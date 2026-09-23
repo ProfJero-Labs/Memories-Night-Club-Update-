@@ -1,0 +1,1399 @@
+<!DOCTYPE html>
+<html class="dark" lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Memories – Dashboard</title>
+
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries">
+    </script>
+
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.7.2/css/all.min.css" />
+
+    <!-- Firebase SDKs -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/firebase/10.7.1/firebase-app-compat.min.js">
+    </script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/firebase/10.7.1/firebase-auth-compat.min.js">
+    </script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/firebase/10.7.1/firebase-firestore-compat.min.js">
+    </script>
+
+    <style>
+        /* ── Core Styles ── */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        /* ── Dark Theme Variables ── */
+        .dark {
+            --color-primary: #ffb1c8;
+            --color-on-primary: #541d32;
+            --color-primary-container: #703348;
+            --color-on-primary-container: #ffd9e2;
+            --color-secondary: #e5bdc7;
+            --color-on-secondary: #432931;
+            --color-secondary-container: #5c3f47;
+            --color-on-secondary-container: #ffd9e2;
+            --color-tertiary: #efa5cb;
+            --color-on-tertiary: #491730;
+            --color-tertiary-container: #642e47;
+            --color-on-tertiary-container: #ffd9e8;
+            --color-error: #ffb4ab;
+            --color-on-error: #690005;
+            --color-error-container: #93000a;
+            --color-on-error-container: #ffdad6;
+            --color-background: #0d0b0c;
+            --color-on-background: #ece0e3;
+            --color-surface: #0d0b0c;
+            --color-on-surface: #ece0e3;
+            --color-surface-variant: #3d3135;
+            --color-on-surface-variant: #cbb5ba;
+            --color-surface-container-lowest: #0a0809;
+            --color-surface-container-low: #141012;
+            --color-surface-container: #1d181a;
+            --color-surface-container-high: #282124;
+            --color-surface-container-highest: #352d30;
+            --color-outline: #948186;
+            --color-outline-variant: #42373a;
+            --color-inverse-surface: #ece0e3;
+            --color-inverse-on-surface: #2d2326;
+            --color-inverse-primary: #8d4a60;
+            --color-surface-dim: #0d0b0c;
+            --color-surface-bright: #342a2d;
+            --font-sans: 'Hanken Grotesk', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+        }
+
+        body {
+            background-color: var(--color-background);
+            color: var(--color-on-background);
+            font-family: var(--font-sans);
+            overflow: hidden;
+            height: 100vh;
+        }
+
+        /* ── Scrollbar ── */
+        ::-webkit-scrollbar {
+            width: 5px;
+            height: 5px;
+        }
+        ::-webkit-scrollbar-track {
+            background: var(--color-surface-container-low);
+        }
+        ::-webkit-scrollbar-thumb {
+            background: var(--color-outline-variant);
+            border-radius: 8px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: var(--color-primary);
+        }
+
+        /* ── Dashboard Layout ── */
+        #app {
+            display: flex;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        /* ── Sidebar Container ── */
+        #sidebar-container {
+            flex-shrink: 0;
+            width: 260px;
+            height: 100%;
+            z-index: 30;
+            transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        #sidebar-container .sidebar-inner {
+            height: 100%;
+            background: var(--color-surface-container-lowest);
+            border-right: 1px solid var(--color-outline-variant);
+            display: flex;
+            flex-direction: column;
+            padding: 1.5rem 0;
+        }
+
+        /* ── Sidebar Brand ── */
+        #sidebar-container .sidebar-brand {
+            padding: 0 1.25rem 1.5rem;
+            border-bottom: 1px solid var(--color-outline-variant);
+        }
+        #sidebar-container .sidebar-brand h1 {
+            font-size: 1.5rem;
+            font-weight: 800;
+            color: var(--color-primary);
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+        }
+        #sidebar-container .sidebar-brand p {
+            font-size: 0.55rem;
+            letter-spacing: 0.25em;
+            color: var(--color-on-surface-variant);
+            margin-top: 0.125rem;
+            text-transform: uppercase;
+        }
+
+        /* ── Sidebar Navigation ── */
+        #sidebar-container .nav-list {
+            flex: 1;
+            overflow-y: auto;
+            padding: 0.75rem 0.75rem 0.5rem;
+            display: flex;
+            flex-direction: column;
+            gap: 0.125rem;
+        }
+        #sidebar-container .nav-link {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            padding: 0.6rem 1rem;
+            border-radius: 8px;
+            color: var(--color-on-surface-variant);
+            transition: background 0.2s, color 0.2s;
+            text-decoration: none;
+            font-size: 0.875rem;
+            font-weight: 500;
+            cursor: pointer;
+        }
+        #sidebar-container .nav-link:hover {
+            background: var(--color-surface-container-high);
+            color: var(--color-on-surface);
+        }
+        #sidebar-container .nav-link.active {
+            background: var(--color-primary-container);
+            color: var(--color-on-primary-container);
+        }
+        #sidebar-container .nav-link i {
+            width: 1.25rem;
+            text-align: center;
+            font-size: 1.05rem;
+            flex-shrink: 0;
+        }
+        #sidebar-container .nav-link .nav-label {
+            white-space: nowrap;
+        }
+
+        /* ── Sidebar User Profile ── */
+        #sidebar-container .sidebar-user {
+            margin-top: auto;
+            padding: 0.75rem 1rem;
+            border-top: 1px solid var(--color-outline-variant);
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+        #sidebar-container .sidebar-user .avatar {
+            width: 2.25rem;
+            height: 2.25rem;
+            border-radius: 50%;
+            background: var(--color-surface-container-high);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: var(--color-on-surface-variant);
+            flex-shrink: 0;
+        }
+        #sidebar-container .sidebar-user .user-info {
+            flex: 1;
+            min-width: 0;
+        }
+        #sidebar-container .sidebar-user .user-info .name {
+            font-size: 0.85rem;
+            font-weight: 600;
+            color: var(--color-on-surface);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        #sidebar-container .sidebar-user .user-info .email {
+            font-size: 0.7rem;
+            color: var(--color-on-surface-variant);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        #sidebar-container .sidebar-user .logout-btn {
+            background: none;
+            border: none;
+            color: var(--color-on-surface-variant);
+            font-size: 1.1rem;
+            cursor: pointer;
+            transition: color 0.2s;
+            padding: 0.25rem;
+        }
+        #sidebar-container .sidebar-user .logout-btn:hover {
+            color: var(--color-error);
+        }
+
+        /* ── Main Content ── */
+        #main-content {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            background: var(--color-background);
+            min-width: 0;
+        }
+
+        /* ── Top Bar ── */
+        .topbar {
+            flex-shrink: 0;
+            padding: 1rem 1.5rem;
+            background: var(--color-surface-container-low);
+            border-bottom: 1px solid var(--color-outline-variant);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 1rem;
+            min-height: 72px;
+        }
+
+        .topbar-left {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            min-width: 0;
+        }
+
+        .hamburger {
+            display: none;
+            background: none;
+            border: none;
+            color: var(--color-on-surface);
+            font-size: 1.5rem;
+            cursor: pointer;
+            padding: 0.25rem;
+            transition: color 0.2s;
+        }
+        .hamburger:hover {
+            color: var(--color-primary);
+        }
+
+        .topbar-title h1 {
+            font-size: 1.25rem;
+            font-weight: 700;
+            color: var(--color-on-surface);
+            line-height: 1.2;
+        }
+        .topbar-title p {
+            font-size: 0.75rem;
+            color: var(--color-on-surface-variant);
+            letter-spacing: 0.05em;
+        }
+
+        .topbar-right {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            flex-shrink: 0;
+        }
+
+        /* ── Event Selector ── */
+        .event-selector {
+            background: var(--color-surface-container);
+            border: 1px solid var(--color-outline-variant);
+            border-radius: 10px;
+            padding: 0.4rem 0.75rem;
+            color: var(--color-on-surface);
+            font-size: 0.875rem;
+            font-weight: 500;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            min-width: 140px;
+            transition: border-color 0.2s;
+            font-family: var(--font-sans);
+        }
+        .event-selector:hover {
+            border-color: var(--color-primary);
+        }
+        .event-selector select {
+            background: transparent;
+            border: none;
+            color: var(--color-on-surface);
+            font-weight: 500;
+            font-size: 0.875rem;
+            outline: none;
+            cursor: pointer;
+            flex: 1;
+            font-family: var(--font-sans);
+            min-width: 80px;
+        }
+        .event-selector select option {
+            background: var(--color-surface-container);
+            color: var(--color-on-surface);
+        }
+        .event-selector i {
+            color: var(--color-on-surface-variant);
+            font-size: 0.75rem;
+        }
+
+        /* ── Scrollable Content ── */
+        .scroll-content {
+            flex: 1;
+            overflow-y: auto;
+            padding: 1.5rem;
+        }
+
+        /* ── Metric Cards ── */
+        .metric-card {
+            background: linear-gradient(180deg, var(--color-surface-container) 0%, var(--color-surface-container-low) 100%);
+            border: 1px solid var(--color-outline-variant);
+            border-radius: 14px;
+            padding: 1.25rem 1.25rem 1rem;
+            transition: border-color 0.25s, transform 0.2s, box-shadow 0.25s;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+        }
+        .metric-card:hover {
+            border-color: var(--color-primary);
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(0, 0, 0, 0.6);
+        }
+        .metric-card .icon-wrap {
+            width: 2.25rem;
+            height: 2.25rem;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1rem;
+            flex-shrink: 0;
+        }
+        .metric-card .stat-number {
+            font-size: 1.75rem;
+            font-weight: 800;
+            color: var(--color-on-surface);
+            line-height: 1.2;
+            margin-top: 0.5rem;
+        }
+        .metric-card .stat-label {
+            font-size: 0.65rem;
+            font-weight: 600;
+            color: var(--color-on-surface-variant);
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+        }
+
+        /* ── Panels ── */
+        .panel {
+            background: var(--color-surface-container-low);
+            border: 1px solid var(--color-outline-variant);
+            border-radius: 14px;
+            padding: 1.5rem;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.35);
+        }
+        .panel-title {
+            font-size: 1rem;
+            font-weight: 600;
+            color: var(--color-on-surface);
+            margin-bottom: 1rem;
+        }
+
+        /* ── Donut Chart ── */
+        .donut-chart {
+            width: 130px;
+            height: 130px;
+            border-radius: 50%;
+            position: relative;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+            box-shadow: 0 0 20px rgba(0, 0, 0, 0.5);
+        }
+        .donut-chart-inner {
+            width: 100px;
+            height: 100px;
+            background: var(--color-surface-container-low);
+            border-radius: 50%;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+        }
+        .donut-chart-inner .number {
+            font-size: 1.5rem;
+            font-weight: 800;
+            color: var(--color-on-surface);
+            line-height: 1;
+        }
+        .donut-chart-inner .label {
+            font-size: 0.6rem;
+            color: var(--color-on-surface-variant);
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            margin-top: 0.125rem;
+        }
+
+        /* ── Chart container ── */
+        .chart-container {
+            width: 100%;
+            height: 220px;
+            position: relative;
+        }
+        .chart-container svg {
+            width: 100%;
+            height: 100%;
+        }
+
+        /* ── Toast ── */
+        .toast {
+            position: fixed;
+            bottom: 2rem;
+            left: 50%;
+            transform: translateX(-50%) translateY(80px);
+            background: var(--color-surface-container-highest);
+            color: var(--color-on-surface);
+            padding: 0.75rem 1.75rem;
+            border-radius: 12px;
+            font-weight: 600;
+            font-size: 0.875rem;
+            border: 1px solid var(--color-outline-variant);
+            box-shadow: 0 8px 40px rgba(0, 0, 0, 0.7);
+            z-index: 9999;
+            opacity: 0;
+            transition: opacity 0.35s, transform 0.35s;
+            pointer-events: none;
+            white-space: nowrap;
+        }
+        .toast.show {
+            opacity: 1;
+            transform: translateX(-50%) translateY(0);
+        }
+        .toast.success {
+            border-color: #69f0ae;
+            color: #69f0ae;
+        }
+        .toast.error {
+            border-color: #ffab91;
+            color: #ffab91;
+        }
+
+        /* ── Spinner ── */
+        .spinner {
+            display: inline-block;
+            width: 18px;
+            height: 18px;
+            border: 2.5px solid rgba(255, 255, 255, 0.2);
+            border-top-color: var(--color-primary);
+            border-radius: 50%;
+            animation: spin 0.7s linear infinite;
+        }
+        @keyframes spin {
+            to {
+                transform: rotate(360deg);
+            }
+        }
+
+        /* ── Recent check-in item ── */
+        .checkin-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0.6rem 0;
+            border-bottom: 1px solid var(--color-outline-variant);
+        }
+        .checkin-item:last-child {
+            border-bottom: none;
+        }
+        .checkin-item .guest {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            min-width: 0;
+        }
+        .checkin-item .guest .avatar-sm {
+            width: 2rem;
+            height: 2rem;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+            font-size: 0.8rem;
+        }
+        .checkin-item .guest .info {
+            min-width: 0;
+        }
+        .checkin-item .guest .info .name {
+            font-size: 0.875rem;
+            font-weight: 500;
+            color: var(--color-on-surface);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .checkin-item .guest .info .ticket-id {
+            font-size: 0.7rem;
+            color: var(--color-on-surface-variant);
+        }
+        .checkin-item .meta {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            flex-shrink: 0;
+        }
+        .checkin-item .meta .day-badge {
+            padding: 0.125rem 0.6rem;
+            border-radius: 100px;
+            font-size: 0.6rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+        .checkin-item .meta .time {
+            font-size: 0.75rem;
+            color: var(--color-on-surface-variant);
+            white-space: nowrap;
+        }
+
+        /* ── Legend item ── */
+        .legend-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            font-size: 0.8rem;
+            padding: 0.25rem 0;
+        }
+        .legend-item .left {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        .legend-item .left .dot {
+            width: 0.7rem;
+            height: 0.7rem;
+            border-radius: 50%;
+            flex-shrink: 0;
+        }
+        .legend-item .left .label {
+            color: var(--color-on-surface-variant);
+        }
+        .legend-item .value {
+            font-weight: 600;
+            color: var(--color-on-surface);
+        }
+        .legend-item .pct {
+            font-size: 0.7rem;
+            color: var(--color-on-surface-variant);
+            margin-left: 0.25rem;
+        }
+
+        /* ── Empty state ── */
+        .empty-state {
+            text-align: center;
+            padding: 2rem 0;
+            color: var(--color-on-surface-variant);
+        }
+        .empty-state i {
+            font-size: 2rem;
+            opacity: 0.3;
+            margin-bottom: 0.5rem;
+            display: block;
+        }
+        .empty-state p {
+            font-size: 0.875rem;
+        }
+
+        /* ── Responsive ── */
+        @media (max-width: 1024px) {
+            .topbar {
+                padding: 0.75rem 1rem;
+            }
+            .scroll-content {
+                padding: 1rem;
+            }
+            .metric-card .stat-number {
+                font-size: 1.5rem;
+            }
+        }
+
+        @media (max-width: 768px) {
+            #sidebar-container {
+                position: fixed;
+                top: 0;
+                left: 0;
+                height: 100%;
+                width: 280px;
+                transform: translateX(-100%);
+                z-index: 50;
+                box-shadow: 0 0 50px rgba(0, 0, 0, 0.8);
+            }
+            #sidebar-container.open {
+                transform: translateX(0);
+            }
+
+            .hamburger {
+                display: block;
+            }
+
+            .topbar-title h1 {
+                font-size: 1rem;
+            }
+            .topbar-title p {
+                display: none;
+            }
+
+            .event-selector {
+                min-width: 100px;
+                padding: 0.3rem 0.6rem;
+                font-size: 0.75rem;
+            }
+            .event-selector select {
+                font-size: 0.75rem;
+                min-width: 60px;
+            }
+
+            .scroll-content {
+                padding: 0.75rem;
+            }
+
+            .metric-card {
+                padding: 0.875rem;
+            }
+            .metric-card .stat-number {
+                font-size: 1.25rem;
+            }
+            .metric-card .stat-label {
+                font-size: 0.55rem;
+            }
+
+            .panel {
+                padding: 1rem;
+            }
+            .panel-title {
+                font-size: 0.9rem;
+            }
+
+            .donut-chart {
+                width: 100px;
+                height: 100px;
+            }
+            .donut-chart-inner {
+                width: 76px;
+                height: 76px;
+            }
+            .donut-chart-inner .number {
+                font-size: 1.1rem;
+            }
+
+            .checkin-item {
+                flex-wrap: wrap;
+                gap: 0.25rem;
+            }
+            .checkin-item .meta {
+                margin-left: auto;
+            }
+
+            .toast {
+                font-size: 0.75rem;
+                padding: 0.5rem 1.25rem;
+                white-space: normal;
+                max-width: 90%;
+            }
+        }
+
+        @media (max-width: 480px) {
+            .topbar {
+                padding: 0.5rem 0.75rem;
+                min-height: 60px;
+            }
+            .topbar-title h1 {
+                font-size: 0.875rem;
+            }
+            .event-selector {
+                min-width: 80px;
+                font-size: 0.7rem;
+                padding: 0.2rem 0.5rem;
+            }
+            .event-selector select {
+                font-size: 0.7rem;
+                min-width: 50px;
+            }
+            .scroll-content {
+                padding: 0.5rem;
+            }
+            .metric-card .stat-number {
+                font-size: 1.1rem;
+            }
+            .metric-card .icon-wrap {
+                width: 1.75rem;
+                height: 1.75rem;
+                font-size: 0.8rem;
+            }
+            .panel {
+                padding: 0.75rem;
+            }
+            .chart-container {
+                height: 150px;
+            }
+        }
+
+        /* Overlay for mobile */
+        .sidebar-overlay {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.6);
+            backdrop-filter: blur(4px);
+            z-index: 40;
+        }
+        .sidebar-overlay.active {
+            display: block;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- ====== TOAST ====== -->
+    <div class="toast" id="toast"></div>
+
+    <!-- ====== MOBILE OVERLAY ====== -->
+    <div class="sidebar-overlay" id="sidebarOverlay"></div>
+
+    <!-- ====== APP ====== -->
+    <div id="app">
+
+        <!-- ====== SIDEBAR CONTAINER ====== -->
+        <aside id="sidebar-container"></aside>
+
+        <!-- ====== MAIN CONTENT ====== -->
+        <div id="main-content">
+
+            <!-- ====== TOP BAR ====== -->
+            <header class="topbar">
+                <div class="topbar-left">
+                    <button class="hamburger" id="hamburgerBtn" aria-label="Toggle menu">
+                        <i class="fas fa-bars"></i>
+                    </button>
+                    <div class="topbar-title">
+                        <h1>Dashboard</h1>
+                        <p>Overview of your event</p>
+                    </div>
+                </div>
+                <div class="topbar-right">
+                    <div class="event-selector">
+                        <i class="fas fa-calendar-alt"></i>
+                        <select id="eventSelector">
+                            <option value="all">All Events</option>
+                        </select>
+                        <i class="fas fa-chevron-down"></i>
+                    </div>
+                </div>
+            </header>
+
+            <!-- ====== SCROLLABLE CONTENT ====== -->
+            <div class="scroll-content" id="scrollContent">
+
+                <!-- ── Metrics Row ── -->
+                <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3 md:gap-4 mb-6" id="metricsGrid">
+                    <div class="metric-card">
+                        <div class="flex items-center gap-3">
+                            <div class="icon-wrap bg-[#3a1d29] text-[#ffb1c8]"><i class="fas fa-ticket-alt"></i></div>
+                            <span class="stat-label">Total Tickets</span>
+                        </div>
+                        <div class="stat-number" id="totalTickets">—</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="flex items-center gap-3">
+                            <div class="icon-wrap bg-[#193b2d] text-[#69f0ae]"><i class="fas fa-check-circle"></i></div>
+                            <span class="stat-label">Checked-in Day 1</span>
+                        </div>
+                        <div class="stat-number" id="checkedDay1">—</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="flex items-center gap-3">
+                            <div class="icon-wrap bg-[#1d2d44] text-[#82b1ff]"><i class="fas fa-check-circle"></i></div>
+                            <span class="stat-label">Checked-in Day 2</span>
+                        </div>
+                        <div class="stat-number" id="checkedDay2">—</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="flex items-center gap-3">
+                            <div class="icon-wrap bg-[#3e2723] text-[#ffab40]"><i class="fas fa-clock"></i></div>
+                            <span class="stat-label">Not Checked-in</span>
+                        </div>
+                        <div class="stat-number" id="notChecked">—</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="flex items-center gap-3">
+                            <div class="icon-wrap bg-[#311b3b] text-[#e040fb]"><i class="fas fa-users"></i></div>
+                            <span class="stat-label">Unique Guests</span>
+                        </div>
+                        <div class="stat-number" id="uniqueGuests">—</div>
+                    </div>
+                </div>
+
+                <!-- ── Main Grid ── -->
+                <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+
+                    <!-- Left: Chart + Recent -->
+                    <div class="lg:col-span-2 space-y-6">
+
+                        <!-- Chart -->
+                        <div class="panel">
+                            <div class="flex items-center justify-between mb-4">
+                                <h3 class="panel-title mb-0">Attendance Overview</h3>
+                                <div class="flex items-center gap-4 text-xs">
+                                    <div class="flex items-center gap-1.5">
+                                        <span class="w-4 h-1.5 rounded-full bg-[#ff4081]"></span>
+                                        <span class="text-on-surface-variant">Day 1</span>
+                                    </div>
+                                    <div class="flex items-center gap-1.5">
+                                        <span class="w-4 h-1.5 rounded-full bg-[#536dfe]"></span>
+                                        <span class="text-on-surface-variant">Day 2</span>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="chart-container" id="chartContainer">
+                                <!-- SVG chart will be rendered by JS -->
+                            </div>
+                        </div>
+
+                        <!-- Recent Check-ins -->
+                        <div class="panel">
+                            <div class="flex items-center justify-between mb-4">
+                                <h3 class="panel-title mb-0">Recent Check-ins</h3>
+                                <span class="text-xs text-on-surface-variant">Latest entries</span>
+                            </div>
+                            <div id="recentCheckins">
+                                <div class="empty-state"><i class="fas fa-spinner fa-spin"></i><p>Loading...</p></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Right: Donuts -->
+                    <div class="space-y-6">
+
+                        <!-- Ticket Summary -->
+                        <div class="panel">
+                            <h3 class="panel-title">Ticket Summary</h3>
+                            <div class="flex flex-col items-center gap-5">
+                                <div class="donut-chart" id="summaryDonut">
+                                    <div class="donut-chart-inner">
+                                        <span class="number" id="summaryTotal">—</span>
+                                        <span class="label">Total</span>
+                                    </div>
+                                </div>
+                                <div class="w-full space-y-1.5" id="summaryLegend">
+                                    <div class="legend-item"><div class="left"><span class="dot" style="background:#4ade80"></span><span class="label">Checked-in (Any Day)</span></div><span class="value" id="summaryChecked">—</span><span class="pct" id="summaryCheckedPct"></span></div>
+                                    <div class="legend-item"><div class="left"><span class="dot" style="background:#42373a"></span><span class="label">Not Checked-in</span></div><span class="value" id="summaryNotChecked">—</span><span class="pct" id="summaryNotCheckedPct"></span></div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Ticket Type Breakdown -->
+                        <div class="panel">
+                            <h3 class="panel-title">Ticket Type Breakdown</h3>
+                            <div class="flex flex-col items-center gap-5">
+                                <div class="donut-chart" id="typeDonut" style="background: conic-gradient(#e91e63 0% 33%, #3f51b5 33% 66%, #9c27b0 66% 100%);">
+                                    <div class="donut-chart-inner">
+                                        <span class="number" id="typeTotal">—</span>
+                                        <span class="label">Total</span>
+                                    </div>
+                                </div>
+                                <div class="w-full space-y-1.5" id="typeLegend">
+                                    <div class="empty-state" style="padding:0.5rem 0;"><p style="font-size:0.8rem;">No ticket types yet</p></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+            </div><!-- /scroll-content -->
+        </div><!-- /main-content -->
+    </div><!-- /app -->
+
+    <!-- ============================================================ -->
+    <!-- JAVASCRIPT                                                   -->
+    <!-- ============================================================ -->
+    <script>
+        // ============================================================
+        // FIREBASE CONFIG
+        // ============================================================
+        const firebaseConfig = {
+            apiKey: "AIzaSyCkhFjqfTqCIg9ic5Qh63XfWVT4tGWuzpM",
+            authDomain: "memoriesnightclub-2717f.firebaseapp.com",
+            projectId: "memoriesnightclub-2717f",
+            storageBucket: "memoriesnightclub-2717f.firebasestorage.app",
+            messagingSenderId: "143491627943",
+            appId: "1:143491627943:web:7cb70bfabdefda7e8a5482",
+            measurementId: "G-9RQQCZ7EVD"
+        };
+
+        firebase.initializeApp(firebaseConfig);
+        const auth = firebase.auth();
+        const db = firebase.firestore();
+        db.enablePersistence({ synchronizeTabs: true }).catch(() => {});
+
+        // ============================================================
+        // DOM REFS
+        // ============================================================
+        const toast = document.getElementById('toast');
+        const sidebarContainer = document.getElementById('sidebar-container');
+        const hamburgerBtn = document.getElementById('hamburgerBtn');
+        const overlay = document.getElementById('sidebarOverlay');
+        const eventSelector = document.getElementById('eventSelector');
+
+        // Metric elements
+        const totalTickets = document.getElementById('totalTickets');
+        const checkedDay1 = document.getElementById('checkedDay1');
+        const checkedDay2 = document.getElementById('checkedDay2');
+        const notChecked = document.getElementById('notChecked');
+        const uniqueGuests = document.getElementById('uniqueGuests');
+        const recentCheckins = document.getElementById('recentCheckins');
+        const summaryTotal = document.getElementById('summaryTotal');
+        const summaryChecked = document.getElementById('summaryChecked');
+        const summaryNotChecked = document.getElementById('summaryNotChecked');
+        const summaryCheckedPct = document.getElementById('summaryCheckedPct');
+        const summaryNotCheckedPct = document.getElementById('summaryNotCheckedPct');
+        const summaryDonut = document.getElementById('summaryDonut');
+        const typeTotal = document.getElementById('typeTotal');
+        const typeLegend = document.getElementById('typeLegend');
+        const typeDonut = document.getElementById('typeDonut');
+        const chartContainer = document.getElementById('chartContainer');
+
+        let currentEventId = 'all';
+        let allTickets = [];
+        let allEvents = [];
+        let unsubscribeTickets = null;
+        let unsubscribeEvents = null;
+
+        // ============================================================
+        // TOAST
+        // ============================================================
+        function showToast(message, type = 'info') {
+            toast.textContent = message;
+            toast.className = 'toast ' + type;
+            toast.classList.add('show');
+            clearTimeout(toast._timer);
+            toast._timer = setTimeout(() => toast.classList.remove('show'), 3500);
+        }
+
+        // ============================================================
+        // SIDEBAR LOADER
+        // ============================================================
+        async function loadSidebar() {
+            try {
+                const response = await fetch('sidebar.html');
+                const html = await response.text();
+                sidebarContainer.innerHTML = html;
+
+                // Highlight current page
+                const currentPage = window.location.pathname.split('/').pop() || 'dashboard.html';
+                document.querySelectorAll('.nav-link').forEach(link => {
+                    const href = link.getAttribute('href');
+                    if (href === currentPage) {
+                        link.classList.add('active');
+                    } else {
+                        link.classList.remove('active');
+                    }
+                });
+
+                // Attach logout handler
+                document.getElementById('sidebarLogoutBtn')?.addEventListener('click', async () => {
+                    await auth.signOut();
+                    showToast('Logged out', 'info');
+                    setTimeout(() => window.location.href = 'login.html', 500);
+                });
+
+                // Update user info when auth changes
+                auth.onAuthStateChanged(user => {
+                    const nameEl = document.getElementById('sidebarAdminName');
+                    const emailEl = document.getElementById('sidebarAdminEmail');
+                    if (user) {
+                        if (nameEl) nameEl.textContent = user.displayName || 'Admin';
+                        if (emailEl) emailEl.textContent = user.email || 'Administrator';
+                    }
+                });
+
+                return true;
+            } catch (error) {
+                console.error('Sidebar load error:', error);
+                return false;
+            }
+        }
+
+        // ============================================================
+        // AUTH GUARD
+        // ============================================================
+        auth.onAuthStateChanged(async user => {
+            if (!user) {
+                window.location.href = 'login.html';
+                return;
+            }
+            await loadSidebar();
+            loadEvents();
+            loadTickets();
+        });
+
+        // ============================================================
+        // LOAD EVENTS
+        // ============================================================
+        function loadEvents() {
+            if (unsubscribeEvents) unsubscribeEvents();
+            unsubscribeEvents = db.collection('events')
+                .where('active', '==', true)
+                .orderBy('createdAt', 'desc')
+                .onSnapshot((snapshot) => {
+                    allEvents = [];
+                    snapshot.forEach(doc => {
+                        allEvents.push({ id: doc.id, ...doc.data() });
+                    });
+                    populateEventSelector();
+                }, (error) => {
+                    console.error('Events load error:', error);
+                    populateEventSelector();
+                });
+        }
+
+        function populateEventSelector() {
+            const currentValue = eventSelector.value;
+            eventSelector.innerHTML = '<option value="all">All Events</option>';
+            allEvents.forEach(ev => {
+                const opt = document.createElement('option');
+                opt.value = ev.id;
+                opt.textContent = ev.name || ev.id;
+                eventSelector.appendChild(opt);
+            });
+            if ([...eventSelector.options].some(o => o.value === currentValue)) {
+                eventSelector.value = currentValue;
+            } else {
+                eventSelector.value = 'all';
+            }
+            currentEventId = eventSelector.value;
+            if (allTickets.length) updateDashboard(allTickets);
+        }
+
+        // ============================================================
+        // LOAD TICKETS
+        // ============================================================
+        function loadTickets() {
+            if (unsubscribeTickets) unsubscribeTickets();
+            unsubscribeTickets = db.collection('tickets')
+                .orderBy('createdAt', 'desc')
+                .onSnapshot((snapshot) => {
+                    const tickets = [];
+                    snapshot.forEach(doc => {
+                        tickets.push({ id: doc.id, ...doc.data() });
+                    });
+                    allTickets = tickets;
+                    updateDashboard(tickets);
+                }, (error) => {
+                    console.error('Tickets load error:', error);
+                    showToast('Error loading tickets', 'error');
+                    updateDashboard([]);
+                });
+        }
+
+        // ============================================================
+        // EVENT SELECTOR CHANGE
+        // ============================================================
+        eventSelector.addEventListener('change', function() {
+            currentEventId = this.value;
+            updateDashboard(allTickets);
+            closeSidebar();
+        });
+
+        // ============================================================
+        // UPDATE DASHBOARD (FIXED)
+        // ============================================================
+        function updateDashboard(tickets) {
+            // Filter by selected event
+            let filtered = tickets;
+            if (currentEventId !== 'all') {
+                filtered = tickets.filter(t => t.eventId === currentEventId);
+            }
+
+            const total = filtered.length;
+
+            // Per-day check-in counts (using dedicated fields)
+            const day1Checked = filtered.filter(t => t.checkedInDay1 === true).length;
+            const day2Checked = filtered.filter(t => t.checkedInDay2 === true).length;
+
+            // Not checked-in at all (neither day)
+            const notCheckedCount = filtered.filter(t => t.checkedInDay1 !== true && t.checkedInDay2 !== true).length;
+
+            // Unique guests (by phone or name)
+            const unique = new Set(filtered.map(t => t.phone || t.customerName)).size;
+
+            // Update metric cards
+            totalTickets.textContent = total || '—';
+            checkedDay1.textContent = day1Checked || '—';
+            checkedDay2.textContent = day2Checked || '—';
+            notChecked.textContent = notCheckedCount || '—';
+            uniqueGuests.textContent = unique || '—';
+
+            // ── Summary donut: Checked-in (any day) vs Not checked-in ──
+            const checkedAny = filtered.filter(t => t.checkedInDay1 === true || t.checkedInDay2 === true).length;
+            const notCheckedAny = total - checkedAny;
+            const pctChecked = total > 0 ? Math.round((checkedAny / total) * 100) : 0;
+            const pctNot = 100 - pctChecked;
+
+            summaryTotal.textContent = total || '—';
+            summaryChecked.textContent = checkedAny;
+            summaryNotChecked.textContent = notCheckedAny;
+            summaryCheckedPct.textContent = total ? `(${pctChecked}%)` : '';
+            summaryNotCheckedPct.textContent = total ? `(${pctNot}%)` : '';
+
+            // Update donut with checked (green) / not checked (gray)
+            summaryDonut.style.background = `conic-gradient(#4ade80 0% ${pctChecked}%, #42373a ${pctChecked}% 100%)`;
+
+            // ── Ticket type breakdown ──
+            const types = {};
+            filtered.forEach(t => {
+                const type = t.type || 'Standard';
+                types[type] = (types[type] || 0) + 1;
+            });
+            const typeEntries = Object.entries(types).sort((a, b) => b[1] - a[1]);
+            typeTotal.textContent = total || '—';
+
+            const typeColors = {
+                'VIP': '#e91e63',
+                'Regular': '#3f51b5',
+                'Standard': '#9c27b0',
+                'Vvip': '#ff6f00',
+                'Guest': '#00897b'
+            };
+            const colorPalette = ['#e91e63', '#3f51b5', '#9c27b0', '#ff6f00', '#00897b', '#00acc1', '#8d6e63'];
+
+            if (typeEntries.length === 0) {
+                typeLegend.innerHTML = '<div class="empty-state" style="padding:0.5rem 0;"><p style="font-size:0.8rem;">No ticket types</p></div>';
+                typeDonut.style.background = `conic-gradient(#42373a 0% 100%)`;
+            } else {
+                let legendHTML = '';
+                let cumulative = 0;
+                let conicParts = [];
+                typeEntries.forEach(([name, count], idx) => {
+                    const p = total ? (count / total) * 100 : 0;
+                    const color = typeColors[name] || colorPalette[idx % colorPalette.length];
+                    conicParts.push(`${color} ${cumulative}% ${cumulative + p}%`);
+                    cumulative += p;
+                    legendHTML += `
+                            <div class="legend-item">
+                                <div class="left"><span class="dot" style="background:${color}"></span><span class="label">${name}</span></div>
+                                <span class="value">${count}</span>
+                                <span class="pct">(${Math.round(p)}%)</span>
+                            </div>
+                        `;
+                });
+                typeLegend.innerHTML = legendHTML;
+                typeDonut.style.background = `conic-gradient(${conicParts.join(', ')})`;
+            }
+
+            // ── Render chart and recent check-ins ──
+            renderChart(filtered);
+            renderRecentCheckins(filtered);
+        }
+
+        // ============================================================
+        // RENDER CHART (FIXED)
+        // ============================================================
+        function renderChart(tickets) {
+            const day1Data = new Array(9).fill(0);
+            const day2Data = new Array(9).fill(0);
+            const hours = ['6PM', '7PM', '8PM', '9PM', '10PM', '11PM', '12AM', '1AM', '2AM'];
+
+            tickets.forEach(t => {
+                // Check-in for day 1
+                if (t.checkedInDay1 === true && t.checkedInTime) {
+                    let hour = 18;
+                    if (t.checkedInTime) {
+                        const match = String(t.checkedInTime).match(/(\d{1,2}):/);
+                        if (match) {
+                            let h = parseInt(match[1]);
+                            if (h < 6) h += 12;
+                            hour = h;
+                        }
+                    }
+                    const idx = Math.min(Math.max(hour - 18, 0), 8);
+                    day1Data[idx] = (day1Data[idx] || 0) + 1;
+                }
+                // Check-in for day 2
+                if (t.checkedInDay2 === true && t.checkedInTime) {
+                    let hour = 18;
+                    if (t.checkedInTime) {
+                        const match = String(t.checkedInTime).match(/(\d{1,2}):/);
+                        if (match) {
+                            let h = parseInt(match[1]);
+                            if (h < 6) h += 12;
+                            hour = h;
+                        }
+                    }
+                    const idx = Math.min(Math.max(hour - 18, 0), 8);
+                    day2Data[idx] = (day2Data[idx] || 0) + 1;
+                }
+            });
+
+            const maxVal = Math.max(1, ...day1Data, ...day2Data);
+            const scale = (val) => 170 - (val / maxVal) * 140;
+            const width = 600;
+            const height = 200;
+            const padding = { top: 10, bottom: 30, left: 35, right: 10 };
+            const chartW = width - padding.left - padding.right;
+            const chartH = height - padding.top - padding.bottom;
+
+            let svg =
+                `<svg viewBox="0 0 ${width} ${height}" preserveAspectRatio="none" style="width:100%;height:100%;">`;
+
+            for (let i = 0; i <= 4; i++) {
+                const y = padding.top + (i / 4) * chartH;
+                svg +=
+                    `<line x1="${padding.left}" x2="${width - padding.right}" y1="${y}" y2="${y}" stroke="var(--color-outline-variant)" stroke-dasharray="4" stroke-width="0.5"/>`;
+                const val = Math.round(maxVal - (i / 4) * maxVal);
+                svg +=
+                    `<text x="${padding.left - 6}" y="${y + 4}" fill="var(--color-on-surface-variant)" font-size="9" text-anchor="end">${val}</text>`;
+            }
+
+            const step = chartW / (hours.length - 1);
+            hours.forEach((h, i) => {
+                const x = padding.left + i * step;
+                svg +=
+                    `<text x="${x}" y="${height - 4}" fill="var(--color-on-surface-variant)" font-size="8" text-anchor="middle">${h}</text>`;
+            });
+
+            let d1Path = '',
+                d1Area = '';
+            day1Data.forEach((val, i) => {
+                const x = padding.left + i * step;
+                const y = padding.top + scale(val);
+                d1Path += (i === 0 ? 'M' : ' L') + x + ',' + y;
+                d1Area += (i === 0 ? 'M' : ' L') + x + ',' + y;
+            });
+            const lastX = padding.left + (day1Data.length - 1) * step;
+            d1Area += ` L${lastX},${padding.top + chartH} L${padding.left},${padding.top + chartH} Z`;
+
+            let d2Path = '',
+                d2Area = '';
+            day2Data.forEach((val, i) => {
+                const x = padding.left + i * step;
+                const y = padding.top + scale(val);
+                d2Path += (i === 0 ? 'M' : ' L') + x + ',' + y;
+                d2Area += (i === 0 ? 'M' : ' L') + x + ',' + y;
+            });
+            const lastX2 = padding.left + (day2Data.length - 1) * step;
+            d2Area += ` L${lastX2},${padding.top + chartH} L${padding.left},${padding.top + chartH} Z`;
+
+            svg += `
+                    <defs>
+                        <linearGradient id="grad1" x1="0%" x2="0%" y1="0%" y2="100%"><stop offset="0%" style="stop-color:#ff4081;stop-opacity:0.4"/><stop offset="100%" style="stop-color:#ff4081;stop-opacity:0"/></linearGradient>
+                        <linearGradient id="grad2" x1="0%" x2="0%" y1="0%" y2="100%"><stop offset="0%" style="stop-color:#536dfe;stop-opacity:0.4"/><stop offset="100%" style="stop-color:#536dfe;stop-opacity:0"/></linearGradient>
+                    </defs>
+                    <path d="${d1Area}" fill="url(#grad1)"/>
+                    <path d="${d1Path}" fill="none" stroke="#ff4081" stroke-width="2"/>
+                    <path d="${d2Area}" fill="url(#grad2)"/>
+                    <path d="${d2Path}" fill="none" stroke="#536dfe" stroke-width="2"/>
+                `;
+
+            svg += '</svg>';
+            chartContainer.innerHTML = svg;
+        }
+
+        // ============================================================
+        // RENDER RECENT CHECK-INS (FIXED)
+        // ============================================================
+        function renderRecentCheckins(tickets) {
+            // Combine both day check-ins into one list
+            const allCheckins = [];
+            tickets.forEach(t => {
+                if (t.checkedInDay1 === true) {
+                    allCheckins.push({
+                        ...t,
+                        dayLabel: 'Day 1',
+                        day: 1,
+                        time: t.checkedInTime || 'Just now'
+                    });
+                }
+                if (t.checkedInDay2 === true) {
+                    allCheckins.push({
+                        ...t,
+                        dayLabel: 'Day 2',
+                        day: 2,
+                        time: t.checkedInTime || 'Just now'
+                    });
+                }
+            });
+            // Sort by time (newest first) - fallback to ticket id if no time
+            const sorted = allCheckins.sort((a, b) => {
+                const ta = a.time || a.createdAt || 0;
+                const tb = b.time || b.createdAt || 0;
+                return (tb?.seconds || tb) - (ta?.seconds || ta);
+            }).slice(0, 5);
+
+            if (sorted.length === 0) {
+                recentCheckins.innerHTML =
+                    `<div class="empty-state"><i class="fas fa-inbox"></i><p>No check-ins yet</p></div>`;
+                return;
+            }
+
+            let html = '';
+            sorted.forEach(t => {
+                const dayLabel = t.dayLabel;
+                const color = t.day === 1 ? '#69f0ae' : '#e040fb';
+                const bg = t.day === 1 ? '#193b2d' : '#311b3b';
+                const timeStr = t.time || 'Just now';
+                const name = t.customerName || 'Guest';
+                const ticketId = t.ticketId || t.id;
+
+                html += `
+                        <div class="checkin-item">
+                            <div class="guest">
+                                <div class="avatar-sm" style="background:${bg};color:${color}"><i class="fas fa-user"></i></div>
+                                <div class="info">
+                                    <div class="name">${name}</div>
+                                    <div class="ticket-id">${ticketId}</div>
+                                </div>
+                            </div>
+                            <div class="meta">
+                                <span class="day-badge" style="background:${bg};color:${color}">${dayLabel}</span>
+                                <span class="time">${timeStr}</span>
+                            </div>
+                        </div>
+                    `;
+            });
+            recentCheckins.innerHTML = html;
+        }
+
+        // ============================================================
+        // MOBILE SIDEBAR TOGGLE
+        // ============================================================
+        function openSidebar() {
+            sidebarContainer.classList.add('open');
+            overlay.classList.add('active');
+            document.body.style.overflow = 'hidden';
+        }
+
+        function closeSidebar() {
+            sidebarContainer.classList.remove('open');
+            overlay.classList.remove('active');
+            document.body.style.overflow = '';
+        }
+
+        hamburgerBtn.addEventListener('click', () => {
+            if (sidebarContainer.classList.contains('open')) {
+                closeSidebar();
+            } else {
+                openSidebar();
+            }
+        });
+
+        overlay.addEventListener('click', closeSidebar);
+
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') closeSidebar();
+        });
+
+        window.addEventListener('resize', () => {
+            if (window.innerWidth > 768) closeSidebar();
+        });
+
+        console.log('✅ Memories Dashboard ready – Firebase connected.');
+    </script>
+</body>
+</html>

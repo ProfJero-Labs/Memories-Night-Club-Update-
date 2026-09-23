@@ -1,0 +1,1075 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Memories Night Club | Admin Dashboard</title>
+    
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Roboto+Slab:wght@700;900&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/firebase/10.7.1/firebase-app-compat.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/firebase/10.7.1/firebase-auth-compat.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/firebase/10.7.1/firebase-firestore-compat.min.js"></script>
+    
+    <style>
+        * { margin:0; padding:0; box-sizing:border-box; }
+        :root { --primary:#a83a1e; --primary-light:#c1502e; --primary-dark:#37210f; --accent:#e5a92c; --cream:#f4ead4; --bg-white:#ffffff; --text-dark:#1a1a1a; --text-gray:#6b7280; --border-color:#e5e7eb; --success:#10b981; --warning:#f59e0b; --danger:#ef4444; --shadow:0 1px 3px rgba(0,0,0,0.1); --shadow-lg:0 10px 30px rgba(0,0,0,0.15); --radius:12px; --transition:all 0.3s ease; }
+        body { font-family:'Inter',sans-serif; background:#f8f4ee; min-height:100vh; color:var(--text-dark); }
+        .login-container { min-height:100vh; display:flex; align-items:center; justify-content:center; padding:20px; background:linear-gradient(135deg,#f4ead4 0%,#d8c7a1 100%); }
+        .login-card { background:var(--bg-white); border-radius:24px; padding:48px 40px; max-width:420px; width:100%; box-shadow:var(--shadow-lg); animation:fadeUp 0.6s ease; border:1px solid rgba(55,33,15,0.1); }
+        @keyframes fadeUp { from { opacity:0; transform:translateY(20px); } to { opacity:1; transform:translateY(0); } }
+        .login-card .logo { text-align:center; margin-bottom:32px; }
+        .login-card .logo h1 { font-family:'Roboto Slab','Inter',serif; font-weight:900; font-size:38px; color:var(--primary-dark); letter-spacing:2px; }
+        .login-card .logo span { display:block; font-size:14px; color:var(--text-gray); margin-top:4px; }
+        .login-card .logo .subtitle { font-size:12px; color:var(--primary-light); letter-spacing:2px; text-transform:uppercase; font-weight:600; }
+        .form-group { margin-bottom:20px; }
+        .form-group label { display:block; font-size:13px; font-weight:600; color:var(--text-dark); margin-bottom:6px; }
+        .form-group input { width:100%; padding:12px 16px; border:2px solid var(--border-color); border-radius:var(--radius); font-size:15px; font-family:'Inter',sans-serif; transition:var(--transition); background:#fafafa; }
+        .form-group input:focus { outline:none; border-color:var(--primary); box-shadow:0 0 0 4px rgba(168,58,30,0.1); background:white; }
+        .login-btn { width:100%; padding:14px; background:var(--primary); color:white; border:none; border-radius:var(--radius); font-size:16px; font-weight:600; cursor:pointer; transition:var(--transition); font-family:'Inter',sans-serif; }
+        .login-btn:hover { background:var(--primary-dark); transform:translateY(-2px); box-shadow:0 8px 25px rgba(168,58,30,0.25); }
+        .login-btn:disabled { opacity:0.6; cursor:not-allowed; transform:none; }
+        .login-error { background:#fef2f2; color:var(--danger); padding:12px; border-radius:var(--radius); font-size:14px; margin-bottom:16px; display:none; }
+        .login-error.show { display:block; }
+        .dashboard { display:none; min-height:100vh; }
+        .dashboard.active { display:block; }
+        .topbar { background:var(--bg-white); padding:16px 32px; display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid var(--border-color); position:sticky; top:0; z-index:100; box-shadow:0 1px 3px rgba(0,0,0,0.05); flex-wrap:wrap; gap:8px; }
+        .topbar .brand { display:flex; align-items:center; gap:12px; }
+        .topbar .brand h2 { font-family:'Roboto Slab','Inter',serif; font-weight:900; font-size:24px; color:var(--primary-dark); }
+        .topbar .brand span { font-size:12px; color:var(--text-gray); font-weight:500; }
+        .topbar .user-info { display:flex; align-items:center; gap:16px; flex-wrap:wrap; }
+        .topbar .user-info .email { font-size:14px; color:var(--text-gray); }
+        .topbar .user-info .logout-btn { padding:8px 20px; background:#f3f4f6; border:none; border-radius:8px; font-size:13px; font-weight:600; color:var(--text-gray); cursor:pointer; transition:var(--transition); font-family:'Inter',sans-serif; }
+        .topbar .user-info .logout-btn:hover { background:#fee2e2; color:var(--danger); }
+        .tabs-container { padding:20px 32px 0; max-width:1400px; margin:0 auto; }
+        .tabs { display:flex; gap:4px; border-bottom:2px solid var(--border-color); }
+        .tab-btn { padding:12px 24px; background:none; border:none; font-size:14px; font-weight:600; color:var(--text-gray); cursor:pointer; transition:var(--transition); font-family:'Inter',sans-serif; position:relative; border-radius:8px 8px 0 0; }
+        .tab-btn:hover { color:var(--text-dark); background:rgba(0,0,0,0.03); }
+        .tab-btn.active { color:var(--primary); background:var(--bg-white); }
+        .tab-btn.active::after { content:''; position:absolute; bottom:-2px; left:0; right:0; height:2px; background:var(--primary); }
+        .tab-btn .badge { display:inline-block; background:var(--primary-light); color:white; font-size:11px; padding:1px 8px; border-radius:100px; margin-left:6px; font-weight:700; }
+        .tab-btn .badge.event-badge { background:var(--warning); }
+        .tab-content { display:none; }
+        .tab-content.active { display:block; }
+        .stats-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:20px; padding:24px 32px; max-width:1400px; margin:0 auto; }
+        .stat-card { background:var(--bg-white); padding:20px 24px; border-radius:var(--radius); box-shadow:var(--shadow); transition:var(--transition); border-left:4px solid var(--primary); }
+        .stat-card:hover { transform:translateY(-2px); box-shadow:var(--shadow-lg); }
+        .stat-card .stat-icon { font-size:24px; color:var(--primary-light); margin-bottom:8px; }
+        .stat-card .stat-number { font-size:28px; font-weight:800; color:var(--text-dark); }
+        .stat-card .stat-label { font-size:13px; color:var(--text-gray); font-weight:500; }
+        .stat-card .stat-sub { font-size:11px; color:#9ca3af; margin-top:4px; }
+        .controls-bar { padding:16px 32px; display:flex; flex-wrap:wrap; gap:12px; align-items:center; justify-content:space-between; max-width:1400px; margin:0 auto; width:100%; }
+        .controls-bar .filters { display:flex; gap:10px; flex-wrap:wrap; }
+        .controls-bar .filters select, .controls-bar .filters input { padding:8px 14px; border:2px solid var(--border-color); border-radius:8px; font-size:13px; font-family:'Inter',sans-serif; background:var(--bg-white); transition:var(--transition); }
+        .controls-bar .filters select:focus, .controls-bar .filters input:focus { outline:none; border-color:var(--primary); }
+        .controls-bar .right-controls { display:flex; gap:10px; flex-wrap:wrap; align-items:center; }
+        .controls-bar .search-box { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+        .controls-bar .search-box input { padding:8px 14px; border:2px solid var(--border-color); border-radius:8px; font-size:13px; font-family:'Inter',sans-serif; min-width:200px; transition:var(--transition); }
+        .controls-bar .search-box input:focus { outline:none; border-color:var(--primary); }
+        .refresh-btn { padding:8px 16px; background:var(--bg-white); border:2px solid var(--border-color); border-radius:8px; font-size:13px; font-weight:500; color:var(--text-gray); cursor:pointer; transition:var(--transition); font-family:'Inter',sans-serif; }
+        .refresh-btn:hover { border-color:var(--primary); color:var(--primary); }
+        .export-btn { padding:8px 18px; background:var(--primary); border:none; border-radius:8px; font-size:13px; font-weight:600; color:white; cursor:pointer; transition:var(--transition); font-family:'Inter',sans-serif; display:inline-flex; align-items:center; gap:8px; }
+        .export-btn:hover { background:var(--primary-dark); transform:translateY(-1px); }
+        .table-container { padding:0 32px 32px; max-width:1400px; margin:0 auto; }
+        .table-wrapper { background:var(--bg-white); border-radius:var(--radius); box-shadow:var(--shadow); overflow:hidden; overflow-x:auto; }
+        .table-wrapper table { width:100%; border-collapse:collapse; font-size:14px; min-width:600px; }
+        .table-wrapper thead { background:#f9fafb; border-bottom:2px solid var(--border-color); }
+        .table-wrapper th { padding:14px 16px; text-align:left; font-weight:600; color:var(--text-gray); font-size:12px; text-transform:uppercase; letter-spacing:0.05em; white-space:nowrap; }
+        .table-wrapper td { padding:14px 16px; border-bottom:1px solid var(--border-color); vertical-align:middle; }
+        .table-wrapper tr:hover td { background:#fafafa; }
+        .table-wrapper tr:last-child td { border-bottom:none; }
+        .status-badge { display:inline-block; padding:4px 12px; border-radius:100px; font-size:12px; font-weight:600; }
+        .status-badge.confirmed { background:#d1fae5; color:#065f46; }
+        .status-badge.checked-in { background:#dbeafe; color:#1e40af; }
+        .status-badge.cancelled { background:#fee2e2; color:#991b1b; }
+        .status-badge.pending { background:#fef3c7; color:#92400e; }
+        .entry-type-badge { display:inline-block; padding:3px 10px; border-radius:100px; font-size:11px; font-weight:600; }
+        .entry-type-badge.solo { background:#dbeafe; color:#1e40af; }
+        .entry-type-badge.group { background:#fef3c7; color:#92400e; }
+        .booking-type-badge { display:inline-block; padding:3px 10px; border-radius:100px; font-size:11px; font-weight:600; }
+        .booking-type-badge.dnd { background:#fce4ec; color:#c62828; }
+        .booking-type-badge.event { background:#e8f5e9; color:#2e7d32; }
+        .action-btn { padding:4px 10px; border:none; border-radius:6px; font-size:12px; font-weight:500; cursor:pointer; transition:var(--transition); font-family:'Inter',sans-serif; margin:2px; }
+        .action-btn.confirm-btn { background:#d1fae5; color:#065f46; }
+        .action-btn.confirm-btn:hover { background:#a7f3d0; }
+        .action-btn.cancel-btn { background:#fee2e2; color:#991b1b; }
+        .action-btn.cancel-btn:hover { background:#fecaca; }
+        .action-btn.delete-btn { background:#f3f4f6; color:var(--text-gray); }
+        .action-btn.delete-btn:hover { background:#fee2e2; color:var(--danger); }
+        .action-btn.toggle-btn { background:#e0e7ff; color:#4338ca; }
+        .action-btn.toggle-btn:hover { background:#c7d2fe; }
+        .action-btn.view-btn { background:#e8f5e9; color:#2e7d32; }
+        .action-btn.view-btn:hover { background:#c8e6c9; }
+        .no-data { text-align:center; padding:48px 20px; color:var(--text-gray); }
+        .no-data i { font-size:48px; margin-bottom:12px; opacity:0.3; }
+        .toast { position:fixed; bottom:30px; left:50%; transform:translateX(-50%) translateY(80px); background:#1a1a1a; color:white; padding:12px 28px; border-radius:10px; font-weight:600; font-size:14px; box-shadow:0 8px 32px rgba(0,0,0,0.25); z-index:2000; opacity:0; transition:opacity 0.3s ease, transform 0.3s ease; pointer-events:none; max-width:90%; text-align:center; }
+        .toast.show { opacity:1; transform:translateX(-50%) translateY(0); }
+        .toast.success { background:#065f46; }
+        .toast.error { background:#991b1b; }
+        .toast.info { background:#1e40af; }
+        .spinner { display:inline-block; width:18px; height:18px; border:3px solid rgba(255,255,255,0.3); border-top:3px solid white; border-radius:50%; animation:spin 0.8s linear infinite; margin-right:8px; vertical-align:middle; }
+        @keyframes spin { 0% { transform:rotate(0deg); } 100% { transform:rotate(360deg); } }
+
+        /* ===== DETAILS MODAL ===== */
+        .details-modal { position:fixed; inset:0; z-index:1000; display:flex; align-items:center; justify-content:center; padding:20px; background:rgba(0,0,0,0.6); backdrop-filter:blur(4px); opacity:0; visibility:hidden; transition:all 0.3s ease; }
+        .details-modal.show { opacity:1; visibility:visible; }
+        .details-modal .modal-content { background:var(--bg-white); border-radius:16px; max-width:700px; width:100%; max-height:90vh; overflow-y:auto; padding:32px; box-shadow:var(--shadow-lg); transform:scale(0.9); transition:transform 0.3s ease; position:relative; }
+        .details-modal.show .modal-content { transform:scale(1); }
+        .details-modal .modal-header { display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:20px; padding-bottom:16px; border-bottom:2px solid var(--border-color); }
+        .details-modal .modal-header h2 { font-family:'Roboto Slab','Inter',serif; font-size:22px; color:var(--primary-dark); }
+        .details-modal .modal-header .close-btn { background:none; border:none; font-size:28px; color:var(--text-gray); cursor:pointer; transition:var(--transition); padding:0 8px; line-height:1; }
+        .details-modal .modal-header .close-btn:hover { color:var(--danger); }
+        .details-modal .detail-row { display:flex; padding:10px 0; border-bottom:1px solid var(--border-color); font-size:14px; }
+        .details-modal .detail-row:last-of-type { border-bottom:none; }
+        .details-modal .detail-row .label { width:140px; flex-shrink:0; font-weight:600; color:var(--text-gray); }
+        .details-modal .detail-row .value { flex:1; color:var(--text-dark); word-break:break-word; }
+        .details-modal .detail-row .value .status-badge { font-size:12px; }
+        .details-modal .detail-section { margin-top:16px; padding-top:16px; border-top:2px solid var(--border-color); }
+        .details-modal .detail-section h4 { font-size:14px; font-weight:700; color:var(--primary); margin-bottom:10px; }
+        .details-modal .detail-section .revenue-grid { display:grid; grid-template-columns:1fr 1fr; gap:6px 16px; font-size:13px; }
+        .details-modal .detail-section .revenue-grid .revenue-label { color:var(--text-gray); }
+        .details-modal .detail-section .revenue-grid .revenue-value { font-weight:600; text-align:right; }
+        .details-modal .detail-section .revenue-grid .revenue-value.highlight { color:var(--primary); font-size:15px; }
+        .details-modal .modal-footer { margin-top:20px; padding-top:16px; border-top:2px solid var(--border-color); display:flex; justify-content:flex-end; gap:12px; }
+        .details-modal .modal-footer .btn { padding:10px 24px; border:none; border-radius:8px; font-size:14px; font-weight:600; cursor:pointer; transition:var(--transition); font-family:'Inter',sans-serif; }
+        .details-modal .modal-footer .btn-primary { background:var(--primary); color:white; }
+        .details-modal .modal-footer .btn-primary:hover { background:var(--primary-dark); }
+        .details-modal .modal-footer .btn-secondary { background:#f3f4f6; color:var(--text-gray); }
+        .details-modal .modal-footer .btn-secondary:hover { background:#e5e7eb; }
+
+        /* Responsive */
+        @media (max-width:992px) { .stats-grid { grid-template-columns:repeat(2,1fr); } }
+        @media (max-width:768px) {
+            .topbar { padding:12px 16px; }
+            .topbar .brand h2 { font-size:18px; }
+            .topbar .user-info .email { font-size:12px; }
+            .tabs-container { padding:12px 16px 0; }
+            .tab-btn { padding:10px 16px; font-size:13px; }
+            .stats-grid { padding:16px; gap:12px; }
+            .stat-card { padding:16px 18px; }
+            .stat-card .stat-number { font-size:22px; }
+            .controls-bar { padding:12px 16px; flex-direction:column; align-items:stretch; }
+            .controls-bar .filters { flex-direction:row; flex-wrap:wrap; }
+            .controls-bar .filters select { flex:1; min-width:120px; }
+            .controls-bar .right-controls { flex-direction:column; align-items:stretch; }
+            .controls-bar .search-box { flex-direction:column; align-items:stretch; }
+            .controls-bar .search-box input { min-width:auto; width:100%; }
+            .table-container { padding:0 16px 16px; }
+            .table-wrapper table { font-size:13px; min-width:550px; }
+            .login-card { padding:32px 24px; }
+            .details-modal .modal-content { padding:20px; }
+            .details-modal .detail-row { flex-direction:column; padding:8px 0; }
+            .details-modal .detail-row .label { width:auto; margin-bottom:2px; font-size:12px; }
+            .details-modal .modal-header h2 { font-size:18px; }
+            .details-modal .detail-section .revenue-grid { grid-template-columns:1fr; gap:2px; }
+        }
+        @media (max-width:480px) {
+            .stats-grid { grid-template-columns:1fr 1fr; gap:10px; padding:12px; }
+            .stat-card { padding:12px 14px; }
+            .stat-card .stat-number { font-size:18px; }
+            .stat-card .stat-label { font-size:11px; }
+            .stat-card .stat-icon { font-size:18px; }
+            .controls-bar .filters select { min-width:100px; font-size:12px; padding:6px 10px; }
+            .table-wrapper th, .table-wrapper td { padding:10px 12px; font-size:12px; }
+            .action-btn { padding:3px 8px; font-size:11px; }
+            .topbar .brand h2 { font-size:16px; }
+            .tab-btn { padding:8px 12px; font-size:12px; }
+        }
+    </style>
+</head>
+<body>
+
+    <!-- ===== LOGIN PAGE ===== -->
+    <div class="login-container" id="loginPage">
+        <div class="login-card">
+            <div class="logo">
+                <h1>MEMORIES</h1>
+                <span class="subtitle">Admin Dashboard</span>
+                <span>Night Club · Cape Coast</span>
+            </div>
+            <div class="login-error" id="loginError">
+                <i class="fas fa-exclamation-circle"></i>
+                <span id="errorMessage">Invalid credentials</span>
+            </div>
+            <form id="loginForm" autocomplete="off">
+                <div class="form-group">
+                    <label for="email">Email Address</label>
+                    <input type="email" id="email" placeholder="admin@memories.com" required>
+                </div>
+                <div class="form-group">
+                    <label for="password">Password</label>
+                    <input type="password" id="password" placeholder="Enter your password" required>
+                </div>
+                <button type="submit" class="login-btn" id="loginBtn">Sign In</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- ===== DASHBOARD ===== -->
+    <div class="dashboard" id="dashboard">
+        <div class="topbar">
+            <div class="brand">
+                <h2>MEMORIES</h2>
+                <span>| Admin</span>
+            </div>
+            <div class="user-info">
+                <span class="email" id="adminEmail">admin@memories.com</span>
+                <button class="logout-btn" id="logoutBtn"><i class="fas fa-sign-out-alt"></i> Logout</button>
+            </div>
+        </div>
+
+        <div class="stats-grid" id="statsGrid">
+            <div class="stat-card">
+                <div class="stat-icon"><i class="fas fa-ticket-alt"></i></div>
+                <div class="stat-number" id="totalDND">0</div>
+                <div class="stat-label">DND Bookings</div>
+                <div class="stat-sub" id="dndSub">31st July</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-icon"><i class="fas fa-calendar-plus"></i></div>
+                <div class="stat-number" id="totalEvents">0</div>
+                <div class="stat-label">Event Bookings</div>
+                <div class="stat-sub" id="eventSub">Proposals</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-icon"><i class="fas fa-check-circle"></i></div>
+                <div class="stat-number" id="confirmedCount">0</div>
+                <div class="stat-label">Confirmed</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-icon"><i class="fas fa-clock"></i></div>
+                <div class="stat-number" id="pendingCount">0</div>
+                <div class="stat-label">Pending Review</div>
+            </div>
+        </div>
+
+        <div class="tabs-container">
+            <div class="tabs">
+                <button class="tab-btn active" data-tab="dnd" onclick="switchTab('dnd')">
+                    <i class="fas fa-ticket-alt"></i> DND Bookings
+                    <span class="badge" id="dndBadge">0</span>
+                </button>
+                <button class="tab-btn" data-tab="event" onclick="switchTab('event')">
+                    <i class="fas fa-calendar-plus"></i> Event Bookings
+                    <span class="badge event-badge" id="eventBadge">0</span>
+                </button>
+                <button class="tab-btn" data-tab="all" onclick="switchTab('all')">
+                    <i class="fas fa-list"></i> All Bookings
+                    <span class="badge" id="allBadge">0</span>
+                </button>
+            </div>
+        </div>
+
+        <!-- DND Tab -->
+        <div class="tab-content active" id="tab-dnd">
+            <div class="controls-bar">
+                <div class="filters">
+                    <select id="dndStatusFilter">
+                        <option value="all">All Status</option>
+                        <option value="confirmed">Confirmed</option>
+                        <option value="checked-in">Checked In</option>
+                        <option value="cancelled">Cancelled</option>
+                        <option value="pending">Pending</option>
+                    </select>
+                    <select id="dndTypeFilter">
+                        <option value="all">All Types</option>
+                        <option value="solo">Solo</option>
+                        <option value="group">Group</option>
+                    </select>
+                </div>
+                <div class="right-controls">
+                    <div class="search-box">
+                        <input type="text" id="dndSearch" placeholder="Search by name, phone or code...">
+                        <button class="refresh-btn" onclick="refreshData()"><i class="fas fa-sync"></i> Refresh</button>
+                        <button class="export-btn" onclick="exportDND()"><i class="fas fa-file-excel"></i> Export CSV</button>
+                    </div>
+                </div>
+            </div>
+            <div class="table-container">
+                <div class="table-wrapper">
+                    <table>
+                        <thead><tr><th>#</th><th>Name</th><th>Phone</th><th>Gate Code</th><th>Type</th><th>Group Size</th><th>Status</th><th>Booked At</th><th>Actions</th></tr></thead>
+                        <tbody id="dndTableBody"><tr><td colspan="9" class="no-data"><i class="fas fa-spinner fa-spin" style="font-size:32px;"></i><p>Loading DND bookings...</p></td></tr></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- Event Tab -->
+        <div class="tab-content" id="tab-event">
+            <div class="controls-bar">
+                <div class="filters">
+                    <select id="eventStatusFilter">
+                        <option value="all">All Status</option>
+                        <option value="pending">Pending</option>
+                        <option value="confirmed">Confirmed</option>
+                        <option value="cancelled">Cancelled</option>
+                    </select>
+                </div>
+                <div class="right-controls">
+                    <div class="search-box">
+                        <input type="text" id="eventSearch" placeholder="Search organiser or phone...">
+                        <button class="refresh-btn" onclick="refreshData()"><i class="fas fa-sync"></i> Refresh</button>
+                        <button class="export-btn" onclick="exportEvents()"><i class="fas fa-file-excel"></i> Export CSV</button>
+                    </div>
+                </div>
+            </div>
+            <div class="table-container">
+                <div class="table-wrapper">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>#</th>
+                                <th>Event Date</th>
+                                <th>Organiser</th>
+                                <th>Contact</th>
+                                <th>Phone</th>
+                                <th>Tables</th>
+                                <th>Gate Est.</th>
+                                <th>Status</th>
+                                <th>Submitted</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="eventTableBody"><tr><td colspan="10" class="no-data"><i class="fas fa-spinner fa-spin" style="font-size:32px;"></i><p>Loading event bookings...</p></td></tr></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- All Tab -->
+        <div class="tab-content" id="tab-all">
+            <div class="controls-bar">
+                <div class="filters">
+                    <select id="allStatusFilter">
+                        <option value="all">All Status</option>
+                        <option value="confirmed">Confirmed</option>
+                        <option value="checked-in">Checked In</option>
+                        <option value="cancelled">Cancelled</option>
+                        <option value="pending">Pending</option>
+                    </select>
+                    <select id="allTypeFilter">
+                        <option value="all">All Types</option>
+                        <option value="dnd">DND</option>
+                        <option value="event">Event</option>
+                    </select>
+                </div>
+                <div class="right-controls">
+                    <div class="search-box">
+                        <input type="text" id="allSearch" placeholder="Search...">
+                        <button class="refresh-btn" onclick="refreshData()"><i class="fas fa-sync"></i> Refresh</button>
+                        <button class="export-btn" onclick="exportAll()"><i class="fas fa-file-excel"></i> Export CSV</button>
+                    </div>
+                </div>
+            </div>
+            <div class="table-container">
+                <div class="table-wrapper">
+                    <table>
+                        <thead><tr><th>#</th><th>Type</th><th>Name/Organiser</th><th>Contact/Phone</th><th>Details</th><th>Status</th><th>Date</th><th>Actions</th></tr></thead>
+                        <tbody id="allTableBody"><tr><td colspan="8" class="no-data"><i class="fas fa-spinner fa-spin" style="font-size:32px;"></i><p>Loading bookings...</p></td></tr></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ===== DETAILS MODAL ===== -->
+    <div class="details-modal" id="detailsModal" onclick="closeDetailsModal(event)">
+        <div class="modal-content" onclick="event.stopPropagation()">
+            <div class="modal-header">
+                <h2><i class="fas fa-calendar-alt"></i> Event Details</h2>
+                <button class="close-btn" onclick="closeDetailsModal()">&times;</button>
+            </div>
+            <div id="detailsContent">
+                <div class="detail-row"><span class="label">Booking Ref</span><span class="value" id="detail-ref">—</span></div>
+                <div class="detail-row"><span class="label">Event Date</span><span class="value" id="detail-date">—</span></div>
+                <div class="detail-row"><span class="label">Organiser</span><span class="value" id="detail-organiser">—</span></div>
+                <div class="detail-row"><span class="label">Contact Person</span><span class="value" id="detail-contact">—</span></div>
+                <div class="detail-row"><span class="label">Email</span><span class="value" id="detail-email">—</span></div>
+                <div class="detail-row"><span class="label">Phone</span><span class="value" id="detail-phone">—</span></div>
+                <div class="detail-row"><span class="label">Status</span><span class="value" id="detail-status">—</span></div>
+                <div class="detail-row"><span class="label">Submitted</span><span class="value" id="detail-submitted">—</span></div>
+                <div class="detail-section">
+                    <h4>Event Concept</h4>
+                    <p id="detail-concept" style="font-size:14px;color:var(--text-dark);line-height:1.6;">—</p>
+                </div>
+                <div class="detail-section">
+                    <h4>DJs / MCs</h4>
+                    <p id="detail-dj" style="font-size:14px;color:var(--text-dark);">—</p>
+                </div>
+                <div class="detail-section">
+                    <h4>Special Requests</h4>
+                    <p id="detail-requests" style="font-size:14px;color:var(--text-dark);">—</p>
+                </div>
+                <div class="detail-section">
+                    <h4>Estimated Revenue Split</h4>
+                    <div class="revenue-grid" id="detail-revenue">
+                        <span class="revenue-label">Gate Revenue Total</span>
+                        <span class="revenue-value" id="rev-gate-total">—</span>
+                        <span class="revenue-label" style="padding-left:20px;">Memories share (30%)</span>
+                        <span class="revenue-value" id="rev-gate-club">—</span>
+                        <span class="revenue-label" style="padding-left:20px;">Organiser share (70%)</span>
+                        <span class="revenue-value" id="rev-gate-org">—</span>
+                        <span class="revenue-label">Table Revenue Total</span>
+                        <span class="revenue-value" id="rev-table-total">—</span>
+                        <span class="revenue-label" style="padding-left:20px;">Memories share (90%)</span>
+                        <span class="revenue-value" id="rev-table-club">—</span>
+                        <span class="revenue-label" style="padding-left:20px;">Organiser share (10%)</span>
+                        <span class="revenue-value" id="rev-table-org">—</span>
+                        <span class="revenue-label" style="font-weight:700;">Estimated Organiser Payout</span>
+                        <span class="revenue-value highlight" id="rev-payout">—</span>
+                    </div>
+                    <p style="font-size:12px;color:var(--text-gray);margin-top:8px;font-style:italic;">Memories reserves 30 complimentary gate passes per event, honoured at no charge and not deducted from the organiser's share.</p>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeDetailsModal()">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast -->
+    <div class="toast" id="toast">✓ Done!</div>
+
+    <script>
+        // ============================================================
+        // FIREBASE CONFIG
+        // ============================================================
+        const firebaseConfig = {
+            apiKey: "AIzaSyCkhFjqfTqCIg9ic5Qh63XfWVT4tGWuzpM",
+            authDomain: "memoriesnightclub-2717f.firebaseapp.com",
+            projectId: "memoriesnightclub-2717f",
+            storageBucket: "memoriesnightclub-2717f.firebasestorage.app",
+            messagingSenderId: "143491627943",
+            appId: "1:143491627943:web:7cb70bfabdefda7e8a5482",
+            measurementId: "G-9RQQCZ7EVD"
+        };
+
+        firebase.initializeApp(firebaseConfig);
+        const auth = firebase.auth();
+        const db = firebase.firestore();
+        db.enablePersistence({ synchronizeTabs: true }).catch(err => {
+            console.warn('Firestore persistence failed, using memory cache:', err);
+        });
+
+        // ============================================================
+        // DOM REFS
+        // ============================================================
+        const loginPage = document.getElementById('loginPage');
+        const dashboard = document.getElementById('dashboard');
+        const loginForm = document.getElementById('loginForm');
+        const loginBtn = document.getElementById('loginBtn');
+        const loginError = document.getElementById('loginError');
+        const errorMessage = document.getElementById('errorMessage');
+        const logoutBtn = document.getElementById('logoutBtn');
+        const adminEmail = document.getElementById('adminEmail');
+        const toast = document.getElementById('toast');
+
+        let dndBookings = [];
+        let eventBookings = [];
+        let dndUnsubscribe = null;
+        let eventUnsubscribe = null;
+
+        // ============================================================
+        // TOAST
+        // ============================================================
+        function showToast(message, type = 'info') {
+            toast.textContent = message;
+            toast.className = 'toast ' + type;
+            toast.classList.add('show');
+            setTimeout(() => toast.classList.remove('show'), 3000);
+        }
+
+        // ============================================================
+        // AUTH
+        // ============================================================
+        auth.onAuthStateChanged(user => {
+            if (user) {
+                loginPage.style.display = 'none';
+                dashboard.classList.add('active');
+                adminEmail.textContent = user.email;
+                loadAllData();
+            } else {
+                loginPage.style.display = 'flex';
+                dashboard.classList.remove('active');
+            }
+        });
+
+        loginForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const email = document.getElementById('email').value.trim();
+            const password = document.getElementById('password').value;
+            loginBtn.disabled = true;
+            loginBtn.innerHTML = '<span class="spinner"></span> Signing In...';
+            loginError.classList.remove('show');
+            try {
+                await auth.signInWithEmailAndPassword(email, password);
+            } catch (error) {
+                loginBtn.disabled = false;
+                loginBtn.textContent = 'Sign In';
+                errorMessage.textContent = error.message;
+                loginError.classList.add('show');
+            }
+        });
+
+        logoutBtn.addEventListener('click', async () => {
+            if (dndUnsubscribe) dndUnsubscribe();
+            if (eventUnsubscribe) eventUnsubscribe();
+            await auth.signOut();
+        });
+
+        // ============================================================
+        // TAB MANAGEMENT
+        // ============================================================
+        let currentTab = 'dnd';
+        function switchTab(tab) {
+            currentTab = tab;
+            document.querySelectorAll('.tab-btn').forEach(btn => {
+                btn.classList.toggle('active', btn.dataset.tab === tab);
+            });
+            document.querySelectorAll('.tab-content').forEach(content => {
+                content.classList.toggle('active', content.id === 'tab-' + tab);
+            });
+            renderAllViews();
+        }
+
+        // ============================================================
+        // LOAD DATA
+        // ============================================================
+        function loadAllData() {
+            loadDNDBookings();
+            loadEventBookings();
+        }
+
+        function loadDNDBookings() {
+            if (dndUnsubscribe) dndUnsubscribe();
+            document.getElementById('dndTableBody').innerHTML = `<tr><td colspan="9" class="no-data"><i class="fas fa-spinner fa-spin" style="font-size:32px;"></i><p>Loading DND bookings...</p></td></tr>`;
+            dndUnsubscribe = db.collection('bookings')
+                .orderBy('timestamp', 'desc')
+                .onSnapshot((snapshot) => {
+                    const bookings = [];
+                    snapshot.forEach(doc => bookings.push({ id: doc.id, ...doc.data() }));
+                    dndBookings = bookings;
+                    updateStats();
+                    renderDNDTable(bookings);
+                    renderAllTable();
+                }, (error) => {
+                    console.error('Error loading DND:', error);
+                    document.getElementById('dndTableBody').innerHTML = `<tr><td colspan="9" class="no-data" style="color:var(--danger);"><i class="fas fa-exclamation-circle" style="font-size:32px;"></i><p>Error: ${error.message}</p></td></tr>`;
+                });
+        }
+
+        function loadEventBookings() {
+            if (eventUnsubscribe) eventUnsubscribe();
+            document.getElementById('eventTableBody').innerHTML = `<tr><td colspan="10" class="no-data"><i class="fas fa-spinner fa-spin" style="font-size:32px;"></i><p>Loading event bookings...</p></td></tr>`;
+            eventUnsubscribe = db.collection('eventBookings')
+                .orderBy('submittedAt', 'desc')
+                .onSnapshot((snapshot) => {
+                    const bookings = [];
+                    snapshot.forEach(doc => bookings.push({ id: doc.id, ...doc.data() }));
+                    eventBookings = bookings;
+                    updateStats();
+                    renderEventTable(bookings);
+                    renderAllTable();
+                }, (error) => {
+                    console.error('Error loading events:', error);
+                    document.getElementById('eventTableBody').innerHTML = `<tr><td colspan="10" class="no-data" style="color:var(--danger);"><i class="fas fa-exclamation-circle" style="font-size:32px;"></i><p>Error: ${error.message}</p></td></tr>`;
+                });
+        }
+
+        function refreshData() {
+            loadDNDBookings();
+            loadEventBookings();
+            showToast('🔄 Refreshing data...', 'info');
+        }
+
+        // ============================================================
+        // STATS
+        // ============================================================
+        function updateStats() {
+            const dndCount = dndBookings.length;
+            const eventCount = eventBookings.length;
+            const dndConfirmed = dndBookings.filter(b => b.status === 'confirmed' || b.status === 'checked-in').length;
+            const eventConfirmed = eventBookings.filter(b => b.status === 'confirmed').length;
+            const dndPending = dndBookings.filter(b => b.status === 'pending' || !b.status).length;
+            const eventPending = eventBookings.filter(b => b.status === 'pending' || !b.status).length;
+
+            document.getElementById('totalDND').textContent = dndCount;
+            document.getElementById('totalEvents').textContent = eventCount;
+            document.getElementById('confirmedCount').textContent = dndConfirmed + eventConfirmed;
+            document.getElementById('pendingCount').textContent = dndPending + eventPending;
+            document.getElementById('dndSub').textContent = `31st July · ${dndCount} registered`;
+            document.getElementById('eventSub').textContent = `${eventCount} proposals`;
+
+            document.getElementById('dndBadge').textContent = dndCount;
+            document.getElementById('eventBadge').textContent = eventCount;
+            document.getElementById('allBadge').textContent = dndCount + eventCount;
+        }
+
+        // ============================================================
+        // RENDER FUNCTIONS
+        // ============================================================
+
+        function renderDNDTable(bookings) {
+            const status = document.getElementById('dndStatusFilter').value;
+            const type = document.getElementById('dndTypeFilter').value;
+            const search = document.getElementById('dndSearch').value.toLowerCase().trim();
+
+            let filtered = bookings.filter(b => {
+                if (status !== 'all' && b.status !== status) return false;
+                if (type !== 'all' && b.entryType !== type) return false;
+                if (search) {
+                    const name = (b.name || '').toLowerCase();
+                    const phone = (b.phone || '').toLowerCase();
+                    const code = (b.gateCode || '').toLowerCase();
+                    if (!name.includes(search) && !phone.includes(search) && !code.includes(search)) return false;
+                }
+                return true;
+            });
+
+            if (filtered.length === 0) {
+                document.getElementById('dndTableBody').innerHTML = `<tr><td colspan="9" class="no-data"><i class="fas fa-inbox" style="font-size:32px;"></i><p>${bookings.length === 0 ? 'No DND bookings yet' : 'No bookings match your filters'}</p></td></tr>`;
+                return;
+            }
+
+            let html = '';
+            filtered.forEach((booking, index) => {
+                const timestamp = booking.timestamp ? new Date(booking.timestamp.seconds * 1000) : new Date();
+                const timeStr = timestamp.toLocaleString('en-GH', { day:'2-digit', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit' });
+                const statusClass = booking.status || 'pending';
+                const statusLabel = statusClass.charAt(0).toUpperCase() + statusClass.slice(1);
+                const typeLabel = booking.entryType === 'solo' ? 'Solo' : 'Group';
+                const typeClass = booking.entryType === 'solo' ? 'solo' : 'group';
+
+                html += `<tr>
+                    <td>${index+1}</td>
+                    <td><strong>${booking.name || 'N/A'}</strong></td>
+                    <td><code style="background:#f3f4f6;padding:2px 8px;border-radius:4px;font-size:12px;">${booking.phone || 'N/A'}</code></td>
+                    <td><code style="background:#f3f4f6;padding:2px 8px;border-radius:4px;font-weight:600;color:var(--primary);">${booking.gateCode || 'N/A'}</code></td>
+                    <td><span class="entry-type-badge ${typeClass}">${typeLabel}</span></td>
+                    <td>${booking.groupSize || '-'}</td>
+                    <td><span class="status-badge ${statusClass}">${statusLabel}</span></td>
+                    <td style="font-size:13px;color:var(--text-gray);">${timeStr}</td>
+                    <td>
+                        ${booking.status !== 'checked-in' && booking.status !== 'cancelled' ? `
+                            <button class="action-btn confirm-btn" onclick="updateDNDStatus('${booking.id}','checked-in')"><i class="fas fa-check"></i></button>
+                            <button class="action-btn cancel-btn" onclick="updateDNDStatus('${booking.id}','cancelled')"><i class="fas fa-times"></i></button>
+                        ` : ''}
+                        <button class="action-btn delete-btn" onclick="deleteDNDBooking('${booking.id}')"><i class="fas fa-trash"></i></button>
+                    </td>
+                </tr>`;
+            });
+            document.getElementById('dndTableBody').innerHTML = html;
+        }
+
+        function renderEventTable(bookings) {
+            const status = document.getElementById('eventStatusFilter').value;
+            const search = document.getElementById('eventSearch').value.toLowerCase().trim();
+
+            let filtered = bookings.filter(b => {
+                if (status !== 'all' && b.status !== status) return false;
+                if (search) {
+                    const organiser = (b.organiser || '').toLowerCase();
+                    const contact = (b.contactPerson || '').toLowerCase();
+                    const phone = (b.phone || '').toLowerCase();
+                    if (!organiser.includes(search) && !contact.includes(search) && !phone.includes(search)) return false;
+                }
+                return true;
+            });
+
+            if (filtered.length === 0) {
+                document.getElementById('eventTableBody').innerHTML = `<tr><td colspan="11" class="no-data"><i class="fas fa-inbox" style="font-size:32px;"></i><p>${bookings.length === 0 ? 'No event bookings yet' : 'No bookings match your filters'}</p></td></tr>`;
+                return;
+            }
+
+            let html = '';
+            filtered.forEach((booking, index) => {
+                const dateStr = booking.date || 'TBC';
+                const submittedAt = booking.submittedAt ? new Date(booking.submittedAt) : new Date();
+                const timeStr = submittedAt.toLocaleString('en-GH', { day:'2-digit', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit' });
+                const statusClass = booking.status || 'pending';
+                const statusLabel = statusClass.charAt(0).toUpperCase() + statusClass.slice(1);
+
+                html += `<tr>
+                    <td>${index+1}</td>
+                    <td><strong>${dateStr}</strong></td>
+                    <td>${booking.organiser || 'N/A'}</td>
+                    <td>${booking.contactPerson || 'N/A'}</td>
+                    <td><code style="background:#f3f4f6;padding:2px 8px;border-radius:4px;font-size:12px;">${booking.phone || 'N/A'}</code></td>
+                    <td>${booking.tables || 0}</td>
+                    <td>${booking.gateAttendance || 0}</td>
+                    <td><span class="status-badge ${statusClass}">${statusLabel}</span></td>
+                    <td style="font-size:13px;color:var(--text-gray);">${timeStr}</td>
+                    <td>
+                        ${booking.status === 'pending' ? `<button class="action-btn confirm-btn" onclick="updateEventStatus('${booking.id}','confirmed')"><i class="fas fa-check"></i> Confirm</button>` : ''}
+                        ${booking.status !== 'cancelled' ? `<button class="action-btn cancel-btn" onclick="updateEventStatus('${booking.id}','cancelled')"><i class="fas fa-times"></i></button>` : ''}
+                        <button class="action-btn toggle-btn" onclick="toggleDateBlock('${booking.id}')">
+                            <i class="fas fa-exchange-alt"></i> Toggle Block
+                        </button>
+                        <button class="action-btn view-btn" onclick="viewEventDetails('${booking.id}')">
+                            <i class="fas fa-eye"></i> View
+                        </button>
+                        <button class="action-btn delete-btn" onclick="deleteEventBooking('${booking.id}')"><i class="fas fa-trash"></i></button>
+                    </td>
+                </tr>`;
+            });
+            document.getElementById('eventTableBody').innerHTML = html;
+        }
+
+        function renderAllTable() {
+            const status = document.getElementById('allStatusFilter').value;
+            const type = document.getElementById('allTypeFilter').value;
+            const search = document.getElementById('allSearch').value.toLowerCase().trim();
+
+            let combined = [];
+            dndBookings.forEach(b => {
+                combined.push({
+                    ...b,
+                    _type: 'dnd',
+                    _displayName: b.name || 'N/A',
+                    _displayContact: b.phone || 'N/A',
+                    _displayDetails: b.entryType === 'solo' ? 'Solo' : `Group (${b.groupSize})`,
+                    _displayDate: b.timestamp ? new Date(b.timestamp.seconds * 1000) : new Date()
+                });
+            });
+            eventBookings.forEach(b => {
+                combined.push({
+                    ...b,
+                    _type: 'event',
+                    _displayName: b.organiser || 'N/A',
+                    _displayContact: b.phone || b.contactPerson || 'N/A',
+                    _displayDetails: `${b.tables || 0} tables, ${b.gateAttendance || 0} gate`,
+                    _displayDate: b.submittedAt ? new Date(b.submittedAt) : new Date()
+                });
+            });
+            combined.sort((a,b) => b._displayDate - a._displayDate);
+
+            let filtered = combined.filter(item => {
+                if (status !== 'all' && item.status !== status) return false;
+                if (type !== 'all' && item._type !== type) return false;
+                if (search) {
+                    const name = (item._displayName || '').toLowerCase();
+                    const contact = (item._displayContact || '').toLowerCase();
+                    if (!name.includes(search) && !contact.includes(search)) return false;
+                }
+                return true;
+            });
+
+            if (filtered.length === 0) {
+                document.getElementById('allTableBody').innerHTML = `<tr><td colspan="8" class="no-data"><i class="fas fa-inbox" style="font-size:32px;"></i><p>${combined.length === 0 ? 'No bookings yet' : 'No bookings match your filters'}</p></td></tr>`;
+                return;
+            }
+
+            let html = '';
+            filtered.forEach((item, index) => {
+                const timeStr = item._displayDate.toLocaleString('en-GH', { day:'2-digit', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit' });
+                const statusClass = item.status || 'pending';
+                const statusLabel = statusClass.charAt(0).toUpperCase() + statusClass.slice(1);
+                const typeLabel = item._type === 'dnd' ? 'DND' : 'Event';
+                const typeClass = item._type === 'dnd' ? 'dnd' : 'event';
+
+                html += `<tr>
+                    <td>${index+1}</td>
+                    <td><span class="booking-type-badge ${typeClass}">${typeLabel}</span></td>
+                    <td><strong>${item._displayName}</strong></td>
+                    <td>${item._displayContact}</td>
+                    <td style="font-size:13px;color:var(--text-gray);">${item._displayDetails}</td>
+                    <td><span class="status-badge ${statusClass}">${statusLabel}</span></td>
+                    <td style="font-size:13px;color:var(--text-gray);">${timeStr}</td>
+                    <td>
+                        <button class="action-btn delete-btn" onclick="deleteAllBooking('${item.id}','${item._type}')"><i class="fas fa-trash"></i></button>
+                    </td>
+                </tr>`;
+            });
+            document.getElementById('allTableBody').innerHTML = html;
+        }
+
+        function renderAllViews() {
+            renderDNDTable(dndBookings);
+            renderEventTable(eventBookings);
+            renderAllTable();
+        }
+
+        // ============================================================
+        // ACTIONS – DND
+        // ============================================================
+        window.updateDNDStatus = async function(id, newStatus) {
+            if (!confirm(`Mark this booking as ${newStatus}?`)) return;
+            try {
+                await db.collection('bookings').doc(id).update({ status: newStatus, updatedAt: firebase.firestore.FieldValue.serverTimestamp() });
+                showToast(`✅ Booking ${newStatus}`, 'success');
+            } catch (error) {
+                console.error(error);
+                showToast('Failed to update status', 'error');
+            }
+        };
+
+        window.deleteDNDBooking = async function(id) {
+            if (!confirm('⚠️ Delete this booking permanently?')) return;
+            try {
+                await db.collection('bookings').doc(id).delete();
+                showToast('✅ Booking deleted', 'success');
+            } catch (error) {
+                console.error(error);
+                showToast('Failed to delete', 'error');
+            }
+        };
+
+        // ============================================================
+        // ACTIONS – EVENT
+        // ============================================================
+        window.updateEventStatus = async function(id, newStatus) {
+            if (!confirm(`Mark this booking as ${newStatus}?`)) return;
+            try {
+                await db.collection('eventBookings').doc(id).update({
+                    status: newStatus,
+                    updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+                });
+
+                const bookingDoc = await db.collection('eventBookings').doc(id).get();
+                const booking = bookingDoc.data();
+                if (booking && booking.dateObj) {
+                    const dateKey = `${booking.dateObj.d}_${booking.dateObj.n}_${booking.dateObj.m}`;
+                    let dateStatus = 'available';
+                    let note = '';
+                    if (newStatus === 'confirmed') {
+                        dateStatus = 'booked';
+                        note = 'Confirmed booking';
+                    } else if (newStatus === 'cancelled') {
+                        dateStatus = 'available';
+                        note = 'Cancelled – available again';
+                    }
+                    await db.collection('eventDates').doc(dateKey).set({
+                        day: booking.dateObj.d,
+                        date: booking.dateObj.n,
+                        month: booking.dateObj.m,
+                        status: dateStatus,
+                        note: note
+                    }, { merge: true });
+                    showToast(`✅ Event ${newStatus} and date updated`, 'success');
+                } else {
+                    showToast(`✅ Event ${newStatus} (no date sync)`, 'success');
+                }
+            } catch (error) {
+                console.error('Error updating event status:', error);
+                showToast('Failed to update status', 'error');
+            }
+        };
+
+        window.toggleDateBlock = async function(bookingId) {
+            try {
+                const bookingDoc = await db.collection('eventBookings').doc(bookingId).get();
+                const booking = bookingDoc.data();
+                if (!booking || !booking.dateObj) {
+                    showToast('❌ No date information found for this booking.', 'error');
+                    return;
+                }
+
+                const dateKey = `${booking.dateObj.d}_${booking.dateObj.n}_${booking.dateObj.m}`;
+                const dateRef = db.collection('eventDates').doc(dateKey);
+                const dateDoc = await dateRef.get();
+
+                let newStatus, note;
+                if (dateDoc.exists && dateDoc.data().status === 'booked') {
+                    newStatus = 'available';
+                    note = 'Unblocked by admin';
+                } else {
+                    newStatus = 'booked';
+                    note = 'Manually blocked by admin';
+                }
+
+                await dateRef.set({
+                    day: booking.dateObj.d,
+                    date: booking.dateObj.n,
+                    month: booking.dateObj.m,
+                    status: newStatus,
+                    note: note
+                }, { merge: true });
+
+                showToast(`✅ Date ${newStatus === 'booked' ? 'blocked' : 'unblocked'} successfully`, 'success');
+            } catch (error) {
+                console.error('Error toggling date block:', error);
+                showToast('❌ Failed to update date status', 'error');
+            }
+        };
+
+        // ============================================================
+        // NEW: View Event Details
+        // ============================================================
+        window.viewEventDetails = async function(bookingId) {
+            try {
+                const bookingDoc = await db.collection('eventBookings').doc(bookingId).get();
+                const booking = bookingDoc.data();
+                if (!booking) {
+                    showToast('❌ Booking not found.', 'error');
+                    return;
+                }
+
+                const fmt = (num) => 'GHS ' + num.toLocaleString(undefined, { maximumFractionDigits: 0 });
+                const gateTotal = (booking.gateAttendance || 0) * 50;
+                const gateClub = gateTotal * 0.30;
+                const gateOrg = gateTotal * 0.70;
+                const tableTotal = (booking.tables || 0) * 3000;
+                const tableClub = tableTotal * 0.90;
+                const tableOrg = tableTotal * 0.10;
+                const payout = gateOrg + tableOrg;
+
+                document.getElementById('detail-ref').textContent = bookingId;
+                document.getElementById('detail-date').textContent = booking.date || 'TBC';
+                document.getElementById('detail-organiser').textContent = booking.organiser || 'N/A';
+                document.getElementById('detail-contact').textContent = booking.contactPerson || 'N/A';
+                document.getElementById('detail-email').textContent = booking.email || 'N/A';
+                document.getElementById('detail-phone').textContent = booking.phone || 'N/A';
+                document.getElementById('detail-status').innerHTML = `<span class="status-badge ${booking.status || 'pending'}">${(booking.status || 'pending').charAt(0).toUpperCase() + (booking.status || 'pending').slice(1)}</span>`;
+                document.getElementById('detail-submitted').textContent = booking.submittedAt ? new Date(booking.submittedAt).toLocaleString('en-GH', { day:'2-digit', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit' }) : 'N/A';
+                document.getElementById('detail-concept').textContent = booking.concept || 'Not specified';
+                document.getElementById('detail-dj').textContent = booking.hasDJ ? `Yes – ${booking.djDetails || 'Details not provided'}` : 'No external DJs / MCs';
+                document.getElementById('detail-requests').textContent = booking.specialRequests || 'None';
+
+                document.getElementById('rev-gate-total').textContent = fmt(gateTotal);
+                document.getElementById('rev-gate-club').textContent = fmt(gateClub);
+                document.getElementById('rev-gate-org').textContent = fmt(gateOrg);
+                document.getElementById('rev-table-total').textContent = fmt(tableTotal);
+                document.getElementById('rev-table-club').textContent = fmt(tableClub);
+                document.getElementById('rev-table-org').textContent = fmt(tableOrg);
+                document.getElementById('rev-payout').textContent = fmt(payout);
+
+                document.getElementById('detailsModal').classList.add('show');
+                document.body.style.overflow = 'hidden';
+            } catch (error) {
+                console.error('Error loading booking details:', error);
+                showToast('❌ Failed to load booking details.', 'error');
+            }
+        };
+
+        // ============================================================
+        // CLOSE DETAILS MODAL
+        // ============================================================
+        function closeDetailsModal(event) {
+            if (event && event.target !== event.currentTarget) return;
+            document.getElementById('detailsModal').classList.remove('show');
+            document.body.style.overflow = '';
+        }
+
+        // Close modal with Escape key
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') {
+                closeDetailsModal();
+            }
+        });
+
+        // ============================================================
+        // DELETE FUNCTIONS
+        // ============================================================
+        window.deleteEventBooking = async function(id) {
+            if (!confirm('⚠️ Delete this booking permanently?')) return;
+            try {
+                const bookingDoc = await db.collection('eventBookings').doc(id).get();
+                const booking = bookingDoc.data();
+                if (booking && booking.dateObj) {
+                    const dateKey = `${booking.dateObj.d}_${booking.dateObj.n}_${booking.dateObj.m}`;
+                    await db.collection('eventDates').doc(dateKey).set({
+                        day: booking.dateObj.d,
+                        date: booking.dateObj.n,
+                        month: booking.dateObj.m,
+                        status: 'available',
+                        note: 'Date freed (booking deleted)'
+                    }, { merge: true });
+                }
+                await db.collection('eventBookings').doc(id).delete();
+                showToast('✅ Booking and date freed', 'success');
+            } catch (error) {
+                console.error('Error deleting event booking:', error);
+                showToast('Failed to delete', 'error');
+            }
+        };
+
+        window.deleteAllBooking = async function(id, type) {
+            if (!confirm('⚠️ Delete this booking permanently?')) return;
+            try {
+                const collection = type === 'dnd' ? 'bookings' : 'eventBookings';
+                await db.collection(collection).doc(id).delete();
+                showToast('✅ Booking deleted', 'success');
+            } catch (error) {
+                console.error(error);
+                showToast('Failed to delete', 'error');
+            }
+        };
+
+        // ============================================================
+        // FILTERS
+        // ============================================================
+        document.getElementById('dndStatusFilter').addEventListener('change', () => renderDNDTable(dndBookings));
+        document.getElementById('dndTypeFilter').addEventListener('change', () => renderDNDTable(dndBookings));
+        document.getElementById('dndSearch').addEventListener('input', () => renderDNDTable(dndBookings));
+        document.getElementById('eventStatusFilter').addEventListener('change', () => renderEventTable(eventBookings));
+        document.getElementById('eventSearch').addEventListener('input', () => renderEventTable(eventBookings));
+        document.getElementById('allStatusFilter').addEventListener('change', renderAllTable);
+        document.getElementById('allTypeFilter').addEventListener('change', renderAllTable);
+        document.getElementById('allSearch').addEventListener('input', renderAllTable);
+
+        // ============================================================
+        // EXPORT FUNCTIONS
+        // ============================================================
+        function exportDND() {
+            if (dndBookings.length === 0) { showToast('❌ No DND bookings to export', 'error'); return; }
+            exportToCSV(dndBookings, 'DND_Bookings', [
+                ['Name','Phone','Gate Code','Type','Group Size','Status','Booked At'],
+                b => [b.name||'N/A', b.phone||'N/A', b.gateCode||'N/A', b.entryType==='solo'?'Solo':'Group', b.groupSize||'-', b.status||'pending', new Date(b.timestamp?.seconds*1000).toLocaleString()]
+            ]);
+        }
+
+        function exportEvents() {
+            if (eventBookings.length === 0) { showToast('❌ No event bookings to export', 'error'); return; }
+            exportToCSV(eventBookings, 'Event_Bookings', [
+                ['Event Date','Organiser','Contact Person','Phone','Email','Tables','Gate Attendance','Status','Submitted At'],
+                b => [b.date||'TBC', b.organiser||'N/A', b.contactPerson||'N/A', b.phone||'N/A', b.email||'N/A', b.tables||0, b.gateAttendance||0, b.status||'pending', new Date(b.submittedAt).toLocaleString()]
+            ]);
+        }
+
+        function exportAll() {
+            const combined = [...dndBookings, ...eventBookings];
+            if (combined.length === 0) { showToast('❌ No bookings to export', 'error'); return; }
+            exportToCSV(combined, 'All_Bookings', [
+                ['Type','Name/Organiser','Contact/Phone','Details','Status','Date'],
+                b => {
+                    const isDND = b.name !== undefined;
+                    return [
+                        isDND ? 'DND' : 'Event',
+                        isDND ? (b.name||'N/A') : (b.organiser||'N/A'),
+                        isDND ? (b.phone||'N/A') : (b.phone||b.contactPerson||'N/A'),
+                        isDND ? (b.entryType==='solo'?'Solo':`Group (${b.groupSize})`) : `${b.tables||0} tables, ${b.gateAttendance||0} gate`,
+                        b.status||'pending',
+                        isDND ? new Date(b.timestamp?.seconds*1000).toLocaleString() : new Date(b.submittedAt).toLocaleString()
+                    ];
+                }
+            ]);
+        }
+
+        function exportToCSV(data, filename, config) {
+            const [headers, rowMapper] = config;
+            let csv = '\uFEFF';
+            csv += headers.join(',') + '\n';
+            data.forEach(item => {
+                const row = rowMapper(item);
+                csv += row.map(cell => `"${cell}"`).join(',') + '\n';
+            });
+            const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `${filename}_${new Date().toISOString().slice(0,10)}.csv`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            showToast(`📥 Exported ${data.length} bookings to CSV`, 'success');
+        }
+
+        console.log('✅ Admin Dashboard ready – event details view enabled.');
+    </script>
+</body>
+</html>

@@ -1,0 +1,475 @@
+<!DOCTYPE html>
+<html class="dark" lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Event Details · MEMORIES</title>
+
+    <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.7.2/css/all.min.css" />
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/firebase/10.7.1/firebase-app-compat.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/firebase/10.7.1/firebase-firestore-compat.min.js"></script>
+
+    <style>
+        :root {
+            --bg: #0a0809;
+            --surface: #141012;
+            --surface-2: #1d181a;
+            --surface-3: #282124;
+            --border: #2a1f22;
+            --primary: #e91e63;
+            --primary-light: #ffb1c8;
+            --ink: #ece0e3;
+            --ink-muted: #a89096;
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            background: var(--bg);
+            color: var(--ink);
+            font-family: 'Hanken Grotesk', sans-serif;
+            min-height: 100vh;
+        }
+        .font-bebas { font-family: 'Bebas Neue', sans-serif; letter-spacing: 0.05em; }
+        .glass-card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+        }
+        .btn-primary {
+            background: linear-gradient(135deg, #ffb1c8, #e91e63);
+            color: #08080A;
+            font-weight: 700;
+            transition: all 0.3s cubic-bezier(0.4,0,0.2,1);
+            box-shadow: 0 4px 20px rgba(233,30,99,0.35);
+            border: none;
+        }
+        .btn-primary:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 30px rgba(233,30,99,0.5);
+        }
+        .btn-primary:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        .ticket-type-option {
+            background: var(--surface-2);
+            border: 2px solid var(--border);
+            border-radius: 12px;
+            padding: 1rem;
+            cursor: pointer;
+            transition: all 0.2s;
+            position: relative;
+        }
+        .ticket-type-option:hover {
+            border-color: rgba(233,30,99,0.4);
+        }
+        .ticket-type-option.selected {
+            border-color: var(--primary);
+            background: rgba(233,30,99,0.08);
+        }
+        .ticket-type-option.selected::after {
+            content: '✓';
+            position: absolute;
+            top: 0.5rem;
+            right: 0.75rem;
+            color: var(--primary);
+            font-weight: 700;
+            font-size: 1.1rem;
+        }
+        .ticket-type-option.sold-out {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        .input-field {
+            width: 100%;
+            background: var(--surface-2);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 0.75rem 1rem;
+            color: var(--ink);
+            font-size: 0.9rem;
+            outline: none;
+            transition: border-color 0.2s;
+            font-family: inherit;
+        }
+        .input-field:focus { border-color: var(--primary); }
+        .input-field::placeholder { color: var(--ink-muted); }
+        .quantity-btn {
+            width: 40px;
+            height: 40px;
+            border-radius: 10px;
+            background: var(--surface-2);
+            border: 1px solid var(--border);
+            color: var(--ink);
+            font-size: 1.2rem;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .quantity-btn:hover:not(:disabled) {
+            border-color: var(--primary);
+            color: var(--primary);
+        }
+        .quantity-btn:disabled { opacity: 0.3; cursor: not-allowed; }
+        .loading-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(10,8,9,0.9);
+            backdrop-filter: blur(8px);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 100;
+        }
+        .loading-overlay.active { display: flex; }
+        .spinner {
+            width: 48px;
+            height: 48px;
+            border: 4px solid rgba(233,30,99,0.2);
+            border-top-color: var(--primary);
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+    </style>
+</head>
+<body>
+
+    <!-- Header -->
+    <header class="border-b" style="border-color: var(--border); background: rgba(10,8,9,0.8); backdrop-filter: blur(12px); position: sticky; top: 0; z-index: 50;">
+        <div class="max-w-4xl mx-auto px-5 py-4 flex items-center gap-4">
+            <a href="events.html" class="text-lg" style="color: var(--ink-muted);">
+                <i class="fas fa-arrow-left"></i>
+            </a>
+            <div>
+                <h1 class="font-bebas text-xl" style="color: var(--primary-light);">MEMORIES</h1>
+            </div>
+        </div>
+    </header>
+
+    <!-- Loading -->
+    <div id="loading" class="max-w-4xl mx-auto px-5 pt-8 text-center" style="color: var(--ink-muted);">
+        <div class="spinner mx-auto mb-4"></div>
+        <p>Loading event...</p>
+    </div>
+
+    <!-- Content -->
+    <main id="content" class="hidden max-w-4xl mx-auto px-5 py-8" style="display:none;">
+
+        <!-- Event Hero -->
+        <div id="eventHero" class="glass-card overflow-hidden mb-6">
+            <div id="eventArtwork" style="aspect-ratio: 16/7; background: linear-gradient(135deg, #703348 0%, #e91e63 100%); position: relative;"></div>
+            <div class="p-6">
+                <p id="eventDate" class="text-xs tracking-[0.2em] uppercase mb-2" style="color: var(--primary-light);"></p>
+                <h1 id="eventName" class="font-bebas text-4xl md:text-5xl leading-none mb-3"></h1>
+                <p id="eventDescription" class="text-sm mb-4" style="color: var(--ink-muted);"></p>
+                <div class="flex flex-wrap gap-4 text-xs" style="color: var(--ink-muted);">
+                    <span><i class="fas fa-map-marker-alt mr-1.5" style="color: var(--primary);"></i><span id="eventVenue"></span></span>
+                    <span><i class="fas fa-clock mr-1.5" style="color: var(--primary);"></i><span id="eventTime"></span></span>
+                    <span><i class="fas fa-user mr-1.5" style="color: var(--primary);"></i><span id="eventHost"></span></span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Ticket Selection -->
+        <div class="glass-card p-6 mb-6">
+            <h2 class="font-bebas text-2xl mb-4">SELECT TICKET TYPE</h2>
+            <div id="ticketTypes" class="grid grid-cols-1 md:grid-cols-2 gap-3 mb-6">
+                <!-- Populated by JS -->
+            </div>
+
+            <!-- Quantity -->
+            <div class="flex items-center justify-between p-4 mb-6" style="background: var(--surface-2); border-radius: 12px;">
+                <div>
+                    <p class="text-sm font-semibold mb-0.5">Quantity</p>
+                    <p class="text-xs" style="color: var(--ink-muted);">Max 6 per transaction</p>
+                </div>
+                <div class="flex items-center gap-3">
+                    <button class="quantity-btn" id="qtyDec">−</button>
+                    <span id="qtyDisplay" class="text-lg font-bold w-8 text-center">1</span>
+                    <button class="quantity-btn" id="qtyInc">+</button>
+                </div>
+            </div>
+
+            <!-- Buyer Info -->
+            <h2 class="font-bebas text-2xl mb-4">YOUR DETAILS</h2>
+            <div class="space-y-3 mb-6">
+                <input id="buyerName" type="text" class="input-field" placeholder="Full Name *" />
+                <input id="buyerPhone" type="tel" class="input-field" placeholder="Phone Number (e.g. 0241234567) *" />
+                <input id="buyerEmail" type="email" class="input-field" placeholder="Email Address *" />
+            </div>
+
+            <!-- Summary -->
+            <div class="p-4 mb-6" style="background: var(--surface-2); border-radius: 12px;">
+                <div class="flex justify-between text-sm mb-2">
+                    <span style="color: var(--ink-muted);">Subtotal</span>
+                    <span id="subtotal" class="font-semibold">GHS 0.00</span>
+                </div>
+                <div class="flex justify-between text-sm mb-2">
+                    <span style="color: var(--ink-muted);">Processing fee</span>
+                    <span class="font-semibold" style="color: var(--ink-muted);">Included</span>
+                </div>
+                <div class="border-t pt-2 mt-2 flex justify-between" style="border-color: var(--border);">
+                    <span class="font-bold">Total</span>
+                    <span id="total" class="font-bold text-lg" style="color: var(--primary-light);">GHS 0.00</span>
+                </div>
+            </div>
+
+            <!-- Pay Button -->
+            <button id="payBtn" class="btn-primary w-full py-4 rounded-xl text-base" disabled>
+                <i class="fas fa-lock mr-2"></i> Pay with Paystack
+            </button>
+            <p class="text-xs text-center mt-3" style="color: var(--ink-muted);">
+                <i class="fas fa-shield-alt mr-1"></i> Secure payment powered by Paystack
+            </p>
+        </div>
+
+        <p class="text-xs text-center" style="color: var(--ink-muted);">
+            Tickets will be sent to your phone via SMS/WhatsApp after payment
+        </p>
+    </main>
+
+    <!-- Loading Overlay -->
+    <div class="loading-overlay" id="loadingOverlay">
+        <div class="text-center">
+            <div class="spinner mx-auto mb-4"></div>
+            <p id="loadingText" style="color: var(--ink);">Processing...</p>
+        </div>
+    </div>
+
+    <script>
+        const firebaseConfig = {
+            apiKey: "AIzaSyCkhFjqfTqCIg9ic5Qh63XfWVT4tGWuzpM",
+            authDomain: "memoriesnightclub-2717f.firebaseapp.com",
+            projectId: "memoriesnightclub-2717f",
+            storageBucket: "memoriesnightclub-2717f.firebasestorage.app",
+            messagingSenderId: "143491627943",
+            appId: "1:143491627943:web:7cb70bfabdefda7e8a5482",
+            measurementId: "G-9RQQCZ7EVD"
+        };
+
+        firebase.initializeApp(firebaseConfig);
+        const db = firebase.firestore();
+
+        // ⚠️ Replace with your Cloudflare Worker URL
+        const WORKER_URL = 'https://memories-paystack-verify.diamondj04102026.workers.dev';
+
+        const params = new URLSearchParams(window.location.search);
+        const eventId = params.get('id');
+
+        let event = null;
+        let ticketTypes = [];
+        let selectedTypeId = null;
+        let quantity = 1;
+
+        function escapeHtml(text) {
+            if (!text) return '';
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        function formatGHS(pesewas) {
+            return 'GHS ' + (pesewas / 100).toFixed(2);
+        }
+
+        function formatDate(ts) {
+            if (!ts) return '';
+            const date = ts.toDate ? ts.toDate() : new Date(ts);
+            return date.toLocaleDateString('en-GB', { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' });
+        }
+
+        function formatTime(ts) {
+            if (!ts) return '';
+            const date = ts.toDate ? ts.toDate() : new Date(ts);
+            return date.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+        }
+
+        function normalizePhone(phone) {
+            if (!phone) return '';
+            return phone.replace(/\s/g, '').replace(/^\+233/, '0').replace(/^233/, '0');
+        }
+
+        async function loadEvent() {
+            if (!eventId) {
+                document.getElementById('loading').innerHTML = '<p style="color: var(--primary-light);">No event ID provided</p>';
+                return;
+            }
+
+            try {
+                const docRef = await db.collection('events').doc(eventId).get();
+                if (!docRef.exists) {
+                    document.getElementById('loading').innerHTML = '<p style="color: var(--primary-light);">Event not found</p>';
+                    return;
+                }
+                event = { id: docRef.id, ...docRef.data() };
+
+                // Load ticket types
+                const ttSnapshot = await db.collection('ticket_types')
+                    .where('eventId', '==', eventId)
+                    .where('active', '==', true)
+                    .orderBy('pricePesewas', 'asc')
+                    .get();
+
+                ticketTypes = [];
+                ttSnapshot.forEach(doc => ticketTypes.push({ id: doc.id, ...doc.data() }));
+
+                if (ticketTypes.length === 0) {
+                    // Fallback: create default ticket types if none exist
+                    ticketTypes = [
+                        { id: 'default_standard', name: 'Standard', pricePesewas: 5000, remaining: 999, admits: 1 },
+                        { id: 'default_vip', name: 'VIP', pricePesewas: 10000, remaining: 999, admits: 1 },
+                    ];
+                }
+
+                selectedTypeId = ticketTypes[0]?.id;
+                renderEvent();
+                document.getElementById('loading').style.display = 'none';
+                document.getElementById('content').style.display = 'block';
+
+            } catch (error) {
+                console.error('Load error:', error);
+                document.getElementById('loading').innerHTML = `<p style="color: var(--primary-light);">Error: ${escapeHtml(error.message)}</p>`;
+            }
+        }
+
+        function renderEvent() {
+            document.getElementById('eventName').textContent = event.name || 'Untitled Event';
+            document.getElementById('eventDate').textContent = formatDate(event.startsAt);
+            document.getElementById('eventDescription').textContent = event.description || '';
+            document.getElementById('eventVenue').textContent = event.venue || 'Memories Night Club, Cape Coast';
+            document.getElementById('eventTime').textContent = formatTime(event.startsAt) + ' – Late';
+            document.getElementById('eventHost').textContent = event.hostName || 'Memories Night Club';
+
+            if (event.artworkUrl) {
+                document.getElementById('eventArtwork').innerHTML = 
+                    `<img src="${escapeHtml(event.artworkUrl)}" style="width:100%;height:100%;object-fit:cover;" />`;
+            }
+
+            renderTicketTypes();
+            updateSummary();
+        }
+
+        function renderTicketTypes() {
+            const container = document.getElementById('ticketTypes');
+            container.innerHTML = '';
+            ticketTypes.forEach(tt => {
+                const isSoldOut = (tt.remaining !== undefined && tt.remaining <= 0);
+                const isSelected = tt.id === selectedTypeId;
+                const div = document.createElement('div');
+                div.className = 'ticket-type-option' + (isSelected ? ' selected' : '') + (isSoldOut ? ' sold-out' : '');
+                div.innerHTML = `
+                    <div class="flex justify-between items-start mb-2">
+                        <div>
+                            <p class="font-bold text-base">${escapeHtml(tt.name || 'Ticket')}</p>
+                            ${tt.admits ? `<p class="text-xs" style="color: var(--ink-muted);">Admits ${tt.admits}</p>` : ''}
+                        </div>
+                        <p class="font-bold text-lg" style="color: var(--primary-light);">${formatGHS(tt.pricePesewas || 0)}</p>
+                    </div>
+                    ${tt.description ? `<p class="text-xs mt-1" style="color: var(--ink-muted);">${escapeHtml(tt.description)}</p>` : ''}
+                    ${isSoldOut ? `<p class="text-xs mt-2" style="color: #ffab40;">Sold Out</p>` : ''}
+                `;
+                if (!isSoldOut) {
+                    div.onclick = () => {
+                        selectedTypeId = tt.id;
+                        renderTicketTypes();
+                        updateSummary();
+                    };
+                }
+                container.appendChild(div);
+            });
+        }
+
+        function updateSummary() {
+            const type = ticketTypes.find(t => t.id === selectedTypeId);
+            if (!type) {
+                document.getElementById('payBtn').disabled = true;
+                return;
+            }
+            const subtotal = (type.pricePesewas || 0) * quantity;
+            document.getElementById('subtotal').textContent = formatGHS(subtotal);
+            document.getElementById('total').textContent = formatGHS(subtotal);
+            document.getElementById('qtyDisplay').textContent = quantity;
+
+            // Validate form
+            const name = document.getElementById('buyerName').value.trim();
+            const phone = document.getElementById('buyerPhone').value.trim();
+            const email = document.getElementById('buyerEmail').value.trim();
+            const valid = name && phone.length >= 9 && email.includes('@');
+            document.getElementById('payBtn').disabled = !valid;
+        }
+
+        // Quantity controls
+        document.getElementById('qtyDec').onclick = () => {
+            if (quantity > 1) { quantity--; updateSummary(); }
+        };
+        document.getElementById('qtyInc').onclick = () => {
+            if (quantity < 6) { quantity++; updateSummary(); }
+        };
+
+        // Form listeners
+        ['buyerName', 'buyerPhone', 'buyerEmail'].forEach(id => {
+            document.getElementById(id).addEventListener('input', updateSummary);
+        });
+
+        // Payment
+        document.getElementById('payBtn').onclick = async () => {
+            const type = ticketTypes.find(t => t.id === selectedTypeId);
+            if (!type) return;
+
+            const name = document.getElementById('buyerName').value.trim();
+            const phone = normalizePhone(document.getElementById('buyerPhone').value.trim());
+            const email = document.getElementById('buyerEmail').value.trim();
+
+            if (!name || !phone || !email) {
+                alert('Please fill in all fields');
+                return;
+            }
+
+            const overlay = document.getElementById('loadingOverlay');
+            const loadingText = document.getElementById('loadingText');
+            overlay.classList.add('active');
+            loadingText.textContent = 'Initiating payment...';
+
+            try {
+                const payload = {
+                    eventId: event.id,
+                    ticketTypeId: type.id,
+                    ticketTypeName: type.name || 'Standard',
+                    pricePesewas: type.pricePesewas || 0,
+                    admits: type.admits || 1,
+                    quantity: quantity,
+                    buyerName: name,
+                    buyerPhone: phone,
+                    buyerEmail: email,
+                    callbackUrl: window.location.origin + '/payment-return.html'
+                };
+
+                const response = await fetch(`${WORKER_URL}/ticket-checkout/initiate`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+
+                const data = await response.json();
+
+                if (!data.success) {
+                    throw new Error(data.error || 'Failed to initiate payment');
+                }
+
+                // Redirect to Paystack
+                loadingText.textContent = 'Redirecting to Paystack...';
+                window.location.href = data.authorizationUrl;
+
+            } catch (error) {
+                console.error('Payment error:', error);
+                overlay.classList.remove('active');
+                alert('Payment error: ' + error.message);
+            }
+        };
+
+        loadEvent();
+    </script>
+</body>
+</html>

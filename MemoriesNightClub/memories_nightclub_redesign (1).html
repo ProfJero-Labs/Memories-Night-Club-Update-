@@ -1,0 +1,519 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="description" content="Memories Night Club — Cape Coast's nightlife destination. Discover upcoming nights, buy tickets, book tables and host your event at SamRit Hotel, Cape Coast.">
+<title>MEMORIES — Some Nights Are Forever</title>
+<style>
+:root{
+  --bg:#080808; --surface:#111; --surface2:#171717; --text:#f5f2eb; --muted:#a8a39a;
+  --line:#2b2926; --accent:#d7b46a; --max:1180px; --radius:18px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{font-family:Inter,Arial,sans-serif;background:var(--bg);color:var(--text);line-height:1.55}
+a{color:inherit;text-decoration:none}
+img{max-width:100%;display:block}
+button,.btn{font:inherit;cursor:pointer}
+.container{width:min(calc(100% - 40px),var(--max));margin:auto}
+.eyebrow{font-size:.75rem;letter-spacing:.18em;text-transform:uppercase;color:var(--accent);font-weight:700}
+h1,h2,h3{line-height:1.05}
+h2{font-size:clamp(2rem,5vw,4rem);margin:10px 0 16px}
+p{color:var(--muted)}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;padding:14px 20px;border-radius:999px;border:1px solid var(--line);font-weight:800;transition:.2s}
+.btn-primary{background:var(--accent);color:#0b0b0b;border-color:var(--accent)}
+.btn-secondary{background:rgba(255,255,255,.04)}
+.btn:hover{transform:translateY(-2px)}
+header{position:fixed;top:0;left:0;right:0;z-index:50;background:rgba(8,8,8,.82);backdrop-filter:blur(18px);border-bottom:1px solid rgba(255,255,255,.07)}
+.nav{height:72px;display:flex;align-items:center;justify-content:space-between;gap:20px}
+.logo{font-size:1.35rem;font-weight:950;letter-spacing:.18em}
+nav{display:flex;gap:25px;align-items:center}
+nav a{font-size:.86rem;color:#ddd;font-weight:700}
+nav a:hover{color:var(--accent)}
+.menu{display:none;background:none;border:0;color:#fff;font-size:25px}.mobile-menu{display:none}
+.hero{min-height:760px;display:flex;align-items:end;padding:130px 0 70px;position:relative;overflow:hidden;background:
+linear-gradient(90deg,rgba(0,0,0,.92) 0%,rgba(0,0,0,.58) 48%,rgba(0,0,0,.38) 100%),
+radial-gradient(circle at 75% 35%,rgba(215,180,106,.18),transparent 30%),
+linear-gradient(135deg,#17110b,#080808 60%);}
+.hero:after{content:"";position:absolute;inset:0;background:linear-gradient(0deg,#080808 0%,transparent 30%);pointer-events:none}
+.hero-inner{position:relative;z-index:2;max-width:820px}
+.hero h1{font-size:clamp(4rem,11vw,9rem);letter-spacing:-.07em;margin:12px 0}
+.hero h1 span{color:var(--accent)}
+.hero-tag{font-size:clamp(1.2rem,2.6vw,2rem);max-width:650px;color:#eee}
+.hero-actions{display:flex;flex-wrap:wrap;gap:12px;margin:30px 0}
+.hero-meta{display:flex;flex-wrap:wrap;gap:10px;color:#ddd;font-size:.9rem}
+.hero-meta span{padding:7px 11px;border:1px solid rgba(255,255,255,.14);border-radius:999px;background:rgba(0,0,0,.28)}
+section{padding:90px 0}
+.section-head{display:flex;justify-content:space-between;align-items:end;gap:30px;margin-bottom:34px}
+.section-head p{max-width:520px}
+.events{display:grid;grid-template-columns:repeat(2,1fr);gap:20px}
+.event{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);overflow:hidden}
+.event-art{aspect-ratio:16/10;background:
+radial-gradient(circle at 75% 25%,rgba(215,180,106,.4),transparent 25%),
+linear-gradient(135deg,#241b12,#0e0e0e);display:flex;align-items:end;padding:25px}
+.event-art .date{font-size:3rem;font-weight:950;line-height:.9}
+.event-body{padding:22px}
+.event-body h3{font-size:1.55rem;margin:7px 0}
+.event-info{display:flex;gap:8px;flex-wrap:wrap;margin:15px 0}
+.pill{font-size:.76rem;padding:6px 9px;border:1px solid var(--line);border-radius:999px;color:#ddd}
+.event-actions{display:flex;gap:10px;flex-wrap:wrap}
+.experience{display:grid;grid-template-columns:1.1fr .9fr;gap:22px}
+.feature{min-height:470px;border-radius:var(--radius);padding:34px;display:flex;flex-direction:column;justify-content:end;overflow:hidden;position:relative;background:
+linear-gradient(0deg,rgba(0,0,0,.9),transparent 65%),
+radial-gradient(circle at 50% 20%,rgba(215,180,106,.25),transparent 30%),#161616}
+.feature h3{font-size:2.5rem;margin:8px 0}
+.feature p{max-width:560px}
+.stack{display:grid;gap:22px}
+.small-feature{min-height:224px;border:1px solid var(--line);background:var(--surface);border-radius:var(--radius);padding:28px}
+.small-feature h3{font-size:1.7rem;margin:8px 0}
+.tables{background:#0d0d0d}
+.table-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:18px}
+.table-card{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:28px}
+.table-card.featured{border-color:var(--accent);box-shadow:0 0 0 1px rgba(215,180,106,.15)}
+.price{font-size:2rem;font-weight:950;margin:15px 0}
+.table-card ul{list-style:none;margin:20px 0;color:#ddd}
+.table-card li{padding:7px 0;border-bottom:1px solid var(--line)}
+.drinks{margin:25px 0;padding:18px;background:#0b0b0b;border:1px solid var(--line);border-radius:14px}
+.drinks strong{display:block;margin-bottom:8px}
+.drink-options{display:flex;flex-wrap:wrap;gap:8px}
+.drink-options span{padding:7px 10px;border-radius:999px;border:1px solid #3a3731;color:#ddd;font-size:.8rem}
+.host{display:grid;grid-template-columns:.9fr 1.1fr;gap:45px;align-items:start}
+.host-points{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:25px}
+.host-point{padding:18px;background:var(--surface);border:1px solid var(--line);border-radius:14px}
+.host-point strong{display:block;margin-bottom:4px}
+form{display:grid;gap:13px;background:var(--surface);padding:26px;border:1px solid var(--line);border-radius:var(--radius)}
+.field{display:grid;gap:6px}
+label{font-size:.82rem;font-weight:700;color:#ddd}
+input,select,textarea{width:100%;background:#0b0b0b;color:#fff;border:1px solid #34322e;border-radius:11px;padding:13px 14px;outline:none}
+input:focus,select:focus,textarea:focus{border-color:var(--accent)}
+textarea{min-height:120px;resize:vertical}
+.form-row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.calendar{overflow:auto;border:1px solid var(--line);border-radius:var(--radius)}
+.calendar table{width:100%;border-collapse:collapse;min-width:720px}
+.calendar th,.calendar td{padding:16px;text-align:left;border-bottom:1px solid var(--line)}
+.calendar th{font-size:.75rem;text-transform:uppercase;letter-spacing:.1em;color:var(--muted)}
+.calendar td strong{display:block}
+.calendar .open{color:#bfe7b0}.calendar .pending{color:var(--accent)}
+.social{display:grid;grid-template-columns:repeat(4,1fr);gap:15px}
+.social-card{min-height:260px;border-radius:var(--radius);background:linear-gradient(145deg,#21180f,#121212);border:1px solid var(--line);padding:22px;display:flex;flex-direction:column;justify-content:end}
+.social-card strong{font-size:1.3rem}
+.location{display:grid;grid-template-columns:1fr 1fr;gap:20px}
+.location-card{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:30px}
+.location-card h3{font-size:1.8rem;margin:8px 0}
+footer{padding:50px 0 95px;border-top:1px solid var(--line)}
+.footer-grid{display:grid;grid-template-columns:1.3fr 1fr 1fr;gap:30px}
+footer ul{list-style:none;display:grid;gap:8px;color:var(--muted)}
+footer h4{margin-bottom:12px}
+.sticky{position:fixed;bottom:0;left:0;right:0;z-index:60;display:none;background:rgba(8,8,8,.95);border-top:1px solid var(--line);padding:9px;gap:8px}
+.sticky a{flex:1;text-align:center;padding:11px 5px;border-radius:10px;font-size:.75rem;font-weight:800}
+.sticky .gold{background:var(--accent);color:#000}
+
+.empty-state{padding:55px 30px;border:1px dashed var(--line);border-radius:var(--radius);text-align:center;background:var(--surface)}
+.empty-state h3{font-size:1.6rem;margin:8px auto;max-width:650px}
+.manage-panel{margin-top:20px;padding-top:10px}
+.flier-preview{display:none;margin:2px 0 10px;border:1px solid var(--line);border-radius:14px;overflow:hidden;background:#090909}
+.flier-preview img{width:100%;max-height:420px;object-fit:contain}
+.event-art.has-image{background-size:cover;background-position:center}
+.event-art small{font-size:.45em;letter-spacing:.04em}
+.saved-events{margin-top:25px;display:grid;gap:10px}
+.saved-event{display:flex;justify-content:space-between;align-items:center;gap:15px;padding:15px 18px;background:var(--surface);border:1px solid var(--line);border-radius:14px}
+.saved-event .actions{display:flex;gap:8px;flex-wrap:wrap}
+.event-detail{margin-top:15px;padding-top:15px;border-top:1px solid var(--line)}
+.event-detail p{margin:5px 0}
+.status-confirmed{color:#bfe7b0}.status-pending{color:var(--accent)}
+.whatsapp{position:fixed;right:20px;bottom:20px;z-index:59;width:54px;height:54px;border-radius:50%;background:#25D366;color:#07140b;display:grid;place-items:center;font-size:24px;font-weight:950;box-shadow:0 10px 30px rgba(0,0,0,.4)}
+@media(max-width:850px){
+ nav{display:none}.menu{display:block}
+ .mobile-menu{display:none;position:absolute;top:72px;left:0;right:0;background:rgba(8,8,8,.98);border-bottom:1px solid var(--line);padding:16px 20px}
+ .mobile-menu.open{display:grid;gap:8px}.mobile-menu a{padding:13px 4px;font-weight:800}
+ .mobile-menu .btn{margin-top:5px}
+ .hero{min-height:700px}
+ .events,.experience,.host,.location,.footer-grid{grid-template-columns:1fr}
+ .table-grid{grid-template-columns:1fr}.social{grid-template-columns:repeat(2,1fr)}
+ .section-head{display:block}.section-head p{margin-top:10px}
+ .host-points{grid-template-columns:1fr}
+ .sticky{display:flex}.whatsapp{bottom:75px}
+}
+@media(max-width:560px){
+ .container{width:min(calc(100% - 24px),var(--max))}
+ section{padding:65px 0}
+ .hero{padding:115px 0 50px}
+ .hero h1{font-size:4.2rem}
+ .form-row{grid-template-columns:1fr}.social{grid-template-columns:1fr}.saved-event{align-items:flex-start;flex-direction:column}
+ .hero-actions .btn{width:100%}
+}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="container nav">
+    <a class="logo" href="#top">MEMORIES</a>
+    <nav>
+      <a href="#whats-on">What's On</a>
+      <a href="#tables">Tables</a><a href="#calendar">Calendar</a>
+      <a href="#host">Host an Event</a>
+      <a href="#venue">The Venue</a>
+      <a href="#find-us">Find Us</a>
+      <a class="btn btn-primary" href="https://wa.me/233249050086?text=Hi%20Memories%2C%20I%27d%20like%20to%20buy%20tickets." target="_blank">Get Tickets</a>
+    </nav>
+    <button class="menu" aria-label="Open menu" aria-expanded="false">☰</button>
+  </div>
+<div class="mobile-menu" aria-hidden="true">
+      <a href="#whats-on">What's On</a>
+      <a href="#tables">Tables</a><a href="#calendar">Calendar</a>
+      <a href="#host">Host an Event</a>
+      <a href="#venue">The Venue</a>
+      <a href="#find-us">Find Us</a>
+      <a class="btn btn-primary" href="https://wa.me/233249050086?text=Hi%20Memories%2C%20I%27d%20like%20to%20buy%20tickets." target="_blank">Get Tickets</a>
+    </div>
+</header>
+
+<main id="top">
+<section class="hero">
+  <div class="container hero-inner">
+    <div class="eyebrow">SamRit Hotel • Cape Coast, Ghana</div>
+    <h1>MEMORIES<span>.</span></h1>
+    <div class="hero-tag">Some nights are forever. Make your next one count.</div>
+    <div class="hero-actions">
+      <a class="btn btn-primary" href="#whats-on">See What's On</a>
+      <a class="btn btn-secondary" href="#tables">Book a Table</a>
+    </div>
+    <div class="hero-meta">
+      <span>Friday & Saturday</span><span>10PM — Late</span><span>18+</span><span>Afrobeats • Amapiano • Afro House • Hip-Hop</span>
+    </div>
+  </div>
+</section>
+
+<section id="whats-on">
+  <div class="container">
+    <div class="section-head">
+      <div><div class="eyebrow">Confirmed Events</div><h2>What's On</h2></div>
+      <p>Every confirmed booking is automatically promoted here as an upcoming event. Click an event for the flier, lineup, ticket details and table options.</p>
+    </div>
+    <div id="upcomingEvents" class="events"></div>
+    <div id="noEvents" class="empty-state" style="display:none">
+      <div class="eyebrow">No confirmed events yet</div>
+      <h3>The next night will appear here once the booking is confirmed.</h3>
+      <p>Use the event calendar below to manage confirmed bookings.</p>
+    </div>
+  </div>
+</section>
+
+<section id="venue">
+  <div class="container">
+    <div class="section-head">
+      <div><div class="eyebrow">The Experience</div><h2>This is Memories.</h2></div>
+      <p>Not just another night out. Music, people, energy, service and the moments that bring you back.</p>
+    </div>
+    <div class="experience">
+      <div class="feature">
+        <div class="eyebrow">Cape Coast After Dark</div>
+        <h3>Ghana's coast, curated.</h3>
+        <p>Afrobeats, Amapiano, Afro House and Hip-Hop in a nightlife environment built around the crowd, the music and the moment.</p>
+      </div>
+      <div class="stack">
+        <div class="small-feature"><div class="eyebrow">The Crowd</div><h3>Come for the night. Stay for the memories.</h3><p>A room designed for people who came to enjoy themselves.</p></div>
+        <div class="small-feature"><div class="eyebrow">The Room</div><h3>One destination. Two nights.</h3><p>Fridays and Saturdays at SamRit Hotel, Cape Coast. Doors open at 10PM.</p></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="tables" class="tables">
+  <div class="container">
+    <div class="section-head">
+      <div><div class="eyebrow">Reserve Your Space</div><h2>Tables from GHS 2,000.</h2></div>
+      <p>Gate entry is always GHS 50. Select the table that fits your group, then choose your preferred drinks. Our team will confirm availability and the final package with you.</p>
+    </div>
+    <div class="table-grid">
+      <article class="table-card">
+        <div class="eyebrow">Standard</div><h3>Standard Table</h3><div class="price">From GHS 2,000</div>
+        <ul><li>Reserved seating</li><li>Bottle service</li><li>Priority entry</li><li>Dedicated floor host</li></ul>
+        <a class="btn btn-primary" href="#table-form">Choose Standard</a>
+      </article>
+      <article class="table-card featured">
+        <div class="eyebrow">Premium</div><h3>Premium Table</h3><div class="price">From GHS 2,000</div>
+        <ul><li>Premium floor position</li><li>Best sightlines</li><li>Multiple-bottle package options</li><li>Priority service</li></ul>
+        <a class="btn btn-primary" href="#table-form">Choose Premium</a>
+      </article>
+      <article class="table-card">
+        <div class="eyebrow">Groups</div><h3>Group Booking</h3><div class="price">From GHS 2,000</div>
+        <ul><li>Space for your group</li><li>Custom drink selection</li><li>Coordinated arrival</li><li>Dedicated support</li></ul>
+        <a class="btn btn-primary" href="#table-form">Plan My Table</a>
+      </article>
+    </div>
+
+    <div class="drinks">
+      <strong>Choose your preferred drinks</strong>
+      <div class="drink-options">
+        <span>Whisky</span><span>Vodka</span><span>Cognac</span><span>Champagne</span><span>Tequila</span><span>Gin</span><span>Other — tell us</span>
+      </div>
+    </div>
+
+    <form id="table-form" onsubmit="bookTable(event)">
+      <div class="eyebrow">Table Request</div>
+      <div class="form-row">
+        <div class="field"><label>Name</label><input id="tname" required placeholder="Your name"></div>
+        <div class="field"><label>WhatsApp</label><input id="tphone" required placeholder="024 XXX XXXX"></div>
+      </div>
+      <div class="form-row">
+        <div class="field"><label>Night</label><select id="tnight"><option>Friday</option><option>Saturday</option></select></div>
+        <div class="field"><label>Table</label><select id="ttable"><option>Standard</option><option>Premium</option><option>Group</option></select></div>
+      </div>
+      <div class="field"><label>Preferred drinks</label><input id="tdrinks" required placeholder="e.g. Whisky + Champagne"></div>
+      <button class="btn btn-primary" type="submit">Continue on WhatsApp</button>
+      <small style="color:#8f8b83">18+. Table availability and package details are confirmed by the Memories team.</small>
+    </form>
+  </div>
+</section>
+
+<section id="calendar">
+  <div class="container">
+    <div class="section-head">
+      <div><div class="eyebrow">Booking Calendar</div><h2>Upcoming Nights</h2></div>
+      <p>The calendar is the source of truth for public events. When an event is marked <strong>Confirmed</strong>, it automatically appears in What's On.</p>
+    </div>
+    <div class="calendar">
+      <table>
+        <thead><tr><th>Date</th><th>Event</th><th>Organiser</th><th>Status</th><th></th></tr></thead>
+        <tbody id="calendarBody"></tbody>
+      </table>
+    </div>
+
+    <div class="manage-panel">
+      <div class="section-head" style="margin-top:55px">
+        <div><div class="eyebrow">Event Management</div><h2 style="font-size:2.2rem">Add / Confirm an Event</h2></div>
+        <p>This prototype stores event records in the browser. A production version should connect this form to the Memories admin database/CMS.</p>
+      </div>
+      <form id="eventForm" onsubmit="saveEvent(event)">
+        <div class="form-row">
+          <div class="field"><label>Event name</label><input id="ename" required placeholder="e.g. Memories Fridays"></div>
+          <div class="field"><label>Event date</label><input id="edate" type="date" required></div>
+        </div>
+        <div class="form-row">
+          <div class="field"><label>Organiser / promoter</label><input id="eorganiser" placeholder="Optional"></div>
+          <div class="field"><label>Status</label><select id="estatus"><option value="confirmed">Confirmed — publish event</option><option value="pending">Pending — keep private</option></select></div>
+        </div>
+        <div class="form-row">
+          <div class="field"><label>Music / event type</label><input id="egenre" placeholder="Afrobeats • Amapiano • Hip-Hop"></div>
+          <div class="field"><label>Time</label><input id="etime" value="10PM — Late"></div>
+        </div>
+        <div class="field"><label>Event description</label><textarea id="edesc" placeholder="What should guests know about the night?"></textarea></div>
+        <div class="form-row">
+          <div class="field"><label>DJs / performers</label><input id="elineup" placeholder="DJ 1, DJ 2, MC..."></div>
+          <div class="field"><label>Ticket note</label><input id="eticket" value="Gate: GHS 50"></div>
+        </div>
+        <div class="field">
+          <label>Upload event flier</label>
+          <input id="eflier" type="file" accept="image/*,.pdf">
+          <small style="color:#8f8b83">Upload the official event artwork. It will become the event's main visual.</small>
+        </div>
+        <div id="flierPreview" class="flier-preview"></div>
+        <button class="btn btn-primary" type="submit">Save Event</button>
+      </form>
+
+      <div class="saved-events" id="savedEvents"></div>
+    </div>
+  </div>
+</section>
+
+<section id="host">
+  <div class="container host">
+    <div>
+      <div class="eyebrow">For Organisers</div>
+      <h2>Bring your night to Memories.</h2>
+      <p>Have an event concept? We provide the venue, sound, floor and nightlife infrastructure. You bring the audience and the idea.</p>
+      <div class="host-points">
+        <div class="host-point"><strong>Events</strong><span>Concerts, private parties and brand experiences.</span></div>
+        <div class="host-point"><strong>Campus</strong><span>Student and youth-focused nights.</span></div>
+        <div class="host-point"><strong>Corporate</strong><span>Brand activations and company events.</span></div>
+        <div class="host-point"><strong>Production</strong><span>A venue built for the night.</span></div>
+      </div>
+    </div>
+    <form onsubmit="hostEvent(event)">
+      <div class="eyebrow">Start with the essentials</div>
+      <div class="field"><label>Organiser / Company</label><input id="hcompany" required></div>
+      <div class="form-row">
+        <div class="field"><label>Contact person</label><input id="hname" required></div>
+        <div class="field"><label>WhatsApp</label><input id="hphone" required></div>
+      </div>
+      <div class="form-row">
+        <div class="field"><label>Event name</label><input id="hevent" required></div>
+        <div class="field"><label>Preferred date</label><input id="hdate" type="date" required></div>
+      </div>
+      <div class="form-row">
+        <div class="field"><label>Expected attendance</label><select id="hattendance"><option>Under 100</option><option>100–250</option><option>250–500</option><option>500+</option></select></div>
+        <div class="field"><label>Event type</label><select id="htype"><option>Afrobeats</option><option>Amapiano</option><option>Hip-Hop / R&B</option><option>Campus / Student</option><option>Corporate / Brand</option><option>Concert</option><option>Private Event</option><option>Other</option></select></div>
+      </div>
+      <div class="field"><label>Tell us about the event</label><textarea id="hdesc" placeholder="Theme, DJs/performers, audience and anything important."></textarea></div>
+      <button class="btn btn-primary" type="submit">Submit Event Enquiry</button>
+      <small style="color:#8f8b83">Our team will review your enquiry and continue the conversation on WhatsApp. Commercial terms are discussed during confirmation.</small>
+    </form>
+  </div>
+</section>
+
+<section>
+  <div class="container">
+    <div class="section-head">
+      <div><div class="eyebrow">The Memories Crowd</div><h2>Last night at Memories.</h2></div>
+      <p>Replace these panels with real Ghanaian event photography and short Reels/TikTok clips from the venue.</p>
+    </div>
+    <div class="social social-four">
+      <a class="social-card" href="https://www.instagram.com/memoriesnightclub.gh/" target="_blank"><div class="eyebrow">Instagram</div><strong>See the crowd.</strong><p>@memoriesnightclub.gh</p></a>
+      <a class="social-card" href="https://www.tiktok.com/@memoriesnightclub.gh" target="_blank"><div class="eyebrow">TikTok</div><strong>Feel the energy.</strong><p>Watch the latest moments.</p></a>
+<a class="social-card" href="https://www.facebook.com/memoriesnightclub.gh" target="_blank"><div class="eyebrow">Facebook</div><strong>Stay connected.</strong><p>Follow @memoriesnightclub.gh</p></a>
+      <a class="social-card" href="#whats-on"><div class="eyebrow">Next Night</div><strong>Don't just watch.</strong><p>Be there for the next one.</p></a>
+    </div>
+  </div>
+</section>
+
+<section id="find-us">
+  <div class="container">
+    <div class="section-head">
+      <div><div class="eyebrow">Find Us</div><h2>Come to Memories.</h2></div>
+      <p>SamRit Hotel, Cape Coast, Ghana. Fridays and Saturdays from 10PM until late.</p>
+    </div>
+    <div class="location">
+      <div class="location-card"><div class="eyebrow">Location</div><h3>SamRit Hotel</h3><p>Cape Coast, Central Region, Ghana</p><br><a class="btn btn-primary" href="https://www.google.com/maps/search/?api=1&query=SamRit+Hotel+Cape+Coast" target="_blank">Get Directions</a></div>
+      <div class="location-card"><div class="eyebrow">Tickets & Tables</div><h3>024 905 0086</h3><p>WhatsApp the Memories team for tickets, table bookings and event enquiries.</p><br><a class="btn btn-primary" href="https://wa.me/233249050086?text=Hi%20Memories%2C%20I%20need%20help%20with%20tickets%20or%20a%20table." target="_blank">WhatsApp Memories</a></div>
+    </div>
+  </div>
+</section>
+</main>
+
+<footer>
+  <div class="container footer-grid">
+    <div><div class="logo">MEMORIES</div><p style="margin-top:12px">Some nights are forever.</p></div>
+    <div><h4>Explore</h4><ul><li><a href="#whats-on">What's On</a></li><li><a href="#tables">Tables from GHS 2,000</a></li><li><a href="#host">Host an Event</a></li><li><a href="#find-us">Find Us</a></li></ul></div>
+    <div><h4>Connect</h4><ul><li><a href="https://wa.me/233249050086" target="_blank">WhatsApp: 024 905 0086</a></li><li><a href="https://www.instagram.com/memoriesnightclub.gh/" target="_blank">Instagram</a></li><li><a href="https://www.tiktok.com/@memoriesnightclub.gh" target="_blank">TikTok</a></li><li><a href="https://www.facebook.com/memoriesnightclub.gh" target="_blank">Facebook</a></li><li>18+ • Drink responsibly</li></ul></div>
+  </div>
+</footer>
+
+<div class="sticky">
+  <a href="#whats-on">What's On</a>
+  <a href="#tables">Tables</a><a href="#calendar">Calendar</a>
+  <a class="gold" href="https://wa.me/233249050086?text=Hi%20Memories%2C%20I%27d%20like%20to%20buy%20tickets." target="_blank">Tickets</a>
+  <a href="https://wa.me/233249050086?text=Hi%20Memories%2C%20I%27d%20like%20to%20make%20an%20enquiry." target="_blank">WhatsApp</a>
+</div>
+<a class="whatsapp" href="https://wa.me/233249050086?text=Hi%20Memories%2C%20I%27d%20like%20to%20make%20an%20enquiry." target="_blank" aria-label="WhatsApp Memories">WA</a>
+
+<script>
+
+const defaultEvents = [
+  {id:"sample1",name:"Memories Fridays",date:"2026-09-11",organiser:"Memories",status:"confirmed",genre:"Afrobeats • Amapiano • Hip-Hop",time:"10PM — Late",desc:"The Friday night at Memories.",lineup:"",ticket:"Gate: GHS 50",flier:""},
+  {id:"sample2",name:"Memories Saturdays",date:"2026-09-12",organiser:"Memories",status:"confirmed",genre:"Afrobeats • Amapiano • Afro House",time:"10PM — Late",desc:"The Saturday night at Memories.",lineup:"",ticket:"Gate: GHS 50",flier:""}
+];
+function getEvents(){
+  const saved=localStorage.getItem("memoriesEvents");
+  if(saved!==null) return JSON.parse(saved);
+  localStorage.setItem("memoriesEvents",JSON.stringify(defaultEvents));
+  return defaultEvents;
+}
+function setEvents(events){localStorage.setItem("memoriesEvents",JSON.stringify(events)); renderEvents();}
+function fmtDate(s){
+  const d=new Date(s+"T12:00:00");
+  return {day:d.toLocaleDateString("en-GB",{weekday:"short"}).toUpperCase(),date:d.toLocaleDateString("en-GB",{day:"2-digit",month:"short"}).toUpperCase()};
+}
+function wa(text){return "https://wa.me/233249050086?text="+encodeURIComponent(text);}
+function renderEvents(){
+  const events=getEvents().sort((a,b)=>a.date.localeCompare(b.date));
+  const confirmed=events.filter(e=>e.status==="confirmed");
+  const up=document.getElementById("upcomingEvents"), no=document.getElementById("noEvents"), cb=document.getElementById("calendarBody"), se=document.getElementById("savedEvents");
+  up.innerHTML=""; cb.innerHTML=""; se.innerHTML="";
+  no.style.display=confirmed.length?"none":"block";
+  confirmed.forEach(e=>{
+    const f=fmtDate(e.date);
+    const art=e.flier?`style="background-image:linear-gradient(0deg,rgba(0,0,0,.72),rgba(0,0,0,.12)),url('${e.flier}')"`:"";
+    up.insertAdjacentHTML("beforeend",`
+      <article class="event">
+        <div class="event-art ${e.flier?'has-image':''}" ${art}><div class="date">${f.day}<br><small>${f.date}</small></div></div>
+        <div class="event-body">
+          <div class="eyebrow">${f.day} • ${f.date}</div>
+          <h3>${esc(e.name)}</h3>
+          <p>${esc(e.genre||"Nightlife at Memories")} • ${esc(e.time||"10PM — Late")}</p>
+          <div class="event-info"><span class="pill">Gate GHS 50</span><span class="pill">Tables from GHS 2,000</span></div>
+          <div class="event-detail"><p>${esc(e.desc||"")}</p>${e.lineup?`<p><strong>Line-up:</strong> ${esc(e.lineup)}</p>`:""}</div>
+          <div class="event-actions">
+            <a class="btn btn-primary" href="${wa("Hi Memories, I'd like to buy tickets for "+e.name+" on "+e.date+".")}" target="_blank">Buy Tickets</a>
+            <a class="btn btn-secondary" href="#tables">Book Table</a>
+            <a class="btn btn-secondary" href="${wa("Hi Memories, I'd like details about "+e.name+" on "+e.date+".")}" target="_blank">Ask on WhatsApp</a>
+          </div>
+        </div>
+      </article>`);
+  });
+  events.forEach(e=>{
+    const f=fmtDate(e.date);
+    cb.insertAdjacentHTML("beforeend",`<tr><td><strong>${f.day} ${f.date}</strong></td><td>${esc(e.name)}</td><td>${esc(e.organiser||"—")}</td><td class="${e.status==="confirmed"?"status-confirmed":"status-pending"}">${e.status==="confirmed"?"Confirmed — public":"Pending — private"}</td><td>${e.status==="confirmed"?'<a class="btn btn-secondary" href="#whats-on">View</a>':'<button class="btn btn-secondary" onclick="confirmEvent(\''+e.id+'\')">Confirm</button>'}</td></tr>`);
+    se.insertAdjacentHTML("beforeend",`<div class="saved-event"><div><strong>${esc(e.name)}</strong><br><small>${f.day} ${f.date} • ${e.status==="confirmed"?"Confirmed":"Pending"}</small></div><div class="actions">${e.status!=="confirmed"?`<button class="btn btn-secondary" onclick="confirmEvent('${e.id}')">Confirm</button>`:""}<button class="btn btn-secondary" onclick="deleteEvent('${e.id}')">Delete</button></div></div>`);
+  });
+}
+function esc(v){return String(v??"").replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[m]));}
+function saveEvent(ev){
+  ev.preventDefault();
+  const file=document.getElementById("eflier").files[0];
+  const finish=(flier)=>{
+    const events=getEvents();
+    events.push({
+      id:"e"+Date.now(), name:ename.value, date:edate.value, organiser:eorganiser.value,
+      status:estatus.value, genre:egenre.value, time:etime.value, desc:edesc.value,
+      lineup:elineup.value, ticket:eticket.value||"Gate: GHS 50", flier:flier||""
+    });
+    setEvents(events);
+    ev.target.reset(); etime.value="10PM — Late"; eticket.value="Gate: GHS 50";
+    document.getElementById("flierPreview").style.display="none";
+    location.hash=estatus.value==="confirmed"?"whats-on":"calendar";
+  };
+  if(file){
+    const reader=new FileReader();
+    if(file.type.startsWith("image/")) reader.onload=()=>finish(reader.result);
+    else reader.onload=()=>finish("");
+    reader.readAsDataURL(file);
+  } else finish("");
+}
+function confirmEvent(id){
+  const events=getEvents().map(e=>e.id===id?{...e,status:"confirmed"}:e);
+  setEvents(events); location.hash="whats-on";
+}
+function deleteEvent(id){
+  if(confirm("Remove this event from the prototype calendar?")){
+    setEvents(getEvents().filter(e=>e.id!==id));
+  }
+}
+document.getElementById("eflier").addEventListener("change",function(){
+  const file=this.files[0], box=document.getElementById("flierPreview");
+  if(file && file.type.startsWith("image/")){
+    const r=new FileReader(); r.onload=()=>{box.innerHTML="<img alt='Event flier preview' src='"+r.result+"'>";box.style.display="block"}; r.readAsDataURL(file);
+  } else {box.innerHTML="";box.style.display="none";}
+});
+renderEvents();
+
+const menuBtn=document.querySelector('.menu');
+const mobileMenu=document.querySelector('.mobile-menu');
+menuBtn.addEventListener('click',()=>{
+  const open=mobileMenu.classList.toggle('open');
+  menuBtn.setAttribute('aria-expanded',open);
+  mobileMenu.setAttribute('aria-hidden',!open);
+});
+mobileMenu.querySelectorAll('a').forEach(a=>a.addEventListener('click',()=>{
+  mobileMenu.classList.remove('open');
+  menuBtn.setAttribute('aria-expanded','false');
+  mobileMenu.setAttribute('aria-hidden','true');
+}));
+function bookTable(e){
+  e.preventDefault();
+  const name=document.getElementById('tname').value, phone=document.getElementById('tphone').value;
+  const night=document.getElementById('tnight').value, table=document.getElementById('ttable').value;
+  const drinks=document.getElementById('tdrinks').value;
+  const msg=`Hi Memories, I'd like to request a ${table} table for ${night}. Name: ${name}. My WhatsApp: ${phone}. Preferred drinks: ${drinks}.`;
+  window.open('https://wa.me/233249050086?text='+encodeURIComponent(msg),'_blank');
+}
+function hostEvent(e){
+  e.preventDefault();
+  const msg=`Hi Memories, I'd like to host an event. Organiser: ${hcompany.value}. Contact: ${hname.value}. WhatsApp: ${hphone.value}. Event: ${hevent.value}. Date: ${hdate.value}. Attendance: ${hattendance.value}. Type: ${htype.value}. Details: ${hdesc.value}`;
+  window.open('https://wa.me/233249050086?text='+encodeURIComponent(msg),'_blank');
+}
+</script>
+</body>
+</html>
