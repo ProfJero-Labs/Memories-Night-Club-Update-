@@ -1,0 +1,178 @@
+<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Night · Memories</title><link rel="stylesheet" href="styles.css"></head>
+<body><div id="app"></div><div class="toast"></div>
+<script src="config.js"></script>
+<script type="module">
+import { shell, footer, getEvent, params, eventDate, eventTime, art, esc, money } from './app.js';
+
+const id = params.get('id');
+
+// ── Guard: no event selected ──
+if (!id || id === 'null' || id === 'undefined') {
+  document.querySelector('#app').innerHTML = shell() + `
+    <main class="wrap" style="padding:80px 24px;text-align:center">
+      <div class="eyebrow">EVENT NOT FOUND</div>
+      <h1 class="display" style="font-size:80px;line-height:.8;margin:20px 0">NO<br>NIGHT<br>SELECTED</h1>
+      <p style="color:var(--muted);max-width:400px;margin:20px auto 30px">Open this page by tapping a night from the calendar.</p>
+      <a href="nights.html" class="btn red">BROWSE NIGHTS</a>
+    </main>` + footer();
+  throw new Error('Missing event id');
+}
+
+// ── Page skeleton ──
+document.querySelector('#app').innerHTML = shell() + `
+  <main id="page">
+    <section class="wrap event-hero">
+      <div class="event-art" id="art"></div>
+      <div class="event-info">
+        <div class="eyebrow" id="date">YOUR NIGHT</div>
+        <h1 class="display" id="name">Loading…</h1>
+        <div class="event-facts">
+          <div class="fact"><label>Doors</label><strong id="doors">—</strong></div>
+          <div class="fact"><label>Where</label><strong id="venue">—</strong></div>
+          <div class="fact"><label>Status</label><strong id="status">—</strong></div>
+        </div>
+        <div class="selector">
+          <h2 class="display">CHOOSE YOUR TICKET</h2>
+          <div class="choice-grid" id="tickets">
+            <div class="status" style="grid-column:1/-1;text-align:center">Loading tickets…</div>
+          </div>
+        </div>
+        <div class="selector">
+          <h2 class="display">HOW ARE YOU SHOWING UP?</h2>
+          <div class="line-grid" id="lines"></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" id="checkoutSection" style="display:none;padding-top:20px">
+      <div class="wrap" style="max-width:600px">
+        <div class="status success" style="text-align:center;padding:32px 24px;border-color:#376f48">
+          <div class="eyebrow" style="color:#ffd2d8">READY TO GO</div>
+          <div class="display" id="selectionLabel" style="font-size:34px;margin:14px 0 6px">—</div>
+          <div class="display" id="selectionPrice" style="font-size:54px;color:#ed4356;line-height:1;margin-bottom:24px">—</div>
+          <a id="goCheckout" class="btn red" style="display:block;width:100%;padding:20px;font-size:14px;text-align:center;justify-content:center">
+            PROCEED TO CHECKOUT
+          </a>
+          <p style="color:var(--muted);font-size:12px;margin:16px 0 0">
+            You'll pay securely via Paystack on the next screen.
+          </p>
+        </div>
+      </div>
+    </section>
+  </main>` + footer();
+
+// ═══════════════════════════════════════════════════════════
+// STATE
+// ═══════════════════════════════════════════════════════════
+let selectedLine = 'FULLY ACTIVE.';
+let selectedTicket = null;
+
+// ═══════════════════════════════════════════════════════════
+// UPDATE THE CHECKOUT CTA — always visible, always current
+// ═══════════════════════════════════════════════════════════
+function updateSelection() {
+  const section = document.querySelector('#checkoutSection');
+  if (!selectedTicket) {
+    section.style.display = 'none';
+    return;
+  }
+  section.style.display = 'block';
+  document.querySelector('#selectionLabel').textContent = selectedTicket.name.toUpperCase();
+  document.querySelector('#selectionPrice').textContent = money(selectedTicket.pricePesewas);
+
+  const link = document.querySelector('#goCheckout');
+  link.href = `checkout.html?event=${encodeURIComponent(id)}&ticketType=${encodeURIComponent(selectedTicket.id)}&line=${encodeURIComponent(selectedLine)}`;
+  link.textContent = `PROCEED TO CHECKOUT · ${money(selectedTicket.pricePesewas)}`;
+}
+
+// ═══════════════════════════════════════════════════════════
+// RENDER TICKET TYPES — auto-select first, always show CTA
+// ═══════════════════════════════════════════════════════════
+function renderTickets(ts) {
+  const box = document.querySelector('#tickets');
+
+  if (!ts || ts.length === 0) {
+    box.innerHTML = `<div class="status" style="grid-column:1/-1;text-align:center">
+      Tickets for this night haven't been published yet. Check back soon.
+    </div>`;
+    return;
+  }
+
+  // Render all ticket options
+  box.innerHTML = ts.map((t, i) => `
+    <button class="choice ${i === 0 ? 'active' : ''}" data-id="${esc(t.id)}">
+      <strong>${esc(t.name)}</strong>
+      <div class="price">${money(t.pricePesewas)}</div>
+      <div style="color:var(--muted);font-size:12px;margin-top:5px">Admits ${t.admits || 1}</div>
+    </button>`).join('');
+
+  // Auto-select the first ticket — CTA appears immediately
+  selectedTicket = ts[0];
+  updateSelection();
+
+  // Click handler for switching tickets
+  document.querySelectorAll('#tickets .choice').forEach(b => {
+    b.onclick = () => {
+      document.querySelectorAll('#tickets .choice').forEach(x => x.classList.remove('active'));
+      b.classList.add('active');
+      selectedTicket = ts.find(t => t.id === b.dataset.id);
+      updateSelection();
+      // Smooth-scroll to the CTA section so the user sees the button
+      document.querySelector('#checkoutSection').scrollIntoView({ behavior: 'smooth', block: 'center' });
+    };
+  });
+}
+
+// ═══════════════════════════════════════════════════════════
+// LOAD EVENT
+// ═══════════════════════════════════════════════════════════
+try {
+  const d = await getEvent(id);
+  const e = d.event;
+
+  document.title = `${e.name} · Memories`;
+  document.querySelector('#art').innerHTML = art(e.artwork, e.name);
+  document.querySelector('#date').textContent = eventDate(e);
+  document.querySelector('#name').textContent = e.name;
+  document.querySelector('#doors').textContent = eventTime(e);
+  document.querySelector('#venue').textContent = e.venue || 'Cape Coast';
+  document.querySelector('#status').textContent = 'OPEN';
+
+  // ── Identity lines ──
+  const lines = e.ticketLines || [
+    'FULLY ACTIVE.',
+    'CAPE COAST, LOCKED IN.',
+    'I CAME DRESSED.',
+    'OUTSIDE, CORRECT.',
+    'FULL REPPING.',
+    'I’M NOT MISSING THIS.'
+  ];
+
+  document.querySelector('#lines').innerHTML = lines.map((x, i) => `
+    <button class="identity ${i === 0 ? 'active' : ''}" data-line="${esc(x)}">${esc(x)}</button>
+  `).join('');
+
+  document.querySelectorAll('.identity').forEach(b => {
+    b.onclick = () => {
+      document.querySelectorAll('.identity').forEach(x => x.classList.remove('active'));
+      b.classList.add('active');
+      selectedLine = b.dataset.line;
+      updateSelection();
+    };
+  });
+
+  // ── Ticket types ──
+  renderTickets(d.ticketTypes || []);
+
+} catch (err) {
+  console.error('Event load error:', err);
+  document.querySelector('#page').innerHTML = `
+    <div class="wrap" style="margin:80px auto;text-align:center">
+      <div class="eyebrow">UNAVAILABLE</div>
+      <h1 class="display" style="font-size:80px;line-height:.8;margin:20px 0">NIGHT<br>NOT FOUND</h1>
+      <p style="color:var(--muted);max-width:400px;margin:20px auto 30px">${esc(err.message)}</p>
+      <a href="nights.html" class="btn red">BROWSE NIGHTS</a>
+    </div>`;
+}
+</script>
+</body></html>
