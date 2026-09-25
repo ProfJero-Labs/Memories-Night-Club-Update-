@@ -28,8 +28,8 @@ const rows = [
   s.instagram && `<a href="${esc(igLink(s.instagram))}" target="_blank" rel="noopener"><span class="k">Instagram</span><span>${esc(s.instagram)} ↗</span></a>`,
   s.email && `<a href="mailto:${esc(s.email)}"><span class="k">Email</span><span>${esc(s.email)}</span></a>`,
 ].filter(Boolean).join('');
-$('#root').innerHTML = `<div style="display:grid;gap:clamp(30px,6vw,60px)">
-  <section style="display:grid;gap:14px">
+$('#root').innerHTML = `<div style="display:grid;grid-template-columns:minmax(0,1fr);gap:clamp(30px,6vw,60px)">
+  <section style="display:grid;grid-template-columns:minmax(0,1fr);gap:14px">
     <h2 class="display lg">${esc(s.venue || 'SamRit Hotel, Cape Coast')}</h2>
     ${s.address ? `<p class="muted" style="margin:0;font-size:18px">${esc(s.address)}</p>` : ''}
     <div class="strip" style="max-width:640px"><span>${esc(s.nightsLine || 'Friday + Saturday')}</span><span>${esc(s.doorsLine || 'Doors 10PM')}</span><span>18+ · ID</span></div>

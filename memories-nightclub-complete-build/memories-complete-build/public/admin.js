@@ -1,757 +1,319 @@
-// ═══════════════════════════════════════════════════════════════════
-// MEMORIES ADMIN — Standalone (only depends on firebase.js + CDN)
-// ═══════════════════════════════════════════════════════════════════
+// Control room. Every read and write goes through the Worker with the signed-in user's token;
+// the Worker enforces roles, validation and audit logging. Uploads go to Firebase Storage.
+import { esc, money, $, $$, shortDate } from './app.js';
+import { requireStaff, staffHeader, sapi, compressImage, ghs, pes, when, ROLE_LABEL } from './staff.js';
+import { uploadImage } from './firebase.js';
 
-import { auth, signOut, onAuthStateChanged } from './firebase.js';
-import { initializeApp, getApps } from 'https://www.gstatic.com/firebasejs/11.0.2/firebase-app.js';
-import {
-  getFirestore,
-  collection, doc, getDocs, addDoc, updateDoc, deleteDoc,
-  query, where, serverTimestamp,
-} from 'https://www.gstatic.com/firebasejs/11.0.2/firebase-firestore.js';
+const CMS = ['superAdmin', 'manager', 'eventManager'], MONEY = ['superAdmin', 'manager'];
+const user = await requireStaff(CMS);
+staffHeader(user, 'Control room');
+const can = roles => roles.includes(user.role);
+const TABS = [
+  ['overview', 'Overview', CMS], ['nights', 'Nights', CMS], ['bookings', 'Bookings', CMS], ['requests', 'Private nights', CMS],
+  ['bits', 'Pay in bits', MONEY], ['bar', 'Bar menu', CMS], ['settings', 'Site settings', MONEY], ['staff', 'Staff', ['superAdmin']],
+].filter(t => can(t[2]));
+const panel = $('#panel');
+const flash = (el, text, bad = false) => { el.innerHTML = `<div class="msg ${bad ? 'err' : ''}" role="status">${esc(text)}</div>`; if (!bad) setTimeout(() => { el.innerHTML = ''; }, 4000); };
+const pill = (text, c) => `<span class="pill ${c}">${esc(text)}</span>`;
+const fail = e => { panel.innerHTML = `<div class="msg err">${esc(e.message)}</div>`; };
+const val = id => $(id).value.trim();
 
-// ── Init Firestore (reuses the app firebase.js already initialized) ──
-const app = getApps().length ? getApps()[0] : initializeApp(window.MEMORIES_CONFIG.firebase);
-const db = getFirestore(app);
-
-// ── Inline helpers (zero external deps) ──
-const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' }[c]));
-const money = n => `GHS ${(Number(n || 0) / 100).toLocaleString('en-GH', { minimumFractionDigits: 2 })}`;
-const eventDate = e => {
-  if (!e?.date) return '';
-  const d = new Date(e.date);
-  return d.toLocaleDateString('en-GH', { weekday: 'short', day: '2-digit', month: 'short' }).toUpperCase();
-};
-const toLocalISO = d => {
-  const p = n => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
-};
-
-// ═══════════════════════════════════════════════════════════════════
-// CLOUDINARY UPLOAD — direct unsigned upload, no widget needed
-// ═══════════════════════════════════════════════════════════════════
-async function uploadToCloudinary(file) {
-  const cfg = window.MEMORIES_CONFIG?.cloudinary;
-  if (!cfg?.cloudName || !cfg?.uploadPreset) {
-    throw new Error('Cloudinary not configured. Add cloudName and uploadPreset to config.js.');
-  }
-
-  // Validate
-  if (!file.type.startsWith('image/')) {
-    throw new Error('Please choose an image file (JPG, PNG, WEBP).');
-  }
-  const maxBytes = 8 * 1024 * 1024; // 8 MB
-  if (file.size > maxBytes) {
-    throw new Error(`Image is too large (${(file.size/1024/1024).toFixed(1)} MB). Max 8 MB.`);
-  }
-
-  const formData = new FormData();
-  formData.append('file', file);
-  formData.append('upload_preset', cfg.uploadPreset);
-  if (cfg.folder) formData.append('folder', cfg.folder);
-
-  const r = await fetch(`https://api.cloudinary.com/v1_1/${cfg.cloudName}/image/upload`, {
-    method: 'POST',
-    body: formData,
-  });
-
-  if (!r.ok) {
-    const err = await r.json().catch(() => ({}));
-    throw new Error(err.error?.message || `Upload failed (${r.status})`);
-  }
-
-  const data = await r.json();
-  if (!data.secure_url) throw new Error('Upload returned no URL.');
-  return data.secure_url;
+$('#tabs').innerHTML = TABS.map(([k, l]) => `<button role="tab" data-tab="${k}">${l}</button>`).join('') + '<a href="checkin.html">Door ↗</a>';
+$$('[data-tab]').forEach(b => b.onclick = () => show(b.dataset.tab));
+let current = '';
+function show(tab, arg) {
+  current = tab + (arg ? `/${arg}` : '');
+  if (location.hash.slice(1) !== current) location.hash = current;
+  $$('[data-tab]').forEach(b => b.setAttribute('aria-selected', String(b.dataset.tab === tab)));
+  panel.innerHTML = '<div class="loading">Loading…</div>';
+  ({ overview, nights, night, bookings, requests, bits, bar, settings, staff })[tab](arg).catch(fail);
 }
 
-window.getFirebaseIdToken = async () => auth.currentUser?.getIdToken() || null;
-window.getCurrentUser = () => auth.currentUser;
-
-// ── Worker admin API — everything that mutates server-side state (raffle draws, role grants)
-// goes through here, never through a direct Firestore write from the browser. ──
-async function adminApi(path, options = {}) {
-  const token = await auth.currentUser?.getIdToken();
-  const headers = { 'Content-Type': 'application/json', ...(options.headers || {}) };
-  if (token) headers.Authorization = `Bearer ${token}`;
-  const r = await fetch(`${window.MEMORIES_CONFIG.apiBase}${path}`, { ...options, headers });
-  const d = await r.json().catch(() => ({}));
-  if (!r.ok || d.success === false) throw new Error(d.error || 'Request failed.');
-  return d;
+// ── Overview ──
+async function overview() {
+  const d = await sapi('/api/admin/overview');
+  panel.innerHTML = `<h1>Tonight & next</h1>
+    <div class="kpis"><div><span>Revenue (all confirmed)</span><b>${money(d.revenuePesewas)}</b></div><div><span>Owed on pay-in-bits</span><b>${money(d.owingPesewas)}</b></div>
+      <div><span>Active pay-in-bits</span><b>${d.activePlans}</b></div><div><span>New private requests</span><b>${d.newRequests}</b></div></div>
+    <div class="tbl-wrap"><table class="tbl"><thead><tr><th>Night</th><th>Date</th><th class="num">Tickets</th><th class="num">Comps</th><th class="num">Tables</th><th class="num">Revenue</th><th class="num">In the door</th><th></th></tr></thead><tbody>
+    ${d.nights.map(n => `<tr><td><strong>${esc(n.name)}</strong> ${n.visibility === 'public' ? '' : pill('private', 'grey')}</td><td>${esc(shortDate(n.date))}</td><td class="num">${n.tickets}</td><td class="num">${n.comps}</td><td class="num">${n.tables}</td><td class="num">${money(n.revenuePesewas)}</td><td class="num">${n.checkins}</td>
+      <td class="actions"><button class="sbtn" data-open="${esc(n.id)}">Open</button><a class="sbtn ghost" href="checkin.html?event=${encodeURIComponent(n.id)}">Door</a></td></tr>`).join('') || '<tr><td colspan="8" class="empty-row">No upcoming nights. Create one under Nights.</td></tr>'}
+    </tbody></table></div>`;
+  $$('[data-open]').forEach(b => b.onclick = () => show('nights', b.dataset.open));
 }
 
-console.log('🔵 ADMIN.JS v4 — Standalone');
-
-// ═══════════════════════════════════════════════════════════════════
-// LAYOUT
-// ═══════════════════════════════════════════════════════════════════
-const root = document.querySelector('#adminApp');
-const nav = `<aside class="admin-nav"><a class="brand" href="index.html">MEMORIES</a><div class="eyebrow">CONTROL ROOM</div><button data-tab="overview">Overview</button><button data-tab="events">Events</button><button data-tab="tickets">Tickets</button><button data-tab="tables">Tables</button><button data-tab="raffle">Raffle</button><button data-tab="requests">Private nights</button><button data-tab="installments">Installments</button><button data-tab="settings">Settings</button><button data-tab="staff">Staff</button><a href="verify.html">Door check</a><button id="logout" class="btn ghost">Sign out</button></aside>`;
-root.innerHTML = `<div class="admin-shell">${nav}<main class="admin-main"><div id="panel"></div></main></div>`;
-const panel = document.querySelector('#panel');
-
-function layout(title, sub = '') {
-  return `<div class="eyebrow">MEMORIES · CONTROL ROOM</div><h1 class="display admin-title">${esc(title)}</h1>${sub ? `<p class="admin-sub">${esc(sub)}</p>` : ''}<div id="tabBody"></div>`;
+// ── Nights ──
+async function nights(id) {
+  if (id) return night(id);
+  const { events } = await sapi('/api/admin/events');
+  const now = Date.now();
+  panel.innerHTML = `<h1>Nights</h1><div class="toolbar"><button class="sbtn red" id="new">New night</button></div>
+    <div class="tbl-wrap"><table class="tbl"><thead><tr><th>Date</th><th>Night</th><th>Status</th><th></th></tr></thead><tbody>
+    ${events.map(e => `<tr style="${new Date(e.date).getTime() < now - 12 * 3600e3 ? 'opacity:.55' : ''}"><td>${esc(shortDate(e.date))}</td><td><strong>${esc(e.name)}</strong></td>
+      <td>${e.active === false ? pill('off', 'grey') : e.visibility === 'public' ? pill('live', 'green') : pill('private', 'amber')} ${e.soldOut ? pill('sold out', 'red') : ''} ${(e.ticketLines || []).length ? '' : pill('no lines', 'amber')} ${e.artwork ? '' : pill('no flyer', 'amber')}</td>
+      <td class="actions"><button class="sbtn" data-edit="${esc(e.id)}">Edit</button></td></tr>`).join('') || '<tr><td colspan="4" class="empty-row">No nights yet.</td></tr>'}</tbody></table></div>`;
+  $('#new').onclick = () => night('new');
+  $$('[data-edit]').forEach(b => b.onclick = () => show('nights', b.dataset.edit));
 }
 
-// ═══════════════════════════════════════════════════════════════════
-// OVERVIEW
-// ═══════════════════════════════════════════════════════════════════
-async function overviewTab() {
-  panel.innerHTML = layout('TONIGHT', 'The operational view of what is happening.');
-  const body = document.querySelector('#tabBody');
-  try {
-    // tickets/orders/checkins/private_event_requests are staff-only collections that only a
-    // superAdmin custom claim can read directly per firestore.rules — everyone else (manager,
-    // eventManager, doorStaff) only gets there through the Worker, which checks the role claim
-    // itself, so this whole tab goes through /api/admin/overview instead of the client SDK.
-    const d = await adminApi('/api/admin/overview');
-    const events = (d.events || []).slice().sort((a, b) => new Date(a.date) - new Date(b.date));
-
-    body.innerHTML = `
-      <div class="admin-cards">
-        <div class="metric"><span>Tickets</span><strong>${d.tickets || 0}</strong></div>
-        <div class="metric"><span>Check-ins</span><strong>${d.checkins || 0}</strong></div>
-        <div class="metric"><span>Orders</span><strong>${d.orders || 0}</strong></div>
-        <div class="metric"><span>Private requests</span><strong>${d.privateRequests || 0}</strong></div>
+const localInput = iso => (iso ? new Date(iso).toISOString().slice(0, 16) : ''); // Ghana = UTC
+async function night(id) {
+  const isNew = id === 'new';
+  const d = isNew ? { event: { visibility: 'private', active: true, doors: '10PM', venue: '', ticketLines: [] }, ticketTypes: [], tablePackages: [], raffle: null } : await sapi(`/api/admin/events/${encodeURIComponent(id)}`);
+  const e = d.event; let lines = [...(e.ticketLines || [])];
+  panel.innerHTML = `<div class="toolbar"><button class="sbtn ghost" id="back">← Nights</button>${isNew ? '' : `<a class="sbtn ghost" target="_blank" href="event.html?id=${encodeURIComponent(e.id)}">Public page ↗</a><a class="sbtn ghost" href="checkin.html?event=${encodeURIComponent(e.id)}">Door ↗</a>`}</div>
+    <h1>${isNew ? 'New night' : esc(e.name)}</h1>
+    <form class="card" id="evForm" novalidate>
+      <div class="grid2">
+        <div class="sfield"><label for="evName">Name</label><input id="evName" maxlength="80" value="${esc(e.name || '')}" required></div>
+        <div class="sfield"><label for="evDate">Date & start time (Ghana time)</label><input id="evDate" type="datetime-local" value="${esc(localInput(e.date))}" required></div>
+        <div class="sfield"><label for="evDoors">Doors</label><input id="evDoors" maxlength="40" value="${esc(e.doors || '')}" placeholder="10PM"></div>
+        <div class="sfield"><label for="evVenue">Venue (blank = site venue)</label><input id="evVenue" maxlength="120" value="${esc(e.venue || '')}"></div>
       </div>
-      <section class="admin-section">
-        <div class="section-head"><h2 class="display">UPCOMING NIGHTS</h2><button class="btn red" data-tab="events">MANAGE EVENTS</button></div>
-        ${events.length ? events.map(e => `<div class="admin-row"><div><strong>${esc(e.name)}</strong><small>${esc(eventDate(e))} · ${esc(e.venue || 'Cape Coast')}</small></div><span class="status ${e.active ? 'success' : ''}">${e.active ? 'LIVE' : 'OFF'}</span></div>`).join('') : '<div class="empty">No public events.</div>'}
-      </section>`;
-    bindTabs();
-  } catch (e) {
-    console.error('Overview error:', e);
-    body.innerHTML = `<div class="status error">${esc(e.message)}</div>`;
-  }
-}
-
-// ═══════════════════════════════════════════════════════════════════
-// EVENTS
-// ═══════════════════════════════════════════════════════════════════
-let currentEvents = [];
-
-async function eventsTab() {
-  panel.innerHTML = layout('NIGHTS', 'Create and control the nights guests see.');
-  const body = document.querySelector('#tabBody');
-  try {
-    const snap = await getDocs(collection(db, 'events'));
-    currentEvents = [];
-    snap.forEach(d => currentEvents.push({ id: d.id, ...d.data() }));
-    currentEvents.sort((a, b) => new Date(a.date) - new Date(b.date));
-
-    body.innerHTML = `
-      <div class="admin-toolbar"><button class="btn red" id="newEvent">NEW NIGHT</button></div>
-      <div class="admin-list">
-        ${currentEvents.length ? currentEvents.map(e => `
-          <article class="admin-row">
-            <div><strong>${esc(e.name)}</strong><small>${esc(eventDate(e))} · ${esc(e.venue || 'Cape Coast')} · ${esc(e.visibility || 'private')}</small></div>
-            <div style="display:flex;gap:8px;flex-wrap:wrap">
-              <button class="btn small" data-catalog="${esc(e.id)}">TICKETS / TABLES</button>
-              <button class="btn small" data-edit-event="${esc(e.id)}">EDIT</button>
-              <button class="btn small" data-delete-event="${esc(e.id)}">DELETE</button>
-            </div>
-          </article>
-        `).join('') : '<div class="empty">No events yet.</div>'}
+      <div class="sfield"><label for="evDesc">Two lines, max (optional)</label><textarea id="evDesc" maxlength="240" style="min-height:64px">${esc(e.description || '')}</textarea></div>
+      <div class="grid2">
+        <div class="img-drop"><div class="thumb" id="artThumb" style="background-image:url('${esc(e.artwork || '')}')"></div><div class="sfield"><label for="artFile">Flyer</label><input id="artFile" type="file" accept="image/jpeg,image/png,image/webp"><span class="hint">Portrait works best. Resized before upload.</span></div></div>
+        <div class="img-drop"><div class="thumb wide" id="heroThumb" style="background-image:url('${esc(e.heroImage || '')}')"></div><div class="sfield"><label for="heroFile">Hero image (optional)</label><input id="heroFile" type="file" accept="image/jpeg,image/png,image/webp"></div></div>
       </div>
-      <div id="modal"></div>`;
-
-    document.querySelector('#newEvent').onclick = () => eventForm();
-    document.querySelectorAll('[data-edit-event]').forEach(b => b.onclick = () => eventForm(currentEvents.find(e => e.id === b.dataset.editEvent)));
-    document.querySelectorAll('[data-catalog]').forEach(b => b.onclick = () => catalogForm(currentEvents.find(e => e.id === b.dataset.catalog)));
-    document.querySelectorAll('[data-delete-event]').forEach(b => b.onclick = async () => {
-      if (!confirm('Delete this event and its catalog items?')) return;
-      try {
-        const id = b.dataset.deleteEvent;
-        const [tt, tp, bt] = await Promise.all([
-          getDocs(query(collection(db, 'ticket_types'), where('eventId', '==', id))),
-          getDocs(query(collection(db, 'table_packages'), where('eventId', '==', id))),
-          getDocs(query(collection(db, 'bottles'), where('eventId', '==', id))),
-        ]);
-        await Promise.all([
-          ...tt.docs.map(d => deleteDoc(d.ref)),
-          ...tp.docs.map(d => deleteDoc(d.ref)),
-          ...bt.docs.map(d => deleteDoc(d.ref)),
-        ]);
-        await deleteDoc(doc(db, 'events', id));
-        eventsTab();
-      } catch (err) { alert(err.message); }
-    });
-  } catch (e) {
-    console.error('Events error:', e);
-    body.innerHTML = `<div class="status error">${esc(e.message)}</div>`;
-  }
-}
-
-function eventForm(e = {}) {
-  const m = document.querySelector('#modal');
-  let currentArtwork = e.artwork || ''; // track uploaded URL across the form's lifetime
-
-  m.innerHTML = `
-    <div class="modal"><div class="modal-card">
-      <div class="section-head"><h2 class="display">${e.id ? 'EDIT NIGHT' : 'NEW NIGHT'}</h2><button class="btn ghost" id="close">CLOSE</button></div>
-      <div class="form-grid">
-        <div class="field full"><label>Name</label><input id="en" value="${esc(e.name || '')}"></div>
-        <div class="field"><label>Date / time</label><input id="ed" type="datetime-local" value="${e.date ? toLocalISO(new Date(e.date)) : ''}"></div>
-        <div class="field"><label>Doors</label><input id="edo" value="${esc(e.doors || '10PM')}"></div>
-        <div class="field"><label>Venue</label><input id="ev" value="${esc(e.venue || 'Samrit Hotel · Cape Coast')}"></div>
-
-        <div class="field full">
-          <label>Event Artwork</label>
-          <input type="file" id="eaFile" accept="image/*" style="display:none">
-          <div id="eaDrop" class="artwork-drop">
-            ${currentArtwork
-              ? `<img src="${esc(currentArtwork)}" alt="Artwork" class="artwork-preview" id="eaPreview">
-                 <div class="artwork-hint">Click to change image</div>`
-              : `<div class="artwork-empty">
-                   <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="opacity:0.6"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>
-                   <strong>Click to upload image</strong>
-                   <span>JPG, PNG or WEBP · max 8 MB</span>
-                 </div>`}
-          </div>
-          ${currentArtwork ? `<button type="button" class="btn ghost small" id="eaRemove" style="margin-top:8px">REMOVE IMAGE</button>` : ''}
-          <div id="eaStatus" style="margin-top:8px;font-size:12px;color:var(--muted);min-height:16px"></div>
-        </div>
-
-        <div class="field"><label>Visibility</label><select id="evis"><option value="public">public</option><option value="private">private</option></select></div>
-        <div class="field"><label>Featured</label><select id="efea"><option value="false">no</option><option value="true">yes</option></select></div>
-        <div class="field"><label>Organiser UID</label><input id="eorg" value="${esc(e.organiserId || '')}" placeholder="Firebase UID"></div>
-        <div class="field"><label>Organiser Email</label><input id="eorgEmail" value="${esc(e.organiserEmail || '')}" placeholder="organiser@example.com"></div>
-        <div class="field full"><label>Identity lines</label><textarea id="elines">${esc((e.ticketLines || ['FULLY ACTIVE.', 'CAPE COAST, LOCKED IN.', 'I CAME DRESSED.', 'OUTSIDE, CORRECT.', 'FULL REPPING.', 'I’M NOT MISSING THIS.']).join('\n'))}</textarea></div>
+      <div class="toolbar" style="margin:0">
+        <label class="check"><input type="checkbox" id="evPublic" ${e.visibility === 'public' ? 'checked' : ''}> On the public site</label>
+        <label class="check"><input type="checkbox" id="evActive" ${e.active !== false ? 'checked' : ''}> Active</label>
+        <label class="check"><input type="checkbox" id="evSold" ${e.soldOut ? 'checked' : ''}> Sold out</label>
+        <label class="check"><input type="checkbox" id="evFeat" ${e.featured ? 'checked' : ''}> Lead on the homepage</label>
       </div>
-      <button class="btn red" id="saveEvent">SAVE NIGHT</button>
-      <div id="formMsg"></div>
-    </div></div>`;
+      <div class="sfield"><label for="evOrg">Organiser (UID, optional)</label><input id="evOrg" value="${esc(e.organiserId || '')}" placeholder="Leave blank for club nights"><span class="hint">Their Firebase UID, shown when you grant them the Organiser role under Staff. They’ll see this night’s sales only.</span></div>
+      <div>
+        <h2 style="margin-top:6px">How are you showing up? <span class="kicker" id="lnCount"></span></h2>
+        <p class="hint" style="margin:0 0 10px;color:var(--muted)">8 to 12 lines. Guests pick one; it’s the big type on their ticket. With no lines, the ticket leads with the night’s name.</p>
+        <ol class="lines-ed" id="lines"></ol>
+        <div class="toolbar" style="margin-top:8px"><input id="newLine" maxlength="48" placeholder="e.g. a line for this night" style="flex:1;min-width:200px"><button class="sbtn" type="button" id="addLine">Add line</button></div>
+      </div>
+      <div id="evMsg"></div>
+      <div class="toolbar" style="margin:0"><button class="sbtn red" type="submit" id="save">${isNew ? 'Create night' : 'Save night'}</button>${!isNew && user.role === 'superAdmin' ? '<button class="sbtn ghost" type="button" id="del">Delete</button>' : ''}</div>
+    </form>
+    ${isNew ? '' : `<h2>Tickets</h2>${catalogTable('ticket-types', d.ticketTypes, e.id)}
+    <h2>Tables</h2>${catalogTable('table-packages', d.tablePackages, e.id)}
+    <h2>The draw</h2>${raffleCard(d.raffle, e.id)}
+    <h2>Comps</h2>${compCard()}`}`;
 
-  if (e.visibility) document.querySelector('#evis').value = e.visibility;
-  document.querySelector('#efea').value = e.featured === true ? 'true' : 'false';
-  document.querySelector('#close').onclick = () => m.innerHTML = '';
-
-  // ── Artwork upload wiring ──
-  const drop = document.querySelector('#eaDrop');
-  const fileInput = document.querySelector('#eaFile');
-  const status = document.querySelector('#eaStatus');
-
-  function refreshPreview() {
-    if (currentArtwork) {
-      drop.innerHTML = `<img src="${esc(currentArtwork)}" alt="Artwork" class="artwork-preview" id="eaPreview">
-                        <div class="artwork-hint">Click to change image</div>`;
-    } else {
-      drop.innerHTML = `<div class="artwork-empty">
-                          <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="opacity:0.6"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>
-                          <strong>Click to upload image</strong>
-                          <span>JPG, PNG or WEBP · max 8 MB</span>
-                        </div>`;
-    }
-    // Show/hide remove button
-    const existingRemove = document.querySelector('#eaRemove');
-    if (currentArtwork && !existingRemove) {
-      const btn = document.createElement('button');
-      btn.type = 'button';
-      btn.id = 'eaRemove';
-      btn.className = 'btn ghost small';
-      btn.style.marginTop = '8px';
-      btn.textContent = 'REMOVE IMAGE';
-      btn.onclick = () => { currentArtwork = ''; refreshPreview(); };
-      drop.parentElement.appendChild(btn);
-    }
-    if (!currentArtwork && existingRemove) existingRemove.remove();
-  }
-
-  drop.onclick = () => { if (!fileInput.disabled) fileInput.click(); };
-
-  fileInput.onchange = async () => {
-    const file = fileInput.files[0];
-    if (!file) return;
-
-    status.textContent = `Uploading "${file.name}" (${(file.size/1024).toFixed(0)} KB)…`;
-    drop.style.pointerEvents = 'none';
-    drop.style.opacity = '0.6';
-
-    try {
-      const url = await uploadToCloudinary(file);
-      currentArtwork = url;
-      refreshPreview();
-      status.textContent = `✓ Uploaded successfully`;
-      setTimeout(() => { status.textContent = ''; }, 3000);
-    } catch (err) {
-      console.error('Upload failed:', err);
-      status.innerHTML = `<span style="color:#ed4356">✗ ${esc(err.message)}</span>`;
-    } finally {
-      drop.style.pointerEvents = '';
-      drop.style.opacity = '';
-      fileInput.value = ''; // reset so same file can be re-picked
-    }
+  $('#back').onclick = () => show('nights');
+  const art = { artwork: e.artwork || '', heroImage: e.heroImage || '' };
+  const drawLines = () => {
+    $('#lines').innerHTML = lines.map((l, i) => `<li><span class="kicker">${String(i + 1).padStart(2, '0')}</span><span class="t">${esc(l)}</span><span class="actions" style="display:flex;gap:4px">
+      <button type="button" data-up="${i}" aria-label="Move up" ${i ? '' : 'disabled'}>↑</button><button type="button" data-down="${i}" aria-label="Move down" ${i < lines.length - 1 ? '' : 'disabled'}>↓</button><button type="button" data-rm="${i}" aria-label="Remove">×</button></span></li>`).join('') || '<li><span></span><span class="muted">No lines yet.</span><span></span></li>';
+    $('#lnCount').textContent = `${lines.length}/12`;
+    $$('[data-up]').forEach(b => b.onclick = () => { const i = +b.dataset.up; [lines[i - 1], lines[i]] = [lines[i], lines[i - 1]]; drawLines(); });
+    $$('[data-down]').forEach(b => b.onclick = () => { const i = +b.dataset.down; [lines[i + 1], lines[i]] = [lines[i], lines[i + 1]]; drawLines(); });
+    $$('[data-rm]').forEach(b => b.onclick = () => { lines.splice(+b.dataset.rm, 1); drawLines(); });
   };
-
-  // ── Save ──
-  document.querySelector('#saveEvent').onclick = async () => {
-    const b = document.querySelector('#saveEvent');
-    const err = document.querySelector('#formMsg');
-    err.innerHTML = '';
-    b.disabled = true;
-
+  drawLines();
+  const addLine = () => { const v = val('#newLine').toUpperCase(); if (!v) return; if (lines.length >= 12) return flash($('#evMsg'), 'Twelve lines is the max.', true); if (lines.includes(v)) return flash($('#evMsg'), 'That line is already there.', true); lines.push(v); $('#newLine').value = ''; drawLines(); };
+  $('#addLine').onclick = addLine;
+  $('#newLine').onkeydown = ev => { if (ev.key === 'Enter') { ev.preventDefault(); addLine(); } };
+  for (const [input, key, thumb] of [['#artFile', 'artwork', '#artThumb'], ['#heroFile', 'heroImage', '#heroThumb']]) {
+    $(input).onchange = async ev => {
+      const f = ev.target.files[0]; if (!f) return;
+      flash($('#evMsg'), 'Uploading…');
+      try { art[key] = await uploadImage(await compressImage(f), f.name.replace(/\.\w+$/, '.webp')); $(thumb).style.backgroundImage = `url('${art[key]}')`; flash($('#evMsg'), 'Uploaded. Save the night to publish it.'); }
+      catch (err) { flash($('#evMsg'), err.message || 'Upload failed.', true); }
+    };
+  }
+  $('#evForm').onsubmit = async ev => {
+    ev.preventDefault();
+    const btn = $('#save'); btn.disabled = true;
     try {
-      const name = document.querySelector('#en').value.trim();
-      const dateVal = document.querySelector('#ed').value;
-      if (!name) throw new Error('Name is required.');
-      if (!dateVal) throw new Error('Date/time is required.');
-
-      const data = {
-        name,
-        date: new Date(dateVal).toISOString(),
-        doors: document.querySelector('#edo').value.trim() || '10PM',
-        venue: document.querySelector('#ev').value.trim() || 'Cape Coast',
-        artwork: currentArtwork,
-        visibility: document.querySelector('#evis').value,
-        featured: document.querySelector('#efea').value === 'true',
-        organiserId: document.querySelector('#eorg').value.trim() || null,
-        ticketLines: document.querySelector('#elines').value.split('\n').map(x => x.trim()).filter(Boolean),
-        active: true,
-        updatedAt: serverTimestamp(),
-      };
-
-      if (e.id) {
-        await updateDoc(doc(db, 'events', e.id), data);
-      } else {
-        data.createdAt = serverTimestamp();
-        await addDoc(collection(db, 'events'), data);
-      }
-      m.innerHTML = '';
-      eventsTab();
-    } catch (ex) {
-      console.error('Save error:', ex);
-      err.innerHTML = `<div class="status error">${esc(ex.message)}</div>`;
-      b.disabled = false;
-    }
-  };
-}
-
-// ═══════════════════════════════════════════════════════════════════
-// CATALOG
-// ═══════════════════════════════════════════════════════════════════
-async function catalogForm(e) {
-  if (!e) return;
-  const m = document.querySelector('#modal');
-  m.innerHTML = `
-    <div class="modal"><div class="modal-card">
-      <div class="section-head"><div><h2 class="display">${esc(e.name)}</h2><p class="eyebrow">${esc(eventDate(e))}</p></div><button class="btn ghost" id="close">CLOSE</button></div>
-      <div style="display:flex;gap:8px;margin-bottom:22px;flex-wrap:wrap">
-        <button class="btn red small" data-cat="tickets">TICKETS</button>
-        <button class="btn small" data-cat="tables">TABLES</button>
-        <button class="btn small" data-cat="bottles">BOTTLES</button>
-      </div>
-      <div id="catBody"></div>
-    </div></div>`;
-  document.querySelector('#close').onclick = () => m.innerHTML = '';
-  const catBody = document.querySelector('#catBody');
-
-  async function loadList(col) {
-    const snap = await getDocs(query(collection(db, col), where('eventId', '==', e.id)));
-    const items = []; snap.forEach(d => items.push({ id: d.id, ...d.data() }));
-    return items;
-  }
-
-  async function renderTickets() {
-    catBody.innerHTML = '<div class="status">Loading…</div>';
-    const list = await loadList('ticket_types');
-    catBody.innerHTML = `
-      <h3 class="display" style="font-size:28px;margin:0 0 14px">TICKET TYPES</h3>
-      ${list.length ? list.map(t => `<div class="bottle-row"><div><strong>${esc(t.name)}</strong><small>${money(t.pricePesewas)} · Admits ${t.admits || 1} · ${t.remaining ?? '∞'} remaining</small></div><button class="btn small" data-del="ticket_types" data-id="${esc(t.id)}">DELETE</button></div>`).join('') : '<div class="empty" style="padding:24px">No ticket types yet.</div>'}
-      <div class="form-grid" style="margin-top:26px">
-        <div class="field full"><label>Name</label><select id="ttName"><option>Standard</option><option>VIP</option><option>VVIP</option><option>Guest</option></select></div>
-        <div class="field"><label>Price (pesewas)</label><input id="ttPrice" type="number" min="1" value="5000"></div>
-        <div class="field"><label>Admits</label><input id="ttAdmits" type="number" min="1" value="1"></div>
-        <div class="field full"><label>Quantity available</label><input id="ttRemaining" type="number" min="0" value="100"></div>
-        <div class="field full"><label>Description</label><input id="ttDesc"></div>
-      </div>
-      <button class="btn red" id="addTt" style="margin-top:14px">ADD TICKET TYPE</button>`;
-    document.querySelector('#addTt').onclick = async () => {
-      try {
-        await addDoc(collection(db, 'ticket_types'), {
-          eventId: e.id,
-          name: document.querySelector('#ttName').value,
-          pricePesewas: Number(document.querySelector('#ttPrice').value),
-          admits: Number(document.querySelector('#ttAdmits').value),
-          remaining: Number(document.querySelector('#ttRemaining').value),
-          description: document.querySelector('#ttDesc').value,
-          active: true,
-          createdAt: serverTimestamp(),
-          updatedAt: serverTimestamp(),
-        });
-        renderTickets();
-      } catch (err) { alert(err.message); }
-    };
-  }
-
-  async function renderTables() {
-    catBody.innerHTML = '<div class="status">Loading…</div>';
-    const list = await loadList('table_packages');
-    catBody.innerHTML = `
-      <h3 class="display" style="font-size:28px;margin:0 0 14px">TABLE PACKAGES</h3>
-      ${list.length ? list.map(t => `<div class="bottle-row"><div><strong>${esc(t.name)}</strong><small>${money(t.pricePesewas)} · ${t.remaining ?? '∞'} remaining</small></div><button class="btn small" data-del="table_packages" data-id="${esc(t.id)}">DELETE</button></div>`).join('') : '<div class="empty" style="padding:24px">No table packages yet.</div>'}
-      <div class="form-grid" style="margin-top:26px">
-        <div class="field full"><label>Name</label><input id="tpName" placeholder="e.g. VIP Table for 6"></div>
-        <div class="field"><label>Price (pesewas)</label><input id="tpPrice" type="number" min="1" value="50000"></div>
-        <div class="field"><label>Quantity available</label><input id="tpRemaining" type="number" min="0" value="5"></div>
-        <div class="field full"><label>Capacity (people)</label><input id="tpCapacity" type="number" min="1" value="6"></div>
-        <div class="field full"><label>Description</label><input id="tpDesc"></div>
-      </div>
-      <button class="btn red" id="addTp" style="margin-top:14px">ADD TABLE PACKAGE</button>`;
-    document.querySelector('#addTp').onclick = async () => {
-      try {
-        await addDoc(collection(db, 'table_packages'), {
-          eventId: e.id,
-          name: document.querySelector('#tpName').value,
-          pricePesewas: Number(document.querySelector('#tpPrice').value),
-          remaining: Number(document.querySelector('#tpRemaining').value),
-          capacity: Number(document.querySelector('#tpCapacity').value),
-          description: document.querySelector('#tpDesc').value,
-          active: true,
-          createdAt: serverTimestamp(),
-          updatedAt: serverTimestamp(),
-        });
-        renderTables();
-      } catch (err) { alert(err.message); }
-    };
-  }
-
-  async function renderBottles() {
-    catBody.innerHTML = '<div class="status">Loading…</div>';
-    const list = await loadList('bottles');
-    catBody.innerHTML = `
-      <h3 class="display" style="font-size:28px;margin:0 0 14px">BOTTLES</h3>
-      ${list.length ? list.map(t => `<div class="bottle-row"><div><strong>${esc(t.name)}</strong><small>${money(t.pricePesewas)} · ${t.remaining ?? '∞'} remaining</small></div><button class="btn small" data-del="bottles" data-id="${esc(t.id)}">DELETE</button></div>`).join('') : '<div class="empty" style="padding:24px">No bottles yet.</div>'}
-      <div class="form-grid" style="margin-top:26px">
-        <div class="field full"><label>Name</label><input id="btName" placeholder="e.g. Hennessy VS"></div>
-        <div class="field"><label>Price (pesewas)</label><input id="btPrice" type="number" min="1" value="45000"></div>
-        <div class="field"><label>Quantity available</label><input id="btRemaining" type="number" min="0" value="10"></div>
-        <div class="field full"><label>Category</label><input id="btCategory" placeholder="spirits / wine / champagne"></div>
-      </div>
-      <button class="btn red" id="addBt" style="margin-top:14px">ADD BOTTLE</button>`;
-    document.querySelector('#addBt').onclick = async () => {
-      try {
-        await addDoc(collection(db, 'bottles'), {
-          eventId: e.id,
-          name: document.querySelector('#btName').value,
-          pricePesewas: Number(document.querySelector('#btPrice').value),
-          remaining: Number(document.querySelector('#btRemaining').value),
-          category: document.querySelector('#btCategory').value,
-          active: true,
-          createdAt: serverTimestamp(),
-          updatedAt: serverTimestamp(),
-        });
-        renderBottles();
-      } catch (err) { alert(err.message); }
-    };
-  }
-
-  m.querySelectorAll('[data-cat]').forEach(b => b.onclick = () => {
-    m.querySelectorAll('[data-cat]').forEach(x => x.classList.remove('red'));
-    b.classList.add('red');
-    if (b.dataset.cat === 'tickets') renderTickets();
-    else if (b.dataset.cat === 'tables') renderTables();
-    else renderBottles();
-  });
-
-  catBody.addEventListener('click', async (ev) => {
-    const btn = ev.target.closest('[data-del]');
-    if (!btn) return;
-    if (!confirm('Delete this item?')) return;
-    try {
-      await deleteDoc(doc(db, btn.dataset.del, btn.dataset.id));
-      const active = m.querySelector('[data-cat].red');
-      if (active) active.click();
-    } catch (err) { alert(err.message); }
-  });
-
-  renderTickets();
-  m.querySelector('[data-cat="tickets"]').classList.add('red');
-}
-
-// ═══════════════════════════════════════════════════════════════════
-// TICKETS / TABLES / RAFFLE / REQUESTS
-// ═══════════════════════════════════════════════════════════════════
-async function ticketsTab() {
-  panel.innerHTML = layout('TICKETS', 'All ticket types across events.');
-  const body = document.querySelector('#tabBody');
-  try {
-    const d = await adminApi('/api/admin/catalog');
-    const rows = d.ticketTypes || [];
-    body.innerHTML = `<div class="admin-list">${rows.length ? rows.map(t => `<div class="admin-row"><div><strong>${esc(t.name)}</strong><small>${esc(t.eventName || t.eventId)} · ${money(t.pricePesewas)} · ${t.remaining ?? '∞'} remaining</small></div></div>`).join('') : '<div class="empty">No ticket types.</div>'}</div>`;
-  } catch (e) { body.innerHTML = `<div class="status error">${esc(e.message)}</div>`; }
-}
-
-async function tablesTab() {
-  panel.innerHTML = layout('TABLES', 'Packages and availability.');
-  const body = document.querySelector('#tabBody');
-  try {
-    const d = await adminApi('/api/admin/catalog');
-    const rows = d.tablePackages || [];
-    body.innerHTML = `<div class="admin-list">${rows.length ? rows.map(t => `<div class="admin-row"><div><strong>${esc(t.name)}</strong><small>${esc(t.eventName || t.eventId)} · ${money(t.pricePesewas)} · ${t.remaining ?? '∞'} remaining</small></div></div>`).join('') : '<div class="empty">No table packages.</div>'}</div>`;
-  } catch (e) { body.innerHTML = `<div class="status error">${esc(e.message)}</div>`; }
-}
-
-async function raffleTab() {
-  panel.innerHTML = layout('RAFFLE', 'Spots fill automatically as tickets sell. The draw is manual.');
-  const body = document.querySelector('#tabBody');
-  try {
-    // Both raffles and their entry counts come from the Worker — raffle_entries is not
-    // client-readable (firestore.rules denies it outright), so this never goes to Firestore directly.
-    const [raffleData, eventData] = await Promise.all([
-      adminApi('/api/admin/raffles'),
-      adminApi('/api/admin/events'),
-    ]);
-    const raffles = raffleData.raffles || [];
-    const events = eventData.events || [];
-
-    body.innerHTML = `
-      <div class="admin-list">${raffles.length ? raffles.map(r => {
-        const cap = Number(r.cap) > 0 ? Number(r.cap) : 20;
-        const spotsTaken = Number(r.spotsTaken || 0);
-        return `<div class="admin-row">
-          <div><strong>${esc(r.title || r.prize || 'Raffle')}</strong><small>${esc(r.eventName || r.eventId)} · ${esc(r.status || 'open')} · ${spotsTaken} of ${cap} spots · ${r.entryCount || 0} eligible entries</small></div>
-          ${r.status === 'drawn' ? `<span class="status success">WINNER ${esc(r.winnerDisplayName || '')}${r.winnerDisplayCode ? ` #${esc(r.winnerDisplayCode)}` : ''}</span>` : `<button class="btn red" data-draw="${esc(r.id)}">DRAW</button>`}
-        </div>`;
-      }).join('') : '<div class="empty">No raffles yet.</div>'}</div>
-      <section class="admin-section" style="margin-top:30px">
-        <h2 class="display" style="font-size:28px">START A RAFFLE</h2>
-        <div class="form-grid">
-          <div class="field full"><label>Night</label><select id="rfEvent">${events.map(e => `<option value="${esc(e.id)}">${esc(e.name)}</option>`).join('')}</select></div>
-          <div class="field"><label>Prize</label><input id="rfPrize" placeholder="e.g. A magnum of Moët"></div>
-          <div class="field"><label>Spot cap</label><input id="rfCap" type="number" min="1" value="20"></div>
-          <div class="field full"><button class="btn red" id="rfCreate">CREATE RAFFLE</button></div>
-        </div>
-        <div id="rfMsg" style="margin-top:12px"></div>
-      </section>`;
-
-    document.querySelectorAll('[data-draw]').forEach(b => b.onclick = async () => {
-      if (!confirm('Draw this raffle now?')) return;
-      try {
-        const raffleId = b.dataset.draw;
-        const d = await adminApi('/api/admin/raffle/draw', {
-          method: 'POST',
-          body: JSON.stringify({ raffleId }),
-        });
-        alert(`Winner: ${d.winnerDisplayName || d.winnerTicketId}`);
-        raffleTab();
-      } catch (err) { alert(err.message); }
-    });
-
-    document.querySelector('#rfCreate').onclick = async () => {
-      const msg = document.querySelector('#rfMsg');
-      const eventId = document.querySelector('#rfEvent').value;
-      const prize = document.querySelector('#rfPrize').value.trim();
-      const cap = Number(document.querySelector('#rfCap').value);
-      if (!eventId || !prize) { msg.innerHTML = '<div class="status error">Pick a night and enter a prize.</div>'; return; }
-      try {
-        await adminApi('/api/admin/raffles', { method: 'POST', body: JSON.stringify({ eventId, prize, cap }) });
-        raffleTab();
-      } catch (err) { msg.innerHTML = `<div class="status error">${esc(err.message)}</div>`; }
-    };
-  } catch (e) { body.innerHTML = `<div class="status error">${esc(e.message)}</div>`; }
-}
-
-function requestStatusBadge(status) {
-  const s = status || 'NEW';
-  const cls = s === 'ACCEPTED' ? 'success' : s === 'DECLINED' ? 'error' : '';
-  return `<span class="status ${cls}">${esc(s)}</span>`;
-}
-
-async function requestsTab() {
-  panel.innerHTML = layout('PRIVATE NIGHTS', 'Requests from guests. Open one to accept, decline, or leave a note.');
-  const body = document.querySelector('#tabBody');
-  try {
-    // private_event_requests denies client reads outright in firestore.rules (no admin()
-    // exception either) — same reasoning as overviewTab, so this goes through the Worker.
-    const d = await adminApi('/api/admin/requests');
-    const rows = (d.requests || []).slice();
-    rows.sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
-
-    const render = (openId = null) => {
-      body.innerHTML = `<div class="admin-list">${rows.length ? rows.map(r => `
-        <article class="admin-row" style="flex-direction:column;align-items:stretch">
-          <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;cursor:pointer" data-toggle="${esc(r.id)}">
-            <div><strong>${esc(r.name)}</strong><small>${esc(r.phone)} · ${esc(r.email)} · ${esc(r.eventType || 'Private night')} · ${esc(r.date || '')}</small></div>
-            ${requestStatusBadge(r.status)}
-          </div>
-          ${openId === r.id ? `
-            <div style="margin-top:14px;border-top:1px solid var(--line,#333);padding-top:14px">
-              <p style="color:var(--muted)">${esc(r.message || 'No message.')}</p>
-              <p style="color:var(--muted);font-size:12px">${r.guests ? `${esc(String(r.guests))} guests · ` : ''}Requested ${esc(r.date || 'no date given')}</p>
-              <div class="field full"><label>Note (staff only)</label><textarea id="noteFor-${esc(r.id)}" rows="3">${esc(r.note || '')}</textarea></div>
-              <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:10px">
-                <button class="btn red" data-accept="${esc(r.id)}">ACCEPT</button>
-                <button class="btn ghost" data-decline="${esc(r.id)}">DECLINE</button>
-                <button class="btn ghost" data-savenote="${esc(r.id)}">SAVE NOTE</button>
-              </div>
-              <div id="reqMsg-${esc(r.id)}" style="margin-top:10px"></div>
-            </div>` : ''}
-        </article>`).join('') : '<div class="empty">No private requests.</div>'}</div>`;
-
-      document.querySelectorAll('[data-toggle]').forEach(el => el.onclick = () => render(openId === el.dataset.toggle ? null : el.dataset.toggle));
-
-      const update = async (id, payload) => {
-        const msg = document.querySelector(`#reqMsg-${CSS.escape(id)}`);
-        try {
-          await adminApi(`/api/admin/requests/${encodeURIComponent(id)}`, { method: 'POST', body: JSON.stringify(payload) });
-          const row = rows.find(r => r.id === id);
-          if (row) Object.assign(row, payload);
-          render(id);
-        } catch (err) { if (msg) msg.innerHTML = `<div class="status error">${esc(err.message)}</div>`; }
-      };
-      document.querySelectorAll('[data-accept]').forEach(b => b.onclick = () => update(b.dataset.accept, { status: 'ACCEPTED', note: document.querySelector(`#noteFor-${CSS.escape(b.dataset.accept)}`)?.value || '' }));
-      document.querySelectorAll('[data-decline]').forEach(b => b.onclick = () => { if (confirm('Decline this request?')) update(b.dataset.decline, { status: 'DECLINED', note: document.querySelector(`#noteFor-${CSS.escape(b.dataset.decline)}`)?.value || '' }); });
-      document.querySelectorAll('[data-savenote]').forEach(b => b.onclick = () => update(b.dataset.savenote, { note: document.querySelector(`#noteFor-${CSS.escape(b.dataset.savenote)}`)?.value || '' }));
-    };
-    render();
-  } catch (e) { body.innerHTML = `<div class="status error">${esc(e.message)}</div>`; }
-}
-
-// ═══════════════════════════════════════════════════════════════════
-// STAFF — grant roles by email (superAdmin only; enforced server-side)
-// ═══════════════════════════════════════════════════════════════════
-async function staffTab() {
-  panel.innerHTML = layout('STAFF', 'Grant staff roles by email. Super admin only.');
-  const body = document.querySelector('#tabBody');
-  body.innerHTML = `
-    <div class="form-grid" style="max-width:520px">
-      <div class="field full"><label>Staff email</label><input id="roleEmail" type="email" placeholder="name@example.com"></div>
-      <div class="field full"><label>Role</label>
-        <select id="roleSelect">
-          <option value="doorStaff">Door staff</option>
-          <option value="eventManager">Event manager</option>
-          <option value="manager">Manager</option>
-          <option value="superAdmin">Super admin</option>
-          <option value="organiser">Organiser</option>
-        </select>
-      </div>
-      <div class="field full"><button class="btn red" id="setRole">GRANT ROLE</button></div>
-    </div>
-    <div id="roleMsg" style="margin-top:16px"></div>
-    <p style="color:var(--muted);margin-top:24px;font-size:12px;max-width:520px">
-      The person must already have a Firebase Auth account with this email. Role changes take
-      effect the next time they sign in. Granting "Organiser" only sets their role — link them to
-      a specific night from the Events tab using the UID shown below.
-    </p>`;
-  document.querySelector('#setRole').onclick = async () => {
-    const btn = document.querySelector('#setRole');
-    const msg = document.querySelector('#roleMsg');
-    const email = document.querySelector('#roleEmail').value.trim();
-    const role = document.querySelector('#roleSelect').value;
-    if (!email) { msg.innerHTML = '<div class="status error">Enter an email address.</div>'; return; }
-    btn.disabled = true;
-    msg.innerHTML = '';
-    try {
-      const d = await adminApi('/api/admin/set-role', { method: 'POST', body: JSON.stringify({ email, role }) });
-      msg.innerHTML = `<div class="status success">${esc(email)} is now ${esc(role)}. UID: <code>${esc(d.uid)}</code></div>`;
-    } catch (err) {
-      msg.innerHTML = `<div class="status error">${esc(err.message)}</div>`;
-    }
+      const dt = val('#evDate');
+      const r = await sapi('/api/admin/events', { method: 'POST', body: {
+        id: isNew ? undefined : e.id, name: val('#evName'), date: dt ? `${dt}:00Z` : '', doors: val('#evDoors'), venue: val('#evVenue'), description: val('#evDesc'),
+        artwork: art.artwork, heroImage: art.heroImage, ticketLines: lines, visibility: $('#evPublic').checked ? 'public' : 'private',
+        active: $('#evActive').checked, soldOut: $('#evSold').checked, featured: $('#evFeat').checked, organiserId: val('#evOrg'),
+      } });
+      if (isNew) return show('nights', r.eventId);
+      flash($('#evMsg'), 'Saved. The public site shows it now.');
+    } catch (err) { flash($('#evMsg'), err.message, true); }
     btn.disabled = false;
   };
+  $('#del') && ($('#del').onclick = async () => {
+    if (!confirm(`Delete ${e.name}? Only possible if nothing has been sold.`)) return;
+    try { await sapi(`/api/admin/events/${encodeURIComponent(e.id)}`, { method: 'DELETE' }); show('nights'); } catch (err) { flash($('#evMsg'), err.message, true); }
+  });
+  if (!isNew) { bindCatalog(() => night(id)); bindRaffle(d.raffle, e.id, () => night(id)); bindComp(e.id); }
 }
 
-// ═══════════════════════════════════════════════════════════════════
-// INSTALLMENTS — payment-plan visibility, resend SMS. Every state change (top-ups,
-// completion, forfeiture) is still driven only by the transactional Worker paths that
-// process real Paystack payments — nothing here writes plan state directly.
-// ═══════════════════════════════════════════════════════════════════
-async function installmentsTab() {
-  panel.innerHTML = layout('INSTALLMENTS', 'Payment plans — customer, balance, status, and payment history.');
-  const body = document.querySelector('#tabBody');
-  try {
-    const d = await adminApi('/api/admin/installments');
-    const plans = d.plans || [];
-
-    const render = (openId = null) => {
-      body.innerHTML = `<div class="admin-list">${plans.length ? plans.map(p => {
-        const remaining = Number(p.totalPesewas || 0) - Number(p.paidPesewas || 0);
-        const statusCls = p.status === 'completed' ? 'success' : p.status === 'forfeited' ? 'error' : '';
-        return `<article class="admin-row" style="flex-direction:column;align-items:stretch">
-          <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;cursor:pointer" data-toggle="${esc(p.id)}">
-            <div><strong>${esc(p.buyerName)}</strong><small>${esc(p.buyerPhone)} · ${esc(p.eventName)} · Order ${esc(p.id)}</small></div>
-            <div style="text-align:right"><span class="status ${statusCls}">${esc(p.status || 'active').toUpperCase()}</span><br><small>${money(p.paidPesewas)} / ${money(p.totalPesewas)}</small></div>
-          </div>
-          ${openId === p.id ? `
-            <div style="margin-top:14px;border-top:1px solid var(--line,#333);padding-top:14px">
-              <p style="color:var(--muted)">${esc(p.ticketTypeName || 'Ticket')} × ${p.quantity || 1} · Balance owing: ${money(remaining)}</p>
-              <p style="color:var(--muted);font-size:12px">${esc(p.buyerEmail || '')} · Created ${p.createdAt ? new Date(p.createdAt).toLocaleString('en-GH') : ''}</p>
-              <p style="color:var(--muted);font-size:12px">Ticket status: ${p.status === 'completed' ? `Issued (${(p.ticketIds || []).length} ticket${(p.ticketIds || []).length === 1 ? '' : 's'})` : p.status === 'forfeited' ? 'Forfeited — event date passed before plan completed' : 'Not yet issued — plan still active'}</p>
-              <div style="margin-top:10px"><strong style="font-size:12px;letter-spacing:.05em">PAYMENT HISTORY</strong>
-                <div style="margin-top:6px">${(p.payments || []).length ? p.payments.map(pay => `<div style="font-size:13px;color:var(--muted)">${money(pay.amountPesewas)} — ${pay.paidAt ? new Date(pay.paidAt).toLocaleString('en-GH') : ''} — <code>${esc(pay.reference || '')}</code></div>`).join('') : '<div class="empty">No payments yet.</div>'}</div>
-              </div>
-              ${p.status !== 'forfeited' ? `<div style="margin-top:14px"><button class="btn ghost" data-resend="${esc(p.id)}">RESEND SMS</button></div>` : ''}
-              <div id="planMsg-${esc(p.id)}" style="margin-top:10px"></div>
-            </div>` : ''}
-        </article>`;
-      }).join('') : '<div class="empty">No payment plans yet.</div>'}</div>`;
-
-      document.querySelectorAll('[data-toggle]').forEach(el => el.onclick = () => render(openId === el.dataset.toggle ? null : el.dataset.toggle));
-      document.querySelectorAll('[data-resend]').forEach(b => b.onclick = async () => {
-        const msg = document.querySelector(`#planMsg-${CSS.escape(b.dataset.resend)}`);
-        b.disabled = true;
-        try {
-          await adminApi('/api/admin/installments/resend-sms', { method: 'POST', body: JSON.stringify({ planId: b.dataset.resend }) });
-          if (msg) msg.innerHTML = '<div class="status success">SMS sent.</div>';
-        } catch (err) { if (msg) msg.innerHTML = `<div class="status error">${esc(err.message)}</div>`; }
-        b.disabled = false;
-      });
-    };
-    render();
-  } catch (e) { body.innerHTML = `<div class="status error">${esc(e.message)}</div>`; }
+// Editable rows for ticket types / table packages / bottles.
+const CAT = {
+  'ticket-types': { cols: [['name', 'Name'], ['price', 'Price (GHS)'], ['admits', 'Admits'], ['remaining', 'Left (blank = no limit)'], ['description', 'Note']] },
+  'table-packages': { cols: [['name', 'Name'], ['price', 'Price (GHS)'], ['capacity', 'People'], ['remaining', 'Left (blank = no limit)'], ['description', 'What’s included']] },
+  bottles: { cols: [['category', 'Category'], ['name', 'Name'], ['price', 'Price (GHS)'], ['remaining', 'Left (blank = no limit)']] },
+};
+function catalogTable(kind, rows, eventId) {
+  const cell = (r, k) => { const v = k === 'price' ? ghs(r.pricePesewas) : r[k] ?? ''; return `<td><input data-k="${k}" value="${esc(v)}" ${['price', 'admits', 'capacity', 'remaining'].includes(k) ? 'inputmode="decimal"' : ''} aria-label="${k}"></td>`; };
+  const row = r => `<tr data-row="${esc(r.id || '')}" data-kind="${kind}" data-event="${esc(eventId)}">${CAT[kind].cols.map(([k]) => cell(r, k)).join('')}
+    <td><label class="check"><input type="checkbox" data-k="active" ${r.active !== false ? 'checked' : ''}> On</label></td>
+    <td class="actions"><button class="sbtn" data-save>Save</button>${r.id ? '<button class="sbtn ghost" data-del>×</button>' : ''}</td></tr>`;
+  return `<div class="tbl-wrap"><table class="tbl"><thead><tr>${CAT[kind].cols.map(([, l]) => `<th>${l}</th>`).join('')}<th></th><th></th></tr></thead>
+    <tbody>${rows.map(row).join('')}${row({ active: true })}</tbody></table></div><div data-msg="${kind}"></div>`;
+}
+function bindCatalog(reload) {
+  $$('tr[data-kind] [data-save]').forEach(b => b.onclick = async () => {
+    const tr = b.closest('tr'), kind = tr.dataset.kind, get = k => $(`[data-k="${k}"]`, tr);
+    const body = { id: tr.dataset.row || undefined, eventId: tr.dataset.event, active: get('active').checked };
+    for (const [k] of CAT[kind].cols) { const v = get(k).value.trim(); if (k === 'price') body.pricePesewas = pes(v); else if (['admits', 'capacity'].includes(k)) body[k] = v === '' ? undefined : Number(v); else if (k === 'remaining') body.remaining = v === '' ? null : Number(v); else body[k] = v; }
+    if (!tr.dataset.row && !body.name) return;
+    try { await sapi(`/api/admin/${kind}`, { method: 'POST', body }); reload(); } catch (err) { flash($(`[data-msg="${kind}"]`), err.message, true); }
+  });
+  $$('tr[data-kind] [data-del]').forEach(b => b.onclick = async () => {
+    const tr = b.closest('tr'); if (!confirm('Remove this item?')) return;
+    try { await sapi(`/api/admin/${tr.dataset.kind}/${encodeURIComponent(tr.dataset.row)}`, { method: 'DELETE' }); reload(); } catch (err) { flash($(`[data-msg="${tr.dataset.kind}"]`), err.message, true); }
+  });
 }
 
-// ═══════════════════════════════════════════════════════════════════
-// SETTINGS — single source of truth for contact info shown across the public site
-// ═══════════════════════════════════════════════════════════════════
-async function settingsTab() {
-  panel.innerHTML = layout('SETTINGS', 'Contact info shown across the public site. Changes apply everywhere immediately.');
-  const body = document.querySelector('#tabBody');
-  try {
-    const r = await fetch(`${window.MEMORIES_CONFIG.apiBase}/api/settings`);
-    const s = (await r.json())?.settings || {};
-    const fields = [
-      ['phone', 'Phone'], ['email', 'Email'], ['instagram', 'Instagram'],
-      ['whatsapp', 'WhatsApp'], ['venue', 'Venue'], ['doorsLine', 'Doors line'], ['address', 'Address'],
-    ];
-    body.innerHTML = `
-      <div class="form-grid" style="max-width:520px">
-        ${fields.map(([key, label]) => `<div class="field full"><label>${esc(label)}</label><input id="set-${key}" value="${esc(s[key] || '')}"></div>`).join('')}
-        <div class="field full"><button class="btn red" id="saveSettings">SAVE</button></div>
-      </div>
-      <div id="setMsg" style="margin-top:16px"></div>`;
-    document.querySelector('#saveSettings').onclick = async () => {
-      const msg = document.querySelector('#setMsg');
-      const payload = Object.fromEntries(fields.map(([key]) => [key, document.querySelector(`#set-${key}`).value.trim()]));
-      try {
-        await adminApi('/api/admin/settings', { method: 'POST', body: JSON.stringify(payload) });
-        msg.innerHTML = '<div class="status success">Saved.</div>';
-      } catch (err) { msg.innerHTML = `<div class="status error">${esc(err.message)}</div>`; }
-    };
-  } catch (e) { body.innerHTML = `<div class="status error">${esc(e.message)}</div>`; }
+function raffleCard(r, eventId) {
+  const drawn = r?.status === 'drawn';
+  return `<div class="card">
+    ${r ? `<div class="toolbar" style="margin:0">${pill(r.status, r.status === 'open' ? 'green' : r.status === 'drawn' ? 'amber' : 'grey')}<span>${r.spotsTaken || 0} of ${r.cap} spots taken · ${r.entryCount} entries</span>${drawn ? `<strong>Won by ${esc(r.winnerDisplayName)} (${esc(r.winnerDisplayCode)})</strong>` : ''}</div>` : '<p class="muted" style="margin:0">No draw for this night yet.</p>'}
+    <div class="grid2"><div class="sfield"><label for="rPrize">Prize</label><input id="rPrize" maxlength="140" value="${esc(r?.prize || '')}" ${drawn ? 'disabled' : ''}></div>
+      <div class="sfield"><label for="rCap">Spots (first N fully-paid online tickets)</label><input id="rCap" type="number" min="1" max="500" value="${esc(r?.cap || 20)}" ${drawn ? 'disabled' : ''}></div></div>
+    ${drawn ? '' : `<div class="toolbar" style="margin:0"><label class="check"><input type="checkbox" id="rOn" ${r?.enabled !== false ? 'checked' : ''}> Draw is running</label>${r && r.status !== 'drawn' ? `<label class="check"><input type="checkbox" id="rClosed" ${r.status === 'closed' ? 'checked' : ''}> Closed to new entries</label>` : ''}</div>
+    <p class="hint" style="margin:0;color:var(--muted)">Before a prize of real value goes live, confirm with the club that it’s framed as a promotion attached to the ticket (Ghana lottery law, see BUILD_PLAN).</p>
+    <div class="toolbar" style="margin:0"><button class="sbtn" id="rSave">${r ? 'Save draw' : 'Start a draw'}</button>${r && r.entryCount ? '<button class="sbtn red" id="rDraw">Draw the winner</button>' : ''}</div>`}
+    <div id="rMsg"></div></div>`;
+}
+function bindRaffle(r, eventId, reload) {
+  $('#rSave') && ($('#rSave').onclick = async () => {
+    try { await sapi('/api/admin/raffles', { method: 'POST', body: { eventId, prize: val('#rPrize'), cap: Number(val('#rCap')), enabled: $('#rOn').checked, status: $('#rClosed')?.checked ? 'closed' : 'open' } }); reload(); }
+    catch (err) { flash($('#rMsg'), err.message, true); }
+  });
+  $('#rDraw') && ($('#rDraw').onclick = async () => {
+    if (!confirm(`Draw the winner from ${r.entryCount} entries? This can’t be undone.`)) return;
+    try { const w = await sapi('/api/admin/raffle/draw', { method: 'POST', body: { raffleId: r.id } }); alert(`Winner: ${w.winnerDisplayName} (${w.winnerDisplayCode}) from ${w.eligibleEntryCount} entries.${w.notified ? ' They’ve been texted.' : ''}`); reload(); }
+    catch (err) { flash($('#rMsg'), err.message, true); }
+  });
 }
 
-// ═══════════════════════════════════════════════════════════════════
-// ROUTER + AUTH
-// ═══════════════════════════════════════════════════════════════════
-async function show(tab) {
-  if (tab === 'events') return eventsTab();
-  if (tab === 'tickets') return ticketsTab();
-  if (tab === 'tables') return tablesTab();
-  if (tab === 'raffle') return raffleTab();
-  if (tab === 'requests') return requestsTab();
-  if (tab === 'installments') return installmentsTab();
-  if (tab === 'settings') return settingsTab();
-  if (tab === 'staff') return staffTab();
-  return overviewTab();
+function compCard() {
+  return `<form class="card" id="compForm" novalidate><div class="grid2">
+    <div class="sfield"><label for="cName">Name</label><input id="cName" maxlength="80"></div>
+    <div class="sfield"><label for="cPhone">Phone (optional, gets the ticket link)</label><input id="cPhone" type="tel"></div>
+    <div class="sfield"><label for="cAdmits">Admits</label><input id="cAdmits" type="number" min="1" max="10" value="1"></div>
+    <div class="sfield"><label for="cNote">Why (for the record)</label><input id="cNote" maxlength="200"></div></div>
+    <label class="check"><input type="checkbox" id="cDraw"> Put this comp in the draw (only if there’s a spot)</label>
+    <div><button class="sbtn red" type="submit">Issue comp</button></div><div id="cMsg"></div></form>`;
 }
-function bindTabs() { document.querySelectorAll('[data-tab]').forEach(b => b.onclick = () => show(b.dataset.tab)); }
-bindTabs();
-document.querySelector('#logout').onclick = () => signOut(auth).then(() => location.href = 'login.html');
-onAuthStateChanged(auth, async user => {
-  if (!user) { location.href = 'login.html'; return; }
-  const result = await user.getIdTokenResult().catch(() => null);
-  if (result?.claims?.role === 'organiser') { location.href = 'organiser.html'; return; }
-  show('overview');
-});
+function bindComp(eventId) {
+  $('#compForm').onsubmit = async ev => {
+    ev.preventDefault();
+    try {
+      const r = await sapi('/api/admin/comps', { method: 'POST', body: { eventId, name: val('#cName'), phone: val('#cPhone'), admits: Number(val('#cAdmits')), note: val('#cNote'), inDraw: $('#cDraw').checked } });
+      $('#cMsg').innerHTML = `<div class="msg">Comp issued${r.texted ? ' and texted' : ''}${r.inDraw ? ', in the draw' : r.drawRequestedButFull ? '. The draw was full, so it’s not in it' : ''}. Ticket: <a href="${esc(r.link)}" target="_blank">${esc(r.link)}</a></div>`;
+      $('#compForm').reset();
+    } catch (err) { flash($('#cMsg'), err.message, true); }
+  };
+}
+
+// ── Bookings (tickets, tables, comps) ──
+async function bookings() {
+  const [{ events }] = await Promise.all([sapi('/api/admin/events')]);
+  panel.innerHTML = `<h1>Bookings</h1><div class="toolbar"><select id="fEv"><option value="">All nights</option>${events.map(e => `<option value="${esc(e.id)}">${esc(shortDate(e.date))} · ${esc(e.name)}</option>`).join('')}</select>
+    <select id="fKind"><option value="">Everything</option><option value="table">Tables</option><option value="ticket">Tickets</option><option value="comp">Comps</option></select></div><div id="list"></div>`;
+  const load = async () => {
+    const q = new URLSearchParams(); if (val('#fEv')) q.set('eventId', val('#fEv')); if (val('#fKind')) q.set('kind', val('#fKind'));
+    $('#list').innerHTML = '<div class="loading">Loading…</div>';
+    const { orders } = await sapi(`/api/admin/orders?${q}`);
+    $('#list').innerHTML = `<div class="tbl-wrap"><table class="tbl"><thead><tr><th>When</th><th>Night</th><th>Who</th><th>Phone</th><th>What</th><th class="num">Paid</th><th></th></tr></thead><tbody>
+      ${orders.map(o => `<tr><td>${esc(when(o.createdAt))}</td><td>${esc(o.eventName)}</td><td>${esc(o.buyerName)}</td><td>${o.buyerPhone ? `<a href="tel:${esc(o.buyerPhone)}">${esc(o.buyerPhone)}</a>` : ''}</td>
+        <td>${o.kind === 'table' ? `<strong>${esc(o.packageName)}</strong>${(o.bottles || []).map(b => `<br><small>${b.quantity} × ${esc(b.name)}</small>`).join('')}` : o.kind === 'comp' ? `Comp · admits ${o.admits}${o.note ? `<br><small>${esc(o.note)}</small>` : ''}` : `${o.quantity} × ${esc(o.ticketTypeName)}${o.paidInInstallments ? ' <small>(in bits)</small>' : ''}`}</td>
+        <td class="num">${money(o.amountPesewas)}</td><td>${o.kind === 'table' ? pill('table', 'amber') : o.kind === 'comp' ? pill('comp', 'grey') : pill('ticket', 'green')} ${o.inDraw ? pill('draw', 'amber') : ''}</td></tr>`).join('') || '<tr><td colspan="7" class="empty-row">Nothing yet.</td></tr>'}</tbody></table></div>`;
+  };
+  $('#fEv').onchange = $('#fKind').onchange = () => load().catch(fail);
+  await load();
+}
+
+// ── Private night requests ──
+async function requests() {
+  const { requests: rs } = await sapi('/api/admin/requests');
+  panel.innerHTML = `<h1>Private nights</h1><div class="tbl-wrap"><table class="tbl"><thead><tr><th>Date</th><th>What</th><th>Who</th><th class="num">Guests</th><th>Status</th><th></th></tr></thead><tbody>
+    ${rs.map(r => `<tr><td><strong>${esc(r.date)}</strong></td><td>${esc(r.eventType)}</td><td>${esc(r.name)}</td><td class="num">${esc(r.guests)}</td>
+      <td>${pill(r.status, r.status === 'ACCEPTED' ? 'green' : r.status === 'DECLINED' ? 'grey' : 'amber')}</td><td class="actions"><button class="sbtn" data-open="${esc(r.id)}">Open</button></td></tr>
+      <tr class="expand" id="x-${esc(r.id)}" hidden><td colspan="6"><div class="grid2">
+        <div style="display:grid;gap:6px"><div><a href="tel:${esc(r.phone)}">${esc(r.phone)}</a>${r.instagram ? ` · <a href="https://instagram.com/${esc(r.instagram.replace('@', ''))}" target="_blank" rel="noopener">${esc(r.instagram)}</a>` : ''}${r.email ? ` · ${esc(r.email)}` : ''}</div>
+          <div>${esc(r.message || '—')}</div><small class="muted">Received ${esc(when(r.createdAt))}</small></div>
+        <div class="sfield"><label for="n-${esc(r.id)}">Staff note (never shown to the guest)</label><textarea id="n-${esc(r.id)}">${esc(r.note || '')}</textarea></div></div>
+        <div class="toolbar" style="margin:12px 0 0"><button class="sbtn ok" data-set="ACCEPTED" data-id="${esc(r.id)}">Accept &amp; hold the date</button><button class="sbtn" data-set="DECLINED" data-id="${esc(r.id)}">Decline</button><button class="sbtn ghost" data-set="" data-id="${esc(r.id)}">Save note</button></div><div id="m-${esc(r.id)}"></div></td></tr>`).join('') || '<tr><td colspan="6" class="empty-row">No requests yet.</td></tr>'}</tbody></table></div>`;
+  $$('[data-open]').forEach(b => b.onclick = () => { const x = $(`#x-${b.dataset.open}`); x.hidden = !x.hidden; });
+  $$('[data-set]').forEach(b => b.onclick = async () => {
+    const id = b.dataset.id, body = { note: $(`#n-${id}`).value };
+    if (b.dataset.set) { if (!confirm(b.dataset.set === 'ACCEPTED' ? 'Accept and text the guest?' : 'Decline and text the guest?')) return; body.status = b.dataset.set; }
+    try { await sapi(`/api/admin/requests/${encodeURIComponent(id)}`, { method: 'POST', body }); if (b.dataset.set) requests().catch(fail); else flash($(`#m-${id}`), 'Note saved.'); }
+    catch (err) { flash($(`#m-${id}`), err.message, true); }
+  });
+}
+
+// ── Pay in bits ──
+async function bits() {
+  const { plans } = await sapi('/api/admin/installments');
+  panel.innerHTML = `<h1>Pay in bits</h1><div class="tbl-wrap"><table class="tbl"><thead><tr><th>Order</th><th>Who</th><th>Night</th><th class="num">Paid</th><th class="num">Owing</th><th>Status</th><th></th></tr></thead><tbody>
+    ${plans.map(p => `<tr><td><strong>${esc(p.id)}</strong><br><small class="muted">${esc(when(p.createdAt))}</small></td><td>${esc(p.buyerName)}<br><a href="tel:${esc(p.buyerPhone)}">${esc(p.buyerPhone)}</a></td><td>${esc(p.eventName)}<br><small>${p.quantity} × ${esc(p.ticketTypeName)}</small></td>
+      <td class="num">${money(p.paidPesewas)} / ${money(p.totalPesewas)}</td><td class="num">${money(Math.max(0, p.totalPesewas - p.paidPesewas))}</td>
+      <td>${pill(p.status, p.status === 'completed' ? 'green' : p.status === 'active' ? 'amber' : 'grey')}${p.overpaidPesewas ? ` ${pill(`overpaid ${money(p.overpaidPesewas)}`, 'red')}` : ''}</td>
+      <td class="actions"><button class="sbtn" data-hist="${esc(p.id)}">Payments</button>${['active', 'completed'].includes(p.status) ? `<button class="sbtn" data-sms="${esc(p.id)}">Resend text</button>` : ''}</td></tr>
+      <tr class="expand" id="h-${esc(p.id)}" hidden><td colspan="7">${(p.payments || []).map(x => `<div>${esc(when(x.paidAt))} · ${money(x.amountPesewas)} · <small>${esc(x.reference)}</small>${x.note ? ` · ${pill(x.note.replace(/_/g, ' '), 'red')}` : ''}</div>`).join('') || 'No payments yet.'}</td></tr>`).join('') || '<tr><td colspan="7" class="empty-row">No pay-in-bits orders yet.</td></tr>'}</tbody></table></div><div id="bMsg"></div>`;
+  $$('[data-hist]').forEach(b => b.onclick = () => { const x = $(`#h-${b.dataset.hist}`); x.hidden = !x.hidden; });
+  $$('[data-sms]').forEach(b => b.onclick = async () => { b.disabled = true; try { await sapi('/api/admin/installments/resend-sms', { method: 'POST', body: { planId: b.dataset.sms } }); flash($('#bMsg'), `Text sent for ${b.dataset.sms}.`); } catch (err) { flash($('#bMsg'), err.message, true); } b.disabled = false; });
+}
+
+// ── Bar menu (bottles available on every night) ──
+async function bar() {
+  const { bottles } = await sapi('/api/admin/bottles');
+  panel.innerHTML = `<h1>Bar menu</h1><p class="muted" style="margin-top:-8px">Bottles guests can add to a table, on every night. Use the club’s real names and prices.</p>${catalogTable('bottles', bottles, 'all')}`;
+  bindCatalog(() => bar().catch(fail));
+}
+
+// ── Site settings ──
+async function settings() {
+  const { settings: s } = await sapi('/api/admin/settings');
+  const f = (k, label, hint = '', type = 'text') => `<div class="sfield"><label for="s-${k}">${label}</label><input id="s-${k}" type="${type}" value="${esc(s[k] || '')}">${hint ? `<span class="hint">${hint}</span>` : ''}</div>`;
+  panel.innerHTML = `<h1>Site settings</h1><form class="card" id="sForm" novalidate>
+    <p class="muted" style="margin:0">One place for the details the whole site shows. Blank fields simply don’t appear.</p>
+    <div class="grid2">${f('venue', 'Venue')}${f('address', 'Address line')}${f('nightsLine', 'Nights line', 'e.g. Friday + Saturday')}${f('doorsLine', 'Doors line', 'e.g. Doors 10PM')}
+      ${f('phone', 'Public phone', 'Confirm the real number before filling this in.', 'tel')}${f('whatsapp', 'WhatsApp number', '', 'tel')}${f('email', 'Public email', '', 'email')}${f('instagram', 'Instagram handle', '@handle')}
+      ${f('mapUrl', 'Map link', 'Google Maps share link. Blank = search for the venue.', 'url')}</div>
+    <div class="img-drop"><div class="thumb wide" id="heroT" style="background-image:url('${esc(s.heroImage || '')}')"></div><div class="sfield"><label for="heroF">Homepage hero image (optional)</label><input id="heroF" type="file" accept="image/jpeg,image/png,image/webp"></div></div>
+    <div class="grid2"><div class="sfield"><label for="s-lines">Default lines (one per line)</label><textarea id="s-lines" style="min-height:160px">${esc((s.defaultLines || []).join('\n'))}</textarea><span class="hint">Used for any night without its own lines.</span></div>
+      <div class="sfield"><label for="s-closed">Closed dates (YYYY-MM-DD, one per line)</label><textarea id="s-closed" style="min-height:160px">${esc((s.closedDates || []).join('\n'))}</textarea><span class="hint">Shown as closed on the calendar; can’t be requested.</span></div></div>
+    <div><button class="sbtn red" type="submit">Save settings</button></div><div id="sMsg"></div></form>`;
+  let hero = s.heroImage || '';
+  $('#heroF').onchange = async ev => { const file = ev.target.files[0]; if (!file) return; try { hero = await uploadImage(await compressImage(file, 2000), 'hero.webp'); $('#heroT').style.backgroundImage = `url('${hero}')`; } catch (err) { flash($('#sMsg'), err.message, true); } };
+  $('#sForm').onsubmit = async ev => {
+    ev.preventDefault();
+    const body = Object.fromEntries(['venue', 'address', 'nightsLine', 'doorsLine', 'phone', 'whatsapp', 'email', 'instagram', 'mapUrl'].map(k => [k, val(`#s-${k}`)]));
+    body.heroImage = hero; body.defaultLines = $('#s-lines').value.split('\n').map(x => x.trim().toUpperCase()).filter(Boolean); body.closedDates = $('#s-closed').value.split(/\s+/).filter(Boolean);
+    try { await sapi('/api/admin/settings', { method: 'POST', body }); flash($('#sMsg'), 'Saved. Live on the site now.'); } catch (err) { flash($('#sMsg'), err.message, true); }
+  };
+}
+
+// ── Staff ──
+async function staff() {
+  const { staff: list } = await sapi('/api/admin/staff');
+  panel.innerHTML = `<h1>Staff</h1><form class="card" id="roleForm" novalidate>
+    <p class="muted" style="margin:0">Create the account in Firebase Console → Authentication first (public sign-up is off), then give it a role here. It takes effect at their next sign-in.</p>
+    <div class="grid2"><div class="sfield"><label for="rEmail">Email</label><input id="rEmail" type="email"></div>
+      <div class="sfield"><label for="rRole">Role</label><select id="rRole">${Object.entries(ROLE_LABEL).map(([k, l]) => `<option value="${k}">${l}</option>`).join('')}<option value="none">Remove access</option></select></div></div>
+    <div><button class="sbtn red" type="submit">Save role</button></div><div id="roleMsg"></div></form>
+    <h2>Who has access</h2><div class="tbl-wrap"><table class="tbl"><thead><tr><th>Email</th><th>Role</th><th>UID (for organiser nights)</th></tr></thead><tbody>
+    ${list.map(x => `<tr><td>${esc(x.email)}</td><td>${esc(ROLE_LABEL[x.role] || x.role)}</td><td><code>${esc(x.uid)}</code></td></tr>`).join('') || '<tr><td colspan="3" class="empty-row">No staff recorded yet.</td></tr>'}</tbody></table></div>
+    <p class="hint" style="color:var(--muted)">Super admin: everything. Manager: everything but staff. Event manager: nights, bookings, private nights, comps, the draw. Door: check-in only. Organiser: their own nights’ numbers and door.</p>`;
+  $('#roleForm').onsubmit = async ev => {
+    ev.preventDefault();
+    try { const r = await sapi('/api/admin/set-role', { method: 'POST', body: { email: val('#rEmail'), role: val('#rRole') } }); flash($('#roleMsg'), `${r.email} → ${ROLE_LABEL[r.role] || 'no access'}.`); setTimeout(() => staff().catch(fail), 900); }
+    catch (err) { flash($('#roleMsg'), err.message, true); }
+  };
+}
+
+function fromHash() {
+  const [tab, arg] = location.hash.slice(1).split('/');
+  if (location.hash.slice(1) === current && current) return;
+  show(TABS.some(t => t[0] === tab) ? tab : 'overview', arg);
+}
+window.addEventListener('hashchange', fromHash);
+fromHash();

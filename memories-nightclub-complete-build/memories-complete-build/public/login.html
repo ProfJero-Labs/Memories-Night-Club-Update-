@@ -2,360 +2,57 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="theme-color" content="#0b0909">
-<title>Staff Sign In · Memories</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Staff sign in · Memories</title>
+<meta name="robots" content="noindex">
+<meta name="theme-color" content="#0d0a09">
+<link rel="icon" href="assets/icon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Anton&family=Archivo:wght@400;600;700&family=Instrument+Serif:ital@0;1&display=swap">
 <link rel="stylesheet" href="styles.css">
-<style>
-  /* Self-contained login styling — no dependency on styles.css for layout */
-  .login-page {
-    min-height: 100dvh;
-    display: grid;
-    place-items: center;
-    padding: 24px 16px;
-    background: #0b0909;
-    background-image:
-      radial-gradient(circle at 50% 0%, rgba(200,36,59,0.12) 0%, transparent 55%),
-      radial-gradient(circle at 80% 100%, rgba(200,36,59,0.06) 0%, transparent 50%);
-  }
-  .login-card {
-    width: 100%;
-    max-width: 440px;
-    background: #151210;
-    border: 1px solid #302a27;
-    padding: 44px 36px;
-    position: relative;
-  }
-  .login-brand {
-    font-family: 'Bebas Neue', sans-serif;
-    font-size: 36px;
-    letter-spacing: 0.08em;
-    color: #f0e9df;
-    margin-bottom: 4px;
-  }
-  .login-eyebrow {
-    font-family: 'DM Mono', monospace;
-    font-size: 11px;
-    letter-spacing: 0.18em;
-    text-transform: uppercase;
-    color: #9e9790;
-    margin-bottom: 28px;
-  }
-  .login-title {
-    font-family: 'Bebas Neue', sans-serif;
-    font-size: 68px;
-    line-height: 0.82;
-    letter-spacing: 0.02em;
-    text-transform: uppercase;
-    color: #f0e9df;
-    margin: 0 0 32px;
-  }
-  .login-field {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-    margin-bottom: 18px;
-  }
-  .login-field label {
-    font-family: 'DM Mono', monospace;
-    font-size: 10px;
-    letter-spacing: 0.15em;
-    text-transform: uppercase;
-    color: #9e9790;
-  }
-  .login-field input {
-    background: #0f0e0d;
-    border: 1px solid #302a27;
-    color: #f0e9df;
-    padding: 16px 14px;
-    font-size: 16px; /* Prevents iOS zoom on focus */
-    font-family: inherit;
-    outline: none;
-    transition: border-color 0.15s;
-    width: 100%;
-    box-sizing: border-box;
-  }
-  .login-field input:focus {
-    border-color: #c8243b;
-  }
-  .login-field input:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
-  .login-btn {
-    width: 100%;
-    background: #c8243b;
-    color: #ffffff;
-    border: 1px solid #c8243b;
-    padding: 17px 20px;
-    font-size: 13px;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.12em;
-    cursor: pointer;
-    font-family: inherit;
-    transition: all 0.15s;
-    margin-top: 8px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 10px;
-  }
-  .login-btn:hover:not(:disabled) {
-    background: #ed4356;
-    border-color: #ed4356;
-    transform: translateY(-1px);
-  }
-  .login-btn:active:not(:disabled) {
-    transform: translateY(0);
-  }
-  .login-btn:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
-  }
-  .login-error {
-    background: rgba(200,36,59,0.12);
-    border: 1px solid #c8243b;
-    color: #f0e9df;
-    padding: 14px 16px;
-    font-size: 13px;
-    margin-top: 18px;
-    line-height: 1.45;
-    display: none;
-  }
-  .login-error.show { display: block; }
-  .login-error strong {
-    display: block;
-    color: #ed4356;
-    font-family: 'Bebas Neue', sans-serif;
-    font-size: 18px;
-    letter-spacing: 0.05em;
-    margin-bottom: 4px;
-  }
-  .login-hint {
-    margin-top: 22px;
-    padding-top: 18px;
-    border-top: 1px solid #302a27;
-    font-size: 12px;
-    color: #9e9790;
-    line-height: 1.5;
-    text-align: center;
-  }
-  .login-hint a {
-    color: #ed4356;
-    text-decoration: none;
-  }
-  .login-hint a:hover {
-    text-decoration: underline;
-  }
-  .login-spinner {
-    width: 16px;
-    height: 16px;
-    border: 2px solid rgba(255,255,255,0.3);
-    border-top-color: #ffffff;
-    border-radius: 50%;
-    animation: spin 0.7s linear infinite;
-    display: inline-block;
-  }
-  @keyframes spin { to { transform: rotate(360deg); } }
-  .login-config-error {
-    background: rgba(255,171,64,0.12);
-    border: 1px solid #ffab40;
-    color: #f0e9df;
-    padding: 16px;
-    font-size: 13px;
-    line-height: 1.55;
-    font-family: 'DM Mono', monospace;
-  }
-  .login-config-error strong {
-    display: block;
-    color: #ffab40;
-    font-size: 14px;
-    margin-bottom: 6px;
-  }
-  .login-config-error code {
-    background: rgba(255,255,255,0.08);
-    padding: 2px 6px;
-    border-radius: 3px;
-    font-size: 12px;
-  }
-
-  /* Mobile tuning */
-  @media (max-width: 480px) {
-    .login-page { padding: 16px 12px; }
-    .login-card { padding: 32px 22px; }
-    .login-brand { font-size: 30px; }
-    .login-title { font-size: 54px; margin-bottom: 26px; }
-    .login-field input { padding: 14px 12px; }
-    .login-btn { padding: 15px 18px; font-size: 12px; }
-  }
-  @media (max-width: 360px) {
-    .login-card { padding: 26px 18px; }
-    .login-title { font-size: 46px; }
-  }
-</style>
+<script src="config.js"></script>
 </head>
 <body>
-
-<main class="login-page">
-  <div class="login-card">
-
-    <div class="login-brand">MEMORIES</div>
-    <div class="login-eyebrow">Staff Access · Control Room</div>
-
-    <h1 class="login-title">SIGN<br>IN</h1>
-
-    <!-- Config error (shown if Firebase config is missing/placeholder) -->
-    <div id="configError" class="login-config-error" style="display:none;">
-      <strong>⚠ CONFIGURATION REQUIRED</strong>
-      <span id="configErrorDetail"></span>
-    </div>
-
-    <!-- Login form -->
-    <form id="loginForm" autocomplete="on" novalidate>
-      <div class="login-field">
-        <label for="email">Email</label>
-        <input id="email" type="email" autocomplete="email" inputmode="email" required>
-      </div>
-
-      <div class="login-field">
-        <label for="password">Password</label>
-        <input id="password" type="password" autocomplete="current-password" required>
-      </div>
-
-      <button type="submit" class="login-btn" id="loginBtn">
-        <span id="loginBtnText">Sign In</span>
-      </button>
-    </form>
-
-    <!-- Error box -->
-    <div class="login-error" id="errorBox">
-      <strong id="errorTitle">Sign in failed</strong>
-      <span id="errorMessage"></span>
-    </div>
-
-    <div class="login-hint">
-      Not staff? <a href="index.html">Return to Memories</a>
-    </div>
-
-  </div>
+<main class="center-screen" style="min-height:100vh">
+  <form id="f" class="step" novalidate style="width:min(100%,420px)">
+    <img src="assets/logo.png" alt="Memories" width="220" height="52" style="width:180px;height:auto">
+    <h1 class="display" style="font-size:52px">Staff</h1>
+    <div class="notice" id="msg" hidden role="alert"></div>
+    <div class="field"><label for="email">Email</label><input id="email" type="email" autocomplete="username" required></div>
+    <div class="field"><label for="pw">Password</label><input id="pw" type="password" autocomplete="current-password" required></div>
+    <button class="btn red" type="submit" id="go">Sign in</button>
+    <button class="link" type="button" id="forgot" style="justify-self:start">Forgot password?</button>
+    <p class="foot-small" style="margin:0">Staff accounts are created by the club. There’s no public sign-up.</p>
+  </form>
 </main>
-
-<script src="config.js"></script>
 <script type="module">
-// ── Config validation ──
-const cfg = window.MEMORIES_CONFIG || {};
-const fbCfg = cfg.firebase || {};
-const placeholders = ['YOUR_FIREBASE_WEB_API_KEY', 'YOUR_PROJECT', 'YOUR_PROJECT_ID', 'YOUR_SENDER_ID', 'YOUR_APP_ID'];
-const hasPlaceholder = Object.values(fbCfg).some(v => typeof v === 'string' && placeholders.some(p => v.includes(p)));
-
-if (!fbCfg.apiKey || !fbCfg.authDomain || !fbCfg.projectId || hasPlaceholder) {
-  document.getElementById('configError').style.display = 'block';
-  document.getElementById('configErrorDetail').innerHTML =
-    'Firebase is not configured. Edit <code>config.js</code> and set real values for <code>firebase.apiKey</code>, <code>firebase.authDomain</code>, <code>firebase.projectId</code>, and <code>firebase.appId</code>.';
-  document.getElementById('loginForm').style.display = 'none';
-} else {
-  // Only initialize Firebase Auth if config looks valid
-  const { signInWithEmailAndPassword, auth } = await import('./firebase.js');
-
-  window.getFirebaseIdToken = async () => auth.currentUser?.getIdToken() || null;
-
-  // If already signed in, redirect — organisers land on their scoped view, everyone else
-  // (superAdmin/manager/eventManager/doorStaff) lands on the control room.
-  auth.onAuthStateChanged((user) => {
-    if (user) {
-      setTimeout(async () => {
-        try {
-          const result = await user.getIdTokenResult();
-          location.href = result.claims.role === 'organiser' ? 'organiser.html' : 'admin.html';
-        } catch {
-          location.href = 'admin.html';
-        }
-      }, 150);
-    }
-  });
-
-  const form = document.getElementById('loginForm');
-  const emailEl = document.getElementById('email');
-  const passwordEl = document.getElementById('password');
-  const btn = document.getElementById('loginBtn');
-  const btnText = document.getElementById('loginBtnText');
-  const errorBox = document.getElementById('errorBox');
-  const errorTitle = document.getElementById('errorTitle');
-  const errorMessage = document.getElementById('errorMessage');
-
-  function showError(title, message) {
-    errorTitle.textContent = title;
-    errorMessage.textContent = message;
-    errorBox.classList.add('show');
+import { signIn, onUser, resetPassword, signOutUser } from './firebase.js';
+import { $ } from './app.js';
+import { roleOf, home } from './staff.js';
+const msg = (t, ok = false) => { const m = $('#msg'); m.hidden = !t; m.textContent = t; m.className = ok ? 'notice ok' : 'notice'; };
+const params = new URLSearchParams(location.search);
+if (params.get('denied')) msg('This account doesn’t have staff access. Ask a super admin to add you.');
+const next = params.get('next');
+let routed = false;
+const route = u => { if (routed) return; const r = roleOf(u.claims); if (!r) { signOutUser(); msg('This account doesn’t have staff access. Ask a super admin to add you.'); return; } routed = true; location.replace(next && home(r) === 'admin.html' && /^[a-z-]+\.html/.test(next) ? next : home(r)); };
+onUser(u => { if (u && !params.get('denied')) route(u); });
+$('#f').onsubmit = async e => {
+  e.preventDefault(); msg('');
+  const btn = $('#go'); btn.disabled = true; btn.textContent = 'Signing in…';
+  try { route(await signIn($('#email').value.trim(), $('#pw').value)); }
+  catch (err) {
+    // One message for wrong email and wrong password: the form never confirms who has an account.
+    msg(err.code === 'auth/too-many-requests' ? 'Too many attempts. Wait a few minutes.' : err.code === 'auth/network-request-failed' ? 'Connection dropped. Try again.' : 'That email and password don’t match.');
+    btn.disabled = false; btn.textContent = 'Sign in';
   }
-  function clearError() {
-    errorBox.classList.remove('show');
-  }
-
-  function friendlyError(code, fallback) {
-    switch (code) {
-      case 'auth/invalid-email':
-        return { title: 'Invalid email', msg: 'The email address is not formatted correctly.' };
-      case 'auth/user-disabled':
-        return { title: 'Account disabled', msg: 'This account has been disabled. Contact your manager.' };
-      case 'auth/user-not-found':
-      case 'auth/wrong-password':
-      case 'auth/invalid-credential':
-        // Same message for both — don't let a login form confirm whether an email has an account.
-        return { title: 'Sign in failed', msg: 'The email or password is incorrect. Please try again.' };
-      case 'auth/too-many-requests':
-        return { title: 'Too many attempts', msg: 'Too many failed attempts. Please wait a few minutes and try again.' };
-      case 'auth/network-request-failed':
-        return { title: 'Network error', msg: 'Could not reach the server. Check your connection and try again.' };
-      case 'auth/operation-not-allowed':
-        return { title: 'Not enabled', msg: 'Email/password sign-in is not enabled in Firebase. Enable it in the Firebase Console.' };
-      case 'auth/invalid-api-key':
-        return { title: 'Config error', msg: 'Firebase API key is invalid. Check config.js.' };
-      default:
-        return { title: 'Sign in failed', msg: fallback || 'Something went wrong. Please try again.' };
-    }
-  }
-
-  form.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    clearError();
-
-    const email = emailEl.value.trim();
-    const password = passwordEl.value;
-
-    if (!email || !password) {
-      showError('Missing details', 'Please enter both email and password.');
-      return;
-    }
-
-    // Loading state
-    btn.disabled = true;
-    emailEl.disabled = true;
-    passwordEl.disabled = true;
-    btnText.innerHTML = '<span class="login-spinner"></span> Signing in…';
-
-    try {
-      await signInWithEmailAndPassword(auth, email, password);
-      btnText.textContent = 'Redirecting…';
-      // onAuthStateChanged will handle the redirect
-    } catch (err) {
-      console.error('Sign-in error:', err);
-      const { title, msg } = friendlyError(err.code, err.message);
-      showError(title, msg);
-      btn.disabled = false;
-      emailEl.disabled = false;
-      passwordEl.disabled = false;
-      btnText.textContent = 'Sign In';
-      passwordEl.value = '';
-      passwordEl.focus();
-    }
-  });
-
-  // Focus email on load
-  emailEl.focus();
-}
+};
+$('#forgot').onclick = async () => {
+  const email = $('#email').value.trim();
+  if (!email) { msg('Enter your email first, then tap Forgot password.'); return $('#email').focus(); }
+  try { await resetPassword(email); } catch { /* same answer either way */ }
+  msg('If that email has a staff account, a reset link is on its way.', true);
+};
 </script>
-
 </body>
 </html>

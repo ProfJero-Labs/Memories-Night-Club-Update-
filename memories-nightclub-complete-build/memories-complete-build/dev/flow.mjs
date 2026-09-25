@@ -61,6 +61,40 @@ const flows = {
     await page.waitForURL(/ticket\.html/, { timeout: 20000 }); await page.waitForLoadState('networkidle'); await shot('ticket', true);
     const st = await (await fetch(`${base}/dev/state`)).json(); console.log('SMS:', JSON.stringify(st.sms.slice(-3)));
   },
+  async admin() {
+    const login = async (email) => { await page.goto(`${base}/login.html`); await page.fill('#email', email); await page.fill('#pw', 'memories-dev'); await page.click('#go'); await page.waitForLoadState('networkidle'); };
+    await login('admin@dev'); await shot('overview', true);
+    await page.click('[data-tab=nights]'); await page.waitForLoadState('networkidle'); await shot('nights');
+    await page.locator('[data-edit="dev-afro"]').click(); await page.waitForLoadState('networkidle');
+    await page.setInputFiles('#artFile', new URL('./fixtures/dnd-party-poster.jpeg', import.meta.url).pathname);
+    await page.getByText(/uploaded/i).waitFor();
+    await page.fill('#evName', 'Afrobeats Friday (Edited)');
+    await page.click('#save'); await page.getByText(/saved/i).waitFor(); await shot('night-editor', true);
+    const reg = page.locator('tr[data-row="dev-afro-reg"]'); await reg.locator('[data-k=price]').fill('150'); await reg.locator('[data-save]').click(); await page.waitForTimeout(800);
+    const pub = await (await fetch(`${base}/api/events/dev-afro`)).json();
+    console.log('PUBLIC AFTER EDIT:', pub.event.name, '|', pub.event.artwork.includes('/dev/uploads/') ? 'new flyer' : 'OLD FLYER', '|', pub.ticketTypes.find(t => t.id === 'dev-afro-reg').pricePesewas);
+    await page.click('[data-tab=requests]'); await page.waitForLoadState('networkidle'); await page.locator('[data-open]').first().click(); await shot('requests', true);
+    page.once('dialog', d => d.accept()); await page.locator('[data-set="ACCEPTED"]').first().click(); await page.waitForTimeout(800); await shot('requests-accepted');
+    await page.click('[data-tab=settings]'); await page.waitForLoadState('networkidle'); await shot('settings', true);
+    await page.click('[data-tab=bookings]'); await page.waitForLoadState('networkidle'); await shot('bookings', true);
+    await page.click('[data-tab=staff]'); await page.waitForLoadState('networkidle'); await shot('staff', true);
+    await page.goto(`${base}/nights.html`, { waitUntil: 'networkidle' }); await shot('public-nights', true);
+  },
+  async door() {
+    await page.goto(`${base}/login.html`); await page.fill('#email', 'door@dev'); await page.fill('#pw', 'memories-dev'); await page.click('#go'); await page.waitForURL(/checkin/); await page.waitForLoadState('networkidle');
+    const st = await (await fetch(`${base}/dev/state`)).json();
+    const tok = Object.entries(st.docs).find(([k, v]) => k.startsWith('tickets/') && v.status === 'valid' && v.eventId === 'dev-afro')?.[0]?.split('/')[1];
+    if (!tok) throw new Error('no ticket to scan: run the ticket flow first');
+    await page.selectOption('#ev', 'dev-afro');
+    await page.fill('#code', `${base}/verify.html?token=${tok}`); await page.click('#manual button'); await page.getByText(/entry confirmed/i).waitFor(); await shot('confirmed');
+    await page.fill('#code', tok); await page.click('#manual button'); await page.getByText(/already checked in/i).waitFor(); await shot('again');
+    await page.fill('#code', 'nonsense-token'); await page.click('#manual button'); await page.getByText(/not valid/i).waitFor(); await shot('invalid');
+  },
+  async organiser() {
+    await page.goto(`${base}/login.html`); await page.fill('#email', 'orga@dev'); await page.fill('#pw', 'memories-dev'); await page.click('#go'); await page.waitForURL(/organiser/); await page.waitForLoadState('networkidle'); await shot('mine', true);
+    const txt = await page.textContent('main'); console.log('ORGANISER A SEES B NIGHT?', /Amapiano/i.test(txt) ? 'YES (BAD)' : 'no');
+    await page.goto(`${base}/admin.html`); await page.waitForURL(/organiser/); console.log('ORGANISER A → admin.html redirected to', new URL(page.url()).pathname);
+  },
 };
 try { await flows[name](); } catch (e) { console.error('FLOW FAILED:', e.message); await shot('failure', true); }
 if (errs.length) console.log('PAGE ERRORS:', errs.join(' | '));

@@ -3,10 +3,11 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "firebase emulators:exec --config ../firebase.test.json --project=security-test-demo-project --only firestore \"node --test rules.test.js\""
+    "test": "firebase emulators:exec --config ../firebase.test.json --project=demo-memories-rules --only firestore,storage \"node --test rules.test.js\""
   },
   "devDependencies": {
     "@firebase/rules-unit-testing": "^4.0.1",
-    "firebase-tools": "^15.30.2"
+    "firebase-tools": "^15.30.2",
+    "firebase": "^11.0.2"
   }
 }

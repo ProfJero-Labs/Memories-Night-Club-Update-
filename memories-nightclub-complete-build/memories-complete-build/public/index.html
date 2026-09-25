@@ -63,7 +63,7 @@ async function load() {
   }
   const hero = events.find(e => e.featured && !e.soldOut) || events.find(e => !e.soldOut) || events[0];
   next.innerHTML = `<div class="next-grid">
-    <a class="next-art" href="event.html?id=${encodeURIComponent(hero.id)}" aria-label="${esc(hero.name)}">${img(hero.artwork, `${hero.name} flyer`, '', true)}${dateStamp(hero.date)}</a>
+    <a class="next-art" href="event.html?id=${encodeURIComponent(hero.id)}" aria-label="${esc(hero.name)}">${img(hero.artwork, `${hero.name} flyer`, '', true)}</a>
     <div class="next-copy">
       <p class="kicker red">${esc(whenLabel(hero.date))}</p>
       <h2 class="display">${esc(hero.name)}</h2>
