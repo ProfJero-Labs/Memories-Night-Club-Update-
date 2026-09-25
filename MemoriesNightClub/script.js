@@ -3,11 +3,11 @@
 // ================================================================
 
 // 🔥 Replace with your actual Brevo API key (keep it secret in production)
-const BREVO_API_KEY = "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";
+const BREVO_API_KEY = ""; // Removed: this key was public. Email is sent only by the Worker now.
 const SENDER_EMAIL = "profjero947@gmail.com"; // Verified sender in Brevo
 
 // Paystack Public Key (test)
-const PAYSTACK_PUBLIC_KEY = "pk_test_815f92b8bc47144ae15433d8e7b768b150b2c663";
+const PAYSTACK_PUBLIC_KEY = ""; // Removed (archived site).
 
 // Cloudflare Worker URL
 const WORKER_URL = "https://memories-paystack-verify.diamondj04102026.workers.dev";

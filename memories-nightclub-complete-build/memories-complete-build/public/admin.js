@@ -186,7 +186,7 @@ function bindRaffle(r, eventId, reload) {
   });
   $('#rDraw') && ($('#rDraw').onclick = async () => {
     if (!confirm(`Draw the winner from ${r.entryCount} entries? This can’t be undone.`)) return;
-    try { const w = await sapi('/api/admin/raffle/draw', { method: 'POST', body: { raffleId: r.id } }); alert(`Winner: ${w.winnerDisplayName} (${w.winnerDisplayCode}) from ${w.eligibleEntryCount} entries.${w.notified ? ' They’ve been texted.' : ''}`); reload(); }
+    try { await sapi('/api/admin/raffle/draw', { method: 'POST', body: { raffleId: r.id } }); reload(); }
     catch (err) { flash($('#rMsg'), err.message, true); }
   });
 }

@@ -17,7 +17,7 @@ async function phone(width = 390) {
   // Fonts come from Google in production; offline they fall back, which is fine for behaviour tests.
   await ctx.route(/fonts\.(googleapis|gstatic)\.com/, r => r.abort());
   const page = await ctx.newPage();
-  page.errors = []; page.on('pageerror', e => page.errors.push(e.message));
+  page.errors = []; page.on('pageerror', e => page.errors.push(e.message)); page.on('console', m => /Content Security Policy/i.test(m.text()) && page.errors.push(m.text()));
   return page;
 }
 const docs = col => store.list(col).map(d => ({ id: d.id, ...d.fields }));

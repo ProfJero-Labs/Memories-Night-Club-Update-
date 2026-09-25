@@ -1,10 +1,14 @@
 {
-  "name": "memories-night-club-complete-build",
+  "name": "memories-night-club",
   "private": true,
   "version": "3.0.0",
+  "type": "module",
   "scripts": {
-    "worker:dev": "npm --prefix worker run dev",
-    "worker:deploy": "npm --prefix worker run deploy",
-    "worker:test": "npm --prefix worker test"
+    "dev": "node dev/server.mjs",
+    "test": "npm --prefix worker test",
+    "test:e2e": "node --test --test-concurrency=1 dev/e2e.test.mjs",
+    "test:rules": "npm --prefix firebase/test test",
+    "worker:check": "npm --prefix worker run check",
+    "worker:deploy": "npm --prefix worker run deploy"
   }
 }

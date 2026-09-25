@@ -129,8 +129,8 @@ h1, h2, h3 { margin: 0; }
 
 /* ── Home ── */
 .brand { padding: clamp(28px, 7vw, 72px) 0 clamp(22px, 5vw, 44px); }
-.brand-logo { width: 100%; max-width: 1100px; height: auto; }
-.brand .strip { margin-top: clamp(20px, 4vw, 34px); max-width: 1100px; }
+.brand-logo { width: 100%; max-width: 720px; height: auto; margin-left: -1.5%; }
+.brand .strip { margin-top: clamp(20px, 4vw, 34px); max-width: 720px; }
 .brand .strip span:first-child { color: var(--paper); }
 
 .next { position: relative; border-top: 1px solid var(--line); padding: clamp(28px, 6vw, 64px) 0; }
