@@ -1,0 +1,99 @@
+<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Organiser View · Memories</title><link rel="stylesheet" href="styles.css"></head><body><div id="app"></div><div class="toast"></div><script src="config.js"></script><script type="module">
+import { auth, signOut, onAuthStateChanged } from './firebase.js';
+import { esc, money, api } from './app.js';
+
+window.getFirebaseIdToken = async () => auth.currentUser?.getIdToken() || null;
+
+const root = document.querySelector('#app');
+root.innerHTML = `<div class="admin-shell">
+  <aside class="admin-nav">
+    <a class="brand" href="index.html">MEMORIES</a>
+    <div class="eyebrow">ORGANISER VIEW</div>
+    <button id="logout" class="btn ghost">Sign out</button>
+  </aside>
+  <main class="admin-main">
+    <div class="eyebrow">MEMORIES · ORGANISER VIEW</div>
+    <h1 class="display admin-title">YOUR NIGHTS</h1>
+    <p class="admin-sub">Sales and check-ins for the nights you organise. Pricing, artwork and the raffle are managed by Memories staff.</p>
+    <div id="body"><div class="status">Loading…</div></div>
+  </main>
+</div>`;
+
+document.querySelector('#logout').onclick = () => signOut(auth).then(() => location.href = 'login.html');
+
+function fmtDate(iso) {
+  if (!iso) return '';
+  try {
+    return new Date(iso).toLocaleDateString('en-GH', { weekday: 'short', day: '2-digit', month: 'short' });
+  } catch { return iso; }
+}
+
+async function load() {
+  const body = document.querySelector('#body');
+  try {
+    const d = await api('/api/organiser/overview');
+    const events = d.events || [];
+
+    if (!events.length) {
+      body.innerHTML = `
+        <div class="empty" style="text-align:center;padding:60px 20px">
+          <div class="eyebrow">NO NIGHTS YET</div>
+          <h2 class="display" style="font-size:44px;margin:15px 0">NOTHING<br>LINKED</h2>
+          <p style="color:var(--muted);max-width:400px;margin:0 auto 20px">
+            No nights are linked to your account yet. Ask Memories staff to add your email as the organiser on an event.
+          </p>
+        </div>`;
+      return;
+    }
+
+    body.innerHTML = `<div class="admin-list">${events.map(e => {
+      const byType = Object.entries(e.ticketsSoldByType || {});
+      const raffle = e.raffle;
+      return `
+        <article class="admin-row" style="flex-direction:column;align-items:flex-start;gap:16px">
+          <div style="width:100%">
+            <strong>${esc(e.eventName)}</strong>
+            <small>${esc(fmtDate(e.date))}</small>
+          </div>
+
+          <div class="admin-cards" style="width:100%">
+            <div class="metric"><span>Tickets sold</span><strong>${e.ticketsSold || 0}</strong></div>
+            <div class="metric"><span>Tables sold</span><strong>${e.tablesSold || 0}</strong></div>
+            <div class="metric"><span>Money collected</span><strong>${money(e.revenuePesewas || 0)}</strong></div>
+            <div class="metric"><span>Check-ins</span><strong>${e.checkins || 0}</strong></div>
+            <div class="metric"><span>Money owing</span><strong>${money(e.moneyOwingPesewas || 0)}</strong></div>
+            <div class="metric"><span>Uncompleted</span><strong>${e.partialOrdersCount || 0}</strong></div>
+          </div>
+
+          ${byType.length ? `
+            <div style="width:100%">
+              <small style="color:var(--muted);letter-spacing:.12em;text-transform:uppercase;font-size:10px">By ticket type</small>
+              <div style="display:flex;gap:18px;flex-wrap:wrap;margin-top:8px">
+                ${byType.map(([name, qty]) => `<span style="font-size:13px">${esc(name)}: <strong>${qty}</strong></span>`).join('')}
+              </div>
+            </div>` : ''}
+
+          ${raffle ? `
+            <div style="width:100%">
+              <small style="color:var(--muted);letter-spacing:.12em;text-transform:uppercase;font-size:10px">Raffle</small>
+              <p style="margin-top:6px;font-size:13px">
+                ${esc(raffle.prize)} — ${raffle.spotsTaken} of ${raffle.cap} spots
+                ${raffle.status === 'drawn'
+                  ? ` — Winner: ${esc(raffle.winnerDisplay?.name || 'announced')}${raffle.winnerDisplay?.code ? ` #${esc(raffle.winnerDisplay.code)}` : ''}`
+                  : ` — ${esc(raffle.status)}`}
+              </p>
+            </div>` : ''}
+        </article>`;
+    }).join('')}</div>`;
+
+  } catch (e) {
+    console.error('Organiser load error:', e);
+    body.innerHTML = `<div class="status error">${esc(e.message || 'Could not load your events.')}</div>`;
+  }
+}
+
+onAuthStateChanged(auth, user => {
+  if (!user) { location.href = 'login.html'; return; }
+  load();
+});
+</script></body></html>

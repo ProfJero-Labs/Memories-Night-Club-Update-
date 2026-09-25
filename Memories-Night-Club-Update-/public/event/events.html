@@ -1,0 +1,1326 @@
+<!DOCTYPE html>
+<html class="dark" lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Manage Events · MEMORIES Admin</title>
+
+    <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.7.2/css/all.min.css" />
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/firebase/10.7.1/firebase-app-compat.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/firebase/10.7.1/firebase-auth-compat.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/firebase/10.7.1/firebase-firestore-compat.min.js"></script>
+
+    <style>
+        /* ══════════════════════════════════════════════════════════
+           COLOR TOKENS
+        ══════════════════════════════════════════════════════════ */
+        .dark {
+            --color-primary: #ffb1c8;
+            --color-primary-solid: #e91e63;
+            --color-primary-container: #703348;
+            --color-on-primary-container: #ffd9e2;
+            --color-background: #0d0b0c;
+            --color-on-background: #ece0e3;
+            --color-surface: #0d0b0c;
+            --color-on-surface: #ece0e3;
+            --color-on-surface-variant: #cbb5ba;
+            --color-on-surface-muted: #8b767b;
+            --color-surface-container-lowest: #0a0809;
+            --color-surface-container-low: #141012;
+            --color-surface-container: #1d181a;
+            --color-surface-container-high: #282124;
+            --color-surface-container-highest: #352d30;
+            --color-outline-variant: #42373a;
+            --color-outline: #5b4a4e;
+            --color-error: #ffb4ab;
+            --color-error-solid: #ff6b6b;
+            --color-success: #69f0ae;
+            --color-warning: #ffab40;
+            --color-input-bg: #0f0c0e;
+            --color-input-bg-focus: #171315;
+        }
+
+        /* Force native form controls into dark mode */
+        :root { color-scheme: dark; }
+        input, select, textarea, button { color-scheme: dark; }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            background-color: var(--color-background);
+            color: var(--color-on-background);
+            font-family: 'Hanken Grotesk', sans-serif;
+            overflow: hidden;
+            height: 100vh;
+        }
+
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: var(--color-surface-container-low); }
+        ::-webkit-scrollbar-thumb { background: var(--color-outline-variant); border-radius: 8px; }
+        ::-webkit-scrollbar-thumb:hover { background: var(--color-primary); }
+
+        #app { display: flex; height: 100vh; overflow: hidden; }
+
+        /* ══════════════════════════════════════════════════════════
+           SIDEBAR
+        ══════════════════════════════════════════════════════════ */
+        #sidebar-container {
+            flex-shrink: 0;
+            width: 260px;
+            height: 100%;
+            z-index: 30;
+            transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        #sidebar-container .sidebar-inner {
+            height: 100%;
+            background: var(--color-surface-container-lowest);
+            border-right: 1px solid var(--color-outline-variant);
+            display: flex; flex-direction: column; padding: 1.5rem 0;
+        }
+        #sidebar-container .sidebar-brand {
+            padding: 0 1.25rem 1.5rem;
+            border-bottom: 1px solid var(--color-outline-variant);
+        }
+        #sidebar-container .sidebar-brand h1 {
+            font-size: 1.5rem; font-weight: 800; color: var(--color-primary);
+            letter-spacing: 0.08em; text-transform: uppercase;
+        }
+        #sidebar-container .sidebar-brand p {
+            font-size: 0.55rem; letter-spacing: 0.25em;
+            color: var(--color-on-surface-variant); margin-top: 0.125rem; text-transform: uppercase;
+        }
+        #sidebar-container .nav-list {
+            flex: 1; overflow-y: auto;
+            padding: 0.75rem 0.75rem 0.5rem;
+            display: flex; flex-direction: column; gap: 0.125rem;
+        }
+        #sidebar-container .nav-link {
+            display: flex; align-items: center; gap: 0.75rem;
+            padding: 0.6rem 1rem; border-radius: 8px;
+            color: var(--color-on-surface-variant);
+            transition: background 0.2s, color 0.2s;
+            text-decoration: none; font-size: 0.875rem; font-weight: 500; cursor: pointer;
+        }
+        #sidebar-container .nav-link:hover {
+            background: var(--color-surface-container-high); color: var(--color-on-surface);
+        }
+        #sidebar-container .nav-link.active {
+            background: var(--color-primary-container); color: var(--color-on-primary-container);
+        }
+        #sidebar-container .nav-link i { width: 1.25rem; text-align: center; font-size: 1.05rem; flex-shrink: 0; }
+        #sidebar-container .sidebar-user {
+            margin-top: auto; padding: 0.75rem 1rem;
+            border-top: 1px solid var(--color-outline-variant);
+            display: flex; align-items: center; gap: 0.75rem;
+        }
+        #sidebar-container .sidebar-user .avatar {
+            width: 2.25rem; height: 2.25rem; border-radius: 50%;
+            background: var(--color-surface-container-high);
+            display: flex; align-items: center; justify-content: center;
+            color: var(--color-on-surface-variant); flex-shrink: 0;
+        }
+        #sidebar-container .sidebar-user .user-info { flex: 1; min-width: 0; }
+        #sidebar-container .sidebar-user .user-info .name {
+            font-size: 0.85rem; font-weight: 600; color: var(--color-on-surface);
+            white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+        }
+        #sidebar-container .sidebar-user .user-info .email {
+            font-size: 0.7rem; color: var(--color-on-surface-variant);
+            white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+        }
+        #sidebar-container .sidebar-user .logout-btn {
+            background: none; border: none; color: var(--color-on-surface-variant);
+            font-size: 1.1rem; cursor: pointer; transition: color 0.2s; padding: 0.25rem;
+        }
+        #sidebar-container .sidebar-user .logout-btn:hover { color: var(--color-error-solid); }
+
+        /* ══════════════════════════════════════════════════════════
+           MAIN AREA
+        ══════════════════════════════════════════════════════════ */
+        #main-content {
+            flex: 1; display: flex; flex-direction: column;
+            overflow: hidden; background: var(--color-background); min-width: 0;
+        }
+        .topbar {
+            flex-shrink: 0; padding: 1rem 1.5rem;
+            background: var(--color-surface-container-low);
+            border-bottom: 1px solid var(--color-outline-variant);
+            display: flex; align-items: center; justify-content: space-between;
+            gap: 1rem; min-height: 72px;
+        }
+        .hamburger {
+            display: none; background: none; border: none;
+            color: var(--color-on-surface); font-size: 1.5rem;
+            cursor: pointer; padding: 0.25rem; transition: color 0.2s;
+        }
+        .hamburger:hover { color: var(--color-primary); }
+        .topbar-title h1 { font-size: 1.25rem; font-weight: 700; color: var(--color-on-surface); line-height: 1.2; }
+        .topbar-title p { font-size: 0.75rem; color: var(--color-on-surface-variant); }
+
+        .scroll-content { flex: 1; overflow-y: auto; padding: 1.5rem; }
+
+        /* ══════════════════════════════════════════════════════════
+           BUTTONS
+        ══════════════════════════════════════════════════════════ */
+        .btn-primary {
+            background: linear-gradient(135deg, #ffb1c8, #e91e63);
+            color: #08080a;
+            font-weight: 700;
+            border: none;
+            cursor: pointer;
+            transition: all 0.25s;
+            font-family: inherit;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.5rem;
+        }
+        .btn-primary:hover:not(:disabled) {
+            transform: translateY(-1px);
+            box-shadow: 0 6px 20px rgba(233,30,99,0.4);
+        }
+        .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+
+        .btn-secondary {
+            background: var(--color-surface-container);
+            border: 1px solid var(--color-outline-variant);
+            color: var(--color-on-surface);
+            cursor: pointer;
+            font-family: inherit;
+            transition: all 0.2s;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.4rem;
+        }
+        .btn-secondary:hover { border-color: var(--color-primary); color: var(--color-primary); }
+
+        .btn-danger {
+            background: rgba(255,107,107,0.1);
+            border: 1px solid rgba(255,107,107,0.3);
+            color: var(--color-error-solid);
+            cursor: pointer;
+            font-family: inherit;
+            transition: all 0.2s;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.4rem;
+        }
+        .btn-danger:hover { background: rgba(255,107,107,0.2); border-color: var(--color-error-solid); }
+
+        /* ══════════════════════════════════════════════════════════
+           FORM FIELDS (DARK THEME — FIXED)
+        ══════════════════════════════════════════════════════════ */
+        .input-field {
+            width: 100%;
+            background-color: var(--color-input-bg);
+            color: var(--color-on-surface);
+            border: 1px solid var(--color-outline-variant);
+            border-radius: 10px;
+            padding: 0.75rem 1rem;
+            font-size: 0.9rem;
+            font-family: inherit;
+            outline: none;
+            transition: border-color 0.2s, box-shadow 0.2s, background-color 0.2s;
+            line-height: 1.4;
+        }
+        .input-field:hover {
+            border-color: var(--color-outline);
+        }
+        .input-field:focus {
+            background-color: var(--color-input-bg-focus);
+            border-color: var(--color-primary-solid);
+            box-shadow: 0 0 0 3px rgba(233, 30, 99, 0.15);
+        }
+        .input-field::placeholder {
+            color: #6b565a;
+            opacity: 1;
+        }
+
+        /* Native date/time picker icon — make it visible */
+        .input-field::-webkit-calendar-picker-indicator {
+            filter: invert(0.7) sepia(0.5) saturate(3) hue-rotate(300deg);
+            cursor: pointer;
+            opacity: 0.7;
+        }
+        .input-field::-webkit-calendar-picker-indicator:hover {
+            opacity: 1;
+        }
+
+        /* Select styling */
+        select.input-field {
+            appearance: none;
+            -webkit-appearance: none;
+            -moz-appearance: none;
+            background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 14 14'%3E%3Cpath fill='%23cbb5ba' d='M7 10L2 5h10z'/%3E%3C/svg%3E");
+            background-repeat: no-repeat;
+            background-position: right 1rem center;
+            background-size: 12px;
+            padding-right: 2.75rem;
+            cursor: pointer;
+        }
+        select.input-field:hover {
+            border-color: var(--color-outline);
+        }
+
+        /* Critical: style the option elements (dropdown list) */
+        select.input-field option {
+            background-color: var(--color-surface-container);
+            color: var(--color-on-surface);
+            padding: 0.5rem;
+        }
+
+        /* Textarea */
+        textarea.input-field {
+            resize: vertical;
+            min-height: 80px;
+            font-family: inherit;
+        }
+
+        /* Labels */
+        label.field-label {
+            display: block;
+            font-size: 0.7rem;
+            font-weight: 700;
+            color: var(--color-on-surface-variant);
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            margin-bottom: 0.5rem;
+        }
+        label.field-label .required {
+            color: var(--color-primary-solid);
+            margin-left: 0.2rem;
+        }
+
+        /* ══════════════════════════════════════════════════════════
+           MODALS
+        ══════════════════════════════════════════════════════════ */
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.82);
+            backdrop-filter: blur(6px);
+            -webkit-backdrop-filter: blur(6px);
+            z-index: 100;
+            align-items: center;
+            justify-content: center;
+            padding: 1rem;
+        }
+        .modal-overlay.active { display: flex; }
+
+        .modal-content {
+            background: var(--color-surface-container-low);
+            border: 1px solid var(--color-outline-variant);
+            border-radius: 18px;
+            max-width: 720px;
+            width: 100%;
+            max-height: 92vh;
+            overflow-y: auto;
+            box-shadow: 0 24px 72px rgba(0,0,0,0.85);
+            animation: modalIn 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        @keyframes modalIn {
+            from { opacity: 0; transform: translateY(12px) scale(0.98); }
+            to { opacity: 1; transform: translateY(0) scale(1); }
+        }
+
+        .modal-content.modal-sm { max-width: 480px; }
+
+        .modal-header {
+            padding: 1.5rem 1.75rem 1.15rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            gap: 1rem;
+            border-bottom: 1px solid var(--color-outline-variant);
+        }
+        .modal-header h3 {
+            font-size: 1.15rem;
+            font-weight: 700;
+            color: var(--color-on-surface);
+            line-height: 1.3;
+        }
+        .modal-header .subtitle {
+            font-size: 0.8rem;
+            color: var(--color-on-surface-variant);
+            margin-top: 0.25rem;
+        }
+        .modal-close {
+            background: none;
+            border: none;
+            color: var(--color-on-surface-variant);
+            font-size: 1.5rem;
+            cursor: pointer;
+            line-height: 1;
+            padding: 0.15rem 0.4rem;
+            border-radius: 6px;
+            transition: all 0.15s;
+            flex-shrink: 0;
+        }
+        .modal-close:hover {
+            background: var(--color-surface-container-high);
+            color: var(--color-error-solid);
+        }
+
+        .modal-body {
+            padding: 1.5rem 1.75rem;
+        }
+
+        /* Form section groupings */
+        .form-section {
+            margin-bottom: 1.75rem;
+        }
+        .form-section:last-child { margin-bottom: 0; }
+
+        .form-section-title {
+            font-size: 0.7rem;
+            font-weight: 700;
+            color: var(--color-primary);
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            margin-bottom: 1rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        .form-section-title::after {
+            content: '';
+            flex: 1;
+            height: 1px;
+            background: linear-gradient(90deg, var(--color-outline-variant), transparent);
+        }
+
+        .form-grid-2 {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1rem;
+        }
+        .form-grid-3 {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 1rem;
+        }
+        .form-field { margin-bottom: 1rem; }
+        .form-field:last-child { margin-bottom: 0; }
+
+        .modal-footer {
+            padding: 1.15rem 1.75rem 1.5rem;
+            display: flex;
+            justify-content: flex-end;
+            gap: 0.75rem;
+            border-top: 1px solid var(--color-outline-variant);
+        }
+        .modal-footer button {
+            padding: 0.7rem 1.35rem;
+            border-radius: 10px;
+            font-size: 0.9rem;
+        }
+
+        /* ══════════════════════════════════════════════════════════
+           EVENT CARDS
+        ══════════════════════════════════════════════════════════ */
+        .event-card {
+            background: var(--color-surface-container-low);
+            border: 1px solid var(--color-outline-variant);
+            border-radius: 14px;
+            padding: 1.25rem;
+            transition: all 0.25s;
+        }
+        .event-card:hover {
+            border-color: rgba(233,30,99,0.45);
+            transform: translateY(-2px);
+            box-shadow: 0 8px 24px rgba(233,30,99,0.08);
+        }
+
+        .status-pill {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.3rem;
+            padding: 0.2rem 0.65rem;
+            border-radius: 100px;
+            font-size: 0.65rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+        }
+        .status-draft { background: rgba(168,144,150,0.15); color: #cbb5ba; border: 1px solid rgba(168,144,150,0.25); }
+        .status-published { background: rgba(74,222,128,0.15); color: #4ade80; border: 1px solid rgba(74,222,128,0.25); }
+        .status-sold_out { background: rgba(255,171,64,0.15); color: #ffab40; border: 1px solid rgba(255,171,64,0.25); }
+        .status-ended { background: rgba(255,107,107,0.15); color: #ff6b6b; border: 1px solid rgba(255,107,107,0.25); }
+
+        /* ══════════════════════════════════════════════════════════
+           TICKET TYPE ROWS
+        ══════════════════════════════════════════════════════════ */
+        .type-row {
+            background: var(--color-surface-container);
+            border: 1px solid var(--color-outline-variant);
+            border-radius: 10px;
+            padding: 0.85rem 1rem;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 0.75rem;
+            margin-bottom: 0.6rem;
+        }
+        .type-row .type-info { flex: 1; min-width: 0; }
+        .type-row .type-info .name {
+            font-weight: 600;
+            font-size: 0.9rem;
+            color: var(--color-on-surface);
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        .type-row .type-info .price {
+            font-size: 0.75rem;
+            font-weight: 600;
+            color: var(--color-primary);
+        }
+        .type-row .type-info .meta {
+            font-size: 0.72rem;
+            color: var(--color-on-surface-variant);
+            margin-top: 0.25rem;
+        }
+
+        /* ══════════════════════════════════════════════════════════
+           TOAST / LOADING / MISC
+        ══════════════════════════════════════════════════════════ */
+        .toast {
+            position: fixed;
+            bottom: 2rem;
+            left: 50%;
+            transform: translateX(-50%) translateY(80px);
+            background: var(--color-surface-container-highest);
+            color: var(--color-on-surface);
+            padding: 0.75rem 1.5rem;
+            border-radius: 12px;
+            font-weight: 600;
+            font-size: 0.875rem;
+            border: 1px solid var(--color-outline-variant);
+            box-shadow: 0 8px 40px rgba(0,0,0,0.7);
+            z-index: 9999;
+            opacity: 0;
+            transition: opacity 0.3s, transform 0.3s;
+            pointer-events: none;
+            white-space: nowrap;
+        }
+        .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+        .toast.success { border-color: var(--color-success); color: var(--color-success); }
+        .toast.error { border-color: var(--color-error-solid); color: var(--color-error-solid); }
+        .toast.warning { border-color: var(--color-warning); color: var(--color-warning); }
+
+        .loading-spinner {
+            width: 40px; height: 40px;
+            border: 3px solid rgba(233,30,99,0.15);
+            border-top-color: var(--color-primary-solid);
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+            margin: 3rem auto;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        .sidebar-overlay {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.6);
+            backdrop-filter: blur(4px);
+            z-index: 40;
+        }
+        .sidebar-overlay.active { display: block; }
+
+        .btn-new-event {
+            padding: 0.6rem 1.15rem;
+            border-radius: 10px;
+            font-size: 0.875rem;
+        }
+
+        @media (max-width: 768px) {
+            #sidebar-container {
+                position: fixed; top: 0; left: 0; height: 100%; width: 280px;
+                transform: translateX(-100%); z-index: 50;
+                box-shadow: 0 0 50px rgba(0,0,0,0.8);
+            }
+            #sidebar-container.open { transform: translateX(0); }
+            .hamburger { display: block; }
+            .topbar-title h1 { font-size: 1rem; }
+            .topbar-title p { display: none; }
+            .scroll-content { padding: 1rem; }
+            .modal-content { border-radius: 14px; }
+            .modal-header { padding: 1.25rem 1.25rem 1rem; }
+            .modal-body { padding: 1.25rem; }
+            .modal-footer { padding: 1rem 1.25rem 1.25rem; }
+            .form-grid-2, .form-grid-3 { grid-template-columns: 1fr; }
+            .btn-new-event span { display: none; }
+            .btn-new-event { padding: 0.6rem 0.85rem; }
+        }
+    </style>
+</head>
+<body>
+
+    <div class="toast" id="toast"></div>
+    <div class="sidebar-overlay" id="sidebarOverlay"></div>
+
+    <div id="app">
+        <aside id="sidebar-container"></aside>
+
+        <div id="main-content">
+            <header class="topbar">
+                <div style="display:flex; align-items:center; gap:1rem;">
+                    <button class="hamburger" id="hamburgerBtn" aria-label="Menu">
+                        <i class="fas fa-bars"></i>
+                    </button>
+                    <div class="topbar-title">
+                        <h1>Events Management</h1>
+                        <p>Create and manage events + ticket types</p>
+                    </div>
+                </div>
+                <button class="btn-primary btn-new-event" id="createEventBtn">
+                    <i class="fas fa-plus"></i> <span>New Event</span>
+                </button>
+            </header>
+
+            <div class="scroll-content">
+                <div class="loading-spinner" id="loadingSpinner"></div>
+                <div id="eventsGrid" style="display: none; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 1rem;"></div>
+                <div id="emptyState" style="display: none; text-align: center; padding: 4rem 1rem; color: var(--color-on-surface-variant);">
+                    <i class="fas fa-calendar-times" style="font-size: 3rem; opacity: 0.3; margin-bottom: 1rem; display: block;"></i>
+                    <p style="font-size: 1.05rem; margin-bottom: 0.5rem;">No events yet</p>
+                    <p style="font-size: 0.85rem;">Click "New Event" to create your first event</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ════════════════════════════════════════════════════════ -->
+    <!-- EVENT FORM MODAL                                        -->
+    <!-- ════════════════════════════════════════════════════════ -->
+    <div class="modal-overlay" id="eventModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <div>
+                    <h3 id="eventModalTitle">Create Event</h3>
+                    <p class="subtitle" id="eventModalSubtitle">Fill in the details below</p>
+                </div>
+                <button class="modal-close" id="closeEventModal" aria-label="Close">&times;</button>
+            </div>
+
+            <div class="modal-body">
+                <input type="hidden" id="eventId" />
+
+                <!-- ── Section: Basic Info ── -->
+                <div class="form-section">
+                    <div class="form-section-title">
+                        <i class="fas fa-info-circle"></i> Basic Info
+                    </div>
+
+                    <div class="form-field">
+                        <label class="field-label">Event Name <span class="required">*</span></label>
+                        <input type="text" id="eventName" class="input-field" placeholder="e.g. 72HOURS AFAHYE PARTY" />
+                    </div>
+
+                    <div class="form-field">
+                        <label class="field-label">Description</label>
+                        <textarea id="eventDescription" class="input-field" rows="3" placeholder="Short description shown on the event page"></textarea>
+                    </div>
+
+                    <div class="form-grid-2">
+                        <div class="form-field">
+                            <label class="field-label">Host / Organiser</label>
+                            <input type="text" id="eventHost" class="input-field" placeholder="Memories Night Club" />
+                        </div>
+                        <div class="form-field">
+                            <label class="field-label">Venue</label>
+                            <input type="text" id="eventVenue" class="input-field" placeholder="Memories Night Club, Cape Coast" />
+                        </div>
+                    </div>
+
+                    <div class="form-field">
+                        <label class="field-label">Artwork URL (banner image)</label>
+                        <input type="url" id="eventArtwork" class="input-field" placeholder="https://..." />
+                    </div>
+                </div>
+
+                <!-- ── Section: Schedule ── -->
+                <div class="form-section">
+                    <div class="form-section-title">
+                        <i class="fas fa-clock"></i> Schedule
+                    </div>
+
+                    <div class="form-grid-2">
+                        <div class="form-field">
+                            <label class="field-label">Starts At <span class="required">*</span></label>
+                            <input type="datetime-local" id="eventStartsAt" class="input-field" />
+                        </div>
+                        <div class="form-field">
+                            <label class="field-label">Ends At <span class="required">*</span></label>
+                            <input type="datetime-local" id="eventEndsAt" class="input-field" />
+                        </div>
+                    </div>
+
+                    <div class="form-field">
+                        <label class="field-label">Doors / Entry Info</label>
+                        <input type="text" id="eventDoors" class="input-field" placeholder="Open 10:00PM" />
+                    </div>
+                </div>
+
+                <!-- ── Section: Ticket Display ── -->
+                <div class="form-section">
+                    <div class="form-section-title">
+                        <i class="fas fa-ticket-alt"></i> Ticket Display
+                    </div>
+
+                    <div class="form-grid-2">
+                        <div class="form-field">
+                            <label class="field-label">Day 1 Label</label>
+                            <input type="text" id="eventDay1Date" class="input-field" placeholder="FRI. 04 SEPT 2026" />
+                        </div>
+                        <div class="form-field">
+                            <label class="field-label">Day 1 Expiry Text</label>
+                            <input type="text" id="eventDay1Expires" class="input-field" placeholder="EXPIRES 12:25AM SATURDAY" />
+                        </div>
+                    </div>
+
+                    <div class="form-grid-2">
+                        <div class="form-field">
+                            <label class="field-label">Day 2 Label</label>
+                            <input type="text" id="eventDay2Date" class="input-field" placeholder="SAT. 05 SEPT 2026" />
+                        </div>
+                        <div class="form-field">
+                            <label class="field-label">Day 2 Expiry Text</label>
+                            <input type="text" id="eventDay2Expires" class="input-field" placeholder="EXPIRES 12:25AM SUNDAY" />
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ── Section: Visibility ── -->
+                <div class="form-section">
+                    <div class="form-section-title">
+                        <i class="fas fa-eye"></i> Visibility
+                    </div>
+
+                    <div class="form-grid-2">
+                        <div class="form-field">
+                            <label class="field-label">Status</label>
+                            <select id="eventStatus" class="input-field">
+                                <option value="draft">Draft (not visible)</option>
+                                <option value="published" selected>Published (visible & on sale)</option>
+                                <option value="sold_out">Sold Out</option>
+                                <option value="ended">Ended</option>
+                            </select>
+                        </div>
+                        <div class="form-field">
+                            <label class="field-label">Show on Events Page</label>
+                            <select id="eventActive" class="input-field">
+                                <option value="true" selected>Yes — Visible to public</option>
+                                <option value="false">No — Hidden</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="modal-footer">
+                <button class="btn-secondary" id="cancelEventBtn">Cancel</button>
+                <button class="btn-primary" id="saveEventBtn">
+                    <i class="fas fa-save"></i> Save Event
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ════════════════════════════════════════════════════════ -->
+    <!-- TICKET TYPES MODAL                                      -->
+    <!-- ════════════════════════════════════════════════════════ -->
+    <div class="modal-overlay" id="ticketsModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <div>
+                    <h3>Ticket Types</h3>
+                    <p class="subtitle" id="ticketsModalSubtitle">—</p>
+                </div>
+                <button class="modal-close" id="closeTicketsModal" aria-label="Close">&times;</button>
+            </div>
+
+            <div class="modal-body">
+                <input type="hidden" id="ticketsEventId" />
+
+                <div class="form-section">
+                    <div class="form-section-title">
+                        <i class="fas fa-list"></i> Existing Types
+                    </div>
+                    <div id="ticketTypesList"></div>
+                </div>
+
+                <div class="form-section" style="padding-top: 1.5rem; border-top: 1px solid var(--color-outline-variant);">
+                    <div class="form-section-title">
+                        <i class="fas fa-plus-circle"></i> Add New Type
+                    </div>
+
+                    <div class="form-grid-2">
+                        <div class="form-field">
+                            <label class="field-label">Type Name <span class="required">*</span></label>
+                            <select id="newTypeName" class="input-field">
+                                <option value="Standard">Standard</option>
+                                <option value="VIP">VIP</option>
+                                <option value="VVIP">VVIP</option>
+                                <option value="Guest">Guest</option>
+                            </select>
+                        </div>
+                        <div class="form-field">
+                            <label class="field-label">Admits <span class="required">*</span></label>
+                            <input type="number" id="newTypeAdmits" class="input-field" value="1" min="1" max="20" />
+                        </div>
+                    </div>
+
+                    <div class="form-grid-2">
+                        <div class="form-field">
+                            <label class="field-label">Price (GHS) <span class="required">*</span></label>
+                            <input type="number" id="newTypePrice" class="input-field" value="50" min="1" step="0.5" />
+                        </div>
+                        <div class="form-field">
+                            <label class="field-label">Quantity Available <span class="required">*</span></label>
+                            <input type="number" id="newTypeTotal" class="input-field" value="100" min="1" />
+                        </div>
+                    </div>
+
+                    <div class="form-field">
+                        <label class="field-label">Description (optional)</label>
+                        <input type="text" id="newTypeDesc" class="input-field" placeholder="e.g. Includes 1 free drink" />
+                    </div>
+
+                    <button class="btn-primary" id="addTypeBtn" style="width: 100%; padding: 0.8rem; border-radius: 10px; margin-top: 0.5rem;">
+                        <i class="fas fa-plus"></i> Add Ticket Type
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // ============================================================
+        // FIREBASE
+        // ============================================================
+        const firebaseConfig = {
+            apiKey: "AIzaSyCkhFjqfTqCIg9ic5Qh63XfWVT4tGWuzpM",
+            authDomain: "memoriesnightclub-2717f.firebaseapp.com",
+            projectId: "memoriesnightclub-2717f",
+            storageBucket: "memoriesnightclub-2717f.firebasestorage.app",
+            messagingSenderId: "143491627943",
+            appId: "1:143491627943:web:7cb70bfabdefda7e8a5482",
+            measurementId: "G-9RQQCZ7EVD"
+        };
+
+        firebase.initializeApp(firebaseConfig);
+        const auth = firebase.auth();
+        const db = firebase.firestore();
+        db.enablePersistence({ synchronizeTabs: true }).catch(() => {});
+
+        // ============================================================
+        // DOM
+        // ============================================================
+        const toast = document.getElementById('toast');
+        const sidebarContainer = document.getElementById('sidebar-container');
+        const hamburgerBtn = document.getElementById('hamburgerBtn');
+        const overlay = document.getElementById('sidebarOverlay');
+        const eventsGrid = document.getElementById('eventsGrid');
+        const emptyState = document.getElementById('emptyState');
+        const loadingSpinner = document.getElementById('loadingSpinner');
+        const createEventBtn = document.getElementById('createEventBtn');
+
+        const eventModal = document.getElementById('eventModal');
+        const ticketsModal = document.getElementById('ticketsModal');
+
+        let allEvents = [];
+        let unsubEvents = null;
+        let currentTicketTypes = [];
+
+        // ============================================================
+        // HELPERS
+        // ============================================================
+        function showToast(msg, type = 'info') {
+            toast.textContent = msg;
+            toast.className = 'toast ' + type;
+            toast.classList.add('show');
+            clearTimeout(toast._timer);
+            toast._timer = setTimeout(() => toast.classList.remove('show'), 3500);
+        }
+
+        function escapeHtml(text) {
+            if (!text) return '';
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        function formatDateTime(ts) {
+            if (!ts) return '';
+            const d = ts.toDate ? ts.toDate() : new Date(ts);
+            return d.toLocaleString('en-GB', {
+                weekday: 'short', day: '2-digit', month: 'short', year: 'numeric',
+                hour: '2-digit', minute: '2-digit'
+            });
+        }
+
+        function toDatetimeLocal(ts) {
+            if (!ts) return '';
+            const d = ts.toDate ? ts.toDate() : new Date(ts);
+            const pad = (n) => String(n).padStart(2, '0');
+            return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+        }
+
+        function formatGHS(pesewas) {
+            if (pesewas === undefined || pesewas === null) return 'GHS 0.00';
+            return 'GHS ' + (pesewas / 100).toFixed(2);
+        }
+
+        // ============================================================
+        // SIDEBAR
+        // ============================================================
+        async function loadSidebar() {
+            try {
+                const resp = await fetch('sidebar.html');
+                if (!resp.ok) throw new Error('Sidebar not found');
+                sidebarContainer.innerHTML = await resp.text();
+
+                document.querySelectorAll('.nav-link').forEach(link => {
+                    const href = link.getAttribute('href');
+                    if (href === 'admin-events.html' || href === 'events.html') {
+                        link.classList.add('active');
+                    } else {
+                        link.classList.remove('active');
+                    }
+                });
+
+                document.getElementById('sidebarLogoutBtn')?.addEventListener('click', async () => {
+                    await auth.signOut();
+                    showToast('Logged out', 'info');
+                    setTimeout(() => window.location.href = 'login.html', 500);
+                });
+
+                auth.onAuthStateChanged(user => {
+                    const nameEl = document.getElementById('sidebarAdminName');
+                    const emailEl = document.getElementById('sidebarAdminEmail');
+                    if (user) {
+                        if (nameEl) nameEl.textContent = user.displayName || 'Admin';
+                        if (emailEl) emailEl.textContent = user.email || 'Administrator';
+                    }
+                });
+
+                return true;
+            } catch (err) {
+                console.error('Sidebar load error:', err);
+                return false;
+            }
+        }
+
+        // ============================================================
+        // AUTH GUARD
+        // ============================================================
+        auth.onAuthStateChanged(async user => {
+            if (!user) {
+                window.location.href = 'login.html';
+                return;
+            }
+            await loadSidebar();
+            loadEvents();
+        });
+
+        // ============================================================
+        // LOAD EVENTS
+        // ============================================================
+        function loadEvents() {
+            if (unsubEvents) unsubEvents();
+
+            unsubEvents = db.collection('events')
+                .orderBy('startsAt', 'desc')
+                .onSnapshot((snap) => {
+                    allEvents = [];
+                    snap.forEach(doc => allEvents.push({ id: doc.id, ...doc.data() }));
+                    renderEvents();
+                }, (err) => {
+                    console.error('Events load error:', err);
+                    // Fallback
+                    db.collection('events').onSnapshot((snap) => {
+                        allEvents = [];
+                        snap.forEach(doc => allEvents.push({ id: doc.id, ...doc.data() }));
+                        renderEvents();
+                    }, (err2) => {
+                        showToast('Failed to load events', 'error');
+                        loadingSpinner.style.display = 'none';
+                        emptyState.style.display = 'block';
+                    });
+                });
+        }
+
+        function renderEvents() {
+            loadingSpinner.style.display = 'none';
+
+            if (allEvents.length === 0) {
+                eventsGrid.style.display = 'none';
+                emptyState.style.display = 'block';
+                return;
+            }
+
+            emptyState.style.display = 'none';
+            eventsGrid.style.display = 'grid';
+
+            let html = '';
+            allEvents.forEach(ev => {
+                const status = ev.status || (ev.active ? 'published' : 'draft');
+                const statusCls = `status-${status}`;
+                const statusLabel = status.charAt(0).toUpperCase() + status.slice(1).replace('_', ' ');
+
+                html += `
+                    <div class="event-card" data-id="${escapeHtml(ev.id)}">
+                        <div style="margin-bottom:0.75rem;">
+                            <div style="display:flex; align-items:center; gap:0.5rem; flex-wrap:wrap; margin-bottom:0.5rem;">
+                                <span class="status-pill ${statusCls}">${statusLabel}</span>
+                                ${ev.active === false ? '<span class="status-pill status-draft">Hidden</span>' : ''}
+                            </div>
+                            <h3 style="font-size:1.05rem; font-weight:700; line-height:1.3; margin-bottom:0.35rem; color:var(--color-on-surface);">${escapeHtml(ev.name || 'Untitled Event')}</h3>
+                            <p style="font-size:0.75rem; color:var(--color-on-surface-variant);">
+                                <i class="fas fa-calendar" style="margin-right:0.4rem;"></i>${escapeHtml(formatDateTime(ev.startsAt))}
+                            </p>
+                            <p style="font-size:0.75rem; color:var(--color-on-surface-variant); margin-top:0.2rem;">
+                                <i class="fas fa-map-marker-alt" style="margin-right:0.4rem;"></i>${escapeHtml(ev.venue || 'Memories Night Club')}
+                            </p>
+                        </div>
+
+                        <div style="display:flex; gap:0.5rem; padding-top:0.85rem; border-top:1px solid var(--color-outline-variant);">
+                            <button class="btn-secondary manage-types-btn" data-id="${escapeHtml(ev.id)}" data-name="${escapeHtml(ev.name || '')}" style="flex:1; padding:0.5rem 0.75rem; border-radius:8px; font-size:0.8rem;">
+                                <i class="fas fa-ticket-alt"></i> Manage Tickets
+                            </button>
+                            <button class="btn-secondary edit-btn" data-id="${escapeHtml(ev.id)}" style="padding:0.5rem 0.75rem; border-radius:8px; font-size:0.8rem;" title="Edit">
+                                <i class="fas fa-pen"></i>
+                            </button>
+                            <button class="btn-danger delete-btn" data-id="${escapeHtml(ev.id)}" style="padding:0.5rem 0.75rem; border-radius:8px; font-size:0.8rem;" title="Delete">
+                                <i class="fas fa-trash"></i>
+                            </button>
+                        </div>
+                    </div>
+                `;
+            });
+
+            eventsGrid.innerHTML = html;
+
+            eventsGrid.querySelectorAll('.edit-btn').forEach(btn => {
+                btn.addEventListener('click', (e) => { e.stopPropagation(); openEventModal(btn.dataset.id); });
+            });
+            eventsGrid.querySelectorAll('.delete-btn').forEach(btn => {
+                btn.addEventListener('click', (e) => { e.stopPropagation(); deleteEvent(btn.dataset.id); });
+            });
+            eventsGrid.querySelectorAll('.manage-types-btn').forEach(btn => {
+                btn.addEventListener('click', (e) => { e.stopPropagation(); openTicketsModal(btn.dataset.id, btn.dataset.name); });
+            });
+        }
+
+        // ============================================================
+        // EVENT MODAL
+        // ============================================================
+        createEventBtn.addEventListener('click', () => openEventModal(null));
+        document.getElementById('closeEventModal').addEventListener('click', closeEventModal);
+        document.getElementById('cancelEventBtn').addEventListener('click', closeEventModal);
+        eventModal.addEventListener('click', (e) => { if (e.target === eventModal) closeEventModal(); });
+
+        function openEventModal(eventId) {
+            document.getElementById('eventId').value = eventId || '';
+
+            if (eventId) {
+                const ev = allEvents.find(x => x.id === eventId);
+                if (!ev) { showToast('Event not found', 'error'); return; }
+
+                document.getElementById('eventModalTitle').textContent = 'Edit Event';
+                document.getElementById('eventModalSubtitle').textContent = ev.name || '';
+                document.getElementById('eventName').value = ev.name || '';
+                document.getElementById('eventDescription').value = ev.description || '';
+                document.getElementById('eventHost').value = ev.hostName || '';
+                document.getElementById('eventVenue').value = ev.venue || '';
+                document.getElementById('eventArtwork').value = ev.artworkUrl || '';
+                document.getElementById('eventStartsAt').value = toDatetimeLocal(ev.startsAt);
+                document.getElementById('eventEndsAt').value = toDatetimeLocal(ev.endsAt);
+                document.getElementById('eventDay1Date').value = ev.day1Date || '';
+                document.getElementById('eventDay1Expires').value = ev.day1Expires || '';
+                document.getElementById('eventDay2Date').value = ev.day2Date || '';
+                document.getElementById('eventDay2Expires').value = ev.day2Expires || '';
+                document.getElementById('eventDoors').value = ev.doors || '';
+                document.getElementById('eventStatus').value = ev.status || 'published';
+                document.getElementById('eventActive').value = ev.active === false ? 'false' : 'true';
+            } else {
+                document.getElementById('eventModalTitle').textContent = 'Create Event';
+                document.getElementById('eventModalSubtitle').textContent = 'Fill in the details below';
+                document.getElementById('eventName').value = '';
+                document.getElementById('eventDescription').value = '';
+                document.getElementById('eventHost').value = 'Memories Night Club';
+                document.getElementById('eventVenue').value = 'Memories Night Club, Cape Coast';
+                document.getElementById('eventArtwork').value = '';
+                document.getElementById('eventStartsAt').value = '';
+                document.getElementById('eventEndsAt').value = '';
+                document.getElementById('eventDay1Date').value = 'FRI. 04 SEPT 2026';
+                document.getElementById('eventDay1Expires').value = 'EXPIRES 12:25AM SATURDAY';
+                document.getElementById('eventDay2Date').value = 'SAT. 05 SEPT 2026';
+                document.getElementById('eventDay2Expires').value = 'EXPIRES 12:25AM SUNDAY';
+                document.getElementById('eventDoors').value = 'Open 10:00PM';
+                document.getElementById('eventStatus').value = 'published';
+                document.getElementById('eventActive').value = 'true';
+            }
+
+            eventModal.classList.add('active');
+        }
+
+        function closeEventModal() {
+            eventModal.classList.remove('active');
+        }
+
+        // ============================================================
+        // SAVE EVENT
+        // ============================================================
+        document.getElementById('saveEventBtn').addEventListener('click', async () => {
+            const id = document.getElementById('eventId').value;
+            const name = document.getElementById('eventName').value.trim();
+            const startsAt = document.getElementById('eventStartsAt').value;
+            const endsAt = document.getElementById('eventEndsAt').value;
+
+            if (!name) { showToast('Event name is required', 'warning'); return; }
+            if (!startsAt) { showToast('Start time is required', 'warning'); return; }
+            if (!endsAt) { showToast('End time is required', 'warning'); return; }
+
+            const btn = document.getElementById('saveEventBtn');
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Saving...';
+
+            const data = {
+                name,
+                description: document.getElementById('eventDescription').value.trim(),
+                hostName: document.getElementById('eventHost').value.trim() || 'Memories Night Club',
+                venue: document.getElementById('eventVenue').value.trim() || 'Memories Night Club, Cape Coast',
+                artworkUrl: document.getElementById('eventArtwork').value.trim(),
+                startsAt: firebase.firestore.Timestamp.fromDate(new Date(startsAt)),
+                endsAt: firebase.firestore.Timestamp.fromDate(new Date(endsAt)),
+                day1Date: document.getElementById('eventDay1Date').value.trim(),
+                day1Expires: document.getElementById('eventDay1Expires').value.trim(),
+                day2Date: document.getElementById('eventDay2Date').value.trim(),
+                day2Expires: document.getElementById('eventDay2Expires').value.trim(),
+                doors: document.getElementById('eventDoors').value.trim() || 'Open 10:00PM',
+                status: document.getElementById('eventStatus').value,
+                active: document.getElementById('eventActive').value === 'true',
+                updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+            };
+
+            try {
+                if (id) {
+                    await db.collection('events').doc(id).update(data);
+                    showToast('✅ Event updated', 'success');
+                } else {
+                    data.createdAt = firebase.firestore.FieldValue.serverTimestamp();
+                    await db.collection('events').add(data);
+                    showToast('✅ Event created', 'success');
+                }
+                closeEventModal();
+            } catch (err) {
+                console.error('Save event error:', err);
+                showToast('Failed: ' + err.message, 'error');
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = '<i class="fas fa-save"></i> Save Event';
+            }
+        });
+
+        // ============================================================
+        // DELETE EVENT
+        // ============================================================
+        async function deleteEvent(eventId) {
+            const ev = allEvents.find(x => x.id === eventId);
+            if (!ev) return;
+            if (!confirm(`Delete "${ev.name || 'this event'}"?\n\nThis will also delete its ticket types. This cannot be undone.`)) return;
+
+            try {
+                const typesSnap = await db.collection('ticket_types').where('eventId', '==', eventId).get();
+                const batch = db.batch();
+                typesSnap.forEach(doc => batch.delete(doc.ref));
+                batch.delete(db.collection('events').doc(eventId));
+                await batch.commit();
+                showToast('✅ Event deleted', 'success');
+            } catch (err) {
+                console.error('Delete error:', err);
+                showToast('Failed: ' + err.message, 'error');
+            }
+        }
+
+        // ============================================================
+        // TICKET TYPES MODAL
+        // ============================================================
+        document.getElementById('closeTicketsModal').addEventListener('click', () => {
+            ticketsModal.classList.remove('active');
+        });
+        ticketsModal.addEventListener('click', (e) => {
+            if (e.target === ticketsModal) ticketsModal.classList.remove('active');
+        });
+
+        function openTicketsModal(eventId, eventName) {
+            document.getElementById('ticketsEventId').value = eventId;
+            document.getElementById('ticketsModalSubtitle').textContent = eventName || '';
+            ticketsModal.classList.add('active');
+            loadTicketTypes(eventId);
+        }
+
+        async function loadTicketTypes(eventId) {
+            const list = document.getElementById('ticketTypesList');
+            list.innerHTML = '<div class="loading-spinner"></div>';
+
+            try {
+                const snap = await db.collection('ticket_types')
+                    .where('eventId', '==', eventId)
+                    .get();
+
+                currentTicketTypes = [];
+                snap.forEach(doc => currentTicketTypes.push({ id: doc.id, ...doc.data() }));
+
+                const order = { 'VVIP': 0, 'VIP': 1, 'Standard': 2, 'Guest': 3 };
+                currentTicketTypes.sort((a, b) => {
+                    const oa = order[a.name] !== undefined ? order[a.name] : 99;
+                    const ob = order[b.name] !== undefined ? order[b.name] : 99;
+                    if (oa !== ob) return oa - ob;
+                    return (a.pricePesewas || 0) - (b.pricePesewas || 0);
+                });
+
+                renderTicketTypes();
+            } catch (err) {
+                console.error('Load types error:', err);
+                list.innerHTML = `<p style="text-align:center; color:var(--color-error-solid); font-size:0.85rem;">Failed to load: ${escapeHtml(err.message)}</p>`;
+            }
+        }
+
+        function renderTicketTypes() {
+            const list = document.getElementById('ticketTypesList');
+
+            if (currentTicketTypes.length === 0) {
+                list.innerHTML = `
+                    <p style="text-align:center; padding:1.5rem; color:var(--color-on-surface-variant); font-size:0.85rem;">
+                        <i class="fas fa-ticket-alt" style="opacity:0.3; font-size:1.5rem; display:block; margin-bottom:0.5rem;"></i>
+                        No ticket types yet. Add one below.
+                    </p>`;
+                return;
+            }
+
+            let html = '';
+            currentTicketTypes.forEach(tt => {
+                const price = formatGHS(tt.pricePesewas);
+                const remaining = tt.remaining ?? tt.total ?? 0;
+                const total = tt.total ?? 0;
+                const sold = total - remaining;
+
+                html += `
+                    <div class="type-row">
+                        <div class="type-info">
+                            <div class="name">
+                                ${escapeHtml(tt.name || 'Ticket')}
+                                <span class="price">${price}</span>
+                            </div>
+                            <div class="meta">
+                                Admits ${tt.admits || 1} · ${sold} sold / ${total} total · ${remaining} left
+                                ${tt.description ? ' · ' + escapeHtml(tt.description) : ''}
+                            </div>
+                        </div>
+                        <button class="btn-danger delete-type-btn" data-id="${escapeHtml(tt.id)}" style="padding:0.4rem 0.65rem; border-radius:6px; font-size:0.75rem;" title="Delete">
+                            <i class="fas fa-trash"></i>
+                        </button>
+                    </div>
+                `;
+            });
+
+            list.innerHTML = html;
+
+            list.querySelectorAll('.delete-type-btn').forEach(btn => {
+                btn.addEventListener('click', () => deleteTicketType(btn.dataset.id));
+            });
+        }
+
+        // Add ticket type
+        document.getElementById('addTypeBtn').addEventListener('click', async () => {
+            const eventId = document.getElementById('ticketsEventId').value;
+            const name = document.getElementById('newTypeName').value;
+            const admits = parseInt(document.getElementById('newTypeAdmits').value) || 1;
+            const priceGHS = parseFloat(document.getElementById('newTypePrice').value) || 0;
+            const total = parseInt(document.getElementById('newTypeTotal').value) || 0;
+            const description = document.getElementById('newTypeDesc').value.trim();
+
+            if (!eventId) { showToast('No event selected', 'error'); return; }
+            if (!name) { showToast('Name required', 'warning'); return; }
+            if (priceGHS <= 0) { showToast('Price must be > 0', 'warning'); return; }
+            if (total <= 0) { showToast('Quantity must be > 0', 'warning'); return; }
+
+            const btn = document.getElementById('addTypeBtn');
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Adding...';
+
+            try {
+                await db.collection('ticket_types').add({
+                    eventId,
+                    name,
+                    admits,
+                    pricePesewas: Math.round(priceGHS * 100),
+                    total,
+                    remaining: total,
+                    description,
+                    active: true,
+                    createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+                    updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+                });
+                showToast('✅ Ticket type added', 'success');
+                document.getElementById('newTypeDesc').value = '';
+                await loadTicketTypes(eventId);
+            } catch (err) {
+                console.error('Add type error:', err);
+                showToast('Failed: ' + err.message, 'error');
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = '<i class="fas fa-plus"></i> Add Ticket Type';
+            }
+        });
+
+        async function deleteTicketType(typeId) {
+            const tt = currentTicketTypes.find(x => x.id === typeId);
+            if (!tt) return;
+            if (!confirm(`Delete "${tt.name}" ticket type?`)) return;
+
+            try {
+                await db.collection('ticket_types').doc(typeId).delete();
+                showToast('✅ Ticket type deleted', 'success');
+                await loadTicketTypes(document.getElementById('ticketsEventId').value);
+            } catch (err) {
+                console.error('Delete type error:', err);
+                showToast('Failed: ' + err.message, 'error');
+            }
+        }
+
+        // ============================================================
+        // MOBILE SIDEBAR
+        // ============================================================
+        function openSidebar() {
+            sidebarContainer.classList.add('open');
+            overlay.classList.add('active');
+            document.body.style.overflow = 'hidden';
+        }
+        function closeSidebar() {
+            sidebarContainer.classList.remove('open');
+            overlay.classList.remove('active');
+            document.body.style.overflow = '';
+        }
+        hamburgerBtn.addEventListener('click', () => {
+            if (sidebarContainer.classList.contains('open')) closeSidebar();
+            else openSidebar();
+        });
+        overlay.addEventListener('click', closeSidebar);
+        document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeSidebar(); });
+        window.addEventListener('resize', () => { if (window.innerWidth > 768) closeSidebar(); });
+
+        console.log('✅ Admin Events page ready');
+    </script>
+</body>
+</html>

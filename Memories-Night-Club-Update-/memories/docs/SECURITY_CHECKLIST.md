@@ -1,0 +1,22 @@
+# Security Checklist
+
+- [ ] Rotate previously exposed Brevo API key.
+- [ ] Paystack secret exists only in Cloudflare Worker secrets.
+- [ ] Firebase service account exists only in Worker secrets.
+- [ ] Public Firebase config contains no secrets.
+- [ ] Worker validates callback origin.
+- [ ] Worker recalculates all prices from Firestore.
+- [ ] Paystack webhook signature is validated.
+- [ ] Paystack transaction is independently verified.
+- [ ] Ticket issuance is idempotent.
+- [ ] Ticket tokens are opaque and high entropy.
+- [ ] Public ticket response contains only necessary information.
+- [ ] Check-in uses Firestore transaction semantics.
+- [ ] Raffle entry is server-authorized.
+- [ ] Raffle draw is server-side and auditable.
+- [ ] Admin endpoints require Firebase ID token and role.
+- [ ] Door staff cannot modify events or prices.
+- [ ] Public users cannot write directly to protected collections.
+- [ ] Private requests are written only by the Worker.
+- [ ] Production does not silently enter demo mode.
+- [ ] Rate limiting / abuse protection is configured at the Cloudflare layer where appropriate.

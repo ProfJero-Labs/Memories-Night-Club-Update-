@@ -1,0 +1,134 @@
+<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Payment Plan · Memories</title><link rel="stylesheet" href="styles.css"></head><body><div id="app"></div><div class="toast"></div><script src="config.js"></script><script type="module">
+import {shell,footer,getEvent,params,art,esc,money,api} from './app.js';
+
+const eventId = params.get('event');
+const ticketTypeId = params.get('ticketType');
+const line = params.get('line') || 'FULLY ACTIVE.';
+
+document.querySelector('#app').innerHTML = shell() + `<main><div class="wrap checkout-layout"><section><div class="eyebrow">PAY OVER TIME</div><h1 class="display" style="font-size:clamp(48px,11vw,80px);line-height:.8;margin:12px 0 35px">PAYMENT<br>PLAN</h1><div id="form"></div><section class="selector" style="margin-top:45px"><div class="eyebrow">ALREADY STARTED A PLAN?</div><h2 class="display" style="font-size:38px">CONTINUE PAYING</h2><div class="form-grid"><div class="field full"><label for="lookupPhone">Order code (e.g. MEM-4821) or the phone number used to start the plan</label><input id="lookupPhone" autocomplete="tel" placeholder="MEM-4821 or 024…"></div><div class="field full"><button class="btn ghost" id="lookupBtn" type="button">FIND MY PLAN</button></div></div><div id="lookupResult" style="margin-top:14px"></div></section></section><aside class="summary"><div id="preview"></div></aside></div></main>` + footer();
+
+function renderPlanRow(plan){
+  const remaining = plan.totalPesewas - plan.paidPesewas;
+  return `<div class="ticket-preview" style="margin-bottom:18px">
+    <div class="eyebrow" style="color:#665a4d">${esc(plan.eventName||'')}</div>
+    <h3>${esc(plan.ticketTypeName||'Ticket')} × ${plan.quantity}</h3>
+    <div>${money(plan.paidPesewas)} paid of ${money(plan.totalPesewas)} · ${money(remaining)} left</div>
+    <div class="form-grid" style="margin-top:14px">
+      <div class="field"><label>Top up (min GHS 10)</label><input type="number" min="10" step="1" class="topupAmount" data-plan="${esc(plan.planId)}" value="${Math.min(remaining, Math.max(1000, Math.round(remaining/100)*100))/100}"></div>
+      <div class="field"><button class="btn red topupBtn" type="button" data-plan="${esc(plan.planId)}">PAY TOP-UP</button></div>
+    </div>
+    <div class="status" data-status="${esc(plan.planId)}" style="margin-top:8px"></div>
+  </div>`;
+}
+
+document.querySelector('#lookupBtn').onclick = async () => {
+  const value = document.querySelector('#lookupPhone').value.trim();
+  const box = document.querySelector('#lookupResult');
+  if (!value) { box.innerHTML = '<div class="status error">Enter your order code or phone number.</div>'; return; }
+  const isCode = /^mem-?\d+$/i.test(value.replace(/\s/g, ''));
+  const qs = isCode ? 'code=' + encodeURIComponent(value.replace(/\s/g, '')) : 'phone=' + encodeURIComponent(value);
+  box.innerHTML = '<div class="status">Looking up your plan…</div>';
+  try {
+    const d = await api('/api/installments/lookup?' + qs);
+    if (!d.plans || !d.plans.length) { box.innerHTML = '<div class="empty">No open payment plan found for that number.</div>'; return; }
+    box.innerHTML = d.plans.map(renderPlanRow).join('');
+    box.querySelectorAll('.topupBtn').forEach(btn => btn.onclick = async () => {
+      const planId = btn.dataset.plan;
+      const amountInput = box.querySelector(`.topupAmount[data-plan="${CSS.escape(planId)}"]`);
+      const statusEl = box.querySelector(`[data-status="${CSS.escape(planId)}"]`);
+      const amountPesewas = Math.round(Number(amountInput.value) * 100);
+      btn.disabled = true;
+      statusEl.textContent = '';
+      try {
+        const callbackUrl = new URL('payment-return.html', location.href).href;
+        const r = await api('/api/installments/topup', { method: 'POST', body: JSON.stringify({ planId, amountPesewas, callbackUrl }) });
+        location.href = r.authorizationUrl;
+      } catch (err) {
+        statusEl.innerHTML = `<span style="color:#ed4356">${esc(err.message)}</span>`;
+        btn.disabled = false;
+      }
+    });
+  } catch (err) {
+    box.innerHTML = `<div class="status error">${esc(err.message)}</div>`;
+  }
+};
+
+if (!eventId || !ticketTypeId) {
+  document.querySelector('#form').innerHTML = '<div class="empty">Choose a ticket from a night first, then pick "Pay in installments".</div>';
+  document.querySelector('#preview').innerHTML = '';
+} else {
+  try {
+    const data = await getEvent(eventId);
+    const t = (data.ticketTypes || []).find(x => x.id === ticketTypeId);
+    if (!t) throw new Error('This ticket type is no longer available.');
+    const e = data.event;
+
+    let qty = 1;
+    const minDeposit = 1000; // GHS 10
+
+    const render = () => {
+      const maxQty = Math.min(6, t.remaining ?? 6);
+      const total = t.pricePesewas * qty;
+      document.querySelector('#form').innerHTML = `
+        <div class="ticket-preview" style="margin-bottom:35px">
+          <div class="eyebrow" style="color:#665a4d">${esc(new Date(e.date).toLocaleDateString('en-GH',{weekday:'long',day:'numeric',month:'long'}))}</div>
+          <h3>${esc(e.name)}</h3>
+          <div class="ticket-line">${esc(line)}</div>
+          <div class="ticket-rule"></div>
+          <div>${esc(t.name)} · ${qty} ticket${qty>1?'s':''} · ${money(total)} total</div>
+        </div>
+        <div class="form-grid">
+          <div class="field full"><label for="buyerName">Your name</label><input id="buyerName" autocomplete="name" placeholder="Your full name"></div>
+          <div class="field"><label for="buyerPhone">Phone</label><input id="buyerPhone" autocomplete="tel" placeholder="024…"></div>
+          <div class="field"><label for="buyerEmail">Email</label><input id="buyerEmail" type="email" autocomplete="email" placeholder="you@example.com"></div>
+          <div class="field"><label for="qty">Quantity</label><select id="qty">${Array.from({length:maxQty},(_,i)=>`<option value="${i+1}">${i+1}</option>`).join('')}</select></div>
+          <div class="field full"><label for="deposit">First payment (minimum GHS 10, up to the full price)</label><input id="deposit" type="number" min="10" step="1" value="${minDeposit/100}"></div>
+          <div class="field full" style="color:var(--muted);font-size:12px">Secure payment via Paystack, Mobile Money or card. Your ticket is issued once the full price is paid — unfinished plans are forfeited if not completed before the event, with no refund.</div>
+          <div class="field full"><button id="pay" class="btn red" type="button">PAY DEPOSIT</button></div>
+          <div id="errBox" class="field full"></div>
+        </div>`;
+
+      document.querySelector('#qty').onchange = ev => { qty = Number(ev.target.value); render(); };
+
+      document.querySelector('#pay').onclick = async () => {
+        const buyerName = document.querySelector('#buyerName').value.trim();
+        const buyerPhone = document.querySelector('#buyerPhone').value.trim();
+        const buyerEmail = document.querySelector('#buyerEmail').value.trim();
+        const depositPesewas = Math.round(Number(document.querySelector('#deposit').value) * 100);
+        const errBox = document.querySelector('#errBox');
+        errBox.innerHTML = '';
+
+        if (!buyerName || !buyerPhone || !buyerEmail) {
+          errBox.innerHTML = '<div class="status error">Please complete all details.</div>';
+          return;
+        }
+
+        const b = document.querySelector('#pay');
+        b.disabled = true;
+        b.textContent = 'STARTING PLAN…';
+
+        try {
+          const callbackUrl = new URL('payment-return.html', location.href).href;
+          const r = await api('/api/installments/start', {
+            method: 'POST',
+            body: JSON.stringify({ eventId, ticketTypeId, quantity: qty, buyerName, buyerPhone, buyerEmail, identityLine: line, depositPesewas, callbackUrl }),
+          });
+          if (!r.authorizationUrl) throw new Error('Payment could not be started.');
+          location.href = r.authorizationUrl;
+        } catch (err) {
+          console.error('Installment start error:', err);
+          errBox.innerHTML = `<div class="status error">${esc(err.message)}</div>`;
+          b.disabled = false;
+          b.textContent = 'PAY DEPOSIT';
+        }
+      };
+    };
+
+    render();
+    document.querySelector('#preview').innerHTML = art(e.artwork, e.name) + `<div style="margin-top:18px"><div class="eyebrow">${esc(t.name)}</div><div class="display" style="font-size:58px">${money(t.pricePesewas)}</div></div>`;
+  } catch (err) {
+    console.error('Installment load error:', err);
+    document.querySelector('main').innerHTML = `<div class="wrap empty" style="margin:80px auto;text-align:center"><div class="eyebrow">UNAVAILABLE</div><h2 class="display" style="font-size:60px;margin:18px 0">CANNOT<br>LOAD TICKET</h2><p style="color:var(--muted);margin-bottom:24px">${esc(err.message)}</p><a href="nights.html" class="btn red">BROWSE NIGHTS</a></div>`;
+  }
+}
+</script></body></html>

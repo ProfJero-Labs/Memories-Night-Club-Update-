@@ -1,0 +1,10 @@
+{
+  "name": "memories-night-club-complete-build",
+  "private": true,
+  "version": "3.0.0",
+  "scripts": {
+    "worker:dev": "npm --prefix worker run dev",
+    "worker:deploy": "npm --prefix worker run deploy",
+    "worker:test": "npm --prefix worker test"
+  }
+}

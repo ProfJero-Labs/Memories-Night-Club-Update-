@@ -1,0 +1,1311 @@
+<!DOCTYPE html>
+<html class="dark" lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Tickets Management - MEMORIES</title>
+
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries">
+    </script>
+
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet" />
+
+    <!-- Font Awesome 6 -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.7.2/css/all.min.css" />
+
+    <!-- Firebase SDKs -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/firebase/10.7.1/firebase-app-compat.min.js">
+    </script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/firebase/10.7.1/firebase-auth-compat.min.js">
+    </script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/firebase/10.7.1/firebase-firestore-compat.min.js">
+    </script>
+
+    <style>
+        /* ── Core Styles ── */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        .dark {
+            --color-primary: #ffb1c8;
+            --color-on-primary: #541d32;
+            --color-primary-container: #703348;
+            --color-on-primary-container: #ffd9e2;
+            --color-secondary: #e5bdc7;
+            --color-on-secondary: #432931;
+            --color-secondary-container: #5c3f47;
+            --color-on-secondary-container: #ffd9e2;
+            --color-tertiary: #efa5cb;
+            --color-on-tertiary: #491730;
+            --color-tertiary-container: #642e47;
+            --color-on-tertiary-container: #ffd9e8;
+            --color-error: #ffb4ab;
+            --color-on-error: #690005;
+            --color-error-container: #93000a;
+            --color-on-error-container: #ffdad6;
+            --color-background: #0d0b0c;
+            --color-on-background: #ece0e3;
+            --color-surface: #0d0b0c;
+            --color-on-surface: #ece0e3;
+            --color-surface-variant: #3d3135;
+            --color-on-surface-variant: #cbb5ba;
+            --color-surface-container-lowest: #0a0809;
+            --color-surface-container-low: #141012;
+            --color-surface-container: #1d181a;
+            --color-surface-container-high: #282124;
+            --color-surface-container-highest: #352d30;
+            --color-outline: #948186;
+            --color-outline-variant: #42373a;
+            --color-inverse-surface: #ece0e3;
+            --color-inverse-on-surface: #2d2326;
+            --color-inverse-primary: #8d4a60;
+            --color-surface-dim: #0d0b0c;
+            --color-surface-bright: #342a2d;
+            --font-sans: 'Hanken Grotesk', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+        }
+
+        body {
+            background-color: var(--color-background);
+            color: var(--color-on-background);
+            font-family: var(--font-sans);
+            overflow: hidden;
+            height: 100vh;
+        }
+
+        ::-webkit-scrollbar {
+            width: 5px;
+            height: 5px;
+        }
+        ::-webkit-scrollbar-track {
+            background: var(--color-surface-container-low);
+        }
+        ::-webkit-scrollbar-thumb {
+            background: var(--color-outline-variant);
+            border-radius: 8px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: var(--color-primary);
+        }
+
+        #app {
+            display: flex;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        #sidebar-container {
+            flex-shrink: 0;
+            width: 260px;
+            height: 100%;
+            z-index: 30;
+            transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        #sidebar-container .sidebar-inner {
+            height: 100%;
+            background: var(--color-surface-container-lowest);
+            border-right: 1px solid var(--color-outline-variant);
+            display: flex;
+            flex-direction: column;
+            padding: 1.5rem 0;
+        }
+
+        #sidebar-container .sidebar-brand {
+            padding: 0 1.25rem 1.5rem;
+            border-bottom: 1px solid var(--color-outline-variant);
+        }
+        #sidebar-container .sidebar-brand h1 {
+            font-size: 1.5rem;
+            font-weight: 800;
+            color: var(--color-primary);
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+        }
+        #sidebar-container .sidebar-brand p {
+            font-size: 0.55rem;
+            letter-spacing: 0.25em;
+            color: var(--color-on-surface-variant);
+            margin-top: 0.125rem;
+            text-transform: uppercase;
+        }
+
+        #sidebar-container .nav-list {
+            flex: 1;
+            overflow-y: auto;
+            padding: 0.75rem 0.75rem 0.5rem;
+            display: flex;
+            flex-direction: column;
+            gap: 0.125rem;
+        }
+        #sidebar-container .nav-link {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            padding: 0.6rem 1rem;
+            border-radius: 8px;
+            color: var(--color-on-surface-variant);
+            transition: background 0.2s, color 0.2s;
+            text-decoration: none;
+            font-size: 0.875rem;
+            font-weight: 500;
+            cursor: pointer;
+        }
+        #sidebar-container .nav-link:hover {
+            background: var(--color-surface-container-high);
+            color: var(--color-on-surface);
+        }
+        #sidebar-container .nav-link.active {
+            background: var(--color-primary-container);
+            color: var(--color-on-primary-container);
+        }
+        #sidebar-container .nav-link i {
+            width: 1.25rem;
+            text-align: center;
+            font-size: 1.05rem;
+            flex-shrink: 0;
+        }
+        #sidebar-container .nav-link .nav-label {
+            white-space: nowrap;
+        }
+
+        #sidebar-container .sidebar-user {
+            margin-top: auto;
+            padding: 0.75rem 1rem;
+            border-top: 1px solid var(--color-outline-variant);
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+        #sidebar-container .sidebar-user .avatar {
+            width: 2.25rem;
+            height: 2.25rem;
+            border-radius: 50%;
+            background: var(--color-surface-container-high);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: var(--color-on-surface-variant);
+            flex-shrink: 0;
+        }
+        #sidebar-container .sidebar-user .user-info {
+            flex: 1;
+            min-width: 0;
+        }
+        #sidebar-container .sidebar-user .user-info .name {
+            font-size: 0.85rem;
+            font-weight: 600;
+            color: var(--color-on-surface);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        #sidebar-container .sidebar-user .user-info .email {
+            font-size: 0.7rem;
+            color: var(--color-on-surface-variant);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        #sidebar-container .sidebar-user .logout-btn {
+            background: none;
+            border: none;
+            color: var(--color-on-surface-variant);
+            font-size: 1.1rem;
+            cursor: pointer;
+            transition: color 0.2s;
+            padding: 0.25rem;
+        }
+        #sidebar-container .sidebar-user .logout-btn:hover {
+            color: var(--color-error);
+        }
+
+        #main-content {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            background: var(--color-background);
+            min-width: 0;
+        }
+
+        .topbar {
+            flex-shrink: 0;
+            padding: 1rem 1.5rem;
+            background: var(--color-surface-container-low);
+            border-bottom: 1px solid var(--color-outline-variant);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 1rem;
+            min-height: 72px;
+        }
+
+        .topbar-left {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            min-width: 0;
+        }
+
+        .hamburger {
+            display: none;
+            background: none;
+            border: none;
+            color: var(--color-on-surface);
+            font-size: 1.5rem;
+            cursor: pointer;
+            padding: 0.25rem;
+            transition: color 0.2s;
+        }
+        .hamburger:hover {
+            color: var(--color-primary);
+        }
+
+        .topbar-title h1 {
+            font-size: 1.25rem;
+            font-weight: 700;
+            color: var(--color-on-surface);
+            line-height: 1.2;
+        }
+        .topbar-title p {
+            font-size: 0.75rem;
+            color: var(--color-on-surface-variant);
+            letter-spacing: 0.05em;
+        }
+
+        .topbar-right {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            flex-shrink: 0;
+        }
+
+        .event-selector {
+            background: var(--color-surface-container);
+            border: 1px solid var(--color-outline-variant);
+            border-radius: 10px;
+            padding: 0.4rem 0.75rem;
+            color: var(--color-on-surface);
+            font-size: 0.875rem;
+            font-weight: 500;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            min-width: 140px;
+            transition: border-color 0.2s;
+            font-family: var(--font-sans);
+        }
+        .event-selector:hover {
+            border-color: var(--color-primary);
+        }
+        .event-selector select {
+            background: transparent;
+            border: none;
+            color: var(--color-on-surface);
+            font-weight: 500;
+            font-size: 0.875rem;
+            outline: none;
+            cursor: pointer;
+            flex: 1;
+            font-family: var(--font-sans);
+            min-width: 80px;
+        }
+        .event-selector select option {
+            background: var(--color-surface-container);
+            color: var(--color-on-surface);
+        }
+        .event-selector i {
+            color: var(--color-on-surface-variant);
+            font-size: 0.75rem;
+        }
+
+        .scroll-content {
+            flex: 1;
+            overflow-y: auto;
+            padding: 1.5rem;
+        }
+
+        .glass-card {
+            background: var(--color-surface-container-low);
+            border: 1px solid var(--color-outline-variant);
+            border-radius: 14px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.35);
+        }
+
+        .toast {
+            position: fixed;
+            bottom: 2rem;
+            left: 50%;
+            transform: translateX(-50%) translateY(80px);
+            background: var(--color-surface-container-highest);
+            color: var(--color-on-surface);
+            padding: 0.75rem 1.75rem;
+            border-radius: 12px;
+            font-weight: 600;
+            font-size: 0.875rem;
+            border: 1px solid var(--color-outline-variant);
+            box-shadow: 0 8px 40px rgba(0, 0, 0, 0.7);
+            z-index: 9999;
+            opacity: 0;
+            transition: opacity 0.35s, transform 0.35s;
+            pointer-events: none;
+            white-space: nowrap;
+        }
+        .toast.show {
+            opacity: 1;
+            transform: translateX(-50%) translateY(0);
+        }
+        .toast.success {
+            border-color: #69f0ae;
+            color: #69f0ae;
+        }
+        .toast.error {
+            border-color: #ffab91;
+            color: #ffab91;
+        }
+
+        .spinner {
+            display: inline-block;
+            width: 18px;
+            height: 18px;
+            border: 2.5px solid rgba(255, 255, 255, 0.2);
+            border-top-color: var(--color-primary);
+            border-radius: 50%;
+            animation: spin 0.7s linear infinite;
+        }
+        @keyframes spin {
+            to {
+                transform: rotate(360deg);
+            }
+        }
+
+        .sidebar-overlay {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.6);
+            backdrop-filter: blur(4px);
+            z-index: 40;
+        }
+        .sidebar-overlay.active {
+            display: block;
+        }
+
+        /* ── Modal ── */
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.7);
+            backdrop-filter: blur(8px);
+            z-index: 100;
+            align-items: center;
+            justify-content: center;
+            padding: 1rem;
+        }
+        .modal-overlay.active {
+            display: flex;
+        }
+        .modal-content {
+            background: var(--color-surface-container-low);
+            border: 1px solid var(--color-outline-variant);
+            border-radius: 16px;
+            max-width: 600px;
+            width: 100%;
+            max-height: 90vh;
+            overflow-y: auto;
+            padding: 1.5rem;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.8);
+        }
+        .modal-content .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding-bottom: 1rem;
+            border-bottom: 1px solid var(--color-outline-variant);
+            margin-bottom: 1rem;
+        }
+        .modal-content .modal-header h3 {
+            font-size: 1.25rem;
+            font-weight: 700;
+            color: var(--color-on-surface);
+        }
+        .modal-content .modal-header .close-btn {
+            background: none;
+            border: none;
+            color: var(--color-on-surface-variant);
+            font-size: 1.5rem;
+            cursor: pointer;
+            transition: color 0.2s;
+        }
+        .modal-content .modal-header .close-btn:hover {
+            color: var(--color-error);
+        }
+        .modal-content .detail-row {
+            display: flex;
+            padding: 0.5rem 0;
+            border-bottom: 1px solid var(--color-outline-variant);
+            font-size: 0.9rem;
+        }
+        .modal-content .detail-row .label {
+            width: 120px;
+            flex-shrink: 0;
+            font-weight: 600;
+            color: var(--color-on-surface-variant);
+        }
+        .modal-content .detail-row .value {
+            flex: 1;
+            color: var(--color-on-surface);
+        }
+        .modal-content .modal-actions {
+            margin-top: 1.5rem;
+            padding-top: 1rem;
+            border-top: 1px solid var(--color-outline-variant);
+            display: flex;
+            gap: 0.75rem;
+            flex-wrap: wrap;
+        }
+        .modal-content .modal-actions button {
+            padding: 0.5rem 1.25rem;
+            border-radius: 8px;
+            font-weight: 600;
+            font-size: 0.85rem;
+            cursor: pointer;
+            border: none;
+            transition: background 0.2s;
+        }
+        .modal-content .modal-actions .btn-revoke {
+            background: var(--color-error-container);
+            color: var(--color-on-error-container);
+        }
+        .modal-content .modal-actions .btn-revoke:hover {
+            background: var(--color-error);
+            color: var(--color-on-error);
+        }
+        .modal-content .modal-actions .btn-save {
+            background: var(--color-primary-container);
+            color: var(--color-on-primary-container);
+        }
+        .modal-content .modal-actions .btn-save:hover {
+            background: var(--color-primary);
+            color: var(--color-on-primary);
+        }
+        .modal-content .modal-actions .btn-close-modal {
+            background: var(--color-surface-container-high);
+            color: var(--color-on-surface-variant);
+        }
+        .modal-content .modal-actions .btn-close-modal:hover {
+            background: var(--color-surface-container-highest);
+            color: var(--color-on-surface);
+        }
+        .modal-content .edit-field {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            margin: 0.25rem 0;
+        }
+        .modal-content .edit-field select,
+        .modal-content .edit-field input {
+            background: var(--color-surface-container);
+            border: 1px solid var(--color-outline-variant);
+            border-radius: 6px;
+            padding: 0.25rem 0.5rem;
+            color: var(--color-on-surface);
+            font-size: 0.85rem;
+            outline: none;
+        }
+        .modal-content .edit-field select:focus,
+        .modal-content .edit-field input:focus {
+            border-color: var(--color-primary);
+        }
+
+        /* ── Badges ── */
+        .badge-checked-day1 {
+            color: #4ade80;
+        }
+        .badge-checked-day1 .dot {
+            background: #4ade80;
+            box-shadow: 0 0 8px rgba(74, 222, 128, 0.5);
+        }
+        .badge-checked-day2 {
+            color: #60a5fa;
+        }
+        .badge-checked-day2 .dot {
+            background: #60a5fa;
+            box-shadow: 0 0 8px rgba(96, 165, 250, 0.5);
+        }
+        .badge-not-checked {
+            color: #ffb4ab;
+        }
+        .badge-not-checked .dot {
+            background: #ffb4ab;
+            box-shadow: 0 0 8px rgba(255, 180, 171, 0.3);
+        }
+        .ticket-type-badge {
+            padding: 0.125rem 0.5rem;
+            border-radius: 100px;
+            font-size: 0.65rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            border: 1px solid transparent;
+        }
+        .ticket-type-vip {
+            background: rgba(255, 178, 190, 0.15);
+            color: #ffb1c8;
+            border-color: rgba(255, 178, 190, 0.3);
+        }
+        .ticket-type-regular {
+            background: rgba(255, 255, 255, 0.05);
+            color: #e4e1e6;
+            border-color: var(--color-outline-variant);
+        }
+        .ticket-type-standard {
+            background: rgba(255, 255, 255, 0.03);
+            color: #cbb5ba;
+            border-color: var(--color-outline-variant);
+        }
+        .ticket-type-vvip {
+            background: rgba(255, 111, 0, 0.15);
+            color: #ffab40;
+            border-color: rgba(255, 111, 0, 0.3);
+        }
+        .ticket-type-guest {
+            background: rgba(0, 137, 123, 0.15);
+            color: #69f0ae;
+            border-color: rgba(0, 137, 123, 0.3);
+        }
+
+        @media (max-width: 1024px) {
+            .topbar {
+                padding: 0.75rem 1rem;
+            }
+            .scroll-content {
+                padding: 1rem;
+            }
+        }
+
+        @media (max-width: 768px) {
+            #sidebar-container {
+                position: fixed;
+                top: 0;
+                left: 0;
+                height: 100%;
+                width: 280px;
+                transform: translateX(-100%);
+                z-index: 50;
+                box-shadow: 0 0 50px rgba(0, 0, 0, 0.8);
+            }
+            #sidebar-container.open {
+                transform: translateX(0);
+            }
+            .hamburger {
+                display: block;
+            }
+            .topbar-title h1 {
+                font-size: 1rem;
+            }
+            .topbar-title p {
+                display: none;
+            }
+            .scroll-content {
+                padding: 0.75rem;
+            }
+            .toast {
+                font-size: 0.75rem;
+                padding: 0.5rem 1.25rem;
+                white-space: normal;
+                max-width: 90%;
+            }
+            .modal-content {
+                padding: 1rem;
+                margin: 0.5rem;
+            }
+            .modal-content .detail-row {
+                flex-direction: column;
+                padding: 0.4rem 0;
+            }
+            .modal-content .detail-row .label {
+                width: auto;
+                font-size: 0.75rem;
+            }
+        }
+
+        @media (max-width: 480px) {
+            .topbar {
+                padding: 0.5rem 0.75rem;
+                min-height: 60px;
+            }
+            .topbar-title h1 {
+                font-size: 0.875rem;
+            }
+            .scroll-content {
+                padding: 0.5rem;
+            }
+            .glass-card {
+                border-radius: 10px;
+                padding: 0.75rem;
+            }
+            table {
+                font-size: 0.75rem;
+            }
+            th,
+            td {
+                padding: 0.5rem !important;
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <!-- ====== TOAST ====== -->
+    <div class="toast" id="toast"></div>
+
+    <!-- ====== MOBILE OVERLAY ====== -->
+    <div class="sidebar-overlay" id="sidebarOverlay"></div>
+
+    <!-- ====== APP ====== -->
+    <div id="app">
+
+        <!-- ====== SIDEBAR CONTAINER ====== -->
+        <aside id="sidebar-container"></aside>
+
+        <!-- ====== MAIN CONTENT ====== -->
+        <div id="main-content">
+
+            <!-- ====== TOP BAR ====== -->
+            <header class="topbar">
+                <div class="topbar-left">
+                    <button class="hamburger" id="hamburgerBtn" aria-label="Toggle menu">
+                        <i class="fas fa-bars"></i>
+                    </button>
+                    <div class="topbar-title">
+                        <h1>Tickets</h1>
+                        <p>Manage and view all tickets</p>
+                    </div>
+                </div>
+                <div class="topbar-right">
+                    <button class="bg-surface-container border border-outline-variant rounded-lg px-4 py-2 flex items-center gap-2 text-sm text-on-surface hover:bg-surface-container-high transition-colors">
+                        <i class="fas fa-file-import"></i>
+                        <span>Import CSV</span>
+                    </button>
+                    <button class="bg-surface-container border border-outline-variant rounded-lg px-4 py-2 flex items-center gap-2 text-sm text-on-surface hover:bg-surface-container-high transition-colors">
+                        <i class="fas fa-file-export"></i>
+                        <span>Export</span>
+                    </button>
+                </div>
+            </header>
+
+            <!-- ====== SCROLLABLE CONTENT ====== -->
+            <div class="scroll-content">
+
+                <!-- ── Filters Bar ── -->
+                <div class="glass-card p-4 flex flex-wrap gap-4 items-center justify-between mb-6">
+                    <div class="flex-1 min-w-[250px] relative">
+                        <i class="fas fa-search absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant"></i>
+                        <input id="searchInput" class="w-full bg-[#0F0F12] border border-outline-variant rounded-lg py-2.5 pl-10 pr-4 text-on-surface placeholder:text-on-surface-variant focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all text-sm" placeholder="Search name, phone or ticket ID..." type="text" />
+                    </div>
+                    <div class="flex gap-4 flex-wrap">
+                        <div class="relative min-w-[160px]">
+                            <select id="eventFilter" class="w-full bg-[#0F0F12] border border-outline-variant rounded-lg py-2.5 px-4 appearance-none text-on-surface focus:outline-none focus:border-primary transition-all text-sm pr-8">
+                                <option value="all">All Events</option>
+                            </select>
+                            <i class="fas fa-chevron-down absolute right-3 top-1/2 -translate-y-1/2 text-on-surface-variant pointer-events-none"></i>
+                        </div>
+                        <div class="relative min-w-[160px]">
+                            <select id="typeFilter" class="w-full bg-[#0F0F12] border border-outline-variant rounded-lg py-2.5 px-4 appearance-none text-on-surface focus:outline-none focus:border-primary transition-all text-sm pr-8">
+                                <option value="all">All Ticket Types</option>
+                                <option value="VIP">VIP</option>
+                                <option value="Regular">Regular</option>
+                                <option value="Standard">Standard</option>
+                                <option value="VVIP">VVIP</option>
+                                <option value="Guest">Guest</option>
+                            </select>
+                            <i class="fas fa-chevron-down absolute right-3 top-1/2 -translate-y-1/2 text-on-surface-variant pointer-events-none"></i>
+                        </div>
+                        <div class="relative min-w-[160px]">
+                            <select id="statusFilter" class="w-full bg-[#0F0F12] border border-outline-variant rounded-lg py-2.5 px-4 appearance-none text-on-surface focus:outline-none focus:border-primary transition-all text-sm pr-8">
+                                <option value="all">All Status</option>
+                                <option value="day1">Checked-in Day 1</option>
+                                <option value="day2">Checked-in Day 2</option>
+                                <option value="not">Not Checked-in</option>
+                            </select>
+                            <i class="fas fa-chevron-down absolute right-3 top-1/2 -translate-y-1/2 text-on-surface-variant pointer-events-none"></i>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ── Main Data Table ── -->
+                <div class="glass-card overflow-hidden flex-1 flex flex-col">
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-left border-collapse">
+                            <thead>
+                                <tr class="border-b border-outline-variant text-on-surface-variant font-semibold uppercase tracking-wider text-[11px]">
+                                    <th class="p-4 pl-6 font-medium">#</th>
+                                    <th class="p-4 font-medium">Name</th>
+                                    <th class="p-4 font-medium">Phone</th>
+                                    <th class="p-4 font-medium">Ticket ID</th>
+                                    <th class="p-4 font-medium">Type</th>
+                                    <th class="p-4 font-medium">Admits</th>
+                                    <th class="p-4 font-medium">Event</th>
+                                    <th class="p-4 font-medium">Status</th>
+                                    <th class="p-4 pr-6 text-right font-medium">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="ticketsTableBody" class="text-sm divide-y divide-outline-variant/50">
+                                <!-- Populated by JavaScript -->
+                            </tbody>
+                        </table>
+                    </div>
+                    <!-- ── Pagination ── -->
+                    <div class="border-t border-outline-variant p-4 flex justify-between items-center bg-[#0F0F12] rounded-b-xl">
+                        <span id="paginationInfo" class="text-on-surface-variant text-xs">Loading...</span>
+                        <div class="flex items-center gap-1">
+                            <button id="prevPageBtn" class="w-8 h-8 flex items-center justify-center rounded text-on-surface-variant hover:bg-surface-container transition-colors disabled:opacity-50">
+                                <i class="fas fa-chevron-left text-sm"></i>
+                            </button>
+                            <span id="pageIndicator" class="text-on-surface text-xs px-2">1</span>
+                            <button id="nextPageBtn" class="w-8 h-8 flex items-center justify-center rounded text-on-surface-variant hover:bg-surface-container transition-colors disabled:opacity-50">
+                                <i class="fas fa-chevron-right text-sm"></i>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+            </div><!-- /scroll-content -->
+        </div><!-- /main-content -->
+    </div><!-- /app -->
+
+    <!-- ====== TICKET DETAILS MODAL ====== -->
+    <div class="modal-overlay" id="ticketModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3><i class="fas fa-ticket-alt text-primary mr-2"></i> Ticket Details</h3>
+                <button class="close-btn" id="closeModalBtn">&times;</button>
+            </div>
+            <div id="modalBody">
+                <div class="detail-row"><span class="label">Ticket ID</span><span class="value" id="modalTicketId">—</span></div>
+                <div class="detail-row"><span class="label">Customer</span><span class="value" id="modalCustomer">—</span></div>
+                <div class="detail-row"><span class="label">Phone</span><span class="value" id="modalPhone">—</span></div>
+                <div class="detail-row"><span class="label">Event</span><span class="value" id="modalEvent">—</span></div>
+                <div class="detail-row"><span class="label">Type</span>
+                    <span class="value">
+                        <select id="modalTypeSelect" class="bg-[#0F0F12] border border-outline-variant rounded py-0.5 px-2 text-on-surface focus:border-primary text-sm">
+                            <option value="Standard">Standard</option>
+                            <option value="VIP">VIP</option>
+                            <option value="VVIP">VVIP</option>
+                            <option value="Guest">Guest</option>
+                        </select>
+                    </span>
+                </div>
+                <div class="detail-row"><span class="label">Admits</span>
+                    <span class="value">
+                        <input type="number" id="modalAdmitInput" min="1" max="20" value="1" class="w-16 bg-[#0F0F12] border border-outline-variant rounded py-0.5 px-2 text-on-surface focus:border-primary text-sm" />
+                    </span>
+                </div>
+                <div class="detail-row"><span class="label">Revoked</span><span class="value" id="modalRevoked">No</span></div>
+                <div class="detail-row"><span class="label">Day 1</span><span class="value" id="modalDay1">Not Checked-in</span></div>
+                <div class="detail-row"><span class="label">Day 2</span><span class="value" id="modalDay2">Not Checked-in</span></div>
+                <div class="detail-row"><span class="label">Token</span><span class="value text-xs font-mono" id="modalToken">—</span></div>
+            </div>
+            <div class="modal-actions">
+                <button class="btn-revoke" id="modalRevokeBtn"><i class="fas fa-ban"></i> Revoke</button>
+                <button class="btn-save" id="modalSaveBtn"><i class="fas fa-save"></i> Save Changes</button>
+                <button class="btn-close-modal" id="modalCloseBtn"><i class="fas fa-times"></i> Close</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ============================================================ -->
+    <!-- JAVASCRIPT                                                   -->
+    <!-- ============================================================ -->
+    <script>
+        // ============================================================
+        // FIREBASE CONFIG
+        // ============================================================
+        const firebaseConfig = {
+            apiKey: "AIzaSyCkhFjqfTqCIg9ic5Qh63XfWVT4tGWuzpM",
+            authDomain: "memoriesnightclub-2717f.firebaseapp.com",
+            projectId: "memoriesnightclub-2717f",
+            storageBucket: "memoriesnightclub-2717f.firebasestorage.app",
+            messagingSenderId: "143491627943",
+            appId: "1:143491627943:web:7cb70bfabdefda7e8a5482",
+            measurementId: "G-9RQQCZ7EVD"
+        };
+
+        firebase.initializeApp(firebaseConfig);
+        const auth = firebase.auth();
+        const db = firebase.firestore();
+        db.enablePersistence({ synchronizeTabs: true }).catch(() => {});
+
+        // ============================================================
+        // DOM REFS
+        // ============================================================
+        const toast = document.getElementById('toast');
+        const sidebarContainer = document.getElementById('sidebar-container');
+        const hamburgerBtn = document.getElementById('hamburgerBtn');
+        const overlay = document.getElementById('sidebarOverlay');
+        const ticketsBody = document.getElementById('ticketsTableBody');
+        const searchInput = document.getElementById('searchInput');
+        const eventFilter = document.getElementById('eventFilter');
+        const typeFilter = document.getElementById('typeFilter');
+        const statusFilter = document.getElementById('statusFilter');
+        const paginationInfo = document.getElementById('paginationInfo');
+        const pageIndicator = document.getElementById('pageIndicator');
+        const prevPageBtn = document.getElementById('prevPageBtn');
+        const nextPageBtn = document.getElementById('nextPageBtn');
+
+        // Modal elements
+        const ticketModal = document.getElementById('ticketModal');
+        const closeModalBtn = document.getElementById('closeModalBtn');
+        const modalCloseBtn = document.getElementById('modalCloseBtn');
+        const modalTicketId = document.getElementById('modalTicketId');
+        const modalCustomer = document.getElementById('modalCustomer');
+        const modalPhone = document.getElementById('modalPhone');
+        const modalEvent = document.getElementById('modalEvent');
+        const modalTypeSelect = document.getElementById('modalTypeSelect');
+        const modalAdmitInput = document.getElementById('modalAdmitInput');
+        const modalRevoked = document.getElementById('modalRevoked');
+        const modalDay1 = document.getElementById('modalDay1');
+        const modalDay2 = document.getElementById('modalDay2');
+        const modalToken = document.getElementById('modalToken');
+        const modalRevokeBtn = document.getElementById('modalRevokeBtn');
+        const modalSaveBtn = document.getElementById('modalSaveBtn');
+
+        let allTickets = [];
+        let filteredTickets = [];
+        let currentPage = 1;
+        const pageSize = 10;
+        let allEvents = [];
+        let currentTicketId = null;
+
+        // ============================================================
+        // TOAST
+        // ============================================================
+        function showToast(message, type = 'info') {
+            toast.textContent = message;
+            toast.className = 'toast ' + type;
+            toast.classList.add('show');
+            clearTimeout(toast._timer);
+            toast._timer = setTimeout(() => toast.classList.remove('show'), 3500);
+        }
+
+        // ============================================================
+        // SIDEBAR LOADER
+        // ============================================================
+        async function loadSidebar() {
+            try {
+                const response = await fetch('sidebar.html');
+                if (!response.ok) throw new Error('Sidebar not found');
+                const html = await response.text();
+                sidebarContainer.innerHTML = html;
+
+                document.querySelectorAll('.nav-link').forEach(link => {
+                    const href = link.getAttribute('href');
+                    if (href === 'tickets.html') {
+                        link.classList.add('active');
+                    } else {
+                        link.classList.remove('active');
+                    }
+                });
+
+                document.getElementById('sidebarLogoutBtn')?.addEventListener('click', async () => {
+                    await auth.signOut();
+                    showToast('Logged out', 'info');
+                    setTimeout(() => window.location.href = 'login.html', 500);
+                });
+
+                auth.onAuthStateChanged(user => {
+                    const nameEl = document.getElementById('sidebarAdminName');
+                    const emailEl = document.getElementById('sidebarAdminEmail');
+                    if (user) {
+                        if (nameEl) nameEl.textContent = user.displayName || 'Admin';
+                        if (emailEl) emailEl.textContent = user.email || 'Administrator';
+                    }
+                });
+
+                return true;
+            } catch (error) {
+                console.error('Sidebar load error:', error);
+                return false;
+            }
+        }
+
+        // ============================================================
+        // AUTH GUARD
+        // ============================================================
+        auth.onAuthStateChanged(async user => {
+            if (!user) {
+                window.location.href = 'login.html';
+                return;
+            }
+            await loadSidebar();
+            await loadEvents();
+            loadTickets();
+        });
+
+        // ============================================================
+        // LOAD EVENTS
+        // ============================================================
+        async function loadEvents() {
+            try {
+                const snapshot = await db.collection('events')
+                    .where('active', '==', true)
+                    .orderBy('createdAt', 'desc')
+                    .get();
+
+                allEvents = [];
+                snapshot.forEach(doc => {
+                    allEvents.push({ id: doc.id, ...doc.data() });
+                });
+
+                const currentValue = eventFilter.value;
+                eventFilter.innerHTML = '<option value="all">All Events</option>';
+                allEvents.forEach(ev => {
+                    const opt = document.createElement('option');
+                    opt.value = ev.id;
+                    opt.textContent = ev.name || ev.id;
+                    eventFilter.appendChild(opt);
+                });
+                if ([...eventFilter.options].some(o => o.value === currentValue)) {
+                    eventFilter.value = currentValue;
+                } else {
+                    eventFilter.value = 'all';
+                }
+            } catch (error) {
+                console.error('Events load error:', error);
+            }
+        }
+
+        // ============================================================
+        // LOAD TICKETS
+        // ============================================================
+        function loadTickets() {
+            db.collection('tickets')
+                .orderBy('createdAt', 'desc')
+                .onSnapshot((snapshot) => {
+                    const tickets = [];
+                    snapshot.forEach(doc => {
+                        tickets.push({ id: doc.id, ...doc.data() });
+                    });
+                    allTickets = tickets;
+                    applyFilters();
+                }, (error) => {
+                    console.error('Tickets load error:', error);
+                    showToast('Error loading tickets', 'error');
+                    ticketsBody.innerHTML = `
+                            <tr>
+                                <td colspan="9" class="text-center py-8 text-on-surface-variant">
+                                    <i class="fas fa-exclamation-triangle text-2xl block mb-2"></i>
+                                    <p>Failed to load tickets. Please refresh.</p>
+                                </td>
+                            </tr>
+                        `;
+                });
+        }
+
+        // ============================================================
+        // FILTERING & PAGINATION
+        // ============================================================
+        function applyFilters() {
+            const searchTerm = searchInput.value.toLowerCase().trim();
+            const eventId = eventFilter.value;
+            const type = typeFilter.value;
+            const status = statusFilter.value;
+
+            filteredTickets = allTickets.filter(ticket => {
+                if (searchTerm) {
+                    const name = (ticket.customerName || '').toLowerCase();
+                    const phone = (ticket.phone || '').toLowerCase();
+                    const ticketId = (ticket.ticketId || '').toLowerCase();
+                    if (!name.includes(searchTerm) && !phone.includes(searchTerm) && !ticketId.includes(searchTerm)) {
+                        return false;
+                    }
+                }
+
+                if (eventId !== 'all' && ticket.eventId !== eventId) {
+                    return false;
+                }
+
+                if (type !== 'all' && (ticket.type || 'Standard') !== type) {
+                    return false;
+                }
+
+                // Status uses per-day fields now
+                const day1Checked = ticket.checkedInDay1 === true;
+                const day2Checked = ticket.checkedInDay2 === true;
+                if (status === 'day1' && !day1Checked) return false;
+                if (status === 'day2' && !day2Checked) return false;
+                if (status === 'not' && (day1Checked || day2Checked)) return false;
+
+                return true;
+            });
+
+            currentPage = 1;
+            renderPagination();
+            renderTable();
+        }
+
+        function renderPagination() {
+            const totalPages = Math.ceil(filteredTickets.length / pageSize) || 1;
+            const start = (currentPage - 1) * pageSize;
+            const end = Math.min(start + pageSize, filteredTickets.length);
+
+            paginationInfo.textContent = `Showing ${start + 1} to ${end} of ${filteredTickets.length} tickets`;
+            pageIndicator.textContent = `${currentPage} / ${totalPages}`;
+
+            prevPageBtn.disabled = currentPage <= 1;
+            nextPageBtn.disabled = currentPage >= totalPages;
+        }
+
+        function renderTable() {
+            const start = (currentPage - 1) * pageSize;
+            const end = Math.min(start + pageSize, filteredTickets.length);
+            const pageData = filteredTickets.slice(start, end);
+
+            if (pageData.length === 0) {
+                ticketsBody.innerHTML = `
+                        <tr>
+                            <td colspan="9" class="text-center py-8 text-on-surface-variant">
+                                <i class="fas fa-inbox text-2xl block mb-2"></i>
+                                <p>No tickets found</p>
+                            </td>
+                        </tr>
+                    `;
+                return;
+            }
+
+            let html = '';
+            pageData.forEach((ticket, index) => {
+                const num = start + index + 1;
+                const name = ticket.customerName || 'Guest';
+                const phone = ticket.phone || '—';
+                const ticketId = ticket.ticketId || ticket.id || '—';
+                const type = ticket.type || 'Standard';
+                const admitCount = ticket.admitCount || 1;
+                const eventName = ticket.eventName || allEvents.find(e => e.id === ticket.eventId)?.name || '72HOURS AFAHYE PARTY';
+
+                // Status using per-day fields
+                const day1Checked = ticket.checkedInDay1 === true;
+                const day2Checked = ticket.checkedInDay2 === true;
+                let statusHtml = '';
+                if (day1Checked && day2Checked) {
+                    statusHtml = `
+                            <span class="inline-flex items-center gap-1.5 badge-checked-day1">
+                                <span class="w-2 h-2 rounded-full dot"></span>
+                                Both Days
+                            </span>
+                        `;
+                } else if (day1Checked) {
+                    statusHtml = `
+                            <span class="inline-flex items-center gap-1.5 badge-checked-day1">
+                                <span class="w-2 h-2 rounded-full dot"></span>
+                                Checked-in Day 1
+                            </span>
+                        `;
+                } else if (day2Checked) {
+                    statusHtml = `
+                            <span class="inline-flex items-center gap-1.5 badge-checked-day2">
+                                <span class="w-2 h-2 rounded-full dot"></span>
+                                Checked-in Day 2
+                            </span>
+                        `;
+                } else {
+                    statusHtml = `
+                            <span class="inline-flex items-center gap-1.5 badge-not-checked">
+                                <span class="w-2 h-2 rounded-full dot"></span>
+                                Not Checked-in
+                            </span>
+                        `;
+                }
+
+                let typeClass = 'ticket-type-regular';
+                if (type === 'VIP') typeClass = 'ticket-type-vip';
+                else if (type === 'Standard') typeClass = 'ticket-type-standard';
+                else if (type === 'VVIP') typeClass = 'ticket-type-vvip';
+                else if (type === 'Guest') typeClass = 'ticket-type-guest';
+
+                html += `
+                        <tr class="hover:bg-surface-container-low transition-colors group">
+                            <td class="p-4 pl-6 text-on-surface-variant">${num}</td>
+                            <td class="p-4 font-medium text-on-surface">${name}</td>
+                            <td class="p-4 text-on-surface-variant">${phone}</td>
+                            <td class="p-4 font-mono text-xs text-on-surface-variant">${ticketId}</td>
+                            <td class="p-4"><span class="ticket-type-badge ${typeClass}">${type}</span></td>
+                            <td class="p-4 text-center">${admitCount}</td>
+                            <td class="p-4 text-on-surface-variant truncate max-w-[150px]">${eventName}</td>
+                            <td class="p-4">${statusHtml}</td>
+                            <td class="p-4 pr-6 text-right">
+                                <button class="text-on-surface-variant hover:text-primary transition-colors p-1" onclick="openTicketModal('${ticket.id}')" title="Manage Ticket">
+                                    <i class="fas fa-ellipsis-h"></i>
+                                </button>
+                            </td>
+                        </tr>
+                    `;
+            });
+
+            ticketsBody.innerHTML = html;
+        }
+
+        // ============================================================
+        // MODAL FUNCTIONS
+        // ============================================================
+        function openTicketModal(ticketId) {
+            const ticket = allTickets.find(t => t.id === ticketId);
+            if (!ticket) {
+                showToast('Ticket not found', 'error');
+                return;
+            }
+            currentTicketId = ticketId;
+            // Populate modal
+            modalTicketId.textContent = ticket.ticketId || ticket.id;
+            modalCustomer.textContent = ticket.customerName || 'Guest';
+            modalPhone.textContent = ticket.phone || '—';
+            const eventName = ticket.eventName || allEvents.find(e => e.id === ticket.eventId)?.name || '72HOURS AFAHYE PARTY';
+            modalEvent.textContent = eventName;
+            modalTypeSelect.value = ticket.type || 'Standard';
+            modalAdmitInput.value = ticket.admitCount || 1;
+            modalRevoked.textContent = ticket.revoked === true ? 'Yes' : 'No';
+            modalDay1.textContent = ticket.checkedInDay1 === true ? '✅ Checked-in' : 'Not Checked-in';
+            modalDay2.textContent = ticket.checkedInDay2 === true ? '✅ Checked-in' : 'Not Checked-in';
+            modalToken.textContent = ticket.token || ticket.id;
+
+            // Show/hide revoke button
+            if (ticket.revoked === true) {
+                modalRevokeBtn.textContent = 'Unrevoke';
+                modalRevokeBtn.classList.remove('btn-revoke');
+                modalRevokeBtn.classList.add('btn-save');
+            } else {
+                modalRevokeBtn.textContent = 'Revoke';
+                modalRevokeBtn.classList.remove('btn-save');
+                modalRevokeBtn.classList.add('btn-revoke');
+            }
+
+            ticketModal.classList.add('active');
+        }
+
+        function closeModal() {
+            ticketModal.classList.remove('active');
+            currentTicketId = null;
+        }
+
+        // Close modal handlers
+        closeModalBtn.addEventListener('click', closeModal);
+        modalCloseBtn.addEventListener('click', closeModal);
+        ticketModal.addEventListener('click', (e) => {
+            if (e.target === ticketModal) closeModal();
+        });
+
+        // ============================================================
+        // MODAL ACTIONS
+        // ============================================================
+        // Revoke / Unrevoke
+        modalRevokeBtn.addEventListener('click', async () => {
+            if (!currentTicketId) return;
+            const ticket = allTickets.find(t => t.id === currentTicketId);
+            if (!ticket) return;
+            const newRevoked = ticket.revoked !== true;
+            if (!confirm(`Are you sure you want to ${newRevoked ? 'revoke' : 'unrevoke'} this ticket?`)) return;
+
+            try {
+                await db.collection('tickets').doc(currentTicketId).update({
+                    revoked: newRevoked,
+                    updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+                });
+                showToast(`Ticket ${newRevoked ? 'revoked' : 'unrevoked'} successfully`, 'success');
+                closeModal();
+                // Refresh data will happen via snapshot
+            } catch (error) {
+                console.error('Error updating revocation:', error);
+                showToast('Failed to update revocation', 'error');
+            }
+        });
+
+        // Save changes (type & admit count)
+        modalSaveBtn.addEventListener('click', async () => {
+            if (!currentTicketId) return;
+            const newType = modalTypeSelect.value;
+            const newAdmit = parseInt(modalAdmitInput.value) || 1;
+
+            try {
+                await db.collection('tickets').doc(currentTicketId).update({
+                    type: newType,
+                    admitCount: newAdmit,
+                    updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+                });
+                showToast('Ticket updated successfully', 'success');
+                closeModal();
+            } catch (error) {
+                console.error('Error updating ticket:', error);
+                showToast('Failed to update ticket', 'error');
+            }
+        });
+
+        // ============================================================
+        // EVENT LISTENERS
+        // ============================================================
+        searchInput.addEventListener('input', applyFilters);
+        eventFilter.addEventListener('change', applyFilters);
+        typeFilter.addEventListener('change', applyFilters);
+        statusFilter.addEventListener('change', applyFilters);
+
+        prevPageBtn.addEventListener('click', () => {
+            if (currentPage > 1) {
+                currentPage--;
+                renderPagination();
+                renderTable();
+            }
+        });
+
+        nextPageBtn.addEventListener('click', () => {
+            const totalPages = Math.ceil(filteredTickets.length / pageSize);
+            if (currentPage < totalPages) {
+                currentPage++;
+                renderPagination();
+                renderTable();
+            }
+        });
+
+        // ============================================================
+        // MOBILE SIDEBAR TOGGLE
+        // ============================================================
+        function openSidebar() {
+            sidebarContainer.classList.add('open');
+            overlay.classList.add('active');
+            document.body.style.overflow = 'hidden';
+        }
+
+        function closeSidebar() {
+            sidebarContainer.classList.remove('open');
+            overlay.classList.remove('active');
+            document.body.style.overflow = '';
+        }
+
+        hamburgerBtn.addEventListener('click', () => {
+            if (sidebarContainer.classList.contains('open')) {
+                closeSidebar();
+            } else {
+                openSidebar();
+            }
+        });
+
+        overlay.addEventListener('click', closeSidebar);
+
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') closeSidebar();
+        });
+
+        window.addEventListener('resize', () => {
+            if (window.innerWidth > 768) closeSidebar();
+        });
+
+        console.log('✅ Tickets page ready – Firebase connected.');
+    </script>
+</body>
+</html>

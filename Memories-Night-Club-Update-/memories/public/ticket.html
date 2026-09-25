@@ -1,0 +1,233 @@
+<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Ticket · Memories</title><link rel="stylesheet" href="styles.css"></head><body><div id="app"></div><script src="config.js"></script><script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.4/build/qrcode.min.js"></script><script type="module">
+import {api,params,esc,eventDate} from './app.js';
+const token=params.get('token');
+document.querySelector('#app').innerHTML=`<main class="verify"><div class="wrap" style="max-width:720px;width:100%"><article id="ticket" class="ticket-preview"><div class="eyebrow">MEMORIES</div><div id="body" style="margin-top:20px">Loading ticket…</div></article><div style="display:flex;gap:10px;margin-top:25px;justify-content:center;flex-wrap:wrap"><button class="btn red" id="share">SHARE MY NIGHT</button><button class="btn ghost" onclick="window.print()">SAVE / PRINT</button><a class="btn ghost" href="nights.html">BROWSE NIGHTS</a></div><div id="raffleBox"></div></div></main>`;
+
+try{
+  const d=await api('/api/tickets/'+encodeURIComponent(token));
+  const t=d.ticket;
+  const verifyUrl=`${location.origin}/verify.html?token=${encodeURIComponent(token)}`;
+  document.querySelector('#body').innerHTML=`<div class="eyebrow">${esc(eventDate({date:t.eventDate}))}</div><h1 class="display" style="font-size:clamp(64px,12vw,100px);line-height:.78;margin:18px 0">${esc(t.eventName||'MEMORIES')}</h1><div class="ticket-line">${esc(t.identityLine||'FULLY ACTIVE.')}</div><div class="ticket-rule"></div><p><strong>${esc(t.customerName||'Guest')}</strong></p><p>${esc(t.type||'Ticket')} · ${esc(t.eventVenue||'Cape Coast')} · ${esc(t.eventDoors||'10PM')}</p><div class="qr"><canvas id="qr"></canvas></div><div style="margin-top:20px;display:flex;justify-content:space-between;gap:20px;align-items:end"><div class="ticket-code">${esc(t.displayCode||t.ticketId)}</div><div class="eyebrow">${t.status==='used'?'USED':'VALID'}</div></div>`;
+  if(window.QRCode)QRCode.toCanvas(document.querySelector('#qr'),verifyUrl,{width:180,margin:1});
+
+  document.querySelector('#share').onclick=async()=>{
+    const btn=document.querySelector('#share');
+    const original=btn.textContent;
+    btn.disabled=true;btn.textContent='GENERATING…';
+    try{
+      const blob=await buildShareImage(t,verifyUrl);
+      const file=new File([blob],`memories-${(t.displayCode||t.ticketId||'ticket').toLowerCase()}.png`,{type:'image/png'});
+      const shareText=`${t.identityLine||'FULLY ACTIVE.'}\n${t.eventName}\nMemories Night Club`;
+      showSharePreview(blob,file,shareText,t);
+    }catch(e){
+      console.error('Share image failed:',e);
+      alert('Could not generate the share image. Please try again.');
+    }
+    btn.disabled=false;btn.textContent=original;
+  };
+
+  function showSharePreview(blob,file,shareText,t){
+    const url=URL.createObjectURL(blob);
+    const box=document.querySelector('#raffleBox');
+    const existing=document.querySelector('#sharePreview');
+    if(existing)existing.remove();
+    const wrap=document.createElement('section');
+    wrap.id='sharePreview';
+    wrap.className='selector';
+    wrap.style.marginTop='35px';
+    wrap.innerHTML=`<div class="eyebrow">YOUR SHARE CARD</div><img src="${url}" alt="Shareable ticket card" style="width:100%;max-width:420px;display:block;margin:16px auto;border:1px solid var(--line)"><div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap;margin-top:10px"><a class="btn red" id="downloadCard" download="${esc(file.name)}" href="${url}">DOWNLOAD</a><button class="btn ghost" id="nativeShare" style="display:none">SHARE →</button></div>`;
+    box.parentNode.insertBefore(wrap,box);
+    const canShareFiles=navigator.canShare&&navigator.canShare({files:[file]});
+    if(canShareFiles){
+      const shareBtn=wrap.querySelector('#nativeShare');
+      shareBtn.style.display='';
+      shareBtn.onclick=async()=>{try{await navigator.share({files:[file],title:t.eventName,text:shareText})}catch(e){/* user cancelled — not an error */}};
+    }
+  }
+
+  // ── Shareable ticket image — a real generated 1080x1080 card, not just a URL/text share.
+  // Falls back to a plain dark background if the event artwork can't be loaded (CORS, network),
+  // so the card always renders even when that fails. ──
+  async function buildShareImage(t,verifyUrl){
+    const SIZE=1080;
+    const canvas=document.createElement('canvas');
+    canvas.width=SIZE;canvas.height=SIZE;
+    const ctx=canvas.getContext('2d');
+
+    try{
+      await Promise.all([
+        document.fonts.load('700 90px "Bebas Neue"'),
+        document.fonts.load('italic 600 70px "Playfair Display"'),
+        document.fonts.load('500 24px "DM Mono"'),
+      ]);
+    }catch(e){/* fonts already loaded, or load() unsupported — draw with whatever is available */}
+
+    let artworkImg=null;
+    if(t.eventArtwork){
+      try{
+        artworkImg=await loadImageWithTimeout(t.eventArtwork,3500);
+      }catch(e){artworkImg=null;}
+    }
+
+    const draw=(withArtwork)=>{
+      ctx.clearRect(0,0,SIZE,SIZE);
+      ctx.fillStyle='#0b0909';
+      ctx.fillRect(0,0,SIZE,SIZE);
+
+      if(withArtwork&&artworkImg){
+        ctx.save();
+        ctx.globalAlpha=0.4;
+        ctx.filter='blur(6px)';
+        const scale=Math.max(SIZE/artworkImg.width,SIZE/artworkImg.height)*1.06;
+        const w=artworkImg.width*scale,h=artworkImg.height*scale;
+        ctx.drawImage(artworkImg,(SIZE-w)/2,(SIZE-h)/2,w,h);
+        ctx.restore();
+        const grad=ctx.createLinearGradient(0,0,0,SIZE);
+        grad.addColorStop(0,'rgba(11,9,9,.55)');
+        grad.addColorStop(0.5,'rgba(11,9,9,.75)');
+        grad.addColorStop(1,'rgba(11,9,9,.92)');
+        ctx.fillStyle=grad;
+        ctx.fillRect(0,0,SIZE,SIZE);
+      }
+
+      // Ticket-stub frame — thin crimson double-rule + perforation dots down each side,
+      // translating the physical ticket's visual DNA onto a square social card.
+      ctx.strokeStyle='#c8243b';
+      ctx.lineWidth=3;
+      ctx.strokeRect(40,40,SIZE-80,SIZE-80);
+      ctx.fillStyle='#0b0909';
+      for(const x of [40,SIZE-40]){
+        for(let y=110;y<SIZE-60;y+=34){
+          ctx.beginPath();ctx.arc(x,y,5,0,Math.PI*2);ctx.fill();
+        }
+      }
+
+      const cx=SIZE/2;
+      ctx.textAlign='center';
+
+      // Wordmark
+      ctx.fillStyle='#ed4356';
+      ctx.font='500 26px "DM Mono", monospace';
+      ctx.letterSpacing='6px';
+      ctx.fillText('MEMORIES NIGHT CLUB',cx,140);
+      ctx.letterSpacing='0px';
+
+      // Event name — shrink to fit within the frame
+      const eventName=(t.eventName||'MEMORIES').toUpperCase();
+      let nameSize=88;
+      ctx.font=`700 ${nameSize}px "Bebas Neue", sans-serif`;
+      while(ctx.measureText(eventName).width>SIZE-140&&nameSize>44){
+        nameSize-=4;
+        ctx.font=`700 ${nameSize}px "Bebas Neue", sans-serif`;
+      }
+      ctx.fillStyle='#f0e9df';
+      ctx.fillText(eventName,cx,230);
+
+      // Date
+      ctx.font='500 22px "DM Mono", monospace';
+      ctx.fillStyle='#9e9790';
+      ctx.fillText(eventDate({date:t.eventDate}).toUpperCase(),cx,268);
+
+      // Divider
+      ctx.strokeStyle='#4a3830';
+      ctx.lineWidth=1;
+      ctx.beginPath();ctx.moveTo(140,320);ctx.lineTo(SIZE-140,320);ctx.stroke();
+
+      // Identity line — the most prominent element on the card, per the ticket's own hierarchy
+      const line=(t.identityLine||'FULLY ACTIVE.');
+      let lineSize=68;
+      ctx.font=`italic 600 ${lineSize}px "Playfair Display", serif`;
+      while(ctx.measureText(line).width>SIZE-160&&lineSize>32){
+        lineSize-=4;
+        ctx.font=`italic 600 ${lineSize}px "Playfair Display", serif`;
+      }
+      ctx.fillStyle='#f0e9df';
+      ctx.fillText(line,cx,430);
+
+      // First name
+      const firstName=(t.customerName||'GUEST').trim().split(/\s+/)[0].toUpperCase();
+      ctx.font='700 40px "Bebas Neue", sans-serif';
+      ctx.fillStyle='#c8243b';
+      ctx.fillText(firstName,cx,500);
+
+      // Status badge
+      ctx.font='500 18px "DM Mono", monospace';
+      ctx.fillStyle=t.status==='used'?'#8d2634':'#376f48';
+      ctx.fillText(t.status==='used'?'· USED ·':'· VALID ·',cx,540);
+
+      return {cx};
+    };
+
+    let usedArtwork=!!artworkImg;
+    draw(usedArtwork);
+
+    // Draw the QR code onto an offscreen canvas, then composite it centered in a white box.
+    if(window.QRCode){
+      try{
+        const qrCanvas=document.createElement('canvas');
+        await QRCode.toCanvas(qrCanvas,verifyUrl,{width:220,margin:0});
+        const boxSize=250,boxX=SIZE/2-boxSize/2,boxY=610;
+        ctx.fillStyle='#f0e9df';
+        ctx.fillRect(boxX,boxY,boxSize,boxSize);
+        ctx.drawImage(qrCanvas,boxX+15,boxY+15,boxSize-30,boxSize-30);
+      }catch(e){/* QR is a bonus on the share card — the card still works without it */}
+    }
+
+    // Footer — display code + venue
+    ctx.font='500 20px "DM Mono", monospace';
+    ctx.fillStyle='#9e9790';
+    ctx.textAlign='center';
+    ctx.fillText(`${t.displayCode||t.ticketId||''}`.toUpperCase(),SIZE/2,905);
+    ctx.font='500 16px "DM Mono", monospace';
+    ctx.fillText(`${(t.eventVenue||'CAPE COAST').toUpperCase()} · ${(t.eventDoors||'10PM').toUpperCase()}`,SIZE/2,935);
+
+    try{
+      return await new Promise((resolve,reject)=>canvas.toBlob(b=>b?resolve(b):reject(new Error('toBlob returned null')),'image/png'));
+    }catch(e){
+      // Canvas got tainted by a non-CORS artwork image — redraw without it and export again.
+      if(usedArtwork){
+        usedArtwork=false;
+        draw(false);
+        if(window.QRCode){
+          try{
+            const qrCanvas=document.createElement('canvas');
+            await QRCode.toCanvas(qrCanvas,verifyUrl,{width:220,margin:0});
+            const boxSize=250,boxX=SIZE/2-boxSize/2,boxY=610;
+            ctx.fillStyle='#f0e9df';ctx.fillRect(boxX,boxY,boxSize,boxSize);
+            ctx.drawImage(qrCanvas,boxX+15,boxY+15,boxSize-30,boxSize-30);
+          }catch(e2){}
+        }
+        return await new Promise((resolve,reject)=>canvas.toBlob(b=>b?resolve(b):reject(new Error('toBlob returned null')),'image/png'));
+      }
+      throw e;
+    }
+  }
+
+  function loadImageWithTimeout(src,timeoutMs){
+    return new Promise((resolve,reject)=>{
+      const img=new Image();
+      img.crossOrigin='anonymous';
+      const timer=setTimeout(()=>reject(new Error('Image load timed out')),timeoutMs);
+      img.onload=()=>{clearTimeout(timer);resolve(img)};
+      img.onerror=()=>{clearTimeout(timer);reject(new Error('Image failed to load'))};
+      img.src=src;
+    });
+  }
+
+  // ── Raffle — entry is automatic at purchase (no action here). This ticket either already
+  // took a spot or the raffle was full/closed when it was bought; we just say which. ──
+  const raffleBox=document.querySelector('#raffleBox');
+  if(t.inDraw){
+    try{
+      const bundle=t.eventId?await api('/api/events/'+encodeURIComponent(t.eventId)):null;
+      const raffle=bundle?.raffle;
+      const drawn=raffle?.winnerDisplay;
+      raffleBox.innerHTML=drawn
+        ?`<section class="selector" style="margin-top:35px"><div class="eyebrow">TONIGHT'S RAFFLE</div><h2 class="display" style="font-size:50px">WINNER DRAWN</h2><p style="color:var(--muted)">${esc(drawn.name)}${drawn.code?` — Ticket #${esc(drawn.code)}`:''} won ${esc(raffle?.prize||raffle?.title||'the prize')}.</p></section>`
+        :`<section class="selector" style="margin-top:35px"><div class="eyebrow">TONIGHT'S RAFFLE</div><h2 class="display" style="font-size:50px">YOU'RE IN THE DRAW</h2><p style="color:var(--muted)">This ticket is entered to win ${esc(raffle?.prize||raffle?.title||'the prize')}. Winners are announced after the draw.</p></section>`;
+    }catch(e){ /* couldn't load raffle details — the "in the draw" fact still stands */ }
+  }
+}catch(e){
+  document.querySelector('#body').innerHTML='<div class="status error">This ticket could not be found or is no longer available.</div>';
+}
+</script></body></html>

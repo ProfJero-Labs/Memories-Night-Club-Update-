@@ -1,0 +1,1540 @@
+<!DOCTYPE html>
+<html class="dark" lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta content="width=device-width, initial-scale=1.0" name="viewport" />
+  <title>Memories Night Club | Cape Coast's Premier Nightlife</title>
+
+  <!-- Tailwind & Fonts -->
+  <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&family=Montserrat:wght@400;600&family=Playfair+Display:ital,wght@0,600;0,700;1,400&family=EB+Garamond:wght@400&display=swap" rel="stylesheet" />
+
+  <!-- FontAwesome (replaces Material Symbols) -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" />
+
+  <!-- Firebase SDKs (compat) -->
+  <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
+
+  <!-- jsPDF for PDF generation -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+
+  <!-- PayStack -->
+   <script src="https://js.paystack.co/v1/inline.js"></script>
+
+  <script id="tailwind-config">
+    tailwind.config = {
+      darkMode: "class",
+      theme: {
+        extend: {
+          colors: {
+            "tertiary-container": "#0025c8",
+            "surface-container-highest": "#42312e",
+            "primary-fixed-dim": "#ffb4a8",
+            "on-primary-fixed": "#410000",
+            "primary-fixed": "#ffdad4",
+            "inverse-on-surface": "#3d2c2a",
+            "outline": "#aa8984",
+            "background": "#1d100e",
+            "tertiary-fixed-dim": "#bcc3ff",
+            "on-tertiary-fixed-variant": "#0d2ccc",
+            "on-surface": "#f8dcd8",
+            "error-container": "#93000a",
+            "on-tertiary": "#001a98",
+            "on-tertiary-fixed": "#000d60",
+            "on-secondary-fixed": "#241a00",
+            "on-secondary-fixed-variant": "#574500",
+            "on-tertiary-container": "#9ea9ff",
+            "surface-container-low": "#261816",
+            "surface-bright": "#473532",
+            "secondary-container": "#af8d11",
+            "surface-container": "#2b1c19",
+            "outline-variant": "#5a403c",
+            "on-primary-container": "#ff907f",
+            "on-primary": "#690000",
+            "inverse-primary": "#b52619",
+            "on-secondary": "#3c2f00",
+            "surface-dim": "#1d100e",
+            "surface-tint": "#ffb4a8",
+            "primary": "#ffb4a8",
+            "inverse-surface": "#f8dcd8",
+            "secondary-fixed": "#ffe088",
+            "on-secondary-container": "#342800",
+            "on-surface-variant": "#e3beb8",
+            "tertiary-fixed": "#dfe0ff",
+            "surface": "#1d100e",
+            "surface-container-lowest": "#180b09",
+            "surface-container-high": "#362623",
+            "on-background": "#f8dcd8",
+            "on-error-container": "#ffdad6",
+            "error": "#ffb4ab",
+            "on-primary-fixed-variant": "#920703",
+            "on-error": "#690005",
+            "surface-variant": "#42312e",
+            "secondary": "#e9c349",
+            "secondary-fixed-dim": "#e9c349",
+            "tertiary": "#bcc3ff",
+            "primary-container": "#8b0000"
+          },
+          borderRadius: {
+            DEFAULT: "0.25rem",
+            lg: "0.5rem",
+            xl: "0.75rem",
+            full: "9999px"
+          },
+          spacing: {
+            "margin-desktop": "64px",
+            "margin-mobile": "20px",
+            "section-gap": "120px",
+            "gutter": "24px",
+            "unit": "8px",
+            "container-max": "1280px"
+          },
+          fontFamily: {
+            "body-lg": ["Inter"],
+            "body-md": ["Inter"],
+            "label-sm": ["Montserrat"],
+            "headline-lg-mobile": ["Playfair Display"],
+            "subheading-accent": ["EB Garamond"],
+            "display-xl": ["Playfair Display"],
+            "headline-lg": ["Playfair Display"],
+            "display-xl-mobile": ["Playfair Display"]
+          },
+          fontSize: {
+            "body-lg": ["18px", { lineHeight: "28px", fontWeight: "400" }],
+            "body-md": ["16px", { lineHeight: "24px", fontWeight: "400" }],
+            "label-sm": ["12px", { lineHeight: "16px", letterSpacing: "0.1em", fontWeight: "600" }],
+            "headline-lg-mobile": ["32px", { lineHeight: "40px", fontWeight: "600" }],
+            "subheading-accent": ["24px", { lineHeight: "32px", fontWeight: "400" }],
+            "display-xl": ["80px", { lineHeight: "96px", letterSpacing: "-0.02em", fontWeight: "700" }],
+            "headline-lg": ["48px", { lineHeight: "56px", fontWeight: "600" }],
+            "display-xl-mobile": ["48px", { lineHeight: "56px", fontWeight: "700" }]
+          }
+        }
+      }
+    }
+  </script>
+
+  <!-- Custom CSS for overlay, sheet, calendar, receipt + dark input overrides -->
+  <style>
+    /* Hero Particles - floating bubbles */
+    .hero-particles {
+      position: absolute;
+      inset: 0;
+      overflow: hidden;
+      pointer-events: none;
+      z-index: 1;
+    }
+    .particle {
+      position: absolute;
+      border-radius: 50%;
+      opacity: 0;
+      animation: float-up linear infinite;
+    }
+    @keyframes float-up {
+      0% { opacity: 0; transform: translateY(0); }
+      10% { opacity: .6; }
+      90% { opacity: .15; }
+      100% { opacity: 0; transform: translateY(-85vh); }
+    }
+    /* ----- old site custom styles (scoped) ----- */
+    .slot-section { padding: 44px 5vw 60px; background: var(--deep); }
+    .slot-section .sectitle { font-family: 'Playfair Display', serif; font-weight: 700; font-size: 24px; color: var(--white); margin: 0 0 8px; }
+    .slot-section .secdesc { font-size: 15px; color: var(--text-soft); line-height: 1.6; margin: 0 0 28px; max-width: 600px; }
+    .month-block { margin-bottom: 30px; }
+    .month-label { font-weight: 700; font-size: 16px; color: var(--white); margin: 0 0 14px; padding-bottom: 8px; border-bottom: 2px solid var(--line); }
+    .date-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(148px,1fr)); gap: 12px; }
+    .datecard { border: 2px solid var(--line); background: var(--panel); border-radius: 10px; padding: 16px 14px; text-align: left; transition: all .15s ease; display: flex; align-items: center; gap: 12px; }
+    .datecard .datebox { flex-shrink: 0; text-align: center; min-width: 44px; }
+    .datecard .dow { font-size: 12px; font-weight: 700; color: var(--text-mute); text-transform: uppercase; }
+    .datecard .dnum { font-family: 'Playfair Display', serif; font-weight: 800; font-size: 26px; line-height: 1.1; color: var(--white); }
+    .datecard .mon { font-size: 12px; font-weight: 600; color: var(--text-mute); }
+    .datecard .info { flex: 1; min-width: 0; }
+    .datecard .statusline { display: flex; align-items: center; gap: 7px; font-size: 13.5px; font-weight: 600; }
+    .datecard .statusline .dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
+    .datecard .tapme { font-size: 12px; color: var(--text-mute); margin-top: 2px; }
+    .datecard.available { cursor: pointer; }
+    .datecard.available:hover { border-color: var(--crimson-light); background: var(--panel-2); box-shadow: 0 6px 16px rgba(0,0,0,0.4); }
+    .datecard.available .statusline { color: var(--green); }
+    .datecard.available .dot { background: var(--green); }
+    .datecard.pending { cursor: pointer; }
+    .datecard.pending:hover { border-color: var(--crimson-light); background: var(--panel-2); box-shadow: 0 6px 16px rgba(0,0,0,0.4); }
+    .datecard.pending .statusline { color: var(--amber); }
+    .datecard.pending .dot { background: var(--amber); }
+    .datecard.booked { opacity: 0.6; cursor: not-allowed; border-color: #555; }
+    .datecard.booked .statusline { color: var(--text-mute); }
+    .datecard.booked .dot { background: #777; }
+    .legend { display: flex; gap: 26px; flex-wrap: wrap; margin-top: 26px; font-size: 14px; color: var(--text-soft); font-weight: 500; }
+    .legend span { display: inline-flex; align-items: center; gap: 8px; }
+    .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+    .dot.a { background: var(--green); } .dot.b { background: #777; } .dot.p { background: var(--amber); }
+
+    /* Overlay & Sheet */
+    .overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.7); opacity: 0; pointer-events: none; transition: opacity .25s ease; z-index: 40; }
+    .overlay.show { opacity: 1; pointer-events: auto; }
+    .sheet { position: fixed; top: 0; right: 0; height: 100%; width: min(560px,100%); background: var(--black); border-left: 1px solid var(--line); display: flex; flex-direction: column; transform: translateX(100%); transition: transform .3s cubic-bezier(.32,.72,0,1); z-index: 50; }
+    .sheet.show { transform: translateX(0); }
+    .sheet-header { padding: 22px 24px 18px; border-bottom: 1px solid var(--line); flex-shrink: 0; }
+    .sheet-top { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 18px; }
+    .sheet-date-label { font-size: 12px; font-weight: 700; color: var(--text-soft); text-transform: uppercase; letter-spacing: 0.06em; margin: 0 0 2px; }
+    .sheet-date { font-family: 'Playfair Display', serif; font-weight: 700; font-size: 22px; color: var(--crimson-light); margin: 0; }
+    .sheet-close { background: var(--panel); border: 1px solid var(--line); color: var(--text); width: 36px; height: 36px; border-radius: 8px; font-size: 20px; cursor: pointer; flex-shrink: 0; }
+    .sheet-close:hover { border-color: var(--crimson-light); }
+    .progress { display: flex; align-items: flex-start; gap: 2px; }
+    .progress-step { flex: 1; display: flex; align-items: flex-start; gap: 2px; }
+    .progress-dot { width: 28px; height: 28px; border-radius: 50%; border: 2px solid var(--line); background: var(--panel); display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 700; color: var(--text-soft); flex-shrink: 0; transition: all .2s; }
+    .progress-line { flex: 1; height: 2px; background: var(--line); transition: background .2s; margin-top: 13px; }
+    .progress-step.done .progress-dot { background: var(--crimson); border-color: var(--crimson); color: #fff; }
+    .progress-step.done .progress-line { background: var(--crimson); }
+    .progress-step.active .progress-dot { border-color: var(--crimson-light); color: var(--white); background: rgba(194,36,64,0.18); }
+    .progress-label { display: block; font-size: 11px; font-weight: 600; color: var(--text-mute); margin-top: 6px; text-align: center; white-space: nowrap; }
+    .progress-step.active .progress-label { color: var(--white); }
+    .progress-step.done .progress-label { color: var(--text-soft); }
+    .progress-dotwrap { display: flex; flex-direction: column; align-items: center; }
+    .sheet-body { padding: 26px 24px; overflow-y: auto; flex: 1; }
+    .step-panel { display: none; }
+    .step-panel.active { display: block; }
+    .step-eyebrow { font-size: 12px; font-weight: 700; color: var(--crimson-light); text-transform: uppercase; letter-spacing: 0.06em; margin: 0 0 6px; }
+    .step-title { font-family: 'Playfair Display', serif; font-weight: 700; font-size: 21px; color: var(--white); margin: 0 0 8px; }
+    .step-desc { font-size: 15px; color: var(--text-soft); line-height: 1.55; margin: 0 0 24px; }
+    .field { margin-bottom: 20px; }
+    .field label { display: block; font-size: 14px; font-weight: 600; color: var(--text); margin-bottom: 8px; }
+    .field .req { color: var(--crimson-light); }
+    .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    input, textarea, select { width: 100%; background: var(--panel); border: 1.5px solid var(--line); color: var(--white); border-radius: 8px; padding: 13px 14px; font-family: 'Inter', sans-serif; font-size: 15px; font-weight: 500; }
+    input::placeholder, textarea::placeholder { color: #726c62; font-weight: 400; }
+    input:focus, textarea:focus, select:focus { outline: none; border-color: var(--crimson-light); }
+    textarea { resize: vertical; min-height: 110px; line-height: 1.55; }
+    select option { background: var(--panel); color: var(--white); }
+    .toggle-row { display: flex; gap: 10px; }
+    .toggle-btn { flex: 1; padding: 12px; text-align: center; border: 1.5px solid var(--line); background: var(--panel); border-radius: 8px; cursor: pointer; font-size: 14px; font-weight: 600; color: var(--text-soft); transition: all .15s; }
+    .toggle-btn.active { border-color: var(--crimson-light); color: var(--white); background: rgba(185,28,60,0.18); }
+    #dj-details { display: none; margin-top: 14px; }
+    #dj-details.show { display: block; }
+    .stepper { display: flex; align-items: center; gap: 16px; }
+    .stepper button { width: 42px; height: 42px; background: var(--panel); border: 1.5px solid var(--line); color: var(--text); font-size: 19px; font-weight: 700; cursor: pointer; border-radius: 8px; }
+    .stepper button:hover { border-color: var(--crimson-light); color: var(--crimson-light); }
+    .stepper .val { font-family: 'Playfair Display', serif; font-weight: 800; font-size: 24px; min-width: 44px; text-align: center; color: var(--white); }
+    .summary { background: var(--panel); border: 1.5px solid var(--crimson); border-radius: 10px; padding: 22px; margin-top: 26px; }
+    .summary-title { font-size: 13px; font-weight: 700; color: var(--text-soft); text-transform: uppercase; letter-spacing: 0.04em; margin: 0 0 14px; }
+    .summary-row { display: flex; justify-content: space-between; align-items: center; padding: 9px 0; border-bottom: 1px solid var(--line); font-size: 14px; }
+    .summary-row:last-of-type { border-bottom: none; }
+    .summary-row .label { color: var(--text-soft); font-weight: 500; }
+    .summary-row .val { font-family: 'Playfair Display', serif; font-weight: 700; color: var(--white); }
+    .summary-row.total { border-top: 2px solid var(--crimson); margin-top: 6px; padding-top: 14px; }
+    .summary-row.total .val { color: var(--crimson-light); font-size: 20px; }
+    .summary-note { font-size: 12.5px; color: #8a8378; margin-top: 16px; line-height: 1.6; }
+    .sheet-footer { padding: 18px 24px 22px; border-top: 1px solid var(--line); flex-shrink: 0; display: flex; gap: 12px; }
+    .btn { flex: 1; padding: 15px; font-size: 14px; font-weight: 700; border-radius: 8px; cursor: pointer; letter-spacing: 0.01em; border: 1.5px solid var(--line); background: var(--panel); color: var(--text); }
+    .btn:hover { border-color: var(--crimson-light); }
+    .btn-primary { background: var(--crimson); border-color: var(--crimson); color: #fff; }
+    .btn-primary:hover { background: var(--crimson-light); border-color: var(--crimson-light); }
+    .btn-primary:disabled { background: #3a3a3a; border-color: #3a3a3a; color: #888; cursor: not-allowed; }
+    .btn[data-hidden="true"] { visibility: hidden; }
+
+    /* Receipt Modal */
+    .receipt-modal { position: fixed; inset: 0; z-index: 60; display: flex; align-items: center; justify-content: center; padding: 20px; background: rgba(0,0,0,0.8); backdrop-filter: blur(8px); opacity: 0; visibility: hidden; transition: all .3s ease; }
+    .receipt-modal.show { opacity: 1; visibility: visible; }
+    .receipt-content { background: var(--deep); border: 1px solid var(--crimson); border-radius: 16px; max-width: 560px; width: 100%; padding: 40px; max-height: 90vh; overflow-y: auto; transform: scale(0.9); transition: transform .3s ease; }
+    .receipt-modal.show .receipt-content { transform: scale(1); }
+    .receipt-content .checkmark { font-size: 48px; color: var(--green); text-align: center; margin-bottom: 12px; }
+    .receipt-content h2 { font-family: 'Playfair Display', serif; font-size: 28px; color: var(--white); text-align: center; margin-bottom: 4px; }
+    .receipt-content .sub { text-align: center; color: var(--text-soft); font-size: 14px; margin-bottom: 24px; }
+    .receipt-divider { height: 1px; background: var(--line); margin: 16px 0; }
+    .receipt-row { display: flex; justify-content: space-between; padding: 6px 0; font-size: 14px; color: var(--text-soft); }
+    .receipt-row .label { color: var(--muted); }
+    .receipt-row .value { color: var(--white); font-weight: 500; }
+    .receipt-row.highlight .value { color: var(--crimson-light); font-weight: 700; }
+    .receipt-actions { display: flex; gap: 12px; margin-top: 24px; }
+    .receipt-actions .btn { flex: 1; }
+
+    /* Override Tailwind's default form styles for dark theme */
+    input[type="text"],
+    input[type="email"],
+    input[type="tel"],
+    input[type="date"],
+    select,
+    textarea {
+      background-color: #1c1c1c !important;
+      color: #f0ede8 !important;
+      border-color: #3a3a3a !important;
+    }
+    input::placeholder,
+    textarea::placeholder {
+      color: #726c62 !important;
+    }
+    select option {
+      background-color: #1c1c1c !important;
+      color: #f0ede8 !important;
+    }
+    /* Fix checkbox/radio labels in venue form */
+    .char-type input:checked + label {
+      border-color: var(--crimson) !important;
+      color: var(--crimson-light) !important;
+      background: rgba(200,23,78,0.08) !important;
+    }
+    .char-type label {
+      background: transparent !important;
+      color: var(--text-soft) !important;
+      border-color: var(--line) !important;
+    }
+
+    /* override some old-site variables for dark theme */
+    :root {
+      --black: #08070D;
+      --deep: #100F18;
+      --surface: #16141F;
+      --card: #1C1A28;
+      --crimson: #C8174E;
+      --crimson-light: #E01F5A;
+      --crimson-dim: #7A0E30;
+      --white: #F0EDE8;
+      --muted: #8A8699;
+      --border: rgba(200,23,78,0.18);
+      --border-faint: rgba(240,237,232,0.07);
+      --panel: #1c1c1c;
+      --panel-2: #242424;
+      --text-soft: #d9d3c9;
+      --text-mute: #a39a8d;
+      --line: #3a3a3a;
+      --green: #5fc785;
+      --amber: #e3b158;
+    }
+
+    .btn-ghost-custom { background: transparent; color: var(--white); border: 1px solid rgba(240,237,232,.22); font-family: "DM Sans", sans-serif; font-size: .74rem; letter-spacing: .18em; text-transform: uppercase; padding: .9rem 2rem; cursor: pointer; text-decoration: none; display: inline-block; transition: border-color .25s,color .25s; }
+    .btn-ghost-custom:hover { border-color: var(--crimson); color: var(--crimson-light); }
+
+    @media(max-width:768px) {
+      .row2 { grid-template-columns: 1fr; }
+      .sheet { top: auto; bottom: 0; left: 0; right: 0; width: 100%; height: 94vh; border-left: none; border-top: 1px solid var(--line); border-radius: 16px 16px 0 0; transform: translateY(100%); }
+      .sheet.show { transform: translateY(0); }
+      .receipt-content { padding: 24px; }
+    }
+  </style>
+</head>
+<body class="bg-background text-on-surface antialiased overflow-x-hidden max-w-[100vw]">
+
+  <!-- ===== TOP NAVIGATION (New) ===== -->
+  <header class="bg-background/80 dark:bg-background/80 backdrop-blur-xl full-width top-0 sticky z-50 border-b border-outline-variant/30 flex justify-between items-center h-20 px-margin-mobile md:px-margin-desktop w-full max-w-container-max mx-auto">
+    <div class="font-display-xl text-display-xl tracking-tighter text-on-surface dark:text-on-surface" style="font-size: 32px; line-height: 40px;">
+      MEMORIES
+    </div>
+    <nav class="hidden md:flex space-x-8 font-label-sm text-label-sm uppercase tracking-widest">
+      <a class="text-primary dark:text-primary border-b border-primary pb-1 scale-95 active:scale-90 transition-transform" href="#about">About</a>
+      <a class="text-on-surface-variant dark:text-on-surface-variant hover:text-on-surface hover:text-primary transition-colors duration-300 scale-95 active:scale-90 transition-transform" href="#tickets">Tickets</a>
+      <a class="text-on-surface-variant dark:text-on-surface-variant hover:text-on-surface hover:text-primary transition-colors duration-300 scale-95 active:scale-90 transition-transform" href="#table-booking">Tables</a>
+      <a class="text-on-surface-variant dark:text-on-surface-variant hover:text-on-surface hover:text-primary transition-colors duration-300 scale-95 active:scale-90 transition-transform" href="#slot-booking">Book Event</a>
+      <a class="text-on-surface-variant dark:text-on-surface-variant hover:text-on-surface hover:text-primary transition-colors duration-300 scale-95 active:scale-90 transition-transform" href="#host-event">Host</a>
+      <a class="text-on-surface-variant dark:text-on-surface-variant hover:text-on-surface hover:text-primary transition-colors duration-300 scale-95 active:scale-90 transition-transform" href="#visit">Find Us</a>
+    </nav>
+    <a href="/memories/public/nights.html" class="bg-primary-container text-on-background font-label-sm text-label-sm uppercase tracking-widest px-6 py-3 hover:shadow-[0_0_15px_rgba(139,0,0,0.5)] transition-all duration-300 flex items-center gap-2 no-underline">
+      <i class="fas fa-ticket-alt"></i> Get Tickets
+    </a>
+  </header>
+
+  <main>
+    <!-- HERO SECTION (with particles) -->
+    <section class="relative min-h-[90vh] flex flex-col items-center justify-center text-center px-margin-mobile md:px-margin-desktop">
+      <!-- Background Image & Overlay -->
+      <div class="absolute inset-0 z-[-1] overflow-hidden">
+        <div class="w-full h-full bg-cover bg-center opacity-40" style="background-image: url('https://lh3.googleusercontent.com/aida-public/AB6AXuAQU_A7bH9TqsCyiNMEcnZQDrozP6B6x01HcF_w43hLyw_ojQItMikg0lUOFculJjKq5hYbMx5oGkD6sS4TSoagbaOOKotI00QVuJi7ar8bMNp9k423-7HCJAz0uzgL5znbcePnMcuVtOdD98Hrp5QvSDKQjm7CVkBGNvq-HkTv0_CxvqZO2bpO36SiW54YQWNvVenw-6_YGPsyPeqKTeRDju2mMnsk53ZPEZ3yOVHdrOfwo0SqKZ2c')"></div>
+        <div class="absolute inset-0 bg-gradient-to-t from-background via-background/60 to-transparent"></div>
+      </div>
+
+      <!-- ✨ FLOATING PARTICLES (added back) -->
+      <div class="hero-particles" id="particles"></div>
+
+      <!-- Hero Content -->
+      <div class="max-w-4xl mx-auto space-y-6 mt-16 relative z-10">
+        <p class="font-label-sm text-label-sm text-primary tracking-[0.3em] uppercase">Some Nights Are Forever</p>
+        <h1 class="font-display-xl text-display-xl md:text-display-xl text-on-surface">MEMORIES</h1>
+        <h2 class="font-subheading-accent text-subheading-accent text-secondary tracking-widest uppercase">Night Club</h2>
+        <div class="flex items-center justify-center gap-2 mt-8 text-on-surface-variant">
+          <i class="fas fa-map-marker-alt"></i>
+          <span class="font-label-sm text-label-sm tracking-widest">SAMRIT HOTEL, CAPE COAST</span>
+        </div>
+        <div class="flex flex-col sm:flex-row items-center justify-center gap-6 pt-12">
+          <a href="#tickets" class="bg-primary-container text-on-background font-label-sm text-label-sm uppercase px-8 py-4 w-full sm:w-auto hover:shadow-[0_0_20px_rgba(139,0,0,0.6)] transition-all duration-300 flex items-center justify-center gap-2 no-underline">
+            <i class="fas fa-arrow-right"></i> EXPLORE TONIGHT
+          </a>
+          <a href="#table-booking" class="border border-secondary/50 text-secondary font-label-sm text-label-sm uppercase px-8 py-4 w-full sm:w-auto hover:border-secondary hover:bg-secondary/10 transition-all duration-300 flex items-center justify-center gap-2 bg-background/50 backdrop-blur-sm no-underline">
+            <i class="fas fa-crown"></i> RESERVE A TABLE
+          </a>
+        </div>
+      </div>
+      <div class="absolute bottom-10 animate-bounce z-10">
+        <i class="fas fa-chevron-down text-on-surface-variant opacity-50"></i>
+      </div>
+    </section>
+
+    <!-- ===== ABOUT ===== -->
+    <section id="about" class="py-section-gap px-margin-mobile md:px-margin-desktop max-w-container-max mx-auto grid grid-cols-1 md:grid-cols-2 gap-12 items-center">
+      <div>
+        <p class="font-label-sm text-label-sm text-secondary tracking-[0.2em] uppercase mb-2">The Only One of Its Kind</p>
+        <h2 class="font-headline-lg text-headline-lg text-on-surface mb-4">Cape Coast finally has <span class="text-primary">the night it deserves</span></h2>
+        <div class="w-12 h-0.5 bg-primary mb-6"></div>
+        <p class="font-body-lg text-body-lg text-on-surface-variant">Memories is what happens when Presidential Palace grows up. Built inside SamRit Hotel and reborn with a single obsession: give Cape Coast a night club experience so good, people stop comparing us to Accra.</p>
+        <p class="font-body-lg text-body-lg text-on-surface-variant mt-4">The best DJs in the region. A crowd that came to actually enjoy themselves. A floor that does not lie. And one rule above all: <em class="text-on-surface">some nights are forever</em> — this is one of them.</p>
+        <ul class="mt-6 space-y-3 text-on-surface-variant font-body-md text-body-md">
+          <li class="flex items-start gap-2"><i class="fas fa-circle text-primary text-[6px] mt-2"></i> Ghana's coast, curated — Afrobeats, Amapiano, Afro house, hip-hop, all in one room</li>
+          <li class="flex items-start gap-2"><i class="fas fa-circle text-primary text-[6px] mt-2"></i> No velvet rope theatre — book a table and own your night legitimately</li>
+          <li class="flex items-start gap-2"><i class="fas fa-circle text-primary text-[6px] mt-2"></i> Dedicated smokers area so the floor stays clean and the energy stays up</li>
+          <li class="flex items-start gap-2"><i class="fas fa-circle text-primary text-[6px] mt-2"></i> Security that protects the vibe, not just the door</li>
+          <li class="flex items-start gap-2"><i class="fas fa-circle text-primary text-[6px] mt-2"></i> Strict dress code — because the room you walk into should feel like it means something</li>
+        </ul>
+        <div class="mt-8"><a href="#tickets" class="bg-primary-container text-on-background font-label-sm text-label-sm uppercase px-6 py-3 hover:shadow-[0_0_15px_rgba(139,0,0,0.5)] transition-all inline-block no-underline">See What's On</a></div>
+      </div>
+      <div class="grid grid-cols-2 gap-1">
+        <div class="bg-surface-container border border-outline-variant/30 p-6 text-center col-span-2">
+          <div class="font-display-xl text-5xl text-primary">2</div>
+          <div class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-widest">Nights a week — Friday &amp; Saturday</div>
+        </div>
+        <div class="bg-surface-container border border-outline-variant/30 p-6 text-center">
+          <div class="font-display-xl text-3xl text-primary">10PM</div>
+          <div class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-widest">Doors Open</div>
+        </div>
+        <div class="bg-surface-container border border-outline-variant/30 p-6 text-center">
+          <div class="font-display-xl text-3xl text-primary">∞</div>
+          <div class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-widest">Memories Made</div>
+        </div>
+        <div class="bg-surface-container border border-outline-variant/30 p-6 text-center">
+          <div class="font-display-xl text-3xl text-primary">♩</div>
+          <div class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-widest">Best DJs</div>
+        </div>
+        <div class="bg-surface-container border border-outline-variant/30 p-6 text-center">
+          <div class="font-display-xl text-3xl text-primary">1</div>
+          <div class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-widest">Standard — Unmatched</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== TICKETS ===== -->
+    <section id="tickets" class="py-section-gap px-margin-mobile md:px-margin-desktop max-w-container-max mx-auto text-center">
+      <p class="font-label-sm text-label-sm text-secondary tracking-[0.2em] uppercase mb-2">Secure Your Spot</p>
+      <h2 class="font-headline-lg text-headline-lg text-on-surface mb-4">Do not wait for <span class="text-primary">the gate price</span></h2>
+      <p class="font-body-lg text-body-lg text-on-surface-variant max-w-xl mx-auto">Advance tickets sell out. The crowd you want to be part of buys ahead. Get in, skip the queue, pay less. Simple.</p>
+      <div class="mt-12 p-8 border border-outline-variant/30 max-w-xl mx-auto">
+        <p class="font-label-sm text-label-sm text-secondary tracking-[0.2em] uppercase">To Purchase Tickets</p>
+        <p class="font-body-md text-body-md text-on-surface-variant mt-3">Call or WhatsApp us directly. Quote the event name and your number of tickets. Payment confirms your spot.</p>
+        <div class="flex flex-wrap justify-center gap-4 mt-6">
+          <a href="tel:+233547180023" class="bg-primary-container text-on-background font-label-sm text-label-sm uppercase px-8 py-3 hover:shadow-[0_0_15px_rgba(139,0,0,0.5)] transition-all no-underline"><i class="fas fa-phone-alt mr-2"></i> +233 54 718 0023</a>
+        </div>
+        <p class="font-label-sm text-label-sm text-on-surface-variant mt-4">memoriesnightclub1@gmail.com</p>
+      </div>
+    </section>
+
+    <!-- ===== TABLE BOOKING ===== -->
+    <section id="table-booking" class="py-section-gap px-margin-mobile md:px-margin-desktop max-w-container-max mx-auto text-center">
+      <p class="font-label-sm text-label-sm text-secondary tracking-[0.2em] uppercase mb-2">Seating at Memories</p>
+      <h2 class="font-headline-lg text-headline-lg text-on-surface mb-4">A table is a <span class="text-primary">privilege, not a right</span></h2>
+      <p class="font-body-lg text-body-lg text-on-surface-variant max-w-2xl mx-auto italic">“There is no VIP lounge. There is just the room — and those who chose to own their corner of it.”</p>
+      <p class="font-body-md text-body-md text-on-surface-variant max-w-2xl mx-auto mt-4">Book ahead. Sit where the room can see you. Your own bottles, your own space, your own night. That is the Memories table experience.</p>
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-gutter mt-12">
+        <div class="bg-surface-container border border-outline-variant/30 p-8 hover:border-secondary/50 transition-all">
+          <i class="fas fa-chair text-3xl text-secondary mb-4"></i>
+          <h3 class="font-headline-lg-mobile text-headline-lg-mobile text-on-surface">Standard Table</h3>
+          <p class="font-body-md text-body-md text-on-surface-variant mt-3">Reserved seating for your group with bottle service. Priority entry. Dedicated floor host. The room notices who booked ahead.</p>
+        </div>
+        <div class="bg-surface-container border border-secondary/30 p-8 hover:border-secondary transition-all transform md:-translate-y-4 shadow-[0_0_30px_rgba(212,175,55,0.05)]">
+          <i class="fas fa-gem text-3xl text-secondary mb-4"></i>
+          <h3 class="font-headline-lg-mobile text-headline-lg-mobile text-on-surface">Premium Table</h3>
+          <p class="font-body-md text-body-md text-on-surface-variant mt-3">Floor-side position with the best sightlines in the venue. Multiple bottles. The kind of table that signals to the room you came prepared.</p>
+        </div>
+        <div class="bg-surface-container border border-outline-variant/30 p-8 hover:border-secondary/50 transition-all">
+          <i class="fas fa-birthday-cake text-3xl text-secondary mb-4"></i>
+          <h3 class="font-headline-lg-mobile text-headline-lg-mobile text-on-surface">Birthday Package</h3>
+          <p class="font-body-md text-body-md text-on-surface-variant mt-3">Your night, fully set up. Décor, dedicated host, special mention from the DJ, bottles ready. You just need to show up.</p>
+        </div>
+      </div>
+      <div class="flex flex-wrap justify-center gap-4 mt-12">
+        <a href="tel:+233547180023" class="bg-primary-container text-on-background font-label-sm text-label-sm uppercase px-8 py-4 hover:shadow-[0_0_15px_rgba(139,0,0,0.5)] transition-all no-underline"><i class="fas fa-phone-alt mr-2"></i> Book a Table Now</a>
+        <a href="mailto:memoriesnightclub1@gmail.com" class="border border-secondary/50 text-secondary font-label-sm text-label-sm uppercase px-8 py-4 hover:border-secondary hover:bg-secondary/10 transition-all no-underline"><i class="fas fa-envelope mr-2"></i> Email Us</a>
+      </div>
+    </section>
+
+    <!-- ===== SLOT BOOKING (Calendar + Sheet) ===== -->
+    <section id="slot-booking" class="slot-section bg-surface-container-lowest border-t border-outline-variant/10">
+      <div style="max-width:900px;margin:0 auto;">
+        <h2 class="sectitle">Choose Your Night</h2>
+        <p class="secdesc">Memories operates Fridays and Saturdays. Tap an available date to open your booking form — nothing is confirmed until Memories reviews your submission.</p>
+        <div id="calendar"></div>
+        <div class="legend">
+          <span><i class="dot a"></i>Available — tap to book</span>
+          <span><i class="dot b"></i>Booked</span>
+          <span><i class="dot p"></i>Pending confirmation</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== HOST AN EVENT ===== -->
+    <section id="host-event" class="py-section-gap border-t border-outline-variant/10 px-margin-mobile md:px-margin-desktop">
+      <div class="max-w-container-max mx-auto bg-surface-container-low border border-outline-variant/20 p-8 md:p-16 grid grid-cols-1 md:grid-cols-2 gap-12 items-start">
+        <div>
+          <p class="font-label-sm text-label-sm text-secondary tracking-[0.2em] uppercase mb-2">Host at Memories</p>
+          <h2 class="font-headline-lg text-headline-lg text-on-surface mb-4">Plan an <span class="text-primary">unforgettable event</span></h2>
+          <p class="font-body-lg text-body-lg text-on-surface-variant">Memories is Cape Coast's most active event floor. If you are producing a night worth talking about, this is where it belongs. We provide the venue, the sound, the floor, and the crowd infrastructure. You bring the vision.</p>
+          <div class="grid grid-cols-2 gap-6 mt-8">
+            <div class="flex flex-col items-center gap-3 text-on-surface-variant hover:text-secondary transition-colors">
+              <i class="fas fa-birthday-cake text-4xl"></i>
+              <span class="font-label-sm text-label-sm uppercase">Birthdays</span>
+            </div>
+            <div class="flex flex-col items-center gap-3 text-on-surface-variant hover:text-secondary transition-colors">
+              <i class="fas fa-briefcase text-4xl"></i>
+              <span class="font-label-sm text-label-sm uppercase">Corporate</span>
+            </div>
+            <div class="flex flex-col items-center gap-3 text-on-surface-variant hover:text-secondary transition-colors">
+              <i class="fas fa-music text-4xl"></i>
+              <span class="font-label-sm text-label-sm uppercase">Concerts</span>
+            </div>
+            <div class="flex flex-col items-center gap-3 text-on-surface-variant hover:text-secondary transition-colors">
+              <i class="fas fa-wine-glass-alt text-4xl"></i>
+              <span class="font-label-sm text-label-sm uppercase">Private Parties</span>
+            </div>
+          </div>
+          <div class="mt-8 pt-4 border-t border-outline-variant/20">
+            <a href="#slot-booking" class="border border-secondary/50 text-secondary font-label-sm text-label-sm uppercase px-8 py-4 hover:border-secondary hover:bg-secondary/10 transition-all inline-flex items-center gap-2 no-underline">
+              <i class="fas fa-calendar-check"></i> Check Availability
+            </a>
+          </div>
+        </div>
+
+        <!-- Venue Proposal Form -->
+        <div class="bg-surface-container border border-outline-variant/20 p-6 md:p-8">
+          <h3 class="font-headline-lg-mobile text-headline-lg-mobile text-on-surface mb-2">Submit Your Event Proposal</h3>
+          <p class="font-body-md text-body-md text-on-surface-variant mb-6">Fill in the details below. We review every submission within 48 hours and respond via WhatsApp or email.</p>
+          <div id="venue-form-fields">
+            <div class="form-section-label text-secondary font-label-sm text-label-sm uppercase tracking-widest mt-4">Your Information</div>
+            <div class="row2">
+              <div class="field"><label>First Name</label><input type="text" id="vf-fname" placeholder="Your first name"></div>
+              <div class="field"><label>Last Name</label><input type="text" id="vf-lname" placeholder="Your surname"></div>
+            </div>
+            <div class="field"><label>Phone / WhatsApp</label><input type="tel" id="vf-phone" placeholder="+233 XX XXX XXXX"></div>
+            <div class="field"><label>Email Address</label><input type="email" id="vf-email" placeholder="you@email.com"></div>
+            <div class="field"><label>Instagram Handle</label><input type="text" id="vf-ig" placeholder="@yourhandle"></div>
+
+            <div class="form-section-label text-secondary font-label-sm text-label-sm uppercase tracking-widest mt-4">Event Details</div>
+            <div class="field"><label>Event Name</label><input type="text" id="vf-name" placeholder="What is the name of your event?"></div>
+            <div class="row2">
+              <div class="field"><label>Preferred Date</label><input type="date" id="vf-date"></div>
+              <div class="field"><label>Alternate Date</label><input type="date" id="vf-date2"></div>
+            </div>
+            <div class="row2">
+              <div class="field"><label>Expected Doors Time</label>
+                <select id="vf-time"><option value="">Select</option><option>9:00 PM</option><option>10:00 PM</option><option>11:00 PM</option></select>
+              </div>
+              <div class="field"><label>Expected Attendance</label>
+                <select id="vf-size"><option value="">Estimate</option><option>Under 100</option><option>100 — 200</option><option>200 — 350</option><option>350+</option></select>
+              </div>
+            </div>
+
+            <div class="form-section-label text-secondary font-label-sm text-label-sm uppercase tracking-widest mt-4">Event Character</div>
+            <p class="font-label-sm text-label-sm text-on-surface-variant mb-2">Select all that describe your event</p>
+            <div class="grid grid-cols-2 gap-2">
+              <div class="char-type"><input type="checkbox" id="ct1"><label for="ct1" class="block border border-outline-variant/30 p-2 text-center text-on-surface-variant hover:border-secondary transition-all cursor-pointer">Afrobeats</label></div>
+              <div class="char-type"><input type="checkbox" id="ct2"><label for="ct2" class="block border border-outline-variant/30 p-2 text-center text-on-surface-variant hover:border-secondary transition-all cursor-pointer">Amapiano</label></div>
+              <div class="char-type"><input type="checkbox" id="ct3"><label for="ct3" class="block border border-outline-variant/30 p-2 text-center text-on-surface-variant hover:border-secondary transition-all cursor-pointer">Hip-Hop / R&amp;B</label></div>
+              <div class="char-type"><input type="checkbox" id="ct4"><label for="ct4" class="block border border-outline-variant/30 p-2 text-center text-on-surface-variant hover:border-secondary transition-all cursor-pointer">All-Genre</label></div>
+              <div class="char-type"><input type="checkbox" id="ct5"><label for="ct5" class="block border border-outline-variant/30 p-2 text-center text-on-surface-variant hover:border-secondary transition-all cursor-pointer">Campus / Student</label></div>
+              <div class="char-type"><input type="checkbox" id="ct6"><label for="ct6" class="block border border-outline-variant/30 p-2 text-center text-on-surface-variant hover:border-secondary transition-all cursor-pointer">Corporate / Brand</label></div>
+              <div class="char-type"><input type="checkbox" id="ct7"><label for="ct7" class="block border border-outline-variant/30 p-2 text-center text-on-surface-variant hover:border-secondary transition-all cursor-pointer">Birthday / Private</label></div>
+              <div class="char-type"><input type="checkbox" id="ct8"><label for="ct8" class="block border border-outline-variant/30 p-2 text-center text-on-surface-variant hover:border-secondary transition-all cursor-pointer">Launch Event</label></div>
+              <div class="char-type col-span-2"><input type="checkbox" id="ct9"><label for="ct9" class="block border border-outline-variant/30 p-2 text-center text-on-surface-variant hover:border-secondary transition-all cursor-pointer">Other</label></div>
+            </div>
+
+            <div class="form-section-label text-secondary font-label-sm text-label-sm uppercase tracking-widest mt-4">Describe Your Event</div>
+            <div class="field"><label>Event Concept</label><textarea id="vf-concept" rows="4" placeholder="Tell us what makes this night different. Who is it for? What is the energy? What do you want people to feel when they leave?"></textarea></div>
+            <div class="field"><label>DJs / Performers Confirmed (if any)</label><input type="text" id="vf-acts" placeholder="List any confirmed DJs, MCs, or live acts"></div>
+            <div class="field"><label>Ticket Price You Plan to Charge</label><input type="text" id="vf-price" placeholder="e.g. GHS 40 advance / GHS 60 gate"></div>
+            <div class="field"><label>Anything Else We Should Know</label><textarea id="vf-extra" rows="3" placeholder="Sponsorships, media partners, special requirements..."></textarea></div>
+
+            <button class="bg-primary-container text-on-background font-label-sm text-label-sm uppercase px-8 py-3 hover:shadow-[0_0_15px_rgba(139,0,0,0.5)] transition-all w-full mt-2" onclick="submitVenueForm()">Submit Proposal</button>
+            <p class="font-label-sm text-label-sm text-on-surface-variant mt-3">By submitting you agree to a review call with the Memories team before any date is confirmed. Available dates are Fridays and Saturdays only. Doors open no earlier than 9:00 PM.</p>
+          </div>
+          <div class="form-success" id="venue-success" style="display:none; text-align:center; padding:2rem; background:rgba(200,23,78,0.07); border:1px solid var(--crimson-dim);">
+            <p class="font-headline-lg-mobile text-headline-lg-mobile text-primary">Proposal Received</p>
+            <span class="font-body-md text-body-md text-on-surface-variant">We will review your submission and reach out within 48 hours via WhatsApp or email. Check your messages.</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== VISIT ===== -->
+    <section id="visit" class="py-section-gap px-margin-mobile md:px-margin-desktop max-w-container-max mx-auto grid grid-cols-1 md:grid-cols-2 gap-12 items-center border-t border-outline-variant/10">
+      <div class="bg-surface-container border border-outline-variant/30 aspect-[4/3] flex flex-col items-center justify-center relative p-8 text-center">
+        <p class="font-label-sm text-label-sm text-secondary uppercase tracking-widest">We Are At</p>
+        <h3 class="font-headline-lg text-headline-lg text-on-surface">SamRit Hotel</h3>
+        <p class="font-body-lg text-body-lg text-on-surface-variant">Cape Coast, Ghana</p>
+        <p class="font-label-sm text-label-sm text-primary uppercase tracking-widest mt-4">Fridays &amp; Saturdays Only</p>
+        <div class="absolute bottom-4 right-4">
+          <a href="https://maps.google.com?q=SamRit+Hotel+Cape+Coast+Ghana" target="_blank" class="border border-secondary/50 text-secondary font-label-sm text-label-sm uppercase px-4 py-2 hover:border-secondary hover:bg-secondary/10 transition-all no-underline inline-flex items-center gap-1">
+            <i class="fas fa-map-pin"></i> Open in Maps
+          </a>
+        </div>
+      </div>
+      <div>
+        <p class="font-label-sm text-label-sm text-secondary tracking-[0.2em] uppercase mb-2">Plan Your Night</p>
+        <h2 class="font-headline-lg text-headline-lg text-on-surface mb-6">Everything you <span class="text-primary">need to know</span></h2>
+        <div class="space-y-4">
+          <div class="flex gap-4">
+            <i class="fas fa-map-marker-alt text-secondary text-xl w-8"></i>
+            <div><span class="font-label-sm text-label-sm text-secondary uppercase tracking-widest">Location</span><p class="font-body-md text-body-md text-on-surface-variant">SamRit Hotel, Cape Coast<br>Central Region, Ghana</p></div>
+          </div>
+          <div class="flex gap-4">
+            <i class="fas fa-clock text-secondary text-xl w-8"></i>
+            <div><span class="font-label-sm text-label-sm text-secondary uppercase tracking-widest">When We Open</span><p class="font-body-md text-body-md text-on-surface-variant">Every Friday &amp; Saturday<br>Doors: 10:00 PM sharp</p></div>
+          </div>
+          <div class="flex gap-4">
+            <i class="fas fa-phone-alt text-secondary text-xl w-8"></i>
+            <div><span class="font-label-sm text-label-sm text-secondary uppercase tracking-widest">Reservations &amp; Tickets</span><p class="font-body-md text-body-md text-on-surface-variant"><a href="tel:+233547180023" class="text-on-surface hover:text-primary">+233 54 718 0023</a><br><a href="mailto:memoriesnightclub1@gmail.com" class="text-on-surface hover:text-primary">memoriesnightclub1@gmail.com</a></p></div>
+          </div>
+          <div class="flex gap-4">
+            <i class="fas fa-gavel text-secondary text-xl w-8"></i>
+            <div><span class="font-label-sm text-label-sm text-secondary uppercase tracking-widest">House Rules</span><p class="font-body-md text-body-md text-on-surface-variant">Strict dress code — Drink responsibly<br>Respect the DJ — Security is always present</p></div>
+          </div>
+        </div>
+        <div class="mt-8">
+          <span class="font-label-sm text-label-sm text-secondary uppercase tracking-widest">Follow the Night</span>
+          <div class="flex flex-wrap gap-3 mt-3">
+            <a href="https://instagram.com/memoriesnightclub.gh" target="_blank" class="border border-outline-variant/30 px-4 py-2 text-on-surface-variant hover:border-secondary hover:text-secondary transition-all no-underline"><i class="fab fa-instagram mr-2"></i> @memoriesnightclub.gh</a>
+            <a href="https://tiktok.com/@memoriesnightclub.gh" target="_blank" class="border border-outline-variant/30 px-4 py-2 text-on-surface-variant hover:border-secondary hover:text-secondary transition-all no-underline"><i class="fab fa-tiktok mr-2"></i> @memoriesnightclub.gh</a>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- ===== FOOTER ===== -->
+  <footer class="bg-surface-container-lowest border-t border-outline-variant/20 py-12 px-margin-mobile md:px-margin-desktop w-full max-w-container-max mx-auto">
+    <div class="grid grid-cols-1 md:grid-cols-4 gap-8">
+      <div>
+        <div class="font-display-xl text-display-xl text-on-surface" style="font-size: 32px; line-height: 40px;">MEMORIES</div>
+        <p class="font-body-md text-body-md text-on-surface-variant mt-4">The reborn Presidential Palace at SamRit Hotel. Cape Coast's ultimate night club experience — best DJs, proper service, and the kind of nights that stay with you.</p>
+        <div class="flex gap-4 mt-6">
+          <a href="https://instagram.com/memoriesnightclub.gh" target="_blank" class="w-10 h-10 rounded-full border border-outline-variant/50 flex items-center justify-center text-on-surface-variant hover:text-secondary hover:border-secondary transition-all"><i class="fab fa-instagram"></i></a>
+          <a href="https://tiktok.com/@memoriesnightclub.gh" target="_blank" class="w-10 h-10 rounded-full border border-outline-variant/50 flex items-center justify-center text-on-surface-variant hover:text-secondary hover:border-secondary transition-all"><i class="fab fa-tiktok"></i></a>
+        </div>
+      </div>
+      <div>
+        <h4 class="font-label-sm text-label-sm text-secondary uppercase tracking-widest">Navigate</h4>
+        <ul class="space-y-3 mt-4 font-body-md text-body-md">
+          <li><a href="#about" class="text-on-surface-variant hover:text-primary transition-colors no-underline">About</a></li>
+          <li><a href="#tickets" class="text-on-surface-variant hover:text-primary transition-colors no-underline">Buy Tickets</a></li>
+          <li><a href="#table-booking" class="text-on-surface-variant hover:text-primary transition-colors no-underline">Book a Table</a></li>
+          <li><a href="#slot-booking" class="text-on-surface-variant hover:text-primary transition-colors no-underline">Book Your Event</a></li>
+          <li><a href="#host-event" class="text-on-surface-variant hover:text-primary transition-colors no-underline">Host an Event</a></li>
+          <li><a href="#visit" class="text-on-surface-variant hover:text-primary transition-colors no-underline">Find Us</a></li>
+        </ul>
+      </div>
+      <div>
+        <h4 class="font-label-sm text-label-sm text-secondary uppercase tracking-widest">Contact</h4>
+        <ul class="space-y-3 mt-4 font-body-md text-body-md">
+          <li><a href="tel:+233547180023" class="text-on-surface-variant hover:text-primary transition-colors no-underline"><i class="fas fa-phone-alt mr-2"></i> +233 54 718 0023</a></li>
+          <li><a href="mailto:memoriesnightclub1@gmail.com" class="text-on-surface-variant hover:text-primary transition-colors no-underline"><i class="fas fa-envelope mr-2"></i> memoriesnightclub1@gmail.com</a></li>
+          <li class="text-on-surface-variant"><i class="fas fa-map-marker-alt mr-2"></i> SamRit Hotel, Cape Coast</li>
+          <li class="text-on-surface-variant"><i class="fas fa-clock mr-2"></i> Fri &amp; Sat — Doors 10PM</li>
+        </ul>
+      </div>
+      <div>
+        <h4 class="font-label-sm text-label-sm text-secondary uppercase tracking-widest">Hours</h4>
+        <div class="mt-4 space-y-2 font-body-md text-body-md text-on-surface-variant">
+          <div><span class="font-bold">Friday</span> 10PM – Late</div>
+          <div><span class="font-bold">Saturday</span> 10PM – Late</div>
+          <div class="mt-4 text-secondary font-label-sm uppercase tracking-widest">Some nights are forever.</div>
+        </div>
+      </div>
+    </div>
+    <div class="flex flex-col md:flex-row justify-between items-center pt-8 mt-8 border-t border-outline-variant/20 text-on-surface-variant text-sm font-label-sm uppercase">
+      <p>© 2026 MEMORIES NIGHT CLUB. ALL RIGHTS RESERVED.</p>
+      <p class="mt-4 md:mt-0">Drink Responsibly 18+</p>
+    </div>
+  </footer>
+
+  <!-- ===== OVERLAY & SHEET ===== -->
+  <div class="overlay" id="overlay" onclick="closeSheet()"></div>
+  <div class="sheet" id="sheet">
+    <div class="sheet-header">
+      <div class="sheet-top">
+        <div>
+          <p class="sheet-date-label">Booking for</p>
+          <p class="sheet-date" id="sheet-date">—</p>
+        </div>
+        <button class="sheet-close" onclick="closeSheet()" aria-label="Close">×</button>
+      </div>
+      <div class="progress" id="progress"></div>
+    </div>
+    <div class="sheet-body">
+      <!-- Step 1 -->
+      <div class="step-panel active" data-step="1">
+        <p class="step-eyebrow">Step 1 of 4</p>
+        <h3 class="step-title">Organiser Details</h3>
+        <p class="step-desc">Tell us who's bringing the night to life.</p>
+        <div class="row2">
+          <div class="field"><label>Organiser / Company Name <span class="req">*</span></label><input type="text" id="org-name" placeholder="e.g. Coastline Events"></div>
+          <div class="field"><label>Contact Person <span class="req">*</span></label><input type="text" id="contact-person" placeholder="Full name"></div>
+        </div>
+        <div class="row2">
+          <div class="field"><label>Email <span class="req">*</span></label><input type="email" id="org-email" placeholder="you@example.com"></div>
+          <div class="field"><label>Phone / WhatsApp <span class="req">*</span></label><input type="tel" id="org-phone" placeholder="+233 ..."></div>
+        </div>
+      </div>
+
+      <!-- Step 2 -->
+      <div class="step-panel" data-step="2">
+        <p class="step-eyebrow">Step 2 of 4</p>
+        <h3 class="step-title">Event Concept</h3>
+        <p class="step-desc">Describe the theme, vibe, and experience you're planning. This is what Memories reviews when deciding to confirm your date.</p>
+        <div class="field"><label>Concept Description <span class="req">*</span></label><textarea id="concept-desc" placeholder="Describe your event concept — theme, target crowd, format of the night, expected atmosphere..."></textarea></div>
+      </div>
+
+      <!-- Step 3 -->
+      <div class="step-panel" data-step="3">
+        <p class="step-eyebrow">Step 3 of 4</p>
+        <h3 class="step-title">DJs, MCs & Special Requests</h3>
+        <p class="step-desc">Let us know who's on the decks and mic, and flag anything else we should prepare for.</p>
+        <div class="field">
+          <label>Bringing external DJs or MCs?</label>
+          <div class="toggle-row">
+            <div class="toggle-btn" id="dj-yes" onclick="setDJ(true)">Yes</div>
+            <div class="toggle-btn active" id="dj-no" onclick="setDJ(false)">No</div>
+          </div>
+          <div id="dj-details"><textarea id="dj-details-text" placeholder="Names, roles (DJ/MC/performer), and any technical or logistical requirements..."></textarea></div>
+        </div>
+        <div class="field"><label>Special Requests</label><textarea id="special-requests" placeholder="Décor, stage setup, sponsor branding, security needs, anything else..."></textarea></div>
+      </div>
+
+      <!-- Step 4 -->
+      <div class="step-panel" data-step="4">
+        <p class="step-eyebrow">Step 4 of 4</p>
+        <h3 class="step-title">Tables & Gate Attendance</h3>
+        <p class="step-desc">Estimate your numbers so we can project the revenue split. Final figures are settled against actuals on the night.</p>
+        <div class="row2">
+          <div class="field">
+            <label>Tables (GHS 3,000 minimum each)</label>
+            <div class="stepper">
+              <button onclick="changeVal('tables',-1)">−</button>
+              <span class="val" id="tables">0</span>
+              <button onclick="changeVal('tables',1)">+</button>
+            </div>
+          </div>
+          <div class="field">
+            <label>Est. Gate Attendance (GHS 50 / head)</label>
+            <div class="stepper">
+              <button onclick="changeVal('gate',-25)">−</button>
+              <span class="val" id="gate">0</span>
+              <button onclick="changeVal('gate',25)">+</button>
+            </div>
+          </div>
+        </div>
+        <div class="summary">
+          <p class="summary-title">Estimated Revenue Split</p>
+          <div class="summary-row"><span class="label">Projected gate revenue</span><span class="val" id="s-gate-total">GHS 0</span></div>
+          <div class="summary-row"><span class="label">— Memories share (30%)</span><span class="val" id="s-gate-club">GHS 0</span></div>
+          <div class="summary-row"><span class="label">— Organiser share (70%)</span><span class="val" id="s-gate-org">GHS 0</span></div>
+          <div class="summary-row"><span class="label">Projected table revenue</span><span class="val" id="s-table-total">GHS 0</span></div>
+          <div class="summary-row"><span class="label">— Memories share (90%)</span><span class="val" id="s-table-club">GHS 0</span></div>
+          <div class="summary-row"><span class="label">— Organiser share (10%)</span><span class="val" id="s-table-org">GHS 0</span></div>
+          <div class="summary-row total"><span class="label">Organiser payout, estimated</span><span class="val" id="s-org-total">GHS 0</span></div>
+          <p class="summary-note">Memories reserves 30 complimentary gate passes per event; these are honoured at no charge and do not reduce the organiser's share. Figures above are estimates for planning only and are settled against actual gate and table receipts after the event.</p>
+        </div>
+      </div>
+    </div>
+    <!-- End of sheet-body -->
+
+    <!-- ===== SHEET FOOTER (ADD THIS) ===== -->
+    <div class="sheet-footer">
+      <button class="btn" id="backBtn" onclick="prevStep()" data-hidden="true">Back</button>
+      <button class="btn btn-primary" id="nextBtn" onclick="nextStep()">Continue</button>
+    </div>
+  </div>
+  <!-- End of sheet -->
+
+  <!-- ===== RECEIPT MODAL ===== -->
+  <div class="receipt-modal" id="receiptModal">
+    <div class="receipt-content">
+      <div class="checkmark">✓</div>
+      <h2>Booking Request Submitted</h2>
+      <p class="sub">Your event proposal has been received and is pending review.</p>
+      <div class="receipt-divider"></div>
+      <div id="receiptDetails">
+        <div class="receipt-row"><span class="label">Event Date</span><span class="value" id="receipt-date">—</span></div>
+        <div class="receipt-row"><span class="label">Organiser</span><span class="value" id="receipt-organiser">—</span></div>
+        <div class="receipt-row"><span class="label">Contact</span><span class="value" id="receipt-contact">—</span></div>
+        <div class="receipt-row"><span class="label">Email</span><span class="value" id="receipt-email">—</span></div>
+        <div class="receipt-row"><span class="label">Phone</span><span class="value" id="receipt-phone">—</span></div>
+        <div class="receipt-row"><span class="label">Tables Booked</span><span class="value" id="receipt-tables">0</span></div>
+        <div class="receipt-row"><span class="label">Est. Gate Attendance</span><span class="value" id="receipt-gate">0</span></div>
+        <div class="receipt-row highlight"><span class="label">Est. Organiser Payout</span><span class="value" id="receipt-payout">GHS 0</span></div>
+      </div>
+      <div class="receipt-divider"></div>
+      <p style="font-size:13px;color:var(--text-mute);text-align:center;line-height:1.6;">
+        A confirmation email has been sent to your address.<br>
+        Our team will review your proposal and reach out within 48 hours via WhatsApp or email.
+      </p>
+      <div class="receipt-actions">
+        <button class="btn btn-primary" onclick="closeReceipt()">Done</button>
+        <button class="btn" onclick="window.location.href='#slot-booking'">Book Another Date</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== JAVASCRIPT (from old site, adapted) ===== -->
+  <script>
+    // ================================================================
+    // FIREBASE CONFIG (unchanged)
+    // ================================================================
+    const firebaseConfig = {
+      apiKey: "AIzaSyCkhFjqfTqCIg9ic5Qh63XfWVT4tGWuzpM",
+      authDomain: "memoriesnightclub-2717f.firebaseapp.com",
+      projectId: "memoriesnightclub-2717f",
+      storageBucket: "memoriesnightclub-2717f.firebasestorage.app",
+      messagingSenderId: "143491627943",
+      appId: "1:143491627943:web:7cb70bfabdefda7e8a5482",
+      measurementId: "G-9RQQCZ7EVD"
+    };
+
+    let db;
+    try {
+      firebase.initializeApp(firebaseConfig);
+      db = firebase.firestore();
+      db.enablePersistence().catch(err => console.warn('Firestore persistence:', err));
+      console.log('✅ Firebase initialized');
+    } catch (e) {
+      console.warn('⚠️ Firebase not available. Bookings will work in demo mode.');
+    }
+
+    const BREVO_API_KEY = "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";
+
+    // ================================================================
+    // CALENDAR & BOOKING LOGIC
+    // ================================================================
+    const monthMap = { "Jan":0, "Feb":1, "Mar":2, "Apr":3, "May":4, "Jun":5,
+                       "Jul":6, "Aug":7, "Sep":8, "Oct":9, "Nov":10, "Dec":11 };
+
+    function getToday() {
+      const now = new Date();
+      return new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    }
+
+    function isPastDate(day, month) {
+      const today = getToday();
+      const dateObj = new Date(2026, monthMap[month], day);
+      return dateObj < today;
+    }
+
+    function isFutureDate(day, month) {
+      return !isPastDate(day, month);
+    }
+
+    function getFutureDates(data) {
+      return data.filter(item => isFutureDate(item.n, item.m));
+    }
+
+    const dateData = [
+      {d:"Fri", n:4, m:"Sep", status:"booked", note:"72 Hours"},
+      {d:"Sat", n:5, m:"Sep", status:"booked", note:"72 Hours"},
+      {d:"Fri", n:11, m:"Sep", status:"available"},
+      {d:"Sat", n:12, m:"Sep", status:"available"},
+      {d:"Fri", n:18, m:"Sep", status:"available"},
+      {d:"Sat", n:19, m:"Sep", status:"available"},
+      {d:"Fri", n:25, m:"Sep", status:"available"},
+      {d:"Sat", n:26, m:"Sep", status:"available"},
+      {d:"Fri", n:2, m:"Oct", status:"available"},
+      {d:"Sat", n:3, m:"Oct", status:"available"},
+      {d:"Fri", n:9, m:"Oct", status:"available"},
+      {d:"Sat", n:10, m:"Oct", status:"available"},
+      {d:"Fri", n:16, m:"Oct", status:"available"},
+      {d:"Sat", n:17, m:"Oct", status:"available"},
+      {d:"Fri", n:23, m:"Oct", status:"available"},
+      {d:"Sat", n:24, m:"Oct", status:"available"},
+      {d:"Fri", n:30, m:"Oct", status:"available"},
+      {d:"Sat", n:31, m:"Oct", status:"available"},
+      {d:"Fri", n:6, m:"Nov", status:"available"},
+      {d:"Sat", n:7, m:"Nov", status:"available"},
+      {d:"Fri", n:13, m:"Nov", status:"available"},
+      {d:"Sat", n:14, m:"Nov", status:"available"},
+      {d:"Fri", n:20, m:"Nov", status:"available"},
+      {d:"Sat", n:21, m:"Nov", status:"available"},
+      {d:"Fri", n:27, m:"Nov", status:"available"},
+      {d:"Sat", n:28, m:"Nov", status:"available"},
+      {d:"Fri", n:4, m:"Dec", status:"available"},
+      {d:"Sat", n:5, m:"Dec", status:"available"},
+      {d:"Fri", n:11, m:"Dec", status:"available"},
+      {d:"Sat", n:12, m:"Dec", status:"available"},
+      {d:"Fri", n:18, m:"Dec", status:"available"},
+      {d:"Sat", n:19, m:"Dec", status:"available"},
+      {d:"Fri", n:25, m:"Dec", status:"pending", note:"Holiday — TBC"},
+      {d:"Sat", n:26, m:"Dec", status:"pending", note:"Holiday — TBC"},
+    ];
+
+    const monthNames = {Sep:"September 2026", Oct:"October 2026", Nov:"November 2026", Dec:"December 2026"};
+    const cal = document.getElementById("calendar");
+    let selectedDate = null;
+    let selectedDateObj = null;
+    let dateUnsubscribe = null;
+
+    function mergeDateStatuses(firestoreDocs) {
+      firestoreDocs.forEach(doc => {
+        const data = doc.data();
+        const idx = dateData.findIndex(d => 
+          d.d === data.day && d.n === data.date && d.m === data.month
+        );
+        if (idx !== -1) {
+          dateData[idx].status = data.status || 'available';
+          dateData[idx].note = data.note || '';
+        }
+      });
+    }
+
+    function renderCalendar() {
+      const futureDates = getFutureDates(dateData);
+      cal.innerHTML = '';
+      if (futureDates.length === 0) {
+        const msg = document.createElement("p");
+        msg.style.color = "var(--text-mute)";
+        msg.style.textAlign = "center";
+        msg.style.padding = "2rem";
+        msg.textContent = "No upcoming dates available for booking.";
+        cal.appendChild(msg);
+        return;
+      }
+      const grouped = {};
+      futureDates.forEach(item => {
+        if (!grouped[item.m]) grouped[item.m] = [];
+        grouped[item.m].push(item);
+      });
+      Object.keys(grouped).forEach(m => {
+        const block = document.createElement("div");
+        block.className = "month-block";
+        const label = document.createElement("div");
+        label.className = "month-label";
+        label.textContent = monthNames[m] || m + " 2026";
+        block.appendChild(label);
+        const grid = document.createElement("div");
+        grid.className = "date-grid";
+        grouped[m].forEach(x => {
+          const card = document.createElement("div");
+          card.className = "datecard " + x.status;
+          const statusLabel = x.status === "available" ? "Available" : (x.status === "booked" ? "Booked" : "Pending");
+          const tapLine = x.status === "available" || x.status === "pending" ? `<div class="tapme">Tap to book →</div>` : 
+                          (x.note ? `<div class="tapme">${x.note}</div>` : `<div class="tapme">Not available</div>`);
+          card.innerHTML = `
+            <div class="datebox"><div class="dow">${x.d}</div><div class="dnum">${x.n}</div><div class="mon">${x.m}</div></div>
+            <div class="info">
+              <div class="statusline"><span class="dot"></span>${statusLabel}</div>
+              ${tapLine}
+            </div>`;
+          if (x.status === "available" || x.status === "pending") {
+            card.addEventListener("click", () => openSheet(x.d + " " + x.n + " " + x.m, x));
+          } else {
+            card.style.cursor = "not-allowed";
+          }
+          grid.appendChild(card);
+        });
+        block.appendChild(grid);
+        cal.appendChild(block);
+      });
+    }
+
+    function listenToDates() {
+      if (!db) {
+        console.warn('⚠️ Firebase not available, using static dates.');
+        renderCalendar();
+        return;
+      }
+      if (dateUnsubscribe) {
+        dateUnsubscribe();
+        dateUnsubscribe = null;
+      }
+      dateUnsubscribe = db.collection('eventDates')
+      .onSnapshot((snapshot) => {
+        if (!snapshot.empty) {
+          mergeDateStatuses(snapshot.docs);
+          console.log('✅ Calendar updated from Firestore');
+        } else {
+          console.log('📝 No dates in Firestore, using local static data.');
+        }
+        renderCalendar();
+      }, (error) => {
+        console.warn('⚠️ Real-time listener error:', error);
+        renderCalendar();
+      });
+    }
+    listenToDates();
+
+    // ===== Sheet Logic =====
+    const TOTAL_STEPS = 4;
+    const STEP_LABELS = ["Details", "Concept", "Talent", "Numbers"];
+    let currentStep = 1;
+    const progressEl = document.getElementById("progress");
+
+    function renderProgress() {
+      progressEl.innerHTML = "";
+      for (let i = 1; i <= TOTAL_STEPS; i++) {
+        const stepWrap = document.createElement("div");
+        stepWrap.className = "progress-step" + (i < currentStep ? " done" : "") + (i === currentStep ? " active" : "");
+        const dotwrap = document.createElement("div");
+        dotwrap.className = "progress-dotwrap";
+        const dot = document.createElement("div");
+        dot.className = "progress-dot";
+        dot.textContent = i < currentStep ? "✓" : i;
+        const label = document.createElement("div");
+        label.className = "progress-label";
+        label.textContent = STEP_LABELS[i - 1];
+        dotwrap.appendChild(dot);
+        dotwrap.appendChild(label);
+        stepWrap.appendChild(dotwrap);
+        if (i < TOTAL_STEPS) {
+          const line = document.createElement("div");
+          line.className = "progress-line";
+          stepWrap.appendChild(line);
+        }
+        progressEl.appendChild(stepWrap);
+      }
+    }
+
+    function showStep(n) {
+      console.log('showStep called with step:', n);
+      
+      document.querySelectorAll(".step-panel").forEach(p => p.classList.toggle("active", Number(p.dataset.step) === n));
+      
+      const backBtn = document.getElementById("backBtn");
+      const nextBtn = document.getElementById("nextBtn");
+      
+      console.log('backBtn:', backBtn, 'nextBtn:', nextBtn);
+      
+      if (backBtn) {
+        backBtn.dataset.hidden = n === 1 ? "true" : "false";
+        console.log('Back button hidden:', backBtn.dataset.hidden);
+      } else {
+        console.warn('Back button not found!');
+      }
+      
+      if (nextBtn) {
+        nextBtn.textContent = n === TOTAL_STEPS ? "Submit Booking" : "Continue";
+        console.log('Next button text set to:', nextBtn.textContent);
+      } else {
+        console.warn('Next button not found!');
+      }
+      
+      renderProgress();
+      const sheetBody = document.querySelector(".sheet-body");
+      if (sheetBody) sheetBody.scrollTop = 0;
+    }
+
+    function nextStep() {
+      if (currentStep < TOTAL_STEPS) {
+        currentStep++;
+        showStep(currentStep);
+      } else {
+        // Last step → submit booking
+        submitBooking();
+      }
+    }
+    function prevStep() {
+      if (currentStep > 1) {
+        currentStep--;
+        showStep(currentStep);
+      }
+    }
+
+    const overlay = document.getElementById("overlay");
+    const sheet = document.getElementById("sheet");
+
+    function openSheet(key, x) {
+      selectedDate = key;
+      selectedDateObj = x;
+      document.getElementById("sheet-date").textContent = `${x.d} ${x.n} ${x.m} 2026`;
+      currentStep = 1;
+      showStep(1);
+      overlay.classList.add("show");
+      sheet.classList.add("show");
+      document.body.style.overflow = "hidden";
+    }
+
+    function closeSheet() {
+      overlay.classList.remove("show");
+      sheet.classList.remove("show");
+      document.body.style.overflow = "";
+    }
+
+    function setDJ(yes) {
+      document.getElementById("dj-yes").classList.toggle("active", yes);
+      document.getElementById("dj-no").classList.toggle("active", !yes);
+      document.getElementById("dj-details").classList.toggle("show", yes);
+    }
+
+    let counts = {tables:0, gate:0};
+    function changeVal(key, delta) {
+      counts[key] = Math.max(0, counts[key] + delta);
+      document.getElementById(key).textContent = counts[key];
+      recalc();
+    }
+
+    function recalc() {
+      const gateTotal = counts.gate * 50;
+      const gateClub = gateTotal * 0.30;
+      const gateOrg = gateTotal * 0.70;
+      const tableTotal = counts.tables * 3000;
+      const tableClub = tableTotal * 0.90;
+      const tableOrg = tableTotal * 0.10;
+      const orgTotal = gateOrg + tableOrg;
+
+      const fmt = n => "GHS " + n.toLocaleString(undefined, {maximumFractionDigits:0});
+      document.getElementById("s-gate-total").textContent = fmt(gateTotal);
+      document.getElementById("s-gate-club").textContent = fmt(gateClub);
+      document.getElementById("s-gate-org").textContent = fmt(gateOrg);
+      document.getElementById("s-table-total").textContent = fmt(tableTotal);
+      document.getElementById("s-table-club").textContent = fmt(tableClub);
+      document.getElementById("s-table-org").textContent = fmt(tableOrg);
+      document.getElementById("s-org-total").textContent = fmt(orgTotal);
+    }
+    recalc();
+
+    // ================================================================
+// SUBMIT BOOKING (FREE – no payment)
+// ================================================================
+async function submitBooking() {
+  // Gather form data
+  const orgName = document.getElementById("org-name").value.trim();
+  const contactPerson = document.getElementById("contact-person").value.trim();
+  const email = document.getElementById("org-email").value.trim();
+  const phone = document.getElementById("org-phone").value.trim();
+  const concept = document.getElementById("concept-desc").value.trim();
+  const hasDJ = document.getElementById("dj-yes").classList.contains("active");
+  const djDetails = hasDJ ? document.getElementById("dj-details-text").value.trim() : "";
+  const specialRequests = document.getElementById("special-requests").value.trim();
+
+  // Validate required fields
+  if (!orgName || !contactPerson || !email || !phone || !concept) {
+    alert("Please fill in all required fields (Organiser, Contact, Email, Phone, Concept).");
+    return;
+  }
+
+  // Build booking data
+  const bookingData = {
+    date: selectedDate,
+    dateObj: selectedDateObj,
+    organiser: orgName,
+    contactPerson: contactPerson,
+    email: email,
+    phone: phone,
+    concept: concept,
+    hasDJ: hasDJ,
+    djDetails: djDetails,
+    specialRequests: specialRequests,
+    tables: counts.tables,
+    gateAttendance: counts.gate,
+    estimatedPayout: counts.gate * 50 * 0.70 + counts.tables * 3000 * 0.10,
+    submittedAt: new Date().toISOString(),
+    status: 'pending' // no payment, just pending review
+  };
+
+  const nextBtn = document.getElementById("nextBtn");
+  const originalText = nextBtn.textContent;
+  nextBtn.textContent = "Submitting...";
+  nextBtn.disabled = true;
+
+  try {
+    // Save to Firestore directly (since no payment verification needed)
+    if (db) {
+      const docRef = await db.collection('eventBookings').add(bookingData);
+      bookingData.id = docRef.id;
+      console.log('✅ Booking saved with ID:', docRef.id);
+    } else {
+      console.log('📝 Firestore not available. Booking data:', bookingData);
+      bookingData.id = 'local_' + Date.now();
+    }
+
+    // Send confirmation email
+    await sendBookingEmail(bookingData);
+
+    // Show receipt
+    const receiptData = {
+      ...bookingData,
+      paidAmount: 0 // no fee
+    };
+    showReceipt(receiptData);
+    closeSheet();
+    resetForm();
+
+  } catch (error) {
+    console.error('❌ Error saving booking:', error);
+    alert('Error submitting booking. Please try again.');
+  } finally {
+    nextBtn.textContent = originalText;
+    nextBtn.disabled = false;
+  }
+}
+
+function resetForm() {
+  document.getElementById("org-name").value = "";
+  document.getElementById("contact-person").value = "";
+  document.getElementById("org-email").value = "";
+  document.getElementById("org-phone").value = "";
+  document.getElementById("concept-desc").value = "";
+  document.getElementById("dj-details-text").value = "";
+  document.getElementById("special-requests").value = "";
+  document.getElementById("tables").textContent = "0";
+  document.getElementById("gate").textContent = "0";
+  counts.tables = 0;
+  counts.gate = 0;
+  recalc();
+  setDJ(false);
+  currentStep = 1;
+  showStep(1);
+}
+
+    // ===== PDF Generation =====
+    function generateBookingPDF(bookingData) {
+      const { jsPDF } = window.jspdf;
+      const doc = new jsPDF('p', 'pt', 'a4');
+      const pageWidth = doc.internal.pageSize.getWidth();
+      const margin = 40;
+      let y = 40;
+
+      const writeText = (text, fontSize = 14, style = 'normal', align = 'left') => {
+        doc.setFontSize(fontSize);
+        doc.setFont('helvetica', style);
+        doc.text(String(text), margin, y, { align: align });
+        y += fontSize * 1.6;
+      };
+      const writeHeader = (text, fontSize = 18) => {
+        doc.setFontSize(fontSize);
+        doc.setFont('helvetica', 'bold');
+        doc.setTextColor('#c8174e');
+        doc.text(String(text), margin, y, { align: 'left' });
+        y += fontSize * 1.8;
+        doc.setDrawColor('#c8174e');
+        doc.line(margin, y - 6, pageWidth - margin, y - 6);
+        y += 10;
+        doc.setTextColor('#000000');
+        doc.setFont('helvetica', 'normal');
+      };
+      const writeRow = (label, value) => {
+        doc.setFontSize(12);
+        doc.setFont('helvetica', 'bold');
+        doc.text(String(label), margin, y);
+        doc.setFont('helvetica', 'normal');
+        doc.text(String(value), pageWidth - margin, y, { align: 'right' });
+        y += 18;
+      };
+
+      doc.setFontSize(24);
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor('#c8174e');
+      doc.text('MEMORIES', margin, y, { align: 'left' });
+      y += 20;
+      doc.setFontSize(14);
+      doc.setFont('helvetica', 'italic');
+      doc.setTextColor('#666');
+      doc.text('Some Nights Are Forever', margin, y);
+      y += 30;
+      doc.setTextColor('#000000');
+      doc.setFont('helvetica', 'normal');
+
+      writeText(`Hi ${bookingData.contactPerson}, we've got your proposal.`, 14, 'bold');
+      writeText(`Thanks for submitting an event to Memories. Below is a summary of everything you sent us for ${bookingData.date || 'TBC'}.`, 12);
+      y += 10;
+
+      writeHeader('Booking Reference', 16);
+      writeText(bookingData.id || 'N/A', 16, 'bold');
+      y += 10;
+
+      writeHeader('Proposed Date', 16);
+      writeText(bookingData.date || 'TBC', 14, 'bold');
+      y += 10;
+
+      writeHeader('What You Submitted', 16);
+      const fields = [
+        ['Organiser', bookingData.organiser],
+        ['Contact', `${bookingData.contactPerson} · ${bookingData.email} · ${bookingData.phone}`],
+        ['Event Concept', bookingData.concept || 'Not specified'],
+        ['External DJs / MCs', `${bookingData.hasDJ ? 'Yes' : 'No'} — ${bookingData.djDetails || 'None'}`],
+        ['Special Requests', bookingData.specialRequests || 'None'],
+        ['Tables Requested', String(bookingData.tables || 0)],
+        ['Estimated Gate Attendance', String(bookingData.gateAttendance || 0)]
+      ];
+      fields.forEach(([label, value]) => writeRow(label, value));
+      y += 10;
+
+      const fmt = (num) => 'GHS ' + num.toLocaleString(undefined, { maximumFractionDigits: 0 });
+      const gateTotal = bookingData.gateAttendance * 50;
+      const gateClub = gateTotal * 0.30;
+      const gateOrg = gateTotal * 0.70;
+      const tableTotal = bookingData.tables * 3000;
+      const tableClub = tableTotal * 0.90;
+      const tableOrg = tableTotal * 0.10;
+      const orgTotal = gateOrg + tableOrg;
+
+      writeHeader('Projected Revenue Split', 16);
+      writeRow('Projected gate revenue', fmt(gateTotal));
+      writeRow('— Memories share (30%)', fmt(gateClub));
+      writeRow('— Organiser share (70%)', fmt(gateOrg));
+      y += 6;
+      writeRow('Projected table revenue', fmt(tableTotal));
+      writeRow('— Memories share (90%)', fmt(tableClub));
+      writeRow('— Organiser share (10%)', fmt(tableOrg));
+      y += 6;
+      doc.setFont('helvetica', 'bold');
+      writeRow('Your estimated payout', fmt(orgTotal));
+      doc.setFont('helvetica', 'normal');
+      y += 10;
+
+      doc.setFontSize(10);
+      doc.setTextColor('#777');
+      doc.text('Memories reserves 30 complimentary gate passes per event, honoured at no charge and not deducted from your share.', margin, y);
+      y += 16;
+      doc.text('These figures are based on your own estimates and are settled against actual gate and table receipts on the night.', margin, y);
+      y += 20;
+      doc.setTextColor('#000000');
+
+      writeHeader('What Happens Next', 16);
+      doc.setFontSize(12);
+      doc.text('Memories will review your proposal and get back to you with a decision within 5 business days.', margin, y);
+      y += 18;
+      doc.text('Your date is held provisionally until then — it is not confirmed until you receive written approval from Memories.', margin, y);
+      y += 25;
+
+      doc.setFontSize(10);
+      doc.setTextColor('#999');
+      doc.text('Dress Well. Behave Well. Make Memories.', margin, y);
+      y += 16;
+      doc.setFont('helvetica', 'italic');
+      doc.text('Memories Night Club · SamRit Hotel, Cape Coast', margin, y);
+      y += 14;
+      doc.text('info@memoriesnightclub.com · +233 54 232 6579 · +233 24 308 7077', margin, y);
+      y += 14;
+      doc.text('@memoriesnightclub.gh', margin, y);
+
+      return doc.output('datauristring');
+    }
+
+    // ===== SEND CONFIRMATION EMAIL =====
+async function sendBookingEmail(bookingData) {
+  // Generate the PDF (this uses your existing function)
+  const pdfDataUri = generateBookingPDF(bookingData);
+  // Remove the data:application/pdf;base64, prefix
+  const base64Pdf = pdfDataUri.split(',')[1];
+
+  // The email you used to sign up for Brevo (this is your "from" address)
+  const SENDER_EMAIL = "profjero947@gmail.com";
+
+  const toEmail = bookingData.email; // the organiser's email
+  const subject = `Your Memories Event Booking Confirmation (Ref: ${bookingData.id || 'N/A'})`;
+
+  // --- Build the HTML email body (same as before) ---
+  const fmt = (num) => 'GHS ' + num.toLocaleString(undefined, { maximumFractionDigits: 0 });
+  const gateTotal = bookingData.gateAttendance * 50;
+  const gateClub = gateTotal * 0.30;
+  const gateOrg = gateTotal * 0.70;
+  const tableTotal = bookingData.tables * 3000;
+  const tableClub = tableTotal * 0.90;
+  const tableOrg = tableTotal * 0.10;
+  const orgTotal = gateOrg + tableOrg;
+
+  const htmlBody = `
+    <div style="font-family: 'Segoe UI', Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; color: #1a1a1a;">
+      <div style="text-align: center; border-bottom: 2px solid #c8174e; padding-bottom: 20px;">
+        <h1 style="font-family: 'Georgia', serif; font-size: 28px; color: #c8174e; letter-spacing: 2px; margin: 0;">MEMORIES</h1>
+        <p style="font-style: italic; color: #666; margin: 4px 0 0;">Some Nights Are Forever</p>
+      </div>
+      <div style="margin: 25px 0 20px;">
+        <h2 style="font-size: 20px; margin: 0; color: #1a1a1a;">Hi ${bookingData.contactPerson}, we've got your proposal.</h2>
+        <p style="font-size: 15px; color: #333;">Thanks for submitting an event to Memories. Below is a summary of everything you sent us for <strong>${bookingData.date || 'TBC'}</strong>.</p>
+      </div>
+      <div style="background: #f8f4ee; padding: 12px 16px; border-left: 4px solid #c8174e; margin-bottom: 20px;">
+        <strong style="font-size: 14px;">Booking Reference</strong><br>
+        <span style="font-size: 16px; font-weight: 600; color: #c8174e;">${bookingData.id || 'N/A'}</span>
+      </div>
+      <h3 style="font-size: 16px; color: #c8174e; border-bottom: 1px solid #ddd; padding-bottom: 6px;">What You Submitted</h3>
+      <table style="width: 100%; font-size: 14px; border-collapse: collapse; margin: 8px 0 20px;">
+        <tr><td style="padding: 6px 0; width: 40%;"><strong>Organiser</strong></td><td style="padding: 6px 0;">${bookingData.organiser}</td></tr>
+        <tr><td style="padding: 6px 0;"><strong>Contact</strong></td><td style="padding: 6px 0;">${bookingData.contactPerson} · ${bookingData.email} · ${bookingData.phone}</td></tr>
+        <tr><td style="padding: 6px 0;"><strong>Event Concept</strong></td><td style="padding: 6px 0;">${bookingData.concept || 'Not specified'}</td></tr>
+        <tr><td style="padding: 6px 0;"><strong>External DJs / MCs</strong></td><td style="padding: 6px 0;">${bookingData.hasDJ ? 'Yes' : 'No'} — ${bookingData.djDetails || 'None'}</td></tr>
+        <tr><td style="padding: 6px 0;"><strong>Special Requests</strong></td><td style="padding: 6px 0;">${bookingData.specialRequests || 'None'}</td></tr>
+        <tr><td style="padding: 6px 0;"><strong>Tables Requested</strong></td><td style="padding: 6px 0;">${bookingData.tables || 0}</td></tr>
+        <tr><td style="padding: 6px 0;"><strong>Estimated Gate Attendance</strong></td><td style="padding: 6px 0;">${bookingData.gateAttendance || 0}</td></tr>
+      </table>
+      <h3 style="font-size: 16px; color: #c8174e; border-bottom: 1px solid #ddd; padding-bottom: 6px;">Projected Revenue Split</h3>
+      <table style="width: 100%; font-size: 14px; border-collapse: collapse; margin: 8px 0 20px;">
+        <tr><td style="padding: 6px 0; width: 60%;"><strong>Projected gate revenue</strong></td><td style="padding: 6px 0; text-align: right;">${fmt(gateTotal)}</td></tr>
+        <tr><td style="padding: 6px 0; padding-left: 20px;">— Memories share (30%)</td><td style="padding: 6px 0; text-align: right;">${fmt(gateClub)}</td></tr>
+        <tr><td style="padding: 6px 0; padding-left: 20px;">— Organiser share (70%)</td><td style="padding: 6px 0; text-align: right;">${fmt(gateOrg)}</td></tr>
+        <tr><td style="padding: 6px 0;"><strong>Projected table revenue</strong></td><td style="padding: 6px 0; text-align: right;">${fmt(tableTotal)}</td></tr>
+        <tr><td style="padding: 6px 0; padding-left: 20px;">— Memories share (90%)</td><td style="padding: 6px 0; text-align: right;">${fmt(tableClub)}</td></tr>
+        <tr><td style="padding: 6px 0; padding-left: 20px;">— Organiser share (10%)</td><td style="padding: 6px 0; text-align: right;">${fmt(tableOrg)}</td></tr>
+        <tr style="border-top: 2px solid #c8174e;">
+          <td style="padding: 8px 0;"><strong>Your estimated payout</strong></td>
+          <td style="padding: 8px 0; text-align: right; font-weight: 700; color: #c8174e;">${fmt(orgTotal)}</td>
+        </tr>
+      </table>
+      <p style="font-size: 13px; color: #777; margin: -10px 0 20px;">Memories reserves 30 complimentary gate passes per event, honoured at no charge and not deducted from your share. These figures are based on your own estimates and are settled against actual gate and table receipts on the night.</p>
+      <div style="background: #f8f4ee; padding: 16px; border-radius: 6px; margin: 20px 0 24px;">
+        <h3 style="font-size: 16px; color: #c8174e; margin: 0 0 6px;">What Happens Next</h3>
+        <p style="font-size: 14px; margin: 0;">Memories will review your proposal and get back to you with a decision within <strong>5 business days</strong>. Your date is held provisionally until then — it is <strong>not confirmed</strong> until you receive written approval from Memories.</p>
+      </div>
+      <div style="text-align: center; border-top: 2px solid #c8174e; padding-top: 18px; font-size: 14px; color: #555;">
+        <p style="margin: 0; font-style: italic;">Dress Well. Behave Well. Make Memories.</p>
+        <p style="margin: 8px 0 0; font-size: 13px;">
+          Memories Night Club · SamRit Hotel, Cape Coast<br>
+          info@memoriesnightclub.com · +233 54 232 6579 · +233 24 308 7077<br>
+          @memoriesnightclub.gh
+        </p>
+        <p style="margin: 12px 0 0; font-size: 12px; color: #999;">This is an automated confirmation. Please do not reply directly to this email.</p>
+      </div>
+    </div>
+  `;
+
+  // --- Prepare the attachment for Brevo ---
+  const attachment = {
+    name: `Booking_Confirmation_${bookingData.id || Date.now()}.pdf`,
+    content: base64Pdf
+  };
+
+  // --- Send the email via Brevo API ---
+  try {
+    const response = await fetch('https://api.brevo.com/v3/smtp/email', {
+      method: 'POST',
+      headers: {
+        'Accept': 'application/json',
+        'api-key': BREVO_API_KEY,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        sender: {
+          name: 'Memories Night Club',
+          email: SENDER_EMAIL
+        },
+        to: [
+          {
+            email: toEmail,
+            name: bookingData.contactPerson
+          }
+        ],
+        subject: subject,
+        htmlContent: htmlBody,
+        attachment: [attachment]
+      })
+    });
+
+    const result = await response.json();
+
+    if (response.ok) {
+      console.log('✅ Email sent via Brevo:', result);
+      return true;
+    } else {
+      console.error('❌ Brevo error:', result);
+      // Optionally show a user-friendly message
+      return false;
+    }
+  } catch (error) {
+    console.error('❌ Brevo request failed:', error);
+    return false;
+  }
+}
+
+    // ===== Receipt Modal =====
+    function showReceipt(data) {
+    console.log('📋 showReceipt called with data:', data);
+
+    // Get all the elements we need
+    const elements = {
+        date: document.getElementById('receipt-date'),
+        organiser: document.getElementById('receipt-organiser'),
+        contact: document.getElementById('receipt-contact'),
+        email: document.getElementById('receipt-email'),
+        phone: document.getElementById('receipt-phone'),
+        tables: document.getElementById('receipt-tables'),
+        gate: document.getElementById('receipt-gate'),
+        payout: document.getElementById('receipt-payout'),
+        modal: document.getElementById('receiptModal')
+    };
+
+    // Check if all elements exist
+    const missing = Object.keys(elements).filter(key => !elements[key]);
+    if (missing.length > 0) {
+        console.error('❌ Missing receipt elements:', missing);
+        // Fallback: show a simple alert if modal is missing
+        if (!elements.modal) {
+        alert('Booking confirmed! Check your email for details.');
+        return;
+        }
+    }
+
+    // Populate the fields (only if element exists)
+    if (elements.date) elements.date.textContent = data.date || '—';
+    if (elements.organiser) elements.organiser.textContent = data.organiser || '—';
+    if (elements.contact) elements.contact.textContent = data.contactPerson || '—';
+    if (elements.email) elements.email.textContent = data.email || '—';
+    if (elements.phone) elements.phone.textContent = data.phone || '—';
+    if (elements.tables) elements.tables.textContent = data.tables || 0;
+    if (elements.gate) elements.gate.textContent = data.gateAttendance || 0;
+    if (elements.payout) {
+        elements.payout.textContent = 'GHS ' + (data.estimatedPayout || 0).toLocaleString(undefined, {maximumFractionDigits:0});
+    }
+
+    // Show the modal
+    if (elements.modal) {
+        elements.modal.classList.add('show');
+        document.body.style.overflow = 'hidden';
+        console.log('✅ Receipt modal shown');
+    }
+    }
+
+    function closeReceipt() {
+    const modal = document.getElementById('receiptModal');
+    if (modal) {
+        modal.classList.remove('show');
+        document.body.style.overflow = '';
+    }
+    }
+
+    // ===== Venue Form (host event) =====
+    function submitVenueForm() {
+      const fname = document.getElementById("vf-fname").value.trim();
+      const phone = document.getElementById("vf-phone").value.trim();
+      const ename = document.getElementById("vf-name").value.trim();
+      if (!fname || !phone || !ename) {
+        alert("Please fill in at least your name, phone number, and event name.");
+        return;
+      }
+      document.getElementById("venue-form-fields").style.display = "none";
+      document.getElementById("venue-success").style.display = "block";
+    }
+
+    // ===== HERO PARTICLES (bubbles) =====
+    const particleContainer = document.getElementById("particles");
+    if (particleContainer) {
+      for (let i = 0; i < 20; i++) {
+        const p = document.createElement("div");
+        p.className = "particle";
+        p.style.left = Math.random() * 100 + "%";
+        p.style.bottom = "-10px";
+        p.style.animationDuration = 7 + Math.random() * 10 + "s";
+        p.style.animationDelay = Math.random() * 9 + "s";
+        const size = 1 + Math.random() * 3;
+        p.style.width = size + "px";
+        p.style.height = size + "px";
+        p.style.background = Math.random() > 0.5 ? "#C8174E" : "#E01F5A";
+        particleContainer.appendChild(p);
+      }
+    }
+
+    // ===== Smooth scrolling for nav links =====
+    document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+      anchor.addEventListener('click', function (e) {
+        const href = this.getAttribute('href');
+        if (href === "#") return;
+        const target = document.querySelector(href);
+        if (target) {
+          e.preventDefault();
+          target.scrollIntoView({ behavior: 'smooth' });
+        }
+      });
+    });
+
+    console.log('✅ Memories integration complete – new UI with old functionality, dark inputs fixed, fully responsive.');
+  </script>
+</body>
+</html>
