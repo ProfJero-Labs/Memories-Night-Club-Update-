@@ -5,6 +5,16 @@ const eventId = params.get('event');
 const ticketTypeId = params.get('ticketType');
 const line = params.get('line') || 'FULLY ACTIVE.';
 
+// ── Inline error formatter (was previously imported but never existed) ──
+function friendlyError(err) {
+  const msg = String(err?.message || err || 'Something went wrong.');
+  if (msg.includes('Invalid callback URL')) return 'Configuration error. Please contact support.';
+  if (msg.includes('not available') || msg.includes('no longer')) return 'This ticket is no longer available.';
+  if (msg.includes('remaining')) return 'Not enough tickets remaining.';
+  if (msg.includes('Network') || msg.includes('fetch')) return 'Connection problem. Check your internet and try again.';
+  return msg;
+}
+
 document.querySelector('#app').innerHTML = shell() + `<main><div class="wrap checkout-layout"><section><div class="eyebrow">LOCK IN YOUR NIGHT</div><h1 class="display" style="font-size:92px;line-height:.8;margin:12px 0 35px">YOUR TICKET</h1><div id="form"></div></section><aside class="summary"><div id="preview"></div></aside></div></main>` + footer();
 
 try {
@@ -23,32 +33,69 @@ try {
         <h3>${esc(e.name)}</h3>
         <div class="ticket-line">${esc(line)}</div>
         <div class="ticket-rule"></div>
-        <div>${esc(t.name)} · ${qty} ticket${qty>1?'s':''}</div>
+        <div style="display:flex;justify-content:space-between;align-items:baseline;gap:12px">
+          <span style="font-size:11px;letter-spacing:.15em;text-transform:uppercase;color:#665a4d">Phone</span>
+          <span id="previewPhone" style="font-family:var(--mono);font-size:15px;color:#16110f;letter-spacing:.05em">— — —</span>
+        </div>
+        <div style="margin-top:10px;font-size:13px">${esc(t.name)} · <span id="previewQty">${qty}</span> ticket<span id="previewPlural">${qty>1?'s':''}</span></div>
         <div class="ticket-code" style="margin-top:25px">${esc(e.venue||'CAPE COAST')} · ${esc(e.doors||'10PM')}</div>
       </div>
+
       <div class="form-grid">
-        <div class="field full"><label>Your name</label><input id="buyerName" autocomplete="name" placeholder="Your full name"></div>
-        <div class="field"><label>Phone</label><input id="buyerPhone" autocomplete="tel" placeholder="024…"></div>
-        <div class="field"><label>Email</label><input id="buyerEmail" type="email" autocomplete="email" placeholder="you@example.com"></div>
-        <div class="field"><label>Quantity</label><select id="qty">${Array.from({length:maxQty},(_,i)=>`<option value="${i+1}">${i+1}</option>`).join('')}</select></div>
-        <div class="field full"><button id="pay" class="btn red" type="button">PAY ${money(t.pricePesewas)} · GET TICKETS</button></div>
+        <div class="field full">
+          <label for="buyerPhone">Phone number</label>
+          <input id="buyerPhone" autocomplete="tel" inputmode="tel" placeholder="024 123 4567" style="font-size:20px;letter-spacing:.05em;font-family:var(--mono);text-align:center">
+          <small style="color:var(--muted);font-size:11px;margin-top:6px;display:block">We'll send your ticket to this number. Show it at the door.</small>
+        </div>
+
+        <div class="field full">
+          <label for="qty">Quantity</label>
+          <select id="qty">${Array.from({length:maxQty},(_,i)=>`<option value="${i+1}">${i+1} ticket${i>0?'s':''}</option>`).join('')}</select>
+        </div>
+
+        <div class="field full" style="color:var(--muted);font-size:12px;line-height:1.5">
+          Secure payment via Paystack — Mobile Money or card. No account required.
+        </div>
+
+        <div class="field full">
+          <button id="pay" class="btn red" type="button">PAY ${money(t.pricePesewas)} · GET TICKET</button>
+        </div>
         <div id="errBox" class="field full"></div>
       </div>`;
 
+    // ── Quantity change ──
     document.querySelector('#qty').onchange = ev => {
       qty = Number(ev.target.value);
-      document.querySelector('#pay').textContent = `PAY ${money(t.pricePesewas * qty)} · GET TICKETS`;
+      document.querySelector('#pay').textContent = `PAY ${money(t.pricePesewas * qty)} · GET TICKET${qty>1?'S':''}`;
+      document.querySelector('#previewQty').textContent = qty;
+      document.querySelector('#previewPlural').textContent = qty > 1 ? 's' : '';
     };
 
+    // ── Live phone preview ──
+    const phoneInput = document.querySelector('#buyerPhone');
+    const previewPhone = document.querySelector('#previewPhone');
+    phoneInput.oninput = ev => {
+      const v = ev.target.value.replace(/\D/g, '');
+      if (!v) { previewPhone.textContent = '— — —'; return; }
+      // Simple grouping: 024 123 4567
+      let formatted = v;
+      if (v.length > 3 && v.length <= 6) formatted = `${v.slice(0,3)} ${v.slice(3)}`;
+      else if (v.length > 6) formatted = `${v.slice(0,3)} ${v.slice(3,6)} ${v.slice(6,10)}`;
+      previewPhone.textContent = formatted;
+    };
+
+    // ── Pay ──
     document.querySelector('#pay').onclick = async () => {
-      const buyerName = document.querySelector('#buyerName').value.trim();
-      const buyerPhone = document.querySelector('#buyerPhone').value.trim();
-      const buyerEmail = document.querySelector('#buyerEmail').value.trim();
+      const rawPhone = phoneInput.value.replace(/\D/g, '');
       const errBox = document.querySelector('#errBox');
       errBox.innerHTML = '';
 
-      if (!buyerName || !buyerPhone || !buyerEmail) {
-        errBox.innerHTML = '<div class="status error">Please complete all details.</div>';
+      // Ghana phone: 10 digits starting with 0, or 12 digits starting with 233
+      let phone = rawPhone;
+      if (phone.startsWith('233') && phone.length === 12) phone = '0' + phone.slice(3);
+      if (!/^0\d{9}$/.test(phone)) {
+        errBox.innerHTML = '<div class="status error">Enter a valid phone number (10 digits, e.g. 0241234567).</div>';
+        phoneInput.focus();
         return;
       }
 
@@ -57,8 +104,12 @@ try {
       b.textContent = 'LOCKING IN…';
 
       try {
-        // Correct relative resolution — works from /public/ or root
         const callbackUrl = new URL('payment-return.html', location.href).href;
+
+        // Paystack requires an email. The customer doesn't enter one, so we generate
+        // a placeholder tied to their phone. It's a valid format, so Paystack accepts
+        // it — no delivery happens to this address, and the SMS is the real receipt.
+        const placeholderEmail = `${phone}@guest.memoriesnightclub.com`;
 
         const r = await api('/api/checkout/initiate', {
           method: 'POST',
@@ -66,9 +117,9 @@ try {
             eventId,
             ticketTypeId,
             quantity: qty,
-            buyerName,
-            buyerPhone,
-            buyerEmail,
+            buyerName: 'Guest',            // not shown on the ticket; phone is the identity
+            buyerPhone: phone,
+            buyerEmail: placeholderEmail,
             identityLine: line,
             callbackUrl,
           }),
@@ -79,11 +130,14 @@ try {
 
       } catch (err) {
         console.error('Checkout error:', err);
-        errBox.innerHTML = `<div class="status error">${esc(err.message)}</div>`;
+        errBox.innerHTML = `<div class="status error">${esc(friendlyError(err))}</div>`;
         b.disabled = false;
-        b.textContent = `PAY ${money(t.pricePesewas * qty)} · GET TICKETS`;
+        b.textContent = `PAY ${money(t.pricePesewas * qty)} · GET TICKET${qty>1?'S':''}`;
       }
     };
+
+    // Auto-focus the phone field
+    setTimeout(() => phoneInput.focus(), 100);
   };
 
   render();

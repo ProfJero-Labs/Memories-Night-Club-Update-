@@ -39,8 +39,10 @@ document.querySelector('#app').innerHTML = shell() + `
         </div>
         <div class="selector">
           <h2 class="display">HOW ARE YOU SHOWING UP?</h2>
-          <div class="line-grid" id="lines"></div>
+          <p style="color:var(--muted);font-size:13px;margin:-12px 0 18px">This line goes on your ticket.</p>
+          <div class="identity-list" id="lines"></div>
         </div>
+        <div id="raffleInfo"></div>
       </div>
     </section>
 
@@ -56,10 +58,20 @@ document.querySelector('#app').innerHTML = shell() + `
           <p style="color:var(--muted);font-size:12px;margin:16px 0 0">
             You'll pay securely via Paystack on the next screen.
           </p>
+          <a id="goInstallment" class="btn ghost" style="display:block;width:100%;padding:14px;font-size:12px;text-align:center;justify-content:center;margin-top:12px">
+            OR PAY IN INSTALLMENTS
+          </a>
         </div>
       </div>
     </section>
-  </main>` + footer();
+  </main>
+  <div class="sticky-cta" id="stickyCta">
+    <div class="sticky-info">
+      <span class="sticky-name" id="stickyName">—</span>
+      <span class="sticky-price" id="stickyPrice">—</span>
+    </div>
+    <a id="stickyGo" class="btn red">GET IN →</a>
+  </div>` + footer();
 
 // ═══════════════════════════════════════════════════════════
 // STATE
@@ -74,6 +86,8 @@ function updateSelection() {
   const section = document.querySelector('#checkoutSection');
   if (!selectedTicket) {
     section.style.display = 'none';
+    document.querySelector('#stickyCta').classList.remove('visible');
+    document.body.classList.remove('has-sticky-cta');
     return;
   }
   section.style.display = 'block';
@@ -83,6 +97,16 @@ function updateSelection() {
   const link = document.querySelector('#goCheckout');
   link.href = `checkout.html?event=${encodeURIComponent(id)}&ticketType=${encodeURIComponent(selectedTicket.id)}&line=${encodeURIComponent(selectedLine)}`;
   link.textContent = `PROCEED TO CHECKOUT · ${money(selectedTicket.pricePesewas)}`;
+
+  const installmentLink = document.querySelector('#goInstallment');
+  installmentLink.href = `installment.html?event=${encodeURIComponent(id)}&ticketType=${encodeURIComponent(selectedTicket.id)}&line=${encodeURIComponent(selectedLine)}`;
+
+  // Mobile sticky bottom CTA — mirrors the same selection, always in thumb reach
+  document.querySelector('#stickyName').textContent = selectedTicket.name;
+  document.querySelector('#stickyPrice').textContent = money(selectedTicket.pricePesewas);
+  document.querySelector('#stickyGo').href = link.href;
+  document.querySelector('#stickyCta').classList.add('visible');
+  document.body.classList.add('has-sticky-cta');
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -99,12 +123,16 @@ function renderTickets(ts) {
   }
 
   // Render all ticket options
-  box.innerHTML = ts.map((t, i) => `
+  box.innerHTML = ts.map((t, i) => {
+    const remaining = typeof t.remaining === 'number' ? t.remaining : null;
+    const low = remaining !== null && remaining > 0 && remaining <= 10;
+    return `
     <button class="choice ${i === 0 ? 'active' : ''}" data-id="${esc(t.id)}">
       <strong>${esc(t.name)}</strong>
       <div class="price">${money(t.pricePesewas)}</div>
-      <div style="color:var(--muted);font-size:12px;margin-top:5px">Admits ${t.admits || 1}</div>
-    </button>`).join('');
+      <div style="color:var(--muted);font-size:12px;margin-top:5px">Admits ${t.admits || 1}${low ? ` · <span style="color:var(--red2)">${remaining} left</span>` : ''}</div>
+    </button>`;
+  }).join('');
 
   // Auto-select the first ticket — CTA appears immediately
   selectedTicket = ts[0];
@@ -149,12 +177,16 @@ try {
   ];
 
   document.querySelector('#lines').innerHTML = lines.map((x, i) => `
-    <button class="identity ${i === 0 ? 'active' : ''}" data-line="${esc(x)}">${esc(x)}</button>
+    <button class="identity-row ${i === 0 ? 'active' : ''}" data-line="${esc(x)}">
+      <span class="identity-num">${String(i + 1).padStart(2, '0')}</span>
+      <span class="identity-text">${esc(x)}</span>
+      <span class="identity-mark">✓</span>
+    </button>
   `).join('');
 
-  document.querySelectorAll('.identity').forEach(b => {
+  document.querySelectorAll('.identity-row').forEach(b => {
     b.onclick = () => {
-      document.querySelectorAll('.identity').forEach(x => x.classList.remove('active'));
+      document.querySelectorAll('.identity-row').forEach(x => x.classList.remove('active'));
       b.classList.add('active');
       selectedLine = b.dataset.line;
       updateSelection();
@@ -163,6 +195,15 @@ try {
 
   // ── Ticket types ──
   renderTickets(d.ticketTypes || []);
+
+  // ── Raffle spots — informational only; entry itself is automatic once a ticket is fully paid ──
+  const raffle = d.raffle;
+  if (raffle && raffle.enabled === true) {
+    const cap = Number(raffle.cap) > 0 ? Number(raffle.cap) : 20;
+    const spotsTaken = Number(raffle.spotsTaken || 0);
+    const left = Math.max(0, cap - spotsTaken);
+    document.querySelector('#raffleInfo').innerHTML = `<div class="selector"><div class="eyebrow">TONIGHT'S RAFFLE</div><h2 class="display" style="font-size:44px">WIN ${esc(raffle.prize || raffle.title || 'A PRIZE')}</h2><p style="color:var(--muted)">${raffle.status === 'drawn' ? `Winner: ${esc(raffle.winnerDisplayName || 'announced')}${raffle.winnerDisplayCode ? ` — Ticket #${esc(raffle.winnerDisplayCode)}` : ''}` : left > 0 ? `${left} of ${cap} draw spots left. Buy a ticket to be automatically entered.` : 'Draw closed — all spots are taken. Tickets are still on sale.'}</p></div>`;
+  }
 
 } catch (err) {
   console.error('Event load error:', err);

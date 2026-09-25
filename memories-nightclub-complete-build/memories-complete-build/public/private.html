@@ -1,1 +1,118 @@
-<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Private Night · Memories</title><link rel="stylesheet" href="styles.css"></head><body><div id="app"></div><script src="config.js"></script><script type="module">import {shell,footer,api} from './app.js';document.querySelector('#app').innerHTML=shell()+`<main><section class="section" style="padding-top:65px"><div class="wrap" style="max-width:850px"><div class="eyebrow">MAKE IT YOURS</div><h1 class="display" style="font-size:110px;line-height:.8">PRIVATE<br>NIGHT</h1><p style="color:var(--muted);max-width:600px;margin:25px 0 40px">Birthdays, launches, corporate nights, old-school reunions or simply your people. Tell us what you're planning.</p><div class="form-grid"><div class="field"><label>Name</label><input id="name"></div><div class="field"><label>Phone</label><input id="phone"></div><div class="field"><label>Email</label><input id="email" type="email"></div><div class="field"><label>Preferred date</label><input id="date" type="date"></div><div class="field"><label>Guest count</label><input id="guests" type="number" min="1"></div><div class="field"><label>Event type</label><select id="type"><option>Private party</option><option>Birthday</option><option>Corporate</option><option>Launch</option><option>Reunion</option><option>Other</option></select></div><div class="field full"><label>Tell us about it</label><textarea id="message" rows="6"></textarea></div><div class="field full"><button class="btn red" id="submit">SEND REQUEST</button></div></div><div id="result" style="margin-top:20px"></div></div></section></main>`+footer();document.querySelector('#submit').onclick=async()=>{const b=document.querySelector('#submit');b.disabled=true;try{await api('/api/private-requests',{method:'POST',body:JSON.stringify({name:name.value,phone:phone.value,email:email.value,date:date.value,guests:Number(guests.value),eventType:type.value,message:message.value})});document.querySelector('#result').innerHTML='<div class="status success">REQUEST RECEIVED. We will be in touch.</div>'}catch(e){document.querySelector('#result').innerHTML=`<div class="status error">${e.message}</div>`;b.disabled=false}}</script></body></html>
+<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Private Night · Memories</title><link rel="stylesheet" href="styles.css"></head><body><div id="app"></div><script src="config.js"></script><script type="module">
+import {shell,footer,api,esc,friendlyError} from './app.js';
+
+const TYPES = ['Private party', 'Corporate', 'Launch', 'Reunion', 'Other'];
+let step = 0;
+const data = { eventType: TYPES[0], date: '', guests: '', message: '', name: '', phone: '', email: '' };
+
+document.querySelector('#app').innerHTML = shell() + `<main><section class="section" style="padding-top:65px"><div class="wrap" style="max-width:700px">
+  <div class="eyebrow">MAKE IT YOURS</div>
+  <h1 class="display" style="font-size:clamp(56px,14vw,100px);line-height:.8;margin:14px 0 10px">PRIVATE<br>NIGHT</h1>
+  <p style="color:var(--muted);max-width:560px;margin:0 0 10px">Launches, corporate nights, old-school reunions or simply your people.</p>
+  <div class="eyebrow" id="stepCounter" style="margin:30px 0 18px">STEP 1 OF 4</div>
+  <div id="stepBody"></div>
+</div></section></main>` + footer();
+
+const body = document.querySelector('#stepBody');
+const counter = document.querySelector('#stepCounter');
+
+function renderStep() {
+  counter.textContent = `STEP ${step + 1} OF 4`;
+
+  if (step === 0) {
+    body.innerHTML = `
+      <h2 class="display" style="font-size:44px;margin:0 0 20px">WHAT ARE WE PLANNING?</h2>
+      <div class="identity-list" id="typeList">${TYPES.map((t, i) => `
+        <button class="identity-row ${t === data.eventType ? 'active' : ''}" data-type="${esc(t)}">
+          <span class="identity-num">${String(i + 1).padStart(2, '0')}</span>
+          <span class="identity-text">${esc(t)}</span>
+          <span class="identity-mark">✓</span>
+        </button>`).join('')}</div>
+      <div style="margin-top:28px"><button class="btn red" id="next0">NEXT →</button></div>`;
+    document.querySelectorAll('#typeList .identity-row').forEach(b => b.onclick = () => {
+      document.querySelectorAll('#typeList .identity-row').forEach(x => x.classList.remove('active'));
+      b.classList.add('active');
+      data.eventType = b.dataset.type;
+    });
+    document.querySelector('#next0').onclick = () => { step = 1; renderStep(); };
+
+  } else if (step === 1) {
+    body.innerHTML = `
+      <h2 class="display" style="font-size:44px;margin:0 0 20px">WHEN?</h2>
+      <div class="form-grid">
+        <div class="field full"><label for="date">Preferred date</label><input id="date" type="date" value="${esc(data.date)}"></div>
+      </div>
+      <div style="margin-top:28px;display:flex;gap:12px">
+        <button class="btn ghost" id="back1">← BACK</button>
+        <button class="btn red" id="next1">NEXT →</button>
+      </div>
+      <div id="err1" style="margin-top:14px"></div>`;
+    document.querySelector('#back1').onclick = () => { step = 0; renderStep(); };
+    document.querySelector('#next1').onclick = () => {
+      data.date = document.querySelector('#date').value;
+      if (!data.date) { document.querySelector('#err1').innerHTML = '<div class="status error">Pick a date, even a rough one — we can adjust later.</div>'; return; }
+      step = 2; renderStep();
+    };
+
+  } else if (step === 2) {
+    body.innerHTML = `
+      <h2 class="display" style="font-size:44px;margin:0 0 20px">HOW MANY, AND WHAT'S THE VIBE?</h2>
+      <div class="form-grid">
+        <div class="field"><label for="guests">Guest count</label><input id="guests" type="number" min="1" value="${esc(data.guests)}"></div>
+        <div class="field full"><label for="message">Tell us about it</label><textarea id="message" rows="5" placeholder="Optional — dress code, music, anything we should know.">${esc(data.message)}</textarea></div>
+      </div>
+      <div style="margin-top:28px;display:flex;gap:12px">
+        <button class="btn ghost" id="back2">← BACK</button>
+        <button class="btn red" id="next2">NEXT →</button>
+      </div>
+      <div id="err2" style="margin-top:14px"></div>`;
+    document.querySelector('#back2').onclick = () => { step = 1; renderStep(); };
+    document.querySelector('#next2').onclick = () => {
+      data.guests = document.querySelector('#guests').value;
+      data.message = document.querySelector('#message').value;
+      if (!data.guests || Number(data.guests) < 1) { document.querySelector('#err2').innerHTML = '<div class="status error">How many guests, roughly?</div>'; return; }
+      step = 3; renderStep();
+    };
+
+  } else if (step === 3) {
+    body.innerHTML = `
+      <h2 class="display" style="font-size:44px;margin:0 0 20px">HOW DO WE REACH YOU?</h2>
+      <div class="form-grid">
+        <div class="field full"><label for="name">Name</label><input id="name" value="${esc(data.name)}"></div>
+        <div class="field"><label for="phone">Phone</label><input id="phone" value="${esc(data.phone)}"></div>
+        <div class="field"><label for="email">Email</label><input id="email" type="email" value="${esc(data.email)}"></div>
+      </div>
+      <div style="margin-top:28px;display:flex;gap:12px">
+        <button class="btn ghost" id="back3">← BACK</button>
+        <button class="btn red" id="submit">SEND REQUEST</button>
+      </div>
+      <div id="result" style="margin-top:14px"></div>`;
+    document.querySelector('#back3').onclick = () => { step = 2; renderStep(); };
+    document.querySelector('#submit').onclick = async () => {
+      data.name = document.querySelector('#name').value.trim();
+      data.phone = document.querySelector('#phone').value.trim();
+      data.email = document.querySelector('#email').value.trim();
+      const result = document.querySelector('#result');
+      if (!data.name || !data.phone || !data.email) { result.innerHTML = '<div class="status error">Please fill in name, phone and email.</div>'; return; }
+      const btn = document.querySelector('#submit');
+      btn.disabled = true;
+      try {
+        await api('/api/private-requests', {
+          method: 'POST',
+          body: JSON.stringify({
+            name: data.name, phone: data.phone, email: data.email,
+            date: data.date, guests: Number(data.guests), eventType: data.eventType, message: data.message,
+          }),
+        });
+        body.innerHTML = `<div class="status success" style="text-align:center;padding:36px 24px"><div class="display" style="font-size:36px;margin-bottom:10px">REQUEST RECEIVED</div><p style="color:var(--muted)">We'll be in touch about your ${esc(data.eventType.toLowerCase())}.</p></div>`;
+        counter.textContent = '';
+      } catch (e) {
+        result.innerHTML = `<div class="status error">${esc(friendlyError(e))}</div>`;
+        btn.disabled = false;
+      }
+    };
+  }
+}
+
+renderStep();
+</script></body></html>

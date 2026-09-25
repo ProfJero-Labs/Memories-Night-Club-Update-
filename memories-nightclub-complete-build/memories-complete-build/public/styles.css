@@ -64,3 +64,70 @@
 .artwork-empty span {
   font-size: 12px;
 }
+
+/* ── UI/UX audit fixes (docs/UI_UX_AUDIT.md) — each verified against a scratch copy before
+   being applied here; see that report for the measured before/after on every item. ── */
+
+/* Identity-line picker: fell to 1.13:1 contrast wherever an ancestor (e.g. the ticket-preview's
+   light background/dark text) got inherited into this dark-panel component. Pin the color so it
+   never inherits the wrong one. */
+.identity{color:var(--paper)}
+
+/* Ticket small print — 2.39:1 against the paper background, raised to pass AA. */
+.ticket-preview .eyebrow{color:#6b6156}
+
+/* checkout.html: the layout's single grid track was resolving to 818px content width inside a
+   320px viewport because a flex/grid item won't shrink below its content's min-content size
+   without an explicit min-width:0. Same root cause fixed for .strip-copy and .verify below. */
+@media(max-width:800px){.checkout-layout>*{min-width:0}.event-hero>*{min-width:0}.hero>*{min-width:0}}
+#preview img{max-width:100%;height:auto;display:block}
+
+/* Footer overflow — present on every page since the footer is shared, and one un-wrappable
+   token (the Instagram handle) was forcing the whole 3-column grid past the viewport. */
+@media(max-width:800px){.footer-grid{grid-template-columns:1fr}.footer-grid div{overflow-wrap:break-word}}
+
+/* Homepage "COME CORRECT" strip — same min-content overflow pattern as checkout above. */
+@media(max-width:800px){.strip-copy{min-width:0}.strip-copy h2{overflow-wrap:break-word}}
+
+/* ticket.html / payment-return.html shared .verify wrapper — same pattern again. */
+.verify>*{justify-self:stretch;min-width:0}
+
+/* Hamburger menu tap target: 32x34px, under the ~44px comfortable minimum. */
+.menu{padding:8px}
+
+/* Table-checkout bottle steppers: 38x38px, under the ~44px comfortable minimum. */
+.stepper button{width:44px;height:44px}
+
+/* Form inputs relied on border-color alone (grey->red) as their focus indicator — real, but
+   weak. Add a visible ring without changing the visual language. */
+.field input:focus,.field textarea:focus,.field select:focus{box-shadow:0 0 0 2px var(--red)}
+
+/* ── Mobile sticky checkout bar (event.html) — price + selection always in thumb reach,
+   without duplicating the desktop confirmation panel above it. ── */
+.sticky-cta{display:none}
+@media(max-width:800px){
+  .sticky-cta.visible{display:flex;position:fixed;left:0;right:0;bottom:0;z-index:40;background:rgba(11,9,9,.97);backdrop-filter:blur(10px);border-top:1px solid var(--line);padding:12px 16px calc(12px + env(safe-area-inset-bottom));align-items:center;justify-content:space-between;gap:14px}
+  .sticky-cta .sticky-info{display:flex;flex-direction:column;line-height:1.2;min-width:0;overflow:hidden}
+  .sticky-cta .sticky-name{font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .sticky-cta .sticky-price{font-family:var(--display);font-size:26px;color:var(--paper)}
+  .sticky-cta a.btn{flex:0 0 auto;padding:15px 22px;font-size:13px}
+  body.has-sticky-cta{padding-bottom:76px}
+}
+
+/* ── Identity-line picker — editorial numbered list, not a generic SaaS card grid.
+   Selection state carries through checkout → ticket → share image. ── */
+.identity-list{display:flex;flex-direction:column;border-top:1px solid var(--line)}
+.identity-row{display:flex;align-items:center;gap:18px;width:100%;padding:22px 6px;border:0;border-bottom:1px solid var(--line);background:transparent;text-align:left;color:var(--paper);transition:padding-left .18s,background .15s}
+.identity-row .identity-num{font-family:var(--mono);font-size:13px;color:var(--muted);flex:0 0 auto;letter-spacing:.05em}
+.identity-row .identity-text{font-family:var(--display);font-size:clamp(24px,4vw,36px);letter-spacing:.01em;flex:1;line-height:1;min-width:0}
+.identity-row .identity-mark{opacity:0;font-size:22px;color:var(--red2);flex:0 0 auto;transition:opacity .15s}
+.identity-row:hover{padding-left:16px;background:var(--panel)}
+.identity-row.active{background:var(--red);color:#fff;padding-left:16px}
+.identity-row.active .identity-num{color:rgba(255,255,255,.72)}
+.identity-row.active .identity-mark{opacity:1;color:#fff}
+
+/* Defensive wrap for display headings carrying admin-entered content (event/table names): a
+   single long word (no space to break on) can otherwise force horizontal overflow at these
+   font sizes — found live during this session's own visual QA pass (e.g. a long single-word
+   event name overflowing ticket.html's heading at mobile widths even inside its clamp()). */
+.display{overflow-wrap:break-word}

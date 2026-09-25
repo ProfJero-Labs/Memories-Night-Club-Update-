@@ -105,3 +105,22 @@ Do not store phone/email in public ticket documents unless the security model is
 
 ### audit_logs/{logId}
 Recommended for future admin auditability.
+
+### installment_plans/{planId}
+`planId` is a short human-typeable order code (`MEM-####`), not an opaque id — the buyer's only
+handle on the plan besides their phone number. Created only by the Worker. Never client-written
+or client-read directly — buyers look themselves up through
+`GET /api/installments/lookup?phone=` or `?code=`.
+- eventId, eventName
+- ticketTypeId, ticketTypeName, admits, quantity
+- totalPesewas, paidPesewas
+- buyerName, buyerPhone, buyerEmail
+- identityLine
+- status: `active` | `completed` | `forfeited`
+- payments (array of `{reference, amountPesewas, paidAt}`)
+- ticketIds, orderId (set once completed)
+- createdAt, updatedAt
+
+### events/{eventId} — added field
+- organiserId (optional): uid of the Firebase Auth account granted the `organiser` role for
+  this night. Powers the organiser-only overview (`GET /api/admin/organiser/overview`).

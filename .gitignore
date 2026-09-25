@@ -1,0 +1,5 @@
+node_modules/
+.wrangler/
+*.log
+.dev-data/
+test-results/

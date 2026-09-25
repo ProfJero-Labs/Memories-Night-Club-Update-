@@ -260,11 +260,18 @@ if (!fbCfg.apiKey || !fbCfg.authDomain || !fbCfg.projectId || hasPlaceholder) {
 
   window.getFirebaseIdToken = async () => auth.currentUser?.getIdToken() || null;
 
-  // If already signed in, redirect
+  // If already signed in, redirect — organisers land on their scoped view, everyone else
+  // (superAdmin/manager/eventManager/doorStaff) lands on the control room.
   auth.onAuthStateChanged((user) => {
     if (user) {
-      // Small delay to let the token settle
-      setTimeout(() => { location.href = 'admin.html'; }, 150);
+      setTimeout(async () => {
+        try {
+          const result = await user.getIdTokenResult();
+          location.href = result.claims.role === 'organiser' ? 'organiser.html' : 'admin.html';
+        } catch {
+          location.href = 'admin.html';
+        }
+      }, 150);
     }
   });
 
@@ -293,10 +300,10 @@ if (!fbCfg.apiKey || !fbCfg.authDomain || !fbCfg.projectId || hasPlaceholder) {
       case 'auth/user-disabled':
         return { title: 'Account disabled', msg: 'This account has been disabled. Contact your manager.' };
       case 'auth/user-not-found':
-        return { title: 'No account', msg: 'No staff account exists with that email address.' };
       case 'auth/wrong-password':
       case 'auth/invalid-credential':
-        return { title: 'Wrong password', msg: 'The email or password is incorrect. Please try again.' };
+        // Same message for both — don't let a login form confirm whether an email has an account.
+        return { title: 'Sign in failed', msg: 'The email or password is incorrect. Please try again.' };
       case 'auth/too-many-requests':
         return { title: 'Too many attempts', msg: 'Too many failed attempts. Please wait a few minutes and try again.' };
       case 'auth/network-request-failed':

@@ -4,9 +4,10 @@ service cloud.firestore {
     function signedIn() { return request.auth != null; }
     function role(r) { return signedIn() && request.auth.token.role == r; }
     function admin() { return signedIn() && request.auth.token.admin == true; }
+    function organiserOf(eventData) { return role('organiser') && eventData.organiserId == request.auth.uid; }
 
     match /events/{id} {
-      allow read: if resource.data.visibility == 'public' || admin();
+      allow read: if (resource.data.visibility == 'public' && resource.data.active == true) || admin() || organiserOf(resource.data);
       allow write: if admin();
     }
     match /ticket_types/{id} {
@@ -27,6 +28,9 @@ service cloud.firestore {
       allow write: if false;
     }
     match /pending_checkouts/{id} {
+      allow read, write: if false;
+    }
+    match /installment_plans/{id} {
       allow read, write: if false;
     }
     match /orders/{id} {
@@ -56,6 +60,10 @@ service cloud.firestore {
     }
     match /users/{uid} {
       allow read: if signedIn() && request.auth.uid == uid || admin();
+      allow write: if admin();
+    }
+    match /settings/{id} {
+      allow read: if true;
       allow write: if admin();
     }
   }

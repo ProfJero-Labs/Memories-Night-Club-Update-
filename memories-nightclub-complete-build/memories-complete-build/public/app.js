@@ -6,9 +6,8 @@
 import { initializeApp, getApps } from 'https://www.gstatic.com/firebasejs/11.0.2/firebase-app.js';
 import {
   getFirestore,
-  collection, doc, getDoc, getDocs, addDoc, setDoc, updateDoc, deleteDoc,
-  query, where, orderBy, limit, runTransaction, serverTimestamp,
-  increment,
+  collection, doc, getDoc, getDocs,
+  query, where,
 } from 'https://www.gstatic.com/firebasejs/11.0.2/firebase-firestore.js';
 
 // ── Firebase init (safe to call multiple times) ──
@@ -30,6 +29,17 @@ export const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({
   '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;',
 }[c]));
 export const params = new URLSearchParams(location.search);
+
+// Raw fetch/network failures ("Failed to fetch", "NetworkError...", "Load failed") aren't
+// guest-friendly on their own — rewrite them the same way login.html already handles
+// auth/network-request-failed, but leave server-supplied messages (already plain language) alone.
+export function friendlyError(err) {
+  const msg = err?.message || String(err || '');
+  if (/failed to fetch|networkerror|load failed/i.test(msg)) {
+    return "Couldn't reach the server. Check your connection and try again.";
+  }
+  return msg || 'Something went wrong. Please try again.';
+}
 
 export function toast(msg) {
   const t = qs('.toast');
@@ -170,106 +180,6 @@ export async function verifyTicket(token) {
 }
 
 // ═══════════════════════════════════════════════════════════════════
-// CHECK-IN (requires signed-in door staff)
-// ═══════════════════════════════════════════════════════════════════
-export async function checkinTicket(token) {
-  if (!token) throw new Error('Token required');
-
-  const user = window.getCurrentUser?.();
-  if (!user) throw new Error('Sign in required to check in tickets.');
-
-  const result = await runTransaction(db, async (tx) => {
-    const ref = doc(db, 'tickets', token);
-    const snap = await tx.get(ref);
-
-    if (!snap.exists()) throw new Error('Ticket not found.');
-    const t = snap.data();
-
-    if (t.revoked) throw new Error('This ticket has been revoked.');
-    if (t.cancelled) throw new Error('This ticket has been cancelled.');
-    if (t.status === 'used') throw new Error('TICKET ALREADY USED');
-
-    const when = serverTimestamp();
-    tx.update(ref, {
-      status: 'used',
-      checkedInAt: when,
-      checkedInBy: user.uid,
-    });
-
-    const checkinRef = doc(collection(db, 'checkins'));
-    tx.set(checkinRef, {
-      ticketId: token,
-      eventId: t.eventId,
-      checkedInAt: when,
-      checkedInBy: user.uid,
-    });
-
-    return { customerName: t.customerName, eventName: t.eventName };
-  });
-
-  return {
-    success: true,
-    valid: true,
-    message: 'ENTRY CONFIRMED',
-    ticket: result,
-  };
-}
-
-// ═══════════════════════════════════════════════════════════════════
-// PRIVATE NIGHT REQUEST (public create)
-// ═══════════════════════════════════════════════════════════════════
-export async function submitPrivateRequest(payload) {
-  await addDoc(collection(db, 'private_event_requests'), {
-    ...payload,
-    guests: Number(payload.guests || 0),
-    status: 'NEW',
-    createdAt: serverTimestamp(),
-  });
-  return { success: true };
-}
-
-// ═══════════════════════════════════════════════════════════════════
-// RAFFLE ENTRY
-// ═══════════════════════════════════════════════════════════════════
-async function sha256Hex(text) {
-  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
-  return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
-}
-
-export async function enterRaffle(raffleId, ticketToken) {
-  if (!raffleId || !ticketToken) throw new Error('Ticket and raffle required');
-
-  const entryId = await sha256Hex(`${raffleId}:${ticketToken}`);
-  const entryRef = doc(db, 'raffle_entries', entryId);
-  const existing = await getDoc(entryRef);
-  if (existing.exists()) return { success: true, alreadyEntered: true, entryId };
-
-  const [raffleSnap, ticketSnap] = await Promise.all([
-    getDoc(doc(db, 'raffles', raffleId)),
-    getDoc(doc(db, 'tickets', ticketToken)),
-  ]);
-  if (!raffleSnap.exists()) throw new Error('Raffle not found.');
-  if (!ticketSnap.exists()) throw new Error('Ticket not found.');
-
-  const raffle = raffleSnap.data();
-  const ticket = ticketSnap.data();
-
-  if (raffle.enabled !== true || raffle.status === 'drawn') throw new Error('Raffle is not active.');
-  if (ticket.status !== 'valid' || ticket.revoked || ticket.cancelled) throw new Error('Ticket not eligible.');
-  if (raffle.eventId !== ticket.eventId) throw new Error('Ticket is for a different event.');
-
-  await setDoc(entryRef, {
-    raffleId,
-    eventId: raffle.eventId,
-    ticketId: ticketToken,
-    status: 'eligible',
-    createdAt: serverTimestamp(),
-  });
-
-  return { success: true, entryId };
-}
-
-// ═══════════════════════════════════════════════════════════════════
 // LAYOUT — nav + footer
 // ═══════════════════════════════════════════════════════════════════
 export function shell(active = '') {
@@ -277,13 +187,28 @@ export function shell(active = '') {
 }
 
 export function footer() {
-  return `<footer class="footer"><div class="wrap footer-grid"><div><div class="brand">MEMORIES</div><p>Some nights become stories. Find the next one in Cape Coast.</p></div><div><div class="eyebrow">Explore</div><p><a href="nights.html">Nights</a><br><a href="tables.html">Tables</a><br><a href="private.html">Private Night</a></p></div><div><div class="eyebrow">Social</div><p>@memoriesnightclub.gh<br>Cape Coast, Ghana</p></div></div><div class="wrap" style="margin-top:35px;font-size:11px">© ${new Date().getFullYear()} Memories Night Club</div></footer>`;
+  // Contact info is queued to be patched in from /api/settings (the single source of truth an
+  // admin edits in the Settings tab) right after this HTML lands in the DOM — see
+  // mountFooterSettings() below. The hardcoded text here is the fallback if that fetch fails,
+  // so the footer never shows a blank or broken state.
+  queueMicrotask(mountFooterSettings);
+  return `<footer class="footer"><div class="wrap footer-grid"><div><div class="brand">MEMORIES</div><p>Some nights become stories. Find the next one in Cape Coast.</p></div><div><div class="eyebrow">Explore</div><p><a href="nights.html">Nights</a><br><a href="tables.html">Tables</a><br><a href="private.html">Private Night</a></p></div><div><div class="eyebrow">Social</div><p id="footerSocial">@memoriesnightclub.gh<br id="footerSocialBreak">Cape Coast, Ghana</p></div></div><div class="wrap" style="margin-top:35px;font-size:11px">© ${new Date().getFullYear()} Memories Night Club</div></footer>`;
+}
+
+let settingsPromise = null;
+async function mountFooterSettings() {
+  try {
+    if (!settingsPromise) settingsPromise = fetch(`${API}/api/settings`).then(r => r.json()).then(d => d?.settings).catch(() => null);
+    const s = await settingsPromise;
+    if (!s) return;
+    document.querySelectorAll('#footerSocial').forEach(el => {
+      const lines = [s.instagram, s.venue, s.address].filter(Boolean);
+      if (lines.length) el.innerHTML = lines.map(esc).join('<br>');
+    });
+  } catch { /* keep the hardcoded fallback already in the DOM */ }
 }
 
 // ═══════════════════════════════════════════════════════════════════
-// Re-export commonly used Firestore functions
+// Re-export commonly used Firestore read functions
 // ═══════════════════════════════════════════════════════════════════
-export {
-  collection, doc, getDoc, getDocs, addDoc, setDoc, updateDoc, deleteDoc,
-  query, where, orderBy, limit, runTransaction, serverTimestamp, increment,
-};
+export { collection, doc, getDoc, getDocs, query, where };
