@@ -108,7 +108,7 @@ export class MockFirestore {
     if (u.hostname === 'identitytoolkit.googleapis.com') {
       const body = options.body ? JSON.parse(options.body) : {};
       if (u.pathname.endsWith('accounts:lookup')) return jsonResponse({ users: (this.authUsers || []).filter(x => body.email?.includes(x.email)) });
-      if (u.pathname.endsWith('accounts:update')) { (this.claimUpdates ||= []).push(body); return jsonResponse({ localId: body.localId }); }
+      if (u.pathname.endsWith('accounts:update')) { (this.claimUpdates ||= []).push(body); (this.claims ||= {})[body.localId] = JSON.parse(body.customAttributes || '{}'); return jsonResponse({ localId: body.localId }); }
     }
 
     if (u.hostname === 'oauth2.googleapis.com') {

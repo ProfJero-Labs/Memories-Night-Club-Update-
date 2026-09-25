@@ -1,129 +1,37 @@
 <!doctype html>
-<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Verify Ticket · Memories</title><link rel="stylesheet" href="styles.css"></head>
-<body>
-<main class="verify">
-  <div class="verify-card">
-    <div class="eyebrow">DOOR CHECK</div>
-    <h1 class="display" style="font-size:80px;line-height:.8">TICKET<br>VERIFICATION</h1>
-
-    <div id="authBadge" style="margin-top:20px;display:none;">
-      <span class="eyebrow" style="color:var(--muted);">Signed in as <strong id="authEmail" style="color:var(--paper)"></strong></span>
-    </div>
-
-    <div id="signInPrompt" style="margin-top:20px;padding:14px;border:1px dashed var(--line);background:var(--panel)">
-      <p style="color:var(--muted);font-size:13px;margin:0 0 10px">Sign in to mark tickets as used.</p>
-      <a class="btn red small" href="login.html" style="display:inline-block">STAFF SIGN IN</a>
-    </div>
-
-    <input id="token" style="width:100%;padding:14px;background:var(--panel2);border:1px solid var(--line);color:var(--paper);margin:20px 0" placeholder="Scan token / paste secure token">
-    <div style="display:flex;gap:10px">
-      <button class="btn red" style="flex:1" id="check">LOOK UP</button>
-      <button class="btn red" style="flex:1;display:none" id="markUsed">MARK AS USED</button>
-    </div>
-    <div id="result" style="margin-top:20px"></div>
-  </div>
-</main>
-
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Ticket check · Memories</title>
+<meta name="robots" content="noindex">
+<meta name="referrer" content="no-referrer">
+<meta name="theme-color" content="#0d0a09">
+<link rel="icon" href="assets/icon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Anton&family=Archivo:wght@400;600;700&family=Instrument+Serif:ital@0;1&display=swap">
+<link rel="stylesheet" href="styles.css">
 <script src="config.js"></script>
+</head>
+<body>
+<main class="center-screen"><div id="root" class="loading" role="status">CHECKING THIS TICKET…</div></main>
 <script type="module">
-import {api,params,esc} from './app.js';
-import {auth,onAuthStateChanged} from './firebase.js';
-
-// Expose ID token to app.js so authenticated requests include it
-window.getFirebaseIdToken = async () => auth.currentUser?.getIdToken() || null;
-
-let currentUser = null;
-let lastCheckedToken = null;
-
-onAuthStateChanged(auth, (user) => {
-  currentUser = user;
-  const authBadge = document.querySelector('#authBadge');
-  const signInPrompt = document.querySelector('#signInPrompt');
-  if (user) {
-    document.querySelector('#authEmail').textContent = user.email || user.uid;
-    authBadge.style.display = 'block';
-    signInPrompt.style.display = 'none';
-  } else {
-    authBadge.style.display = 'none';
-    signInPrompt.style.display = 'block';
-  }
-});
-
-const input = document.querySelector('#token');
-input.value = params.get('token') || '';
-
-document.querySelector('#check').onclick = async () => {
-  const token = input.value.trim();
-  if (!token) return;
-  lastCheckedToken = token;
-  const r = document.querySelector('#result');
-  r.innerHTML = '<div class="status">Looking up ticket…</div>';
-  document.querySelector('#markUsed').style.display = 'none';
-
-  try {
-    const d = await api('/api/verify/' + encodeURIComponent(token));
-    const validClass = d.valid ? 'success' : 'error';
-    r.innerHTML = `
-      <div class="status ${validClass}">
-        <strong class="display" style="font-size:42px">${d.valid ? 'VALID TICKET' : d.message || 'NOT VALID'}</strong>
-        ${d.ticket ? `<p style="margin-top:10px">
-          <strong>${esc(d.ticket.eventName || '')}</strong><br>
-          ${esc(d.ticket.customerName || '')}<br>
-          <small style="color:var(--muted)">${esc(d.ticket.displayCode || '')}</small>
-        </p>` : ''}
-      </div>
-    `;
-
-    // Show "MARK AS USED" only when ticket is valid AND staff is signed in
-    if (d.valid && currentUser) {
-      document.querySelector('#markUsed').style.display = 'block';
-    }
-  } catch (e) {
-    r.innerHTML = `<div class="status error">${esc(e.message)}</div>`;
-  }
-};
-
-document.querySelector('#markUsed').onclick = async () => {
-  if (!lastCheckedToken) return;
-  if (!currentUser) {
-    document.querySelector('#result').innerHTML = '<div class="status error">Sign in required.</div>';
-    return;
-  }
-  const btn = document.querySelector('#markUsed');
-  btn.disabled = true;
-  btn.textContent = 'CHECKING IN…';
-
-  try {
-    const r = await api('/api/checkin', {
-      method: 'POST',
-      body: JSON.stringify({ token: lastCheckedToken })
-    });
-
-    const result = document.querySelector('#result');
-    if (r.valid) {
-      result.innerHTML = `
-        <div class="status success">
-          <strong class="display" style="font-size:52px">ENTRY<br>CONFIRMED</strong>
-          <p style="margin-top:15px">${esc(r.ticket?.customerName || 'Guest')}</p>
-        </div>
-      `;
-    } else {
-      result.innerHTML = `<div class="status error"><strong class="display" style="font-size:36px">${esc(r.message)}</strong></div>`;
-    }
-    btn.style.display = 'none';
-
-    // Auto-focus and clear for next scan
-    input.value = '';
-    input.focus();
-  } catch (e) {
-    document.querySelector('#result').innerHTML = `<div class="status error">${esc(e.message)}</div>`;
-  } finally {
-    btn.disabled = false;
-    btn.textContent = 'MARK AS USED';
-  }
-};
-
-// Allow Enter key to trigger lookup
-input.addEventListener('keydown', (e) => { if (e.key === 'Enter') document.querySelector('#check').click(); });
+// What opens when someone scans a ticket QR with a normal phone camera. It only reports the
+// ticket's state; admitting someone happens on the door scanner (checkin.html), staff only.
+import { chrome, api, esc, params, $ } from './app.js';
+chrome();
+const token = params.get('token') || '';
+try {
+  const d = await api(`/api/verify/${encodeURIComponent(token)}`);
+  const t = d.ticket || {};
+  $('#root').outerHTML = `<div class="result ${d.valid ? 'ok' : 'no'}" role="status">
+    <span class="kicker" style="color:inherit">${esc(t.eventName || 'Memories')}</span>
+    <h1 class="display">${esc(d.valid ? 'Valid ticket.' : d.message)}</h1>
+    ${t.firstName ? `<p style="margin:0;font-size:18px">${esc(t.firstName)} · ${esc(t.displayCode || '')}${t.admits > 1 ? ` · admits ${t.admits}` : ''}</p>` : ''}
+    <p class="foot-small" style="margin:0">${d.valid ? 'Door staff scan this at entry. It works once.' : 'Questions? Show this to the door.'}</p>
+    ${d.valid ? `<a class="btn paper" href="ticket.html?token=${encodeURIComponent(token)}">Open the ticket</a>` : ''}</div>`;
+} catch (e) { $('#root').outerHTML = `<div class="result no"><h1 class="display">Couldn’t check.</h1><p>${esc(e.message)}</p></div>`; }
 </script>
-</body></html>
+</body>
+</html>

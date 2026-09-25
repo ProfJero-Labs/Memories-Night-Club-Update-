@@ -356,10 +356,10 @@ export async function checkoutStatus(env, reference) {
   const d = await getDoc(env, 'pending_checkouts', reference);
   if (!d) return null;
   const f = d.fields;
-  const out = { status: f.status, kind: f.kind || 'ticket', eventName: f.eventName || '', packageName: f.packageName || '', amountPesewas: f.amountPesewas, bottles: f.bottles || [], tickets: (f.ticketIds || []).map(token => ({ token })), error: f.status === 'failed' ? f.error : undefined };
+  const out = { status: f.status, kind: f.kind || 'ticket', eventId: f.eventId || '', eventName: f.eventName || '', packageName: f.packageName || '', amountPesewas: f.amountPesewas, bottles: f.bottles || [], tickets: (f.ticketIds || []).map(token => ({ token })), error: f.status === 'failed' ? f.error : undefined };
   if (f.kind === 'installment_topup' && f.planId) {
     const plan = await getDoc(env, 'installment_plans', f.planId);
-    if (plan) Object.assign(out, { planId: f.planId, planStatus: plan.fields.status, paidPesewas: plan.fields.paidPesewas, totalPesewas: plan.fields.totalPesewas, eventName: plan.fields.eventName, planComplete: f.planComplete === true || plan.fields.status === 'completed' });
+    if (plan) Object.assign(out, { eventId: plan.fields.eventId, planId: f.planId, planStatus: plan.fields.status, paidPesewas: plan.fields.paidPesewas, totalPesewas: plan.fields.totalPesewas, eventName: plan.fields.eventName, planComplete: f.planComplete === true || plan.fields.status === 'completed' });
   }
   return out;
 }

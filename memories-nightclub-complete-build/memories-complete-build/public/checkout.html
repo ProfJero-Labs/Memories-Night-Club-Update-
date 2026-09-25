@@ -1,150 +1,176 @@
-<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Checkout · Memories</title><link rel="stylesheet" href="styles.css"></head><body><div id="app"></div><div class="toast"></div><script src="config.js"></script><script type="module">
-import {shell,footer,getEvent,params,art,esc,money,api} from './app.js';
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Get in · Memories</title>
+<meta name="robots" content="noindex">
+<meta name="theme-color" content="#0d0a09">
+<link rel="icon" href="assets/icon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Anton&family=Archivo:wght@400;600;700&family=Instrument+Serif:ital@0;1&display=swap">
+<link rel="stylesheet" href="styles.css">
+<style>
+  .peek { position: relative; max-height: 230px; overflow: hidden; margin: 0 calc(var(--gutter) * -1); padding: 0 var(--gutter); }
+  .peek::after { content: ''; position: absolute; left: 0; right: 0; bottom: 0; height: 70px; background: linear-gradient(transparent, var(--ink)); }
+  .peek .ticket { --w: 340px; }
+  .peek .t-main { min-height: 0; }
+  @media (min-width: 960px) { .peek { display: none; } }
+  .aside { display: none; }
+  @media (min-width: 960px) { .aside { display: block; } }
+  @media (min-width: 960px) { .review-ticket { display: none; } }
+  .for { display: flex; justify-content: space-between; gap: 12px; align-items: baseline; }
+</style>
+<script src="config.js"></script>
+</head>
+<body>
+<main class="wrap"><div id="root"><div class="loading" role="status">GETTING YOUR TICKET READY…</div></div></main>
+<script type="module">
+import { chrome, api, esc, params, money, $, $$, errorState, remember, shortDate, toast } from './app.js';
+import { ticketHTML } from './ticket-art.js';
+chrome();
 
-const eventId = params.get('event');
-const ticketTypeId = params.get('ticketType');
-const line = params.get('line') || 'FULLY ACTIVE.';
+const root = $('#root');
+const S = { name: '', phone: '', email: '', line: '', mode: 'full', deposit: '', step: 1 };
+let B, T, qty = Math.min(6, Math.max(1, Number(params.get('qty')) || 1));
+Object.assign(S, (({ name = '', phone = '', email = '' }) => ({ name, phone, email }))(remember.get()));
 
-// ── Inline error formatter (was previously imported but never existed) ──
-function friendlyError(err) {
-  const msg = String(err?.message || err || 'Something went wrong.');
-  if (msg.includes('Invalid callback URL')) return 'Configuration error. Please contact support.';
-  if (msg.includes('not available') || msg.includes('no longer')) return 'This ticket is no longer available.';
-  if (msg.includes('remaining')) return 'Not enough tickets remaining.';
-  if (msg.includes('Network') || msg.includes('fetch')) return 'Connection problem. Check your internet and try again.';
-  return msg;
-}
+const phoneOk = p => /^0\d{9}$/.test(String(p).replace(/[\s\-().]/g, '').replace(/^\+?233/, '0'));
+const first = n => n.trim().split(/\s+/)[0] || '';
+const total = () => T.pricePesewas * qty;
+const preview = () => ticketHTML({ line: S.line, firstName: first(S.name), eventName: B.event.name, date: B.event.date, doors: B.event.doors, venue: B.event.venue, artwork: B.event.artwork, type: T.name, admits: T.admits, inDraw: false }, { preview: true });
+const hasLines = () => B.lines.length > 0;
+const steps = () => (hasLines() ? 3 : 2);
+const stepNo = () => (S.step === 3 && !hasLines() ? 2 : S.step);
 
-document.querySelector('#app').innerHTML = shell() + `<main><div class="wrap checkout-layout"><section><div class="eyebrow">LOCK IN YOUR NIGHT</div><h1 class="display" style="font-size:92px;line-height:.8;margin:12px 0 35px">YOUR TICKET</h1><div id="form"></div></section><aside class="summary"><div id="preview"></div></aside></div></main>` + footer();
+function refreshPreview() { $$('[data-preview]').forEach(el => { el.innerHTML = preview(); }); }
 
-try {
-  const data = await getEvent(eventId);
-  const t = (data.ticketTypes || []).find(x => x.id === ticketTypeId);
-  if (!t) throw new Error('This ticket type is no longer available.');
-  const e = data.event;
-
-  let qty = 1;
-
-  const render = () => {
-    const maxQty = Math.min(6, t.remaining ?? 6);
-    document.querySelector('#form').innerHTML = `
-      <div class="ticket-preview" style="margin-bottom:35px">
-        <div class="eyebrow" style="color:#665a4d">${esc(new Date(e.date).toLocaleDateString('en-GH',{weekday:'long',day:'numeric',month:'long'}))}</div>
-        <h3>${esc(e.name)}</h3>
-        <div class="ticket-line">${esc(line)}</div>
-        <div class="ticket-rule"></div>
-        <div style="display:flex;justify-content:space-between;align-items:baseline;gap:12px">
-          <span style="font-size:11px;letter-spacing:.15em;text-transform:uppercase;color:#665a4d">Phone</span>
-          <span id="previewPhone" style="font-family:var(--mono);font-size:15px;color:#16110f;letter-spacing:.05em">— — —</span>
-        </div>
-        <div style="margin-top:10px;font-size:13px">${esc(t.name)} · <span id="previewQty">${qty}</span> ticket<span id="previewPlural">${qty>1?'s':''}</span></div>
-        <div class="ticket-code" style="margin-top:25px">${esc(e.venue||'CAPE COAST')} · ${esc(e.doors||'10PM')}</div>
+function shell() {
+  root.innerHTML = `<div class="flow with-aside">
+    <div>
+      <div class="for" style="margin-bottom:16px"><a class="link" href="event.html?id=${encodeURIComponent(B.event.id)}">← ${esc(B.event.name)}</a><span class="kicker">${esc(shortDate(B.event.date))}</span></div>
+      <div class="steps" aria-hidden="true" id="bar"></div>
+      <div class="peek" data-preview aria-hidden="true" style="margin-top:22px"></div>
+      <form id="s1" class="step" novalidate style="margin-top:22px">
+        <h1 class="display">Who’s coming?</h1>
+        <div class="field" id="fName"><label for="name">Your name</label><input id="name" name="name" autocomplete="name" autocapitalize="words" required maxlength="80" value="${esc(S.name)}"><span class="hint">First name goes big on the ticket.</span></div>
+        <div class="field" id="fPhone"><label for="phone">Phone</label><input id="phone" name="phone" type="tel" inputmode="tel" autocomplete="tel" placeholder="024 123 4567" required value="${esc(S.phone)}"><span class="hint">Your ticket link comes here by text.</span></div>
+        <details ${S.email ? 'open' : ''}><summary class="label" style="cursor:pointer;padding:6px 0">Email receipt (optional)</summary>
+          <div class="field" style="margin-top:10px"><label for="email" class="sr">Email</label><input id="email" type="email" autocomplete="email" inputmode="email" value="${esc(S.email)}"></div></details>
+        <div class="summary"><div class="r"><span>${qty} × ${esc(T.name)}</span><span>${money(total())}</span></div></div>
+        <div class="step-nav"><button class="btn red" type="submit">Next <span class="arrow">→</span></button></div>
+      </form>
+      <div id="s2" class="step" hidden style="margin-top:22px">
+        <h1 class="display">How are you showing up?</h1>
+        <p class="muted" style="margin:-8px 0 0">Pick your line. It goes on your ticket.</p>
+        <ol class="lines" role="radiogroup" aria-label="Your line">${B.lines.map((l, i) => `<li><button type="button" class="line-btn" role="radio" aria-checked="${S.line === l}" data-line="${esc(l)}"><span class="no">${String(i + 1).padStart(2, '0')}</span><span class="tx">${esc(l)}</span><span class="mk" aria-hidden="true">✓</span></button></li>`).join('')}</ol>
+        <div class="step-nav"><button class="btn back" type="button" data-back aria-label="Back">←</button><button class="btn red" type="button" id="to3" ${S.line ? '' : 'disabled'}>This is me <span class="arrow">→</span></button></div>
       </div>
-
-      <div class="form-grid">
-        <div class="field full">
-          <label for="buyerPhone">Phone number</label>
-          <input id="buyerPhone" autocomplete="tel" inputmode="tel" placeholder="024 123 4567" style="font-size:20px;letter-spacing:.05em;font-family:var(--mono);text-align:center">
-          <small style="color:var(--muted);font-size:11px;margin-top:6px;display:block">We'll send your ticket to this number. Show it at the door.</small>
+      <div id="s3" class="step" hidden style="margin-top:22px">
+        <h1 class="display">Your night</h1>
+        <div class="review-ticket" data-preview></div>
+        <div class="choice" role="radiogroup" aria-label="How to pay">
+          <button type="button" role="radio" data-mode="full" aria-checked="${S.mode === 'full'}"><b>Pay in full · ${money(total())}</b><span>Ticket straight to your phone.${B.raffle?.status === 'open' ? ' You’re in the draw if a spot is left.' : ''}</span></button>
+          <button type="button" role="radio" data-mode="bits" aria-checked="${S.mode === 'bits'}"><b>Pay in bits</b><span>Start with GHS 10 or more. Top up any time before the night. Ticket arrives when it’s fully paid.</span></button>
         </div>
-
-        <div class="field full">
-          <label for="qty">Quantity</label>
-          <select id="qty">${Array.from({length:maxQty},(_,i)=>`<option value="${i+1}">${i+1} ticket${i>0?'s':''}</option>`).join('')}</select>
+        <div class="field" id="fDep" ${S.mode === 'bits' ? '' : 'hidden'}><label for="dep">Pay now</label><div class="money-in"><input id="dep" type="number" inputmode="decimal" min="10" max="${total() / 100}" step="1" value="${esc(S.deposit)}" placeholder="10"></div><span class="hint">Between GHS 10 and ${money(total())}. Unpaid balances are forfeited once the night starts.</span></div>
+        <div class="summary">
+          <div class="r"><span>${qty} × ${esc(T.name)}</span><span>${money(total())}</span></div>
+          <div class="r muted"><span>For</span><span id="forWho"></span></div>
+          <div class="r t"><span id="payLabel">Total</span><span id="payAmt">${money(total())}</span></div>
         </div>
-
-        <div class="field full" style="color:var(--muted);font-size:12px;line-height:1.5">
-          Secure payment via Paystack — Mobile Money or card. No account required.
-        </div>
-
-        <div class="field full">
-          <button id="pay" class="btn red" type="button">PAY ${money(t.pricePesewas)} · GET TICKET</button>
-        </div>
-        <div id="errBox" class="field full"></div>
-      </div>`;
-
-    // ── Quantity change ──
-    document.querySelector('#qty').onchange = ev => {
-      qty = Number(ev.target.value);
-      document.querySelector('#pay').textContent = `PAY ${money(t.pricePesewas * qty)} · GET TICKET${qty>1?'S':''}`;
-      document.querySelector('#previewQty').textContent = qty;
-      document.querySelector('#previewPlural').textContent = qty > 1 ? 's' : '';
-    };
-
-    // ── Live phone preview ──
-    const phoneInput = document.querySelector('#buyerPhone');
-    const previewPhone = document.querySelector('#previewPhone');
-    phoneInput.oninput = ev => {
-      const v = ev.target.value.replace(/\D/g, '');
-      if (!v) { previewPhone.textContent = '— — —'; return; }
-      // Simple grouping: 024 123 4567
-      let formatted = v;
-      if (v.length > 3 && v.length <= 6) formatted = `${v.slice(0,3)} ${v.slice(3)}`;
-      else if (v.length > 6) formatted = `${v.slice(0,3)} ${v.slice(3,6)} ${v.slice(6,10)}`;
-      previewPhone.textContent = formatted;
-    };
-
-    // ── Pay ──
-    document.querySelector('#pay').onclick = async () => {
-      const rawPhone = phoneInput.value.replace(/\D/g, '');
-      const errBox = document.querySelector('#errBox');
-      errBox.innerHTML = '';
-
-      // Ghana phone: 10 digits starting with 0, or 12 digits starting with 233
-      let phone = rawPhone;
-      if (phone.startsWith('233') && phone.length === 12) phone = '0' + phone.slice(3);
-      if (!/^0\d{9}$/.test(phone)) {
-        errBox.innerHTML = '<div class="status error">Enter a valid phone number (10 digits, e.g. 0241234567).</div>';
-        phoneInput.focus();
-        return;
-      }
-
-      const b = document.querySelector('#pay');
-      b.disabled = true;
-      b.textContent = 'LOCKING IN…';
-
-      try {
-        const callbackUrl = new URL('payment-return.html', location.href).href;
-
-        // Paystack requires an email. The customer doesn't enter one, so we generate
-        // a placeholder tied to their phone. It's a valid format, so Paystack accepts
-        // it — no delivery happens to this address, and the SMS is the real receipt.
-        const placeholderEmail = `${phone}@guest.memoriesnightclub.com`;
-
-        const r = await api('/api/checkout/initiate', {
-          method: 'POST',
-          body: JSON.stringify({
-            eventId,
-            ticketTypeId,
-            quantity: qty,
-            buyerName: 'Guest',            // not shown on the ticket; phone is the identity
-            buyerPhone: phone,
-            buyerEmail: placeholderEmail,
-            identityLine: line,
-            callbackUrl,
-          }),
-        });
-
-        if (!r.authorizationUrl) throw new Error('Payment could not be started.');
-        location.href = r.authorizationUrl;
-
-      } catch (err) {
-        console.error('Checkout error:', err);
-        errBox.innerHTML = `<div class="status error">${esc(friendlyError(err))}</div>`;
-        b.disabled = false;
-        b.textContent = `PAY ${money(t.pricePesewas * qty)} · GET TICKET${qty>1?'S':''}`;
-      }
-    };
-
-    // Auto-focus the phone field
-    setTimeout(() => phoneInput.focus(), 100);
-  };
-
-  render();
-  document.querySelector('#preview').innerHTML = art(e.artwork, e.name) + `<div style="margin-top:18px"><div class="eyebrow">${esc(t.name)}</div><div class="display" style="font-size:58px">${money(t.pricePesewas)}</div></div>`;
-
-} catch (err) {
-  console.error('Checkout load error:', err);
-  document.querySelector('main').innerHTML = `<div class="wrap empty" style="margin:80px auto;text-align:center"><div class="eyebrow">UNAVAILABLE</div><h2 class="display" style="font-size:60px;margin:18px 0">CANNOT<br>LOAD TICKET</h2><p style="color:var(--muted);margin-bottom:24px">${esc(err.message)}</p><a href="nights.html" class="btn red">BROWSE NIGHTS</a></div>`;
+        <div class="notice" id="payErr" hidden role="alert"></div>
+        <div class="step-nav"><button class="btn back" type="button" data-back aria-label="Back">←</button><button class="btn red" type="button" id="pay">Pay <span class="arrow">→</span></button></div>
+        <p class="foot-small" style="margin:0">Payments by Paystack: MoMo or card. Strictly 18+.</p>
+      </div>
+    </div>
+    <aside class="aside" aria-label="Your ticket, live"><p class="kicker" style="margin-bottom:14px">Your ticket · live preview</p><div data-preview></div></aside>
+  </div>`;
+  bind(); go(S.step); refreshPreview();
 }
-</script></body></html>
+
+function go(n) {
+  S.step = n;
+  ['s1', 's2', 's3'].forEach((id, i) => { $('#' + id).hidden = i + 1 !== n; });
+  $('#bar').innerHTML = Array.from({ length: steps() }, (_, i) => `<i class="${i < stepNo() ? 'on' : ''}"></i>`).join('');
+  $('.peek').hidden = n === 3;
+  if (n === 3) $('#forWho').textContent = `${S.name.trim()} · ${S.phone.trim()}`;
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+function payAmount() { return S.mode === 'bits' ? Math.round(Number(S.deposit || 0) * 100) : total(); }
+function syncPay() {
+  $('#fDep').hidden = S.mode !== 'bits';
+  $$('[data-mode]').forEach(b => b.setAttribute('aria-checked', String(b.dataset.mode === S.mode)));
+  $('#payLabel').textContent = S.mode === 'bits' ? 'Paying now' : 'Total';
+  $('#payAmt').textContent = money(payAmount());
+  $('#pay').innerHTML = `Pay ${money(payAmount())} <span class="arrow">→</span>`;
+}
+
+function bind() {
+  const setErr = (f, msg) => { f.classList.toggle('bad', !!msg); f.querySelector('.err')?.remove(); if (msg) f.insertAdjacentHTML('beforeend', `<span class="err">${esc(msg)}</span>`); };
+  $('#name').oninput = e => { S.name = e.target.value; refreshPreview(); };
+  $('#phone').oninput = e => { S.phone = e.target.value; if (phoneOk(S.phone)) setErr($('#fPhone')); };
+  $('#email').oninput = e => { S.email = e.target.value.trim(); };
+  $('#s1').onsubmit = ev => {
+    ev.preventDefault();
+    const okName = S.name.trim().length > 1, okPhone = phoneOk(S.phone);
+    setErr($('#fName'), okName ? '' : 'Add your name.');
+    setErr($('#fPhone'), okPhone ? '' : 'Use a Ghana number, e.g. 024 123 4567.');
+    if (!okName) return $('#name').focus();
+    if (!okPhone) return $('#phone').focus();
+    remember.set({ name: S.name.trim(), phone: S.phone.trim(), email: S.email });
+    go(hasLines() ? 2 : 3);
+  };
+  $$('.line-btn').forEach(b => b.onclick = () => {
+    S.line = b.dataset.line;
+    $$('.line-btn').forEach(x => x.setAttribute('aria-checked', String(x === b)));
+    $('#to3').disabled = false; refreshPreview();
+  });
+  $('#to3').onclick = () => go(3);
+  $$('[data-back]').forEach(b => b.onclick = () => go(S.step === 3 && hasLines() ? 2 : 1));
+  $$('[data-mode]').forEach(b => b.onclick = () => { S.mode = b.dataset.mode; syncPay(); if (S.mode === 'bits') $('#dep').focus(); });
+  $('#dep').oninput = e => { S.deposit = e.target.value; syncPay(); };
+  $('#pay').onclick = pay;
+  syncPay();
+}
+
+async function pay() {
+  const err = $('#payErr'); err.hidden = true;
+  const btn = $('#pay');
+  if (S.mode === 'bits') {
+    const amt = payAmount();
+    if (!(amt >= 1000) || amt > total()) { err.hidden = false; err.textContent = `Pay between GHS 10 and ${money(total())}.`; return $('#dep').focus(); }
+  }
+  btn.disabled = true; btn.textContent = 'Opening payment…';
+  const body = { eventId: B.event.id, ticketTypeId: T.id, quantity: qty, buyerName: S.name.trim(), buyerPhone: S.phone.trim(), buyerEmail: S.email || undefined, identityLine: S.line, callbackUrl: `${location.origin}/payment-return.html` };
+  try {
+    const d = S.mode === 'bits'
+      ? await api('/api/installments/start', { method: 'POST', body: { ...body, depositPesewas: payAmount() } })
+      : await api('/api/checkout/initiate', { method: 'POST', body });
+    location.href = d.authorizationUrl;
+  } catch (e) {
+    err.hidden = false; err.textContent = e.message; btn.disabled = false; syncPay();
+  }
+}
+
+async function load() {
+  try {
+    B = await api(`/api/events/${encodeURIComponent(params.get('event') || '')}`);
+    T = B.ticketTypes.find(t => t.id === params.get('type') && !t.soldOut);
+    if (!T || B.event.soldOut || B.event.over) {
+      root.innerHTML = `<div class="state-msg"><h2 class="display">That ticket isn’t available.</h2><p>It may have sold out. Pick another one.</p><a class="btn red" href="event.html?id=${encodeURIComponent(B.event.id)}#tickets">Back to tickets</a></div>`;
+      return;
+    }
+    if (!B.lines.includes(S.line)) S.line = '';
+    shell();
+  } catch (e) {
+    if (e.status === 404) root.innerHTML = '<div class="state-msg"><h2 class="display">This night isn’t on.</h2><a class="btn red" href="nights.html">See what’s on</a></div>';
+    else errorState(root, e.message, load);
+  }
+}
+load();
+</script>
+</body>
+</html>

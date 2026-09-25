@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="1000" viewBox="0 0 800 1000">
+<rect width="800" height="1000" fill="#0f2d2a"/>
+<g fill="#2f5b54">
+<rect x="0" y="0" width="800" height="120"/><rect x="0" y="880" width="800" height="120"/></g>
+<g stroke="#c4841c" stroke-width="10" fill="none"><path d="M-20 420 C 200 300, 600 560, 820 420"/><path d="M-20 470 C 200 350, 600 610, 820 470"/></g>
+<text x="400" y="330" text-anchor="middle" font-family="Impact,Anton,sans-serif" font-size="150" fill="#e9ddc0">AMA</text>
+<text x="400" y="640" text-anchor="middle" font-family="Impact,Anton,sans-serif" font-size="150" fill="#c4841c">PIANO</text>
+<text x="400" y="740" text-anchor="middle" font-family="Georgia,serif" font-style="italic" font-size="52" fill="#e9ddc0">saturday</text>
+<text x="400" y="950" text-anchor="middle" font-family="Arial,sans-serif" font-weight="700" font-size="24" fill="#e9ddc0" letter-spacing="6">DEV FIXTURE · NOT A REAL EVENT</text>
+</svg>

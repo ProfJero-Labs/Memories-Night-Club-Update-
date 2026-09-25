@@ -1,214 +1,115 @@
-// ═══════════════════════════════════════════════════════════════════
-// MEMORIES — Public app.js (customer side)
-// Reads go to Firestore directly. Only payments + SMS use the Worker.
-// ═══════════════════════════════════════════════════════════════════
-
-import { initializeApp, getApps } from 'https://www.gstatic.com/firebasejs/11.0.2/firebase-app.js';
-import {
-  getFirestore,
-  collection, doc, getDoc, getDocs,
-  query, where,
-} from 'https://www.gstatic.com/firebasejs/11.0.2/firebase-firestore.js';
-
-// ── Firebase init (safe to call multiple times) ──
-const cfg = window.MEMORIES_CONFIG;
-if (!cfg?.firebase) throw new Error('MEMORIES_CONFIG.firebase missing in config.js');
-
-const app = getApps().length ? getApps()[0] : initializeApp(cfg.firebase);
-export const db = getFirestore(app);
-
-// ── Worker base URL ──
-const API = (cfg.apiBase || '').replace(/\/$/, '');
-
-// ═══════════════════════════════════════════════════════════════════
-// HELPERS
-// ═══════════════════════════════════════════════════════════════════
-export const money = n => `GHS ${(Number(n || 0) / 100).toLocaleString('en-GH', { minimumFractionDigits: 2 })}`;
-export const qs = s => document.querySelector(s);
-export const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({
-  '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;',
-}[c]));
+// Shared code for the public pages. No framework, no Firebase: everything goes through the Worker.
+const CFG = window.MEMORIES_CONFIG || {};
 export const params = new URLSearchParams(location.search);
+export const $ = (s, el = document) => el.querySelector(s);
+export const $$ = (s, el = document) => [...el.querySelectorAll(s)];
+export const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+export const money = p => `GHS ${(Number(p || 0) / 100).toLocaleString('en-GH', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
 
-// Raw fetch/network failures ("Failed to fetch", "NetworkError...", "Load failed") aren't
-// guest-friendly on their own — rewrite them the same way login.html already handles
-// auth/network-request-failed, but leave server-supplied messages (already plain language) alone.
-export function friendlyError(err) {
-  const msg = err?.message || String(err || '');
-  if (/failed to fetch|networkerror|load failed/i.test(msg)) {
-    return "Couldn't reach the server. Check your connection and try again.";
+// ── Dates: Ghana is UTC+0, so every date is formatted in UTC ──
+const D = (d, o) => new Date(d).toLocaleDateString('en-GB', { timeZone: 'UTC', ...o }).toUpperCase();
+export const dow = d => D(d, { weekday: 'short' });
+export const dd = d => D(d, { day: '2-digit' });
+export const mon = d => D(d, { month: 'short' });
+export const longDate = d => D(d, { weekday: 'long', day: 'numeric', month: 'long' });
+export const shortDate = d => `${dow(d)} ${dd(d)} ${mon(d)}`;
+export const time = d => new Date(d).toLocaleTimeString('en-GB', { timeZone: 'UTC', hour: 'numeric', minute: '2-digit', hour12: true }).replace(':00', '').replace(' ', '').toUpperCase();
+export const doors = e => (e.doors ? `DOORS ${String(e.doors).replace(/^doors\s*/i, '').toUpperCase()}` : `DOORS ${time(e.date)}`);
+export const dateStamp = (d, cls = '') => `<div class="date-stamp ${cls}"><span class="dow">${dow(d)}</span><span class="dd">${dd(d)}</span><span class="mon">${mon(d)}</span></div>`;
+// "TONIGHT" / "THIS FRIDAY" / "NEXT AT MEMORIES" for the lead night.
+export function whenLabel(d) {
+  const day = x => new Date(x).toISOString().slice(0, 10);
+  const days = Math.round((new Date(day(d)) - new Date(day(Date.now()))) / 864e5);
+  if (days === 0) return 'Tonight';
+  if (days === 1) return 'Tomorrow night';
+  if (days > 1 && days < 7) return `This ${new Date(d).toLocaleDateString('en-GB', { timeZone: 'UTC', weekday: 'long' })}`;
+  return 'Next at Memories';
+}
+export const img = (src, alt, cls = '', eager = false) => src ? `<img src="${esc(src)}" alt="${esc(alt)}" class="${cls}" ${eager ? 'fetchpriority="high"' : 'loading="lazy"'} decoding="async">` : '';
+
+// ── API ──
+// Human copy for anything that goes wrong between the phone and the server.
+export const MSG = {
+  network: 'CONNECTION DROPPED. WE HAVEN’T LOST YOUR ORDER. TRY AGAIN.',
+  server: 'SOMETHING WENT WRONG ON OUR SIDE. TRY AGAIN IN A MOMENT.',
+  busy: 'TOO MANY TRIES. GIVE IT A MINUTE.',
+};
+export class ApiError extends Error { constructor(message, status) { super(message); this.status = status; } }
+export async function api(path, { method = 'GET', body, token, retries = method === 'GET' ? 1 : 0, timeout = 15000 } = {}) {
+  for (let attempt = 0; ; attempt++) {
+    const ctl = new AbortController(); const t = setTimeout(() => ctl.abort(), timeout);
+    try {
+      const headers = { 'Content-Type': 'application/json' };
+      if (token) headers.Authorization = `Bearer ${token}`;
+      const r = await fetch(`${CFG.apiBase || ''}${path}`, { method, headers, body: body ? JSON.stringify(body) : undefined, signal: ctl.signal });
+      const d = await r.json().catch(() => ({}));
+      if (r.ok && d.success !== false) return d;
+      if (r.status === 429) throw new ApiError(MSG.busy, 429);
+      if (r.status >= 500 && attempt < retries) continue;
+      throw new ApiError(r.status >= 500 ? MSG.server : (d.error || MSG.server), r.status);
+    } catch (e) {
+      if (e instanceof ApiError) throw e;
+      if (attempt < retries) { await new Promise(res => setTimeout(res, 600)); continue; }
+      throw new ApiError(MSG.network, 0);
+    } finally { clearTimeout(t); }
   }
-  return msg || 'Something went wrong. Please try again.';
 }
 
+// ── Settings (one document drives every phone/email/Instagram on the site) ──
+let settingsP;
+export const getSettings = () => (settingsP ||= api('/api/settings').then(d => d.settings).catch(() => ({})));
+const digits = s => String(s || '').replace(/\D/g, '');
+export const waLink = n => { const d = digits(n); return d ? `https://wa.me/${d.startsWith('0') ? '233' + d.slice(1) : d}` : ''; };
+export const igLink = h => (h ? `https://instagram.com/${String(h).replace(/^@/, '')}` : '');
+export const mapLink = s => s.mapUrl || `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(s.venue || 'SamRit Hotel Cape Coast')}`;
+
+const WA_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true" fill="currentColor"><path d="M12 2a10 10 0 0 0-8.6 15.1L2 22l5-1.3A10 10 0 1 0 12 2Zm0 18.2c-1.5 0-3-.4-4.2-1.2l-.3-.2-3 .8.8-2.9-.2-.3A8.2 8.2 0 1 1 12 20.2Zm4.5-6.1c-.2-.1-1.5-.7-1.7-.8-.2-.1-.4-.1-.6.1l-.8 1c-.1.2-.3.2-.5.1a6.7 6.7 0 0 1-3.3-2.9c-.3-.4.2-.4.7-1.3.1-.2 0-.3 0-.4l-.8-1.8c-.2-.5-.4-.4-.6-.4h-.5a1 1 0 0 0-.7.3 3 3 0 0 0-.9 2.2 5.2 5.2 0 0 0 1.1 2.8 12 12 0 0 0 4.6 4c1.7.7 2.4.8 3.2.6.5-.1 1.5-.6 1.7-1.2.2-.6.2-1.1.2-1.2-.1-.1-.3-.2-.5-.3Z"/></svg>';
+
+export async function chrome(active = '') {
+  const head = document.createElement('header');
+  head.className = 'site-head';
+  head.innerHTML = `<div class="wrap"><a class="logo" href="index.html" aria-label="Memories — home"><img src="assets/logo.png" alt="Memories" width="93" height="22"></a>
+    <nav class="nav" aria-label="Main">${[['nights', 'Nights'], ['tables', 'Tables'], ['visit', 'Visit']].map(([k, l]) => `<a href="${k}.html"${active === k ? ' aria-current="page"' : ''}>${l}</a>`).join('')}<span id="waSlot"></span></nav></div>`;
+  document.body.prepend(head);
+  const foot = document.createElement('footer');
+  foot.className = 'site-foot';
+  document.body.append(foot);
+  const s = await getSettings();
+  if (s.whatsapp) $('#waSlot').outerHTML = `<a class="wa" href="${waLink(s.whatsapp)}" target="_blank" rel="noopener" aria-label="WhatsApp us">${WA_ICON}<span>WhatsApp</span></a>`;
+  const items = [
+    `<li><a href="${esc(mapLink(s))}" target="_blank" rel="noopener">${esc(s.venue || 'SamRit Hotel, Cape Coast')} ↗</a></li>`,
+    s.phone && `<li><a href="tel:${digits(s.phone)}">${esc(s.phone)}</a></li>`,
+    s.email && `<li><a href="mailto:${esc(s.email)}">${esc(s.email)}</a></li>`,
+    s.instagram && `<li><a href="${esc(igLink(s.instagram))}" target="_blank" rel="noopener">Instagram ${esc(s.instagram)}</a></li>`,
+  ].filter(Boolean).join('');
+  foot.innerHTML = `<div class="wrap foot-grid">
+    <div><a class="logo" href="index.html"><img src="assets/logo.png" alt="Memories" width="110" height="26"></a><p class="foot-small" style="margin-top:14px">${esc(s.nightsLine || 'Friday + Saturday')} · ${esc(s.doorsLine || 'Doors 10PM')}</p></div>
+    <ul class="foot-list">${items}</ul>
+    <ul class="foot-list"><li><a href="nights.html">Nights</a></li><li><a href="tables.html">Tables</a></li><li><a href="private.html">Private night</a></li><li><a href="installment.html">Pay the rest of a ticket</a></li></ul>
+    <div><span class="age" title="Strictly 18 and over">18+</span><p class="foot-small" style="margin-top:10px">Strictly 18+. ID at the door.</p></div>
+  </div>`;
+  return s;
+}
+
+// ── UI states ──
+export const loading = text => `<div class="loading" role="status">${esc(text)}</div>`;
+export function errorState(el, message, retry) {
+  el.innerHTML = `<div class="state-msg"><h2 class="display">${esc(message.includes('CONNECTION') ? 'CONNECTION DROPPED.' : 'THAT DIDN’T WORK.')}</h2><p>${esc(message.includes('CONNECTION') ? 'Check your signal and try again.' : message)}</p>${retry ? '<button class="btn" data-retry>TRY AGAIN</button>' : '<a class="btn" href="index.html">BACK TO MEMORIES</a>'}</div>`;
+  if (retry) $('[data-retry]', el).onclick = retry;
+}
+let toastT;
 export function toast(msg) {
-  const t = qs('.toast');
-  if (!t) return;
-  t.textContent = msg;
-  t.style.display = 'block';
-  setTimeout(() => { t.style.display = 'none'; }, 3200);
+  let t = $('.toast'); if (!t) { t = document.createElement('div'); t.className = 'toast'; t.setAttribute('role', 'status'); document.body.append(t); }
+  t.textContent = msg; t.classList.add('show'); clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove('show'), 3200);
 }
 
-export function art(url, title = 'MEMORIES') {
-  return url
-    ? `<img src="${esc(url)}" alt="${esc(title)}">`
-    : `<div class="art-fallback">${esc((title || 'M').slice(0, 1))}</div>`;
+// Remember who's buying so a second purchase is one tap shorter (this device only).
+export const remember = {
+  get: () => { try { return JSON.parse(localStorage.getItem('mem-buyer') || '{}'); } catch { return {}; } },
+  set: v => { try { localStorage.setItem('mem-buyer', JSON.stringify(v)); } catch { /* private mode */ } },
+};
+
+export async function shareUrl(title, url = location.href) {
+  if (navigator.share) { try { await navigator.share({ title, url }); return; } catch { return; } }
+  try { await navigator.clipboard.writeText(url); toast('LINK COPIED.'); } catch { toast(url); }
 }
-
-export function eventDate(e) {
-  if (!e?.date) return '';
-  const d = new Date(e.date);
-  return d.toLocaleDateString('en-GH', {
-    weekday: 'short', day: '2-digit', month: 'short',
-  }).toUpperCase();
-}
-
-export function eventTime(e) {
-  return e?.doors || '10PM';
-}
-
-// ═══════════════════════════════════════════════════════════════════
-// WORKER API — only for payments (has secrets)
-// ═══════════════════════════════════════════════════════════════════
-export async function api(path, options = {}) {
-  const headers = { 'Content-Type': 'application/json', ...(options.headers || {}) };
-  const token = await window.getFirebaseIdToken?.();
-  if (token) headers.Authorization = `Bearer ${token}`;
-  const r = await fetch(API + path, { ...options, headers });
-  const data = await r.json().catch(() => ({ success: false, error: 'Invalid server response.' }));
-  if (!r.ok && !data.success) throw new Error(data.error || 'Request failed.');
-  return data;
-}
-
-// ═══════════════════════════════════════════════════════════════════
-// EVENTS (direct Firestore)
-// ═══════════════════════════════════════════════════════════════════
-export async function getEvents() {
-  const snap = await getDocs(query(
-    collection(db, 'events'),
-    where('visibility', '==', 'public'),
-    where('active', '==', true)
-  ));
-  const events = [];
-  snap.forEach(d => events.push({ id: d.id, ...d.data() }));
-  events.sort((a, b) => new Date(a.date) - new Date(b.date));
-  return { success: true, events };
-}
-
-export async function getEvent(id) {
-  if (!id || id === 'null' || id === 'undefined') throw new Error('Event not found.');
-
-  const eSnap = await getDoc(doc(db, 'events', id));
-  if (!eSnap.exists()) throw new Error('Event not found.');
-  const event = { id: eSnap.id, ...eSnap.data() };
-
-  const [ttSnap, tpSnap, bSnap, rSnap] = await Promise.all([
-    getDocs(query(collection(db, 'ticket_types'), where('eventId', '==', id), where('active', '==', true))),
-    getDocs(query(collection(db, 'table_packages'), where('eventId', '==', id), where('active', '==', true))),
-    getDocs(query(collection(db, 'bottles'), where('eventId', '==', id), where('active', '==', true))),
-    getDocs(query(collection(db, 'raffles'), where('eventId', '==', id), where('enabled', '==', true))),
-  ]);
-
-  const ticketTypes = []; ttSnap.forEach(d => ticketTypes.push({ id: d.id, ...d.data() }));
-  const tablePackages = []; tpSnap.forEach(d => tablePackages.push({ id: d.id, ...d.data() }));
-  const bottles = []; bSnap.forEach(d => bottles.push({ id: d.id, ...d.data() }));
-
-  let raffle = null;
-  rSnap.forEach(d => {
-    const r = d.data();
-    if (r.public === true && !raffle) raffle = { id: d.id, ...r };
-  });
-
-  return { success: true, event, ticketTypes, tablePackages, bottles, raffle };
-}
-
-// ═══════════════════════════════════════════════════════════════════
-// TICKET (public read by token)
-// ═══════════════════════════════════════════════════════════════════
-export async function getTicket(token) {
-  if (!token) throw new Error('No ticket token');
-  const tSnap = await getDoc(doc(db, 'tickets', token));
-  if (!tSnap.exists()) throw new Error('Ticket not found.');
-  const t = tSnap.data();
-
-  let event = {};
-  if (t.eventId) {
-    const eSnap = await getDoc(doc(db, 'events', t.eventId));
-    if (eSnap.exists()) event = eSnap.data();
-  }
-
-  return {
-    success: true,
-    ticket: {
-      ticketId: token,
-      customerName: t.customerName,
-      type: t.type,
-      admitCount: t.admitCount,
-      identityLine: t.identityLine,
-      status: t.status,
-      revoked: t.revoked,
-      cancelled: t.cancelled,
-      displayCode: t.displayCode,
-      eventId: t.eventId,
-      eventName: t.eventName,
-      eventDate: event.date,
-      eventVenue: event.venue,
-      eventDoors: event.doors,
-    },
-  };
-}
-
-export async function verifyTicket(token) {
-  if (!token) return { valid: false, message: 'No token' };
-  const snap = await getDoc(doc(db, 'tickets', token));
-  if (!snap.exists()) return { valid: false, message: 'Ticket not found.' };
-  const t = snap.data();
-  const valid = t.status === 'valid' && !t.revoked && !t.cancelled;
-  return {
-    success: true,
-    valid,
-    message: valid ? 'VALID TICKET'
-           : t.status === 'used' ? 'TICKET ALREADY USED'
-           : 'TICKET NOT VALID',
-    ticket: {
-      eventName: t.eventName,
-      customerName: t.customerName,
-      status: t.status,
-      displayCode: t.displayCode,
-    },
-  };
-}
-
-// ═══════════════════════════════════════════════════════════════════
-// LAYOUT — nav + footer
-// ═══════════════════════════════════════════════════════════════════
-export function shell(active = '') {
-  return `<header class="nav"><div class="wrap" style="width:100%;display:flex;align-items:center;justify-content:space-between"><a class="brand" href="index.html">MEMORIES</a><nav class="navlinks"><a href="nights.html">Nights</a><a href="tables.html">Tables</a><a href="private.html">Private</a><a href="nights.html#tickets">Get Tickets</a></nav><button class="menu" aria-label="Menu" onclick="document.querySelector('.navlinks').classList.toggle('open')">☰</button></div></header>`;
-}
-
-export function footer() {
-  // Contact info is queued to be patched in from /api/settings (the single source of truth an
-  // admin edits in the Settings tab) right after this HTML lands in the DOM — see
-  // mountFooterSettings() below. The hardcoded text here is the fallback if that fetch fails,
-  // so the footer never shows a blank or broken state.
-  queueMicrotask(mountFooterSettings);
-  return `<footer class="footer"><div class="wrap footer-grid"><div><div class="brand">MEMORIES</div><p>Some nights become stories. Find the next one in Cape Coast.</p></div><div><div class="eyebrow">Explore</div><p><a href="nights.html">Nights</a><br><a href="tables.html">Tables</a><br><a href="private.html">Private Night</a></p></div><div><div class="eyebrow">Social</div><p id="footerSocial">@memoriesnightclub.gh<br id="footerSocialBreak">Cape Coast, Ghana</p></div></div><div class="wrap" style="margin-top:35px;font-size:11px">© ${new Date().getFullYear()} Memories Night Club</div></footer>`;
-}
-
-let settingsPromise = null;
-async function mountFooterSettings() {
-  try {
-    if (!settingsPromise) settingsPromise = fetch(`${API}/api/settings`).then(r => r.json()).then(d => d?.settings).catch(() => null);
-    const s = await settingsPromise;
-    if (!s) return;
-    document.querySelectorAll('#footerSocial').forEach(el => {
-      const lines = [s.instagram, s.venue, s.address].filter(Boolean);
-      if (lines.length) el.innerHTML = lines.map(esc).join('<br>');
-    });
-  } catch { /* keep the hardcoded fallback already in the DOM */ }
-}
-
-// ═══════════════════════════════════════════════════════════════════
-// Re-export commonly used Firestore read functions
-// ═══════════════════════════════════════════════════════════════════
-export { collection, doc, getDoc, getDocs, query, where };

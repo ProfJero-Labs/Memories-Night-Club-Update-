@@ -1,219 +1,107 @@
-<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Night · Memories</title><link rel="stylesheet" href="styles.css"></head>
-<body><div id="app"></div><div class="toast"></div>
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Memories · Cape Coast</title>
+<meta name="theme-color" content="#0d0a09">
+<link rel="icon" href="assets/icon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Anton&family=Archivo:wght@400;600;700&family=Instrument+Serif:ital@0;1&display=swap">
+<link rel="stylesheet" href="styles.css">
 <script src="config.js"></script>
+</head>
+<body>
+<main id="main"><div class="wrap"><div class="loading" role="status">PULLING UP YOUR NIGHT…</div></div></main>
+<div class="buybar" id="buybar" aria-live="polite">
+  <div class="sum" id="barSum">GHS 0<small>1 ticket</small></div>
+  <a class="btn red" id="barGo" href="#">Get in <span class="arrow">→</span></a>
+</div>
 <script type="module">
-import { shell, footer, getEvent, params, eventDate, eventTime, art, esc, money } from './app.js';
-
+import { chrome, api, esc, img, params, money, dateStamp, doors, longDate, $, $$, errorState, shareUrl, mapLink } from './app.js';
+const settingsP = chrome('nights');
 const id = params.get('id');
+const main = $('#main');
+let sel = null, qty = 1, bundle;
 
-// ── Guard: no event selected ──
-if (!id || id === 'null' || id === 'undefined') {
-  document.querySelector('#app').innerHTML = shell() + `
-    <main class="wrap" style="padding:80px 24px;text-align:center">
-      <div class="eyebrow">EVENT NOT FOUND</div>
-      <h1 class="display" style="font-size:80px;line-height:.8;margin:20px 0">NO<br>NIGHT<br>SELECTED</h1>
-      <p style="color:var(--muted);max-width:400px;margin:20px auto 30px">Open this page by tapping a night from the calendar.</p>
-      <a href="nights.html" class="btn red">BROWSE NIGHTS</a>
-    </main>` + footer();
-  throw new Error('Missing event id');
-}
-
-// ── Page skeleton ──
-document.querySelector('#app').innerHTML = shell() + `
-  <main id="page">
-    <section class="wrap event-hero">
-      <div class="event-art" id="art"></div>
-      <div class="event-info">
-        <div class="eyebrow" id="date">YOUR NIGHT</div>
-        <h1 class="display" id="name">Loading…</h1>
-        <div class="event-facts">
-          <div class="fact"><label>Doors</label><strong id="doors">—</strong></div>
-          <div class="fact"><label>Where</label><strong id="venue">—</strong></div>
-          <div class="fact"><label>Status</label><strong id="status">—</strong></div>
-        </div>
-        <div class="selector">
-          <h2 class="display">CHOOSE YOUR TICKET</h2>
-          <div class="choice-grid" id="tickets">
-            <div class="status" style="grid-column:1/-1;text-align:center">Loading tickets…</div>
-          </div>
-        </div>
-        <div class="selector">
-          <h2 class="display">HOW ARE YOU SHOWING UP?</h2>
-          <p style="color:var(--muted);font-size:13px;margin:-12px 0 18px">This line goes on your ticket.</p>
-          <div class="identity-list" id="lines"></div>
-        </div>
-        <div id="raffleInfo"></div>
-      </div>
-    </section>
-
-    <section class="section" id="checkoutSection" style="display:none;padding-top:20px">
-      <div class="wrap" style="max-width:600px">
-        <div class="status success" style="text-align:center;padding:32px 24px;border-color:#376f48">
-          <div class="eyebrow" style="color:#ffd2d8">READY TO GO</div>
-          <div class="display" id="selectionLabel" style="font-size:34px;margin:14px 0 6px">—</div>
-          <div class="display" id="selectionPrice" style="font-size:54px;color:#ed4356;line-height:1;margin-bottom:24px">—</div>
-          <a id="goCheckout" class="btn red" style="display:block;width:100%;padding:20px;font-size:14px;text-align:center;justify-content:center">
-            PROCEED TO CHECKOUT
-          </a>
-          <p style="color:var(--muted);font-size:12px;margin:16px 0 0">
-            You'll pay securely via Paystack on the next screen.
-          </p>
-          <a id="goInstallment" class="btn ghost" style="display:block;width:100%;padding:14px;font-size:12px;text-align:center;justify-content:center;margin-top:12px">
-            OR PAY IN INSTALLMENTS
-          </a>
-        </div>
-      </div>
-    </section>
-  </main>
-  <div class="sticky-cta" id="stickyCta">
-    <div class="sticky-info">
-      <span class="sticky-name" id="stickyName">—</span>
-      <span class="sticky-price" id="stickyPrice">—</span>
-    </div>
-    <a id="stickyGo" class="btn red">GET IN →</a>
-  </div>` + footer();
-
-// ═══════════════════════════════════════════════════════════
-// STATE
-// ═══════════════════════════════════════════════════════════
-let selectedLine = 'FULLY ACTIVE.';
-let selectedTicket = null;
-
-// ═══════════════════════════════════════════════════════════
-// UPDATE THE CHECKOUT CTA — always visible, always current
-// ═══════════════════════════════════════════════════════════
-function updateSelection() {
-  const section = document.querySelector('#checkoutSection');
-  if (!selectedTicket) {
-    section.style.display = 'none';
-    document.querySelector('#stickyCta').classList.remove('visible');
-    document.body.classList.remove('has-sticky-cta');
-    return;
-  }
-  section.style.display = 'block';
-  document.querySelector('#selectionLabel').textContent = selectedTicket.name.toUpperCase();
-  document.querySelector('#selectionPrice').textContent = money(selectedTicket.pricePesewas);
-
-  const link = document.querySelector('#goCheckout');
-  link.href = `checkout.html?event=${encodeURIComponent(id)}&ticketType=${encodeURIComponent(selectedTicket.id)}&line=${encodeURIComponent(selectedLine)}`;
-  link.textContent = `PROCEED TO CHECKOUT · ${money(selectedTicket.pricePesewas)}`;
-
-  const installmentLink = document.querySelector('#goInstallment');
-  installmentLink.href = `installment.html?event=${encodeURIComponent(id)}&ticketType=${encodeURIComponent(selectedTicket.id)}&line=${encodeURIComponent(selectedLine)}`;
-
-  // Mobile sticky bottom CTA — mirrors the same selection, always in thumb reach
-  document.querySelector('#stickyName').textContent = selectedTicket.name;
-  document.querySelector('#stickyPrice').textContent = money(selectedTicket.pricePesewas);
-  document.querySelector('#stickyGo').href = link.href;
-  document.querySelector('#stickyCta').classList.add('visible');
-  document.body.classList.add('has-sticky-cta');
-}
-
-// ═══════════════════════════════════════════════════════════
-// RENDER TICKET TYPES — auto-select first, always show CTA
-// ═══════════════════════════════════════════════════════════
-function renderTickets(ts) {
-  const box = document.querySelector('#tickets');
-
-  if (!ts || ts.length === 0) {
-    box.innerHTML = `<div class="status" style="grid-column:1/-1;text-align:center">
-      Tickets for this night haven't been published yet. Check back soon.
-    </div>`;
-    return;
-  }
-
-  // Render all ticket options
-  box.innerHTML = ts.map((t, i) => {
-    const remaining = typeof t.remaining === 'number' ? t.remaining : null;
-    const low = remaining !== null && remaining > 0 && remaining <= 10;
-    return `
-    <button class="choice ${i === 0 ? 'active' : ''}" data-id="${esc(t.id)}">
-      <strong>${esc(t.name)}</strong>
-      <div class="price">${money(t.pricePesewas)}</div>
-      <div style="color:var(--muted);font-size:12px;margin-top:5px">Admits ${t.admits || 1}${low ? ` · <span style="color:var(--red2)">${remaining} left</span>` : ''}</div>
-    </button>`;
-  }).join('');
-
-  // Auto-select the first ticket — CTA appears immediately
-  selectedTicket = ts[0];
-  updateSelection();
-
-  // Click handler for switching tickets
-  document.querySelectorAll('#tickets .choice').forEach(b => {
-    b.onclick = () => {
-      document.querySelectorAll('#tickets .choice').forEach(x => x.classList.remove('active'));
-      b.classList.add('active');
-      selectedTicket = ts.find(t => t.id === b.dataset.id);
-      updateSelection();
-      // Smooth-scroll to the CTA section so the user sees the button
-      document.querySelector('#checkoutSection').scrollIntoView({ behavior: 'smooth', block: 'center' });
-    };
-  });
-}
-
-// ═══════════════════════════════════════════════════════════
-// LOAD EVENT
-// ═══════════════════════════════════════════════════════════
-try {
-  const d = await getEvent(id);
-  const e = d.event;
-
+function render(b, s) {
+  const e = b.event, r = b.raffle;
   document.title = `${e.name} · Memories`;
-  document.querySelector('#art').innerHTML = art(e.artwork, e.name);
-  document.querySelector('#date').textContent = eventDate(e);
-  document.querySelector('#name').textContent = e.name;
-  document.querySelector('#doors').textContent = eventTime(e);
-  document.querySelector('#venue').textContent = e.venue || 'Cape Coast';
-  document.querySelector('#status').textContent = 'OPEN';
+  const ticketsOpen = !e.soldOut && !e.over && b.ticketTypes.some(t => !t.soldOut);
+  const minTable = Math.min(...b.tablePackages.map(t => t.pricePesewas));
+  main.innerHTML = `<div class="event-hero">
+    <div class="event-art">${img(e.artwork, `${e.name} flyer`, '', true) || `<div style="aspect-ratio:4/5;display:grid;place-items:center">${dateStamp(e.date, 'red')}</div>`}</div>
+    <div class="event-info">
+      ${dateStamp(e.date, 'red')}
+      <h1 class="display">${esc(e.name)}</h1>
+      <div class="meta"><span>${esc(longDate(e.date))}</span><span class="muted">${esc(doors(e))}</span><span class="muted">${esc(e.venue || s.venue || '')}</span></div>
+      ${e.description ? `<p class="desc">${esc(e.description)}</p>` : ''}
+      <div class="row-actions">
+        ${ticketsOpen ? '<a class="btn red" href="#tickets">Get tickets <span class="arrow">↓</span></a>' : `<span class="btn" aria-disabled="true">${e.over ? 'This night has passed' : 'Sold out'}</span>`}
+        ${b.tablePackages.length && !e.over ? `<a class="btn" href="tables.html?event=${encodeURIComponent(e.id)}">Book a table</a>` : ''}
+      </div>
 
-  // ── Identity lines ──
-  const lines = e.ticketLines || [
-    'FULLY ACTIVE.',
-    'CAPE COAST, LOCKED IN.',
-    'I CAME DRESSED.',
-    'OUTSIDE, CORRECT.',
-    'FULL REPPING.',
-    'I’M NOT MISSING THIS.'
-  ];
+      <section id="tickets" aria-labelledby="tTitle" style="scroll-margin-top:80px">
+        <div class="section-title"><h2 id="tTitle">Tickets</h2><span class="kicker">Pay in full or in bits</span></div>
+        <div class="types" role="group" aria-label="Ticket types">${b.ticketTypes.map(t => `
+          <button class="type" type="button" data-type="${esc(t.id)}" aria-pressed="false" ${t.soldOut || e.soldOut || e.over ? 'disabled' : ''}>
+            <span class="n">${esc(t.name)}</span><span class="p">${money(t.pricePesewas)}</span>
+            <span class="s">${t.soldOut || e.soldOut ? 'Sold out' : [t.admits > 1 ? `Admits ${t.admits}` : 'Admits one', t.lastFew ? 'Last few' : '', t.description].filter(Boolean).map(esc).join(' · ')}</span>
+          </button>`).join('') || '<p class="muted" style="padding:18px 0">Tickets aren’t on sale yet.</p>'}</div>
+        <div id="qtyRow" hidden style="display:flex;align-items:center;justify-content:space-between;gap:14px;padding:18px 0">
+          <span class="label">How many?</span>
+          <div class="qty"><button type="button" id="minus" aria-label="One fewer">−</button><output id="qty" aria-live="polite">1</output><button type="button" id="plus" aria-label="One more">+</button></div>
+        </div>
+        <a class="btn red block inline-go" id="inlineGo" hidden href="#">Get in <span class="arrow">→</span></a>
+      </section>
 
-  document.querySelector('#lines').innerHTML = lines.map((x, i) => `
-    <button class="identity-row ${i === 0 ? 'active' : ''}" data-line="${esc(x)}">
-      <span class="identity-num">${String(i + 1).padStart(2, '0')}</span>
-      <span class="identity-text">${esc(x)}</span>
-      <span class="identity-mark">✓</span>
-    </button>
-  `).join('');
+      ${r ? `<aside class="draw-box" aria-label="The draw">
+        <span class="stamp" style="position:absolute;right:14px;top:-16px;background:var(--ink)">The draw</span>
+        ${r.status === 'drawn' && r.winner
+          ? `<span class="display">Won by ${esc(r.winner.name)}</span><span class="muted">Ticket ${esc(r.winner.code)}${r.prize ? ` · ${esc(r.prize)}` : ''}</span>`
+          : r.status === 'open'
+            ? `<span class="display">${r.cap - r.spotsTaken} of ${r.cap} draw spots left</span>
+               <div class="draw-meter" aria-hidden="true"><i style="width:${Math.round(100 * r.spotsTaken / r.cap)}%"></i></div>
+               <span class="muted">The first ${r.cap} tickets paid in full online are in the draw${r.prize ? ` for ${esc(r.prize)}` : ''}. No extra cost.</span>`
+            : `<span class="display">Draw closed</span><span class="muted">All ${r.cap} spots are taken. Tickets are still on sale.</span>`}
+      </aside>` : ''}
 
-  document.querySelectorAll('.identity-row').forEach(b => {
-    b.onclick = () => {
-      document.querySelectorAll('.identity-row').forEach(x => x.classList.remove('active'));
-      b.classList.add('active');
-      selectedLine = b.dataset.line;
-      updateSelection();
-    };
-  });
+      ${b.tablePackages.length && !e.over ? `<a class="info-rows" href="tables.html?event=${encodeURIComponent(e.id)}" style="margin-top:26px;display:block;text-decoration:none">
+        <span style="border-top:1px solid var(--line)"><span><span class="k">Tables</span><br><span class="display" style="font-size:34px">From ${money(minTable)}</span></span><span style="font-size:28px">→</span></span></a>` : ''}
 
-  // ── Ticket types ──
-  renderTickets(d.ticketTypes || []);
+      <div class="info-rows" style="margin-top:10px">
+        <a href="${esc(mapLink({ ...s, venue: e.venue || s.venue }))}" target="_blank" rel="noopener"><span class="k">Where</span><span>${esc(e.venue || s.venue || '')} ↗</span></a>
+        <button type="button" class="link" id="share" style="display:flex;justify-content:space-between;width:100%;text-decoration:none;padding:16px 0;border:0;border-bottom:1px solid var(--line)"><span class="k">Bring people</span><span>Share this night ↗</span></button>
+      </div>
+    </div>
+  </div>`;
 
-  // ── Raffle spots — informational only; entry itself is automatic once a ticket is fully paid ──
-  const raffle = d.raffle;
-  if (raffle && raffle.enabled === true) {
-    const cap = Number(raffle.cap) > 0 ? Number(raffle.cap) : 20;
-    const spotsTaken = Number(raffle.spotsTaken || 0);
-    const left = Math.max(0, cap - spotsTaken);
-    document.querySelector('#raffleInfo').innerHTML = `<div class="selector"><div class="eyebrow">TONIGHT'S RAFFLE</div><h2 class="display" style="font-size:44px">WIN ${esc(raffle.prize || raffle.title || 'A PRIZE')}</h2><p style="color:var(--muted)">${raffle.status === 'drawn' ? `Winner: ${esc(raffle.winnerDisplayName || 'announced')}${raffle.winnerDisplayCode ? ` — Ticket #${esc(raffle.winnerDisplayCode)}` : ''}` : left > 0 ? `${left} of ${cap} draw spots left. Buy a ticket to be automatically entered.` : 'Draw closed — all spots are taken. Tickets are still on sale.'}</p></div>`;
-  }
-
-} catch (err) {
-  console.error('Event load error:', err);
-  document.querySelector('#page').innerHTML = `
-    <div class="wrap" style="margin:80px auto;text-align:center">
-      <div class="eyebrow">UNAVAILABLE</div>
-      <h1 class="display" style="font-size:80px;line-height:.8;margin:20px 0">NIGHT<br>NOT FOUND</h1>
-      <p style="color:var(--muted);max-width:400px;margin:20px auto 30px">${esc(err.message)}</p>
-      <a href="nights.html" class="btn red">BROWSE NIGHTS</a>
-    </div>`;
+  const bar = $('#buybar');
+  const update = () => {
+    const t = b.ticketTypes.find(x => x.id === sel);
+    $$('.type').forEach(x => x.setAttribute('aria-pressed', String(x.dataset.type === sel)));
+    $('#qtyRow').hidden = !t;
+    if (!t) { bar.classList.remove('show'); document.body.style.setProperty('--bar-h', '0px'); return; }
+    $('#qty').value = qty;
+    $('#barSum').innerHTML = `${money(t.pricePesewas * qty)}<small>${qty} × ${esc(t.name)}</small>`;
+    $('#barGo').href = $('#inlineGo').href = `checkout.html?event=${encodeURIComponent(e.id)}&type=${encodeURIComponent(t.id)}&qty=${qty}`;
+    $('#inlineGo').hidden = false; $('#inlineGo').innerHTML = `Get in · ${money(t.pricePesewas * qty)} <span class="arrow">→</span>`;
+    bar.classList.add('show'); document.body.style.setProperty('--bar-h', `${bar.offsetHeight}px`);
+  };
+  $$('.type').forEach(btn => btn.onclick = () => { sel = btn.dataset.type; update(); });
+  if (b.ticketTypes.length) { $('#minus').onclick = () => { qty = Math.max(1, qty - 1); update(); }; $('#plus').onclick = () => { qty = Math.min(6, qty + 1); update(); }; }
+  $('#share').onclick = () => shareUrl(`${e.name} · Memories`);
+  const first = b.ticketTypes.find(t => !t.soldOut);
+  if (first && ticketsOpen && params.get('type') !== 'none') { sel = params.get('type') || first.id; update(); }
 }
+
+async function load() {
+  if (!id) return errorState(main, 'That night doesn’t exist.');
+  try { const [b, s] = await Promise.all([api(`/api/events/${encodeURIComponent(id)}`), settingsP]); bundle = b; render(b, s); }
+  catch (e) { e.status === 404 ? main.innerHTML = '<div class="wrap state-msg"><h2 class="display">This night isn’t on.</h2><p>It may have ended or moved.</p><a class="btn red" href="nights.html">See what’s on</a></div>' : errorState(main, e.message, load); }
+}
+load();
 </script>
-</body></html>
+</body>
+</html>

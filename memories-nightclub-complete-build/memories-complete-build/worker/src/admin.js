@@ -10,7 +10,7 @@ import { balanceMessage } from './checkout.js';
 
 const FORBIDDEN = { error: 'Forbidden.', status: 403 };
 const audit = (env, user, action, data) => setDoc(env, 'audit_logs', id(), { action, actorUid: uidOf(user), ...data, timestamp: now() });
-const httpsUrl = s => { const v = clean(s, 500); return !v || /^https:\/\//.test(v) ? v : null; };
+const httpsUrl = (s, env) => { const v = clean(s, 500); return !v || (env?.DEV_ALLOW_HTTP_ASSETS ? /^https?:\/\// : /^https:\/\//).test(v) ? v : null; };
 const intOrNull = v => (v === null || v === '' || v === undefined ? null : Number(v));
 
 // The table tiers the BUILD_PLAN seeds every new night with. All editable per night.
@@ -67,7 +67,7 @@ export async function upsertEvent(env, b, user) {
   const date = b?.date && !isNaN(new Date(b.date)) ? new Date(b.date).toISOString() : null;
   if (!name) return { error: 'Give the night a name.' };
   if (!date) return { error: 'Set the date and start time.' };
-  const artwork = httpsUrl(b.artwork), heroImage = httpsUrl(b.heroImage);
+  const artwork = httpsUrl(b.artwork, env), heroImage = httpsUrl(b.heroImage, env);
   if (artwork === null || heroImage === null) return { error: 'Images must be uploaded (https links only).' };
   const lines = (Array.isArray(b.ticketLines) ? b.ticketLines : []).map(l => clean(l, 48)).filter(Boolean);
   if (lines.length > 12) return { error: 'Keep it to 12 lines or fewer.' };
@@ -237,7 +237,7 @@ export async function updateSettings(env, b, user) {
   const cur = await getSettings(env);
   const data = {};
   for (const [k, max] of Object.entries(SETTINGS_FIELDS)) if (b?.[k] !== undefined) data[k] = clean(b[k], max);
-  for (const k of ['mapUrl', 'heroImage']) if (data[k] && !/^https:\/\//.test(data[k])) return { error: 'Links must start with https://' };
+  for (const k of ['mapUrl', 'heroImage']) if (data[k] && httpsUrl(data[k], env) === null) return { error: 'Links must start with https://' };
   if (b?.defaultLines !== undefined) {
     const lines = (Array.isArray(b.defaultLines) ? b.defaultLines : []).map(l => clean(l, 48)).filter(Boolean);
     if (lines.length > 12) return { error: 'Keep it to 12 lines or fewer.' };

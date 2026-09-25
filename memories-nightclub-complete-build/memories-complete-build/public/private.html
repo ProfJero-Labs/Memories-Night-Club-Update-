@@ -1,118 +1,105 @@
-<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Private Night · Memories</title><link rel="stylesheet" href="styles.css"></head><body><div id="app"></div><script src="config.js"></script><script type="module">
-import {shell,footer,api,esc,friendlyError} from './app.js';
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Private night · Memories</title>
+<meta name="description" content="Make a night at Memories yours: birthdays, corporate, concerts, private celebrations.">
+<meta name="theme-color" content="#0d0a09">
+<link rel="icon" href="assets/icon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Anton&family=Archivo:wght@400;600;700&family=Instrument+Serif:ital@0;1&display=swap">
+<link rel="stylesheet" href="styles.css">
+<style>
+  .dates { display: grid; grid-template-columns: repeat(auto-fill, minmax(92px, 1fr)); gap: 8px; }
+  .dates button { display: grid; gap: 2px; justify-items: center; padding: 12px 6px 10px; background: var(--ink-2); border: 1.5px solid var(--line-2); line-height: 1; }
+  .dates b { font: 400 30px var(--display); }
+  .dates small { font: 700 10px var(--sans); letter-spacing: .2em; color: var(--muted); }
+  .dates button[aria-checked="true"] { background: var(--paper); color: var(--ink); border-color: var(--paper); }
+  .dates button[aria-checked="true"] small { color: var(--burgundy); }
+  .dates button:disabled { opacity: .35; text-decoration: line-through; }
+  .flow-narrow { max-width: 720px; }
+</style>
+<script src="config.js"></script>
+</head>
+<body>
+<main class="wrap flow-narrow">
+  <header class="page-head" style="padding-bottom:10px"><p class="kicker red">Make it yours</p><h1 class="display" style="font-size:clamp(64px,17vw,150px)">Private night</h1></header>
+  <div id="root" class="flow" style="padding-top:12px"></div>
+</main>
+<script type="module">
+import { chrome, api, esc, params, $, $$, remember, dow, dd, mon, longDate } from './app.js';
+chrome();
+const TYPES = ['Birthday', 'Corporate', 'Concert', 'Private celebration', 'Other'];
+const r = remember.get();
+const S = { step: 1, type: TYPES.find(t => t.toLowerCase() === (params.get('type') || '').toLowerCase()) || '', date: params.get('date') || '', guests: '', name: r.name || '', phone: r.phone || '', instagram: '', message: '' };
+if (S.type) S.step = 2;
+let days = [];
+const root = $('#root');
+const phoneOk = p => /^0\d{9}$/.test(String(p).replace(/[\s\-().]/g, '').replace(/^\+?233/, '0'));
+const bar = () => `<div class="steps" aria-hidden="true">${[1, 2, 3].map(i => `<i class="${i <= S.step ? 'on' : ''}"></i>`).join('')}</div>`;
+const nav = (label, id = 'next') => `<div class="step-nav">${S.step > 1 ? '<button class="btn back" type="button" data-back aria-label="Back">←</button>' : ''}<button class="btn red" type="submit" id="${id}">${label} <span class="arrow">→</span></button></div>`;
+const err = msg => `<div class="notice" role="alert">${esc(msg)}</div>`;
 
-const TYPES = ['Private party', 'Corporate', 'Launch', 'Reunion', 'Other'];
-let step = 0;
-const data = { eventType: TYPES[0], date: '', guests: '', message: '', name: '', phone: '', email: '' };
-
-document.querySelector('#app').innerHTML = shell() + `<main><section class="section" style="padding-top:65px"><div class="wrap" style="max-width:700px">
-  <div class="eyebrow">MAKE IT YOURS</div>
-  <h1 class="display" style="font-size:clamp(56px,14vw,100px);line-height:.8;margin:14px 0 10px">PRIVATE<br>NIGHT</h1>
-  <p style="color:var(--muted);max-width:560px;margin:0 0 10px">Launches, corporate nights, old-school reunions or simply your people.</p>
-  <div class="eyebrow" id="stepCounter" style="margin:30px 0 18px">STEP 1 OF 4</div>
-  <div id="stepBody"></div>
-</div></section></main>` + footer();
-
-const body = document.querySelector('#stepBody');
-const counter = document.querySelector('#stepCounter');
-
-function renderStep() {
-  counter.textContent = `STEP ${step + 1} OF 4`;
-
-  if (step === 0) {
-    body.innerHTML = `
-      <h2 class="display" style="font-size:44px;margin:0 0 20px">WHAT ARE WE PLANNING?</h2>
-      <div class="identity-list" id="typeList">${TYPES.map((t, i) => `
-        <button class="identity-row ${t === data.eventType ? 'active' : ''}" data-type="${esc(t)}">
-          <span class="identity-num">${String(i + 1).padStart(2, '0')}</span>
-          <span class="identity-text">${esc(t)}</span>
-          <span class="identity-mark">✓</span>
-        </button>`).join('')}</div>
-      <div style="margin-top:28px"><button class="btn red" id="next0">NEXT →</button></div>`;
-    document.querySelectorAll('#typeList .identity-row').forEach(b => b.onclick = () => {
-      document.querySelectorAll('#typeList .identity-row').forEach(x => x.classList.remove('active'));
-      b.classList.add('active');
-      data.eventType = b.dataset.type;
-    });
-    document.querySelector('#next0').onclick = () => { step = 1; renderStep(); };
-
-  } else if (step === 1) {
-    body.innerHTML = `
-      <h2 class="display" style="font-size:44px;margin:0 0 20px">WHEN?</h2>
-      <div class="form-grid">
-        <div class="field full"><label for="date">Preferred date</label><input id="date" type="date" value="${esc(data.date)}"></div>
-      </div>
-      <div style="margin-top:28px;display:flex;gap:12px">
-        <button class="btn ghost" id="back1">← BACK</button>
-        <button class="btn red" id="next1">NEXT →</button>
-      </div>
-      <div id="err1" style="margin-top:14px"></div>`;
-    document.querySelector('#back1').onclick = () => { step = 0; renderStep(); };
-    document.querySelector('#next1').onclick = () => {
-      data.date = document.querySelector('#date').value;
-      if (!data.date) { document.querySelector('#err1').innerHTML = '<div class="status error">Pick a date, even a rough one — we can adjust later.</div>'; return; }
-      step = 2; renderStep();
-    };
-
-  } else if (step === 2) {
-    body.innerHTML = `
-      <h2 class="display" style="font-size:44px;margin:0 0 20px">HOW MANY, AND WHAT'S THE VIBE?</h2>
-      <div class="form-grid">
-        <div class="field"><label for="guests">Guest count</label><input id="guests" type="number" min="1" value="${esc(data.guests)}"></div>
-        <div class="field full"><label for="message">Tell us about it</label><textarea id="message" rows="5" placeholder="Optional — dress code, music, anything we should know.">${esc(data.message)}</textarea></div>
-      </div>
-      <div style="margin-top:28px;display:flex;gap:12px">
-        <button class="btn ghost" id="back2">← BACK</button>
-        <button class="btn red" id="next2">NEXT →</button>
-      </div>
-      <div id="err2" style="margin-top:14px"></div>`;
-    document.querySelector('#back2').onclick = () => { step = 1; renderStep(); };
-    document.querySelector('#next2').onclick = () => {
-      data.guests = document.querySelector('#guests').value;
-      data.message = document.querySelector('#message').value;
-      if (!data.guests || Number(data.guests) < 1) { document.querySelector('#err2').innerHTML = '<div class="status error">How many guests, roughly?</div>'; return; }
-      step = 3; renderStep();
-    };
-
-  } else if (step === 3) {
-    body.innerHTML = `
-      <h2 class="display" style="font-size:44px;margin:0 0 20px">HOW DO WE REACH YOU?</h2>
-      <div class="form-grid">
-        <div class="field full"><label for="name">Name</label><input id="name" value="${esc(data.name)}"></div>
-        <div class="field"><label for="phone">Phone</label><input id="phone" value="${esc(data.phone)}"></div>
-        <div class="field"><label for="email">Email</label><input id="email" type="email" value="${esc(data.email)}"></div>
-      </div>
-      <div style="margin-top:28px;display:flex;gap:12px">
-        <button class="btn ghost" id="back3">← BACK</button>
-        <button class="btn red" id="submit">SEND REQUEST</button>
-      </div>
-      <div id="result" style="margin-top:14px"></div>`;
-    document.querySelector('#back3').onclick = () => { step = 2; renderStep(); };
-    document.querySelector('#submit').onclick = async () => {
-      data.name = document.querySelector('#name').value.trim();
-      data.phone = document.querySelector('#phone').value.trim();
-      data.email = document.querySelector('#email').value.trim();
-      const result = document.querySelector('#result');
-      if (!data.name || !data.phone || !data.email) { result.innerHTML = '<div class="status error">Please fill in name, phone and email.</div>'; return; }
-      const btn = document.querySelector('#submit');
-      btn.disabled = true;
-      try {
-        await api('/api/private-requests', {
-          method: 'POST',
-          body: JSON.stringify({
-            name: data.name, phone: data.phone, email: data.email,
-            date: data.date, guests: Number(data.guests), eventType: data.eventType, message: data.message,
-          }),
-        });
-        body.innerHTML = `<div class="status success" style="text-align:center;padding:36px 24px"><div class="display" style="font-size:36px;margin-bottom:10px">REQUEST RECEIVED</div><p style="color:var(--muted)">We'll be in touch about your ${esc(data.eventType.toLowerCase())}.</p></div>`;
-        counter.textContent = '';
-      } catch (e) {
-        result.innerHTML = `<div class="status error">${esc(friendlyError(e))}</div>`;
-        btn.disabled = false;
-      }
-    };
+function render(problem = '') {
+  const tomorrow = new Date(Date.now() + 864e5).toISOString().slice(0, 10);
+  if (S.step === 1) root.innerHTML = `${bar()}<form class="step" novalidate><h2 class="display">What are you planning?</h2>
+    <ol class="lines" role="radiogroup" aria-label="Type of night">${TYPES.map((t, i) => `<li><button type="button" class="line-btn" role="radio" aria-checked="${S.type === t}" data-type="${esc(t)}"><span class="no">${String(i + 1).padStart(2, '0')}</span><span class="tx">${esc(t)}</span><span class="mk" aria-hidden="true">✓</span></button></li>`).join('')}</ol>
+    ${problem ? err(problem) : ''}${nav('Next')}</form>`;
+  if (S.step === 2) {
+    const open = days.filter(d => d.date >= tomorrow);
+    root.innerHTML = `${bar()}<form class="step" novalidate><h2 class="display">When?</h2>
+      <div class="field"><span class="label" id="dLbl">Open Fridays + Saturdays</span>
+        <div class="dates" role="radiogroup" aria-labelledby="dLbl">${open.slice(0, 12).map(d => { const at = d.date + 'T00:00:00Z'; const free = d.state === 'open'; return `<button type="button" role="radio" aria-checked="${S.date === d.date}" data-date="${d.date}" ${free ? '' : 'disabled'} title="${free ? '' : d.state === 'event' ? esc(d.name) : 'Taken'}"><small>${dow(at)}</small><b>${dd(at)}</b><small>${mon(at)}</small></button>`; }).join('')}</div></div>
+      <div class="field"><label for="other">Or another date</label><input id="other" type="date" min="${tomorrow}" value="${esc(S.date)}"></div>
+      <div class="field"><label for="guests">How many people?</label><input id="guests" type="number" inputmode="numeric" min="1" max="3000" placeholder="e.g. 40" value="${esc(S.guests)}"></div>
+      ${problem ? err(problem) : ''}${nav('Next')}</form>`;
   }
+  if (S.step === 3) root.innerHTML = `${bar()}<form class="step" novalidate><h2 class="display">How do we reach you?</h2>
+    <p class="muted" style="margin:-8px 0 0">${esc(S.type)} · ${esc(longDate(S.date + 'T00:00:00Z'))} · ${esc(S.guests)} people</p>
+    <div class="field"><label for="name">Name</label><input id="name" autocomplete="name" value="${esc(S.name)}"></div>
+    <div class="field"><label for="phone">Phone</label><input id="phone" type="tel" inputmode="tel" autocomplete="tel" placeholder="024 123 4567" value="${esc(S.phone)}"></div>
+    <div class="field"><label for="ig">Instagram (optional)</label><input id="ig" autocapitalize="off" placeholder="@yourhandle" value="${esc(S.instagram)}"></div>
+    <div class="field"><label for="msg">Anything we should know? (optional)</label><textarea id="msg" maxlength="500" placeholder="One line is enough.">${esc(S.message)}</textarea></div>
+    ${problem ? err(problem) : ''}${nav('Send request', 'send')}
+    <p class="foot-small" style="margin:0">Nothing to pay now. It’s held once we confirm with you.</p></form>`;
+  if (S.step === 4) root.innerHTML = `<div class="state-msg"><span class="stamp">Received</span><h2 class="display" style="font-size:clamp(52px,13vw,110px)">Got it. We’ll get back to you.</h2>
+    <p>${esc(S.type)} on ${esc(longDate(S.date + 'T00:00:00Z'))}. We’ll text ${esc(S.phone)} once it’s confirmed.</p><a class="btn" href="index.html">Back to Memories</a></div>`;
+  bind();
 }
 
-renderStep();
-</script></body></html>
+function bind() {
+  $$('[data-type]').forEach(b => b.onclick = () => { S.type = b.dataset.type; $$('[data-type]').forEach(x => x.setAttribute('aria-checked', String(x === b))); });
+  $$('[data-date]').forEach(b => b.onclick = () => { S.date = b.dataset.date; $('#other').value = S.date; $$('[data-date]').forEach(x => x.setAttribute('aria-checked', String(x === b))); });
+  $('#other') && ($('#other').onchange = e => { S.date = e.target.value; $$('[data-date]').forEach(x => x.setAttribute('aria-checked', String(x.dataset.date === S.date))); });
+  $$('[data-back]').forEach(b => b.onclick = () => { S.step--; render(); });
+  const form = $('form'); if (!form) return;
+  form.onsubmit = async ev => {
+    ev.preventDefault();
+    if (S.step === 1) { if (!S.type) return render('Pick one.'); S.step = 2; return render(); }
+    if (S.step === 2) {
+      S.guests = $('#guests').value;
+      if (!S.date) return render('Pick a date.');
+      const taken = days.find(d => d.date === S.date && d.state !== 'open');
+      if (taken) return render(taken.state === 'event' ? `${taken.name} is on that night. Pick another date.` : 'That date is taken. Pick another.');
+      if (!(Number(S.guests) >= 1)) return render('How many people are coming?');
+      S.step = 3; return render();
+    }
+    S.name = $('#name').value.trim(); S.phone = $('#phone').value.trim(); S.instagram = $('#ig').value.trim(); S.message = $('#msg').value.trim();
+    if (S.name.length < 2) return render('Add your name.');
+    if (!phoneOk(S.phone)) return render('Use a Ghana number, e.g. 024 123 4567.');
+    const btn = $('#send'); btn.disabled = true; btn.textContent = 'Sending…';
+    try {
+      await api('/api/private-requests', { method: 'POST', body: { eventType: S.type, date: S.date, guests: Number(S.guests), name: S.name, phone: S.phone, instagram: S.instagram, message: S.message } });
+      remember.set({ ...remember.get(), name: S.name, phone: S.phone });
+      S.step = 4; render(); window.scrollTo({ top: 0, behavior: 'smooth' });
+    } catch (e) { render(e.message); }
+  };
+}
+
+api('/api/calendar?weeks=10').then(d => { days = d.days; }).catch(() => {}).finally(render);
+root.innerHTML = '<div class="loading">LOADING…</div>';
+</script>
+</body>
+</html>

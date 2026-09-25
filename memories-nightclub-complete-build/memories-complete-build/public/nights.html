@@ -1,1 +1,59 @@
-<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Nights · Memories</title><link rel="stylesheet" href="styles.css"></head><body><div id="app"></div><div class="toast"></div><script src="config.js"></script><script type="module">import {shell,footer,getEvents,eventDate,eventTime,art,esc} from './app.js';const root=document.querySelector('#app');root.innerHTML=shell()+`<main><section class="section" style="padding-top:70px"><div class="wrap"><div class="section-head"><h1 class="display" style="font-size:clamp(64px,14vw,110px);line-height:.8;margin:0">NIGHTS</h1><p>Choose your night. Then decide how you're showing up.</p></div><div class="poster-grid" id="list"></div></div></section></main>`+footer();try{const d=await getEvents();const list=document.querySelector('#list');list.innerHTML=(d.events||[]).map(e=>`<a class="poster" href="event.html?id=${encodeURIComponent(e.id)}"><div class="poster-art">${art(e.artwork,e.name)}</div><div class="poster-body"><div class="poster-date">${eventDate(e)}</div><h3>${esc(e.name)}</h3><div class="poster-meta">${esc(eventTime(e))} · ${esc(e.venue||'Cape Coast')}</div></div><div class="arrow">↗</div></a>`).join('')||'<div class="empty" style="grid-column:1/-1">No public nights are currently published.</div>'}catch(e){document.querySelector('#list').innerHTML='<div class="empty" style="grid-column:1/-1">Unable to load nights.</div>'}</script></body></html>
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Nights · Memories</title>
+<meta name="description" content="Every night coming up at Memories, Cape Coast.">
+<meta name="theme-color" content="#0d0a09">
+<link rel="icon" href="assets/icon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Anton&family=Archivo:wght@400;600;700&family=Instrument+Serif:ital@0;1&display=swap">
+<link rel="stylesheet" href="styles.css">
+<script src="config.js"></script>
+</head>
+<body>
+<main class="wrap">
+  <header class="page-head"><h1 class="display">Nights</h1></header>
+  <div class="wall" id="wall"><div class="loading" role="status">PULLING UP THE NIGHTS…</div></div>
+  <section aria-labelledby="calTitle" style="margin-top:clamp(60px,10vw,110px)">
+    <div class="section-title"><h2 id="calTitle">The calendar</h2><span class="kicker">Fridays + Saturdays</span></div>
+    <ol class="cal" id="cal"><li><span class="loading">LOADING…</span></li></ol>
+  </section>
+</main>
+<script type="module">
+import { chrome, api, esc, img, dateStamp, doors, $, errorState, dow, dd, mon } from './app.js';
+chrome('nights');
+
+async function wall() {
+  const el = $('#wall');
+  try {
+    const { events } = await api('/api/events');
+    el.innerHTML = events.length ? events.map((e, i) => `<a class="poster" href="event.html?id=${encodeURIComponent(e.id)}">
+        <div class="poster-art">${img(e.artwork, `${e.name} flyer`, '', i < 2)}${dateStamp(e.date)}${e.soldOut ? '<span class="flag">Sold out</span>' : ''}</div>
+        <h3>${esc(e.name)}</h3><span class="sub">${esc(doors(e))}</span></a>`).join('')
+      : '<div class="state-msg" style="grid-column:1/-1"><h2 class="display">New nights drop soon.</h2><p>Check the calendar below, or make one of those Fridays yours.</p><a class="btn red" href="private.html">Plan a private night</a></div>';
+  } catch (e) { errorState(el, e.message, wall); }
+}
+
+async function cal() {
+  const el = $('#cal');
+  try {
+    const { days } = await api('/api/calendar?weeks=8');
+    const today = new Date().toISOString().slice(0, 10);
+    el.innerHTML = days.map(d => {
+      const at = d.date + 'T00:00:00Z';
+      const right = d.state === 'event' ? `<a class="state event" href="event.html?id=${encodeURIComponent(d.eventId)}">Tickets</a>`
+        : d.state === 'held' ? '<span class="state held">Held</span>'
+          : d.state === 'unavailable' ? '<span class="state unavailable">Closed</span>'
+            : d.date > today ? `<a class="state open" href="private.html?date=${d.date}">Book it</a>` : '<span class="state unavailable">Open tonight</span>';
+      const what = d.state === 'event' ? esc(d.name) : d.state === 'held' ? '<span class="muted">Private night</span>' : d.state === 'unavailable' ? '<span class="muted">Closed</span>' : '<span class="muted">Open</span>';
+      return `<li><span class="d"><small>${dow(at)}</small>${dd(at)} ${mon(at)}</span><span class="what">${what}</span>${right}</li>`;
+    }).join('');
+  } catch (e) { el.innerHTML = `<li><span class="muted">${esc(e.message)}</span></li>`; }
+}
+wall(); cal();
+</script>
+</body>
+</html>
