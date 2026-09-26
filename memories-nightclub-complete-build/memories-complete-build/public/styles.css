@@ -137,21 +137,37 @@ h1, h2, h3 { margin: 0; }
 @media (max-width: 420px) { .strip > * { font-size: 11px; letter-spacing: .12em; padding: 11px 10px; } }
 
 /* ── Home ── */
-.brand { padding: clamp(28px, 7vw, 72px) 0 clamp(22px, 5vw, 44px); }
+.hero { display: grid; grid-template-columns: minmax(0, 1fr); grid-template-areas: "brand" "art" "copy"; column-gap: clamp(20px, 4vw, 56px); row-gap: clamp(22px, 5vw, 36px); padding-bottom: clamp(28px, 6vw, 64px); }
+.hero .brand { grid-area: brand; } .hero .next-art { grid-area: art; } .hero .next-copy { grid-area: copy; }
+.brand { padding: clamp(28px, 7vw, 72px) 0 0; }
 .brand-logo { width: 100%; max-width: 720px; height: auto; margin-left: -1.5%; }
 .brand .strip { margin-top: clamp(20px, 4vw, 34px); max-width: 720px; }
 .brand .strip span:first-child { color: var(--paper); }
 
-.next { position: relative; border-top: 1px solid var(--line); padding: clamp(28px, 6vw, 64px) 0; }
-.next-grid { display: grid; gap: clamp(20px, 4vw, 56px); align-items: start; }
 .next-art { position: relative; display: block; background: var(--ink-3); min-height: 200px; overflow: hidden; }
-.next-art img { width: 100%; height: auto; max-height: 86vh; object-fit: contain; margin: 0 auto; }
+.next-art[hidden] { display: none; }
+.next-art img { position: relative; width: 100%; height: auto; max-height: 86vh; object-fit: contain; margin: 0 auto; }
+.next-art .art-fill { position: absolute; inset: -40px; background: center / cover no-repeat; filter: blur(40px) brightness(.45) saturate(1.2); }
 .next-art .date-stamp { position: absolute; left: 14px; top: 14px; background: rgba(13, 10, 9, .82); }
 .next-copy { display: grid; gap: 18px; align-content: start; }
 .next-copy h2 { font-size: clamp(52px, 12vw, 128px); }
 .meta { display: flex; flex-wrap: wrap; gap: 6px 18px; font: 700 13px/1.3 var(--sans); letter-spacing: .18em; text-transform: uppercase; }
 .meta .muted { font-weight: 600; }
-@media (min-width: 860px) { .next-grid { grid-template-columns: minmax(0, 5fr) minmax(0, 6fr); } .next-art { position: sticky; top: 84px; } }
+@media (min-width: 860px) { .hero { grid-template-columns: minmax(0, 5fr) minmax(0, 6fr); grid-template-areas: "brand brand" "art copy"; } }
+/* Desktop: a composed first screen, not a stretched phone. Identity + the night stacked on the left,
+   the flyer as a full-height panel on the right. */
+@media (min-width: 1100px) {
+  .hero { grid-template-columns: minmax(0, 5fr) minmax(0, 6fr); grid-template-rows: auto 1fr; grid-template-areas: "brand art" "copy art"; min-height: calc(100vh - 61px); padding-top: clamp(28px, 4vh, 48px); padding-bottom: clamp(28px, 4vh, 48px); row-gap: clamp(28px, 6vh, 64px); }
+  .hero .brand { padding-top: 0; }
+  .hero .brand-logo { max-width: 560px; }
+  .hero .strip { flex-wrap: nowrap; }
+  .hero .strip > * { padding: 12px 12px; letter-spacing: .14em; font-size: 11px; }
+  .hero .next-copy { align-content: end; }
+  .hero .next-copy { container-type: inline-size; }
+  .hero .next-copy h2 { font-size: clamp(64px, 21cqi, 150px); }
+  .hero .next-art { height: calc(100vh - 61px - 2 * clamp(28px, 4vh, 48px)); min-height: 560px; max-height: 1000px; display: grid; place-items: center; }
+  .hero .next-art img { max-height: 100%; height: 100%; width: auto; max-width: 100%; }
+}
 
 .more { padding-top: 20px; padding-bottom: 10px; }
 .more-row { display: grid; grid-auto-flow: column; grid-auto-columns: min(72%, 300px); gap: 14px; overflow-x: auto; scroll-snap-type: x mandatory; padding-bottom: 12px; scrollbar-width: thin; }
@@ -414,3 +430,5 @@ h1, h2, h3 { margin: 0; }
   body { background: #fff; } body::before, .site-head, .site-foot, .share-actions, .no-print { display: none !important; }
   .ticket { filter: none; }
 }
+/* Nothing on sale: no flyer, so the hero is one column at every width. */
+@media (min-width: 860px) { .hero:has(> .next-art[hidden]) { grid-template-columns: minmax(0, 1fr); grid-template-areas: "brand" "copy"; min-height: 0; } }
