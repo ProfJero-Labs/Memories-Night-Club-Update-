@@ -14,7 +14,7 @@ test('ticket tokens are high-entropy and pairwise unique across many issuances',
     store.seed('pending_checkouts', ref, {
       reference: ref, kind: 'ticket', eventId: 'event1', eventName: 'Test Night', ticketTypeId: 'ttBulk',
       ticketTypeName: 'Standard', admits: 1, quantity: 1, amountPesewas: 1000,
-      buyerName: `Guest ${i}`, buyerPhone: '024', buyerEmail: `g${i}@test.com`, identityLine: 'FULLY ACTIVE.', status: 'pending',
+      buyerName: `Guest ${i}`, buyerPhone: '024', buyerEmail: `g${i}@test.com`, identityLine: 'SAMPLE LINE TWO.', status: 'pending',
     });
     store.setPaystack(ref, { status: 'success', currency: 'GHS', amount: 1000 });
     const r = await fulfillTicket(env, ref);

@@ -11,7 +11,7 @@ test('a partial top-up SMS states the amount received and the remaining balance'
   store.seed('installment_plans', 'MEM-9001', {
     eventId: 'event1', eventName: 'Test Night', ticketTypeId: 'tt1', ticketTypeName: 'VIP', admits: 1, quantity: 1,
     totalPesewas: 10000, paidPesewas: 0, buyerName: 'Ama', buyerPhone: '0555000111', buyerEmail: 'a@test.com',
-    identityLine: 'FULLY ACTIVE.', status: 'active', payments: [],
+    identityLine: 'SAMPLE LINE TWO.', status: 'active', payments: [],
   });
   store.seed('pending_checkouts', 'topA', { reference: 'topA', kind: 'installment_topup', planId: 'MEM-9001', amountPesewas: 3000, buyerEmail: 'a@test.com', status: 'pending' });
   store.setPaystack('topA', { status: 'success', currency: 'GHS', amount: 3000 });
@@ -31,7 +31,7 @@ test('the completing top-up SMS+emails a ready-ticket message instead of a balan
   store.seed('installment_plans', 'MEM-9002', {
     eventId: 'event1', eventName: 'Test Night', ticketTypeId: 'tt2', ticketTypeName: 'VIP', admits: 1, quantity: 1,
     totalPesewas: 10000, paidPesewas: 7000, buyerName: 'Ama', buyerPhone: '0555000222', buyerEmail: 'a@test.com',
-    identityLine: 'FULLY ACTIVE.', status: 'active', payments: [{ reference: 'earlier', amountPesewas: 7000 }],
+    identityLine: 'SAMPLE LINE TWO.', status: 'active', payments: [{ reference: 'earlier', amountPesewas: 7000 }],
   });
   store.seed('pending_checkouts', 'topB', { reference: 'topB', kind: 'installment_topup', planId: 'MEM-9002', amountPesewas: 3000, buyerEmail: 'a@test.com', status: 'pending' });
   store.setPaystack('topB', { status: 'success', currency: 'GHS', amount: 3000 });
@@ -50,7 +50,7 @@ test('a duplicate verify call for the same already-issued reference does not re-
   store.seed('installment_plans', 'MEM-9003', {
     eventId: 'event1', eventName: 'Test Night', ticketTypeId: 'tt3', ticketTypeName: 'VIP', admits: 1, quantity: 1,
     totalPesewas: 10000, paidPesewas: 0, buyerName: 'Ama', buyerPhone: '0555000333', buyerEmail: 'a@test.com',
-    identityLine: 'FULLY ACTIVE.', status: 'active', payments: [],
+    identityLine: 'SAMPLE LINE TWO.', status: 'active', payments: [],
   });
   store.seed('pending_checkouts', 'topC', { reference: 'topC', kind: 'installment_topup', planId: 'MEM-9003', amountPesewas: 3000, buyerEmail: 'a@test.com', status: 'pending' });
   store.setPaystack('topC', { status: 'success', currency: 'GHS', amount: 3000 });

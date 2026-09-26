@@ -42,13 +42,13 @@ test('homepage "Get tickets" opens a real night and a guest can pay, get a ticke
   await page.getByRole('link', { name: /get tickets/i }).first().click();
   await page.waitForURL(/event\.html\?id=/);
   assert.match(await page.textContent('h1'), /\w/);
-  const token = await buyTicket(page, { name: 'Kwame Asante', line: 'OUTSIDE, CORRECT.' });
+  const token = await buyTicket(page, { name: 'Kwame Asante', line: 'SAMPLE LINE THREE.' });
   assert.match(token, /^[0-9a-f]{64}$/);
-  assert.equal(await page.textContent('[data-line]'), 'OUTSIDE, CORRECT.');
+  assert.equal(await page.textContent('[data-line]'), 'SAMPLE LINE THREE.');
   assert.equal(await page.textContent('[data-name]'), 'Kwame');
   assert.ok(await page.locator('.t-qr svg').count(), 'QR rendered');
   const t = store.get('tickets', token).fields;
-  assert.equal(t.identityLine, 'OUTSIDE, CORRECT.');
+  assert.equal(t.identityLine, 'SAMPLE LINE THREE.');
   assert.deepEqual(page.errors, []);
 });
 
@@ -82,7 +82,7 @@ test('two guests picking the same line get two different share images', async ()
   const hashes = [];
   for (const name of ['Ama Owusu', 'Kofi Mensah']) {
     const page = await phone();
-    await buyTicket(page, { name, line: 'FULLY ACTIVE.' });
+    await buyTicket(page, { name, line: 'SAMPLE LINE TWO.' });
     const bytes = await page.evaluate(async () => { const b = await (await fetch(document.querySelector('#postImg').src)).arrayBuffer(); return Array.from(new Uint8Array(b)); });
     hashes.push(createHash('sha256').update(Buffer.from(bytes)).digest('hex'));
     assert.ok(bytes.length > 20000, 'a real PNG was drawn');
@@ -94,7 +94,7 @@ test('pay in bits: partial payment gets no ticket and no draw spot; the final pa
   const page = await phone();
   const spotsBefore = store.get('raffles', 'evt_dev-afro').fields.spotsTaken;
   await page.goto(`${base}/checkout.html?event=dev-afro&type=dev-afro-reg&qty=1`, { waitUntil: 'networkidle' });
-  await page.getByRole('radio', { name: 'I CAME DRESSED.' }).click(); await page.click('#toWho');
+  await page.getByRole('radio', { name: 'SAMPLE LINE FOUR.' }).click(); await page.click('#toWho');
   await page.fill('#name', 'Yaw Boateng'); await page.fill('#phone', '0241112222'); await page.click('#s1 button[type=submit]');
   await page.getByRole('radio', { name: /pay in bits/i }).click(); await page.fill('#dep', '30'); await page.click('#pay');
   await page.waitForURL(/dev\/paystack/); await page.getByRole('button', { name: 'Pay' }).click();
@@ -110,7 +110,7 @@ test('pay in bits: partial payment gets no ticket and no draw spot; the final pa
   await page.waitForURL(/ticket\.html/, { timeout: 20000 });
   assert.equal(store.get('installment_plans', plan.id).fields.status, 'completed');
   assert.equal(docs('tickets').filter(t => t.planId === plan.id).length, 1);
-  assert.equal(await page.textContent('[data-line]'), 'I CAME DRESSED.', 'the line picked at the start is printed at the end');
+  assert.equal(await page.textContent('[data-line]'), 'SAMPLE LINE FOUR.', 'the line picked at the start is printed at the end');
 });
 
 test('tables: night → table → bottles → pay; the booking shows up for staff', async () => {

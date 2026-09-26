@@ -18,7 +18,7 @@ test('Paystack webhook: a forged/invalid signature is ignored, does not fulfil a
   store.seed('pending_checkouts', 'refWebhook1', {
     reference: 'refWebhook1', kind: 'ticket', eventId: 'event1', eventName: 'Test Night', ticketTypeId: 'tt1',
     ticketTypeName: 'Standard', admits: 1, quantity: 1, amountPesewas: 5000,
-    buyerName: 'Ama', buyerPhone: '0241234567', buyerEmail: 'a@test.com', identityLine: 'FULLY ACTIVE.', status: 'pending',
+    buyerName: 'Ama', buyerPhone: '0241234567', buyerEmail: 'a@test.com', identityLine: 'SAMPLE LINE TWO.', status: 'pending',
   });
   store.setPaystack('refWebhook1', { status: 'success', currency: 'GHS', amount: 5000 });
 
@@ -55,7 +55,7 @@ test('Paystack webhook: a correctly-signed payload IS processed (positive contro
   store.seed('pending_checkouts', 'refWebhook3', {
     reference: 'refWebhook3', kind: 'ticket', eventId: 'event1', eventName: 'Test Night', ticketTypeId: 'tt2',
     ticketTypeName: 'Standard', admits: 1, quantity: 1, amountPesewas: 5000,
-    buyerName: 'Ama', buyerPhone: '0241234567', buyerEmail: 'a@test.com', identityLine: 'FULLY ACTIVE.', status: 'pending',
+    buyerName: 'Ama', buyerPhone: '0241234567', buyerEmail: 'a@test.com', identityLine: 'SAMPLE LINE TWO.', status: 'pending',
   });
   store.setPaystack('refWebhook3', { status: 'success', currency: 'GHS', amount: 5000 });
 

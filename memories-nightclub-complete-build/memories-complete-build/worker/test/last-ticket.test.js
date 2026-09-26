@@ -9,12 +9,12 @@ test('two buyers racing for the last ticket: exactly one gets it, stock never go
   store.seed('pending_checkouts', 'refA', {
     reference: 'refA', kind: 'ticket', eventId: 'event1', eventName: 'Test Night', ticketTypeId: 'tt1',
     ticketTypeName: 'Standard', admits: 1, quantity: 1, amountPesewas: 5000,
-    buyerName: 'Ama', buyerPhone: '024', buyerEmail: 'a@test.com', identityLine: 'FULLY ACTIVE.', status: 'pending',
+    buyerName: 'Ama', buyerPhone: '024', buyerEmail: 'a@test.com', identityLine: 'SAMPLE LINE TWO.', status: 'pending',
   });
   store.seed('pending_checkouts', 'refB', {
     reference: 'refB', kind: 'ticket', eventId: 'event1', eventName: 'Test Night', ticketTypeId: 'tt1',
     ticketTypeName: 'Standard', admits: 1, quantity: 1, amountPesewas: 5000,
-    buyerName: 'Kwame', buyerPhone: '025', buyerEmail: 'k@test.com', identityLine: 'FULLY ACTIVE.', status: 'pending',
+    buyerName: 'Kwame', buyerPhone: '025', buyerEmail: 'k@test.com', identityLine: 'SAMPLE LINE TWO.', status: 'pending',
   });
   store.setPaystack('refA', { status: 'success', currency: 'GHS', amount: 5000 });
   store.setPaystack('refB', { status: 'success', currency: 'GHS', amount: 5000 });
@@ -44,7 +44,7 @@ test('same reference verified twice (e.g. webhook + client polling both land) is
   store.seed('pending_checkouts', 'refC', {
     reference: 'refC', kind: 'ticket', eventId: 'event1', eventName: 'Test Night', ticketTypeId: 'tt2',
     ticketTypeName: 'Standard', admits: 1, quantity: 1, amountPesewas: 5000,
-    buyerName: 'Ama', buyerPhone: '024', buyerEmail: 'a@test.com', identityLine: 'FULLY ACTIVE.', status: 'pending',
+    buyerName: 'Ama', buyerPhone: '024', buyerEmail: 'a@test.com', identityLine: 'SAMPLE LINE TWO.', status: 'pending',
   });
   store.setPaystack('refC', { status: 'success', currency: 'GHS', amount: 5000 });
 

@@ -78,7 +78,7 @@ Phase 5 — The ticket people post, and the draw
 
 The line. One ticket layout for every night, the guest picks the line, they don't type one and the system doesn't assign one at random.
 
-Admin writes 8 to 12 lines per event (draft examples only, not live copy: Full repping. Fully active. Outside, correct. I came dressed. Cape Coast, locked in. The club replaces these before go-live).
+Admin writes up to 12 lines per event (the club's own words; the site ships with none). Guests can also write their own line (up to 40 characters).
 At checkout, after name and phone: "How are you showing up?", they pick one line. The same line can be picked by more than one buyer, the ticket is theirs because of name plus line plus night.
 On the ticket, the line is the large type, with first name, event, date, and Memories in small type underneath, QR and a short code in the corner, the flyer faded behind it.
 Also generate a square, mostly-the-line share image for WhatsApp, drawn client-side in the browser (no extra server), shared via the phone's native share sheet plus a Download option.

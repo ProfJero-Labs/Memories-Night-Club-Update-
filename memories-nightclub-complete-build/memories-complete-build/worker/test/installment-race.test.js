@@ -9,7 +9,7 @@ test('two top-up payments verified at once: both amounts land (no lost update), 
   store.seed('installment_plans', 'MEM-1234', {
     eventId: 'event1', eventName: 'Test Night', ticketTypeId: 'tt1', ticketTypeName: 'VIP', admits: 1, quantity: 1,
     totalPesewas: 10000, paidPesewas: 0, buyerName: 'Ama', buyerPhone: '024', buyerEmail: 'a@test.com',
-    identityLine: 'FULLY ACTIVE.', status: 'active', payments: [],
+    identityLine: 'SAMPLE LINE TWO.', status: 'active', payments: [],
   });
   // Two separate real charges, each individually within the (stale) remaining balance at the
   // moment they were initiated, together crossing the total — exactly the scenario the plan
@@ -43,7 +43,7 @@ test('a top-up on a plan that is already complete does not re-issue a ticket', a
   store.seed('installment_plans', 'MEM-5555', {
     eventId: 'event1', eventName: 'Test Night', ticketTypeId: 'tt2', ticketTypeName: 'VIP', admits: 1, quantity: 1,
     totalPesewas: 10000, paidPesewas: 10000, buyerName: 'Ama', buyerPhone: '024', buyerEmail: 'a@test.com',
-    identityLine: 'FULLY ACTIVE.', status: 'completed', payments: [{ reference: 'earlier', amountPesewas: 10000 }],
+    identityLine: 'SAMPLE LINE TWO.', status: 'completed', payments: [{ reference: 'earlier', amountPesewas: 10000 }],
     ticketIds: ['existingTicket'], orderId: 'order1',
   });
   store.seed('pending_checkouts', 'lateRef', { reference: 'lateRef', kind: 'installment_topup', planId: 'MEM-5555', amountPesewas: 500, buyerEmail: 'a@test.com', status: 'pending' });

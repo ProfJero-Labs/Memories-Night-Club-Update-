@@ -14,11 +14,11 @@ async function call(env, method, path, { body, token } = {}) {
   return { status: res.status, data: await res.json().catch(() => ({})) };
 }
 function seedNight(store, id = 'night1', extra = {}) {
-  store.seed('events', id, { name: 'Afrobeats Friday', date: FUTURE, doors: '10PM', venue: 'SamRit Hotel', visibility: 'public', active: true, ticketLines: ['FULLY ACTIVE.', 'OUTSIDE, CORRECT.'], ...extra });
+  store.seed('events', id, { name: 'Afrobeats Friday', date: FUTURE, doors: '10PM', venue: 'SamRit Hotel', visibility: 'public', active: true, ticketLines: ['SAMPLE LINE TWO.', 'SAMPLE LINE THREE.'], ...extra });
   store.seed('ticket_types', `${id}-std`, { eventId: id, name: 'Standard', pricePesewas: 15000, admits: 1, remaining: 200, active: true });
 }
 function seedPaid(store, ref, eventId = 'night1', name = 'Kofi Boateng') {
-  store.seed('pending_checkouts', ref, { reference: ref, kind: 'ticket', eventId, eventName: 'Afrobeats Friday', ticketTypeId: `${eventId}-std`, ticketTypeName: 'Standard', admits: 1, quantity: 1, amountPesewas: 15000, buyerName: name, buyerPhone: '0241234567', buyerEmail: '', identityLine: 'FULLY ACTIVE.', status: 'pending' });
+  store.seed('pending_checkouts', ref, { reference: ref, kind: 'ticket', eventId, eventName: 'Afrobeats Friday', ticketTypeId: `${eventId}-std`, ticketTypeName: 'Standard', admits: 1, quantity: 1, amountPesewas: 15000, buyerName: name, buyerPhone: '0241234567', buyerEmail: '', identityLine: 'SAMPLE LINE TWO.', status: 'pending' });
   store.setPaystack(ref, { status: 'success', currency: 'GHS', amount: 15000 });
 }
 
@@ -113,10 +113,10 @@ test('a guest can pick one of the night’s lines or write their own, kept short
   const none = await call(env, 'POST', '/api/checkout/initiate', { body: { ...base, identityLine: '   ' } });
   assert.equal(none.status, 400, 'a night with lines needs a picked or written line');
   assert.equal(store.list('pending_checkouts').length, 0);
-  const good = await call(env, 'POST', '/api/checkout/initiate', { body: { ...base, identityLine: 'OUTSIDE, CORRECT.' } });
+  const good = await call(env, 'POST', '/api/checkout/initiate', { body: { ...base, identityLine: 'SAMPLE LINE THREE.' } });
   assert.equal(good.status, 200);
   const p = store.get('pending_checkouts', good.data.reference).fields;
-  assert.equal(p.identityLine, 'OUTSIDE, CORRECT.');
+  assert.equal(p.identityLine, 'SAMPLE LINE THREE.');
   assert.equal(p.buyerPhone, '0241234567', 'phone stored in the SMS worker’s 0XXXXXXXXX format');
   const own = await call(env, 'POST', '/api/checkout/initiate', { body: { ...base, identityLine: '  Birthday\n girl   in the  building, finally here at last!!  ' } });
   assert.equal(own.status, 200);
@@ -162,7 +162,7 @@ test('order 20 is in the draw, order 21 is not; a partial order never is', async
   seedNight(store);
   store.seed('raffles', 'evt_night1', { eventId: 'night1', prize: 'Club prize', cap: 20, spotsTaken: 0, enabled: true, public: true, status: 'open' });
   // A pay-in-bits order that has paid something but not all of it.
-  store.seed('installment_plans', 'MEM-AB1234', { eventId: 'night1', eventName: 'Afrobeats Friday', ticketTypeId: 'night1-std', ticketTypeName: 'Standard', admits: 1, quantity: 1, totalPesewas: 15000, paidPesewas: 0, buyerName: 'Part Payer', buyerPhone: '0200000000', identityLine: 'FULLY ACTIVE.', status: 'active', payments: [] });
+  store.seed('installment_plans', 'MEM-AB1234', { eventId: 'night1', eventName: 'Afrobeats Friday', ticketTypeId: 'night1-std', ticketTypeName: 'Standard', admits: 1, quantity: 1, totalPesewas: 15000, paidPesewas: 0, buyerName: 'Part Payer', buyerPhone: '0200000000', identityLine: 'SAMPLE LINE TWO.', status: 'active', payments: [] });
   store.seed('pending_checkouts', 'part1', { reference: 'part1', kind: 'installment_topup', planId: 'MEM-AB1234', amountPesewas: 5000, status: 'pending' });
   store.setPaystack('part1', { status: 'success', currency: 'GHS', amount: 5000 });
   await fulfillInstallment(env, 'part1');

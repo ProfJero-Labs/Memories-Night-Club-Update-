@@ -14,7 +14,7 @@ export function seed(store, origin) {
     phone: '020 000 0000', whatsapp: '0249050086', email: 'dev@example.com', instagram: '@memoriesnightclub.gh', facebook: 'memoriesnightclub.gh', tiktok: '@memoriesnightclub.gh',
     mapUrl: '', address: '', heroImage: '', defaultLines: [], closedDates: [],
   });
-  const lines = ['FULL REPPING.', 'FULLY ACTIVE.', 'OUTSIDE, CORRECT.', 'I CAME DRESSED.', 'CAPE COAST, LOCKED IN.', 'I’M NOT MISSING THIS.'];
+  const lines = ['SAMPLE LINE ONE.', 'SAMPLE LINE TWO.', 'SAMPLE LINE THREE.', 'SAMPLE LINE FOUR.', 'SAMPLE LINE FIVE.', 'SAMPLE LINE SIX.'];
   const nights = [
     { id: 'dev-afro', name: 'Afrobeats Friday', date: nextDow(5), artwork: art('poster-a.svg'), organiserId: 'uid-org-a', description: 'Two rooms. One night. Dress like you meant it.' },
     { id: 'dev-piano', name: 'Amapiano Saturday', date: nextDow(6), artwork: art('poster-b.svg'), organiserId: 'uid-org-b', description: '' },
