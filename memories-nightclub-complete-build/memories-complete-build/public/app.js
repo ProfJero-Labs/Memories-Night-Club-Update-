@@ -67,6 +67,16 @@ export const ttLink = h => (handle(h) ? `https://www.tiktok.com/@${handle(h)}` :
 // Every social account the site shows, in one place: [label, link, @handle]
 export const socials = s => [['Instagram', igLink(s.instagram), s.instagram], ['Facebook', fbLink(s.facebook), s.facebook], ['TikTok', ttLink(s.tiktok), s.tiktok]]
   .filter(([, url]) => url).map(([name, url, h]) => [name, url, '@' + handle(h)]);
+const SOCIAL_ICONS = {
+  Instagram: '<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="5"/><circle cx="12" cy="12" r="4"/><circle cx="17.5" cy="6.5" r="1.2" fill="currentColor" stroke="none"/></svg>',
+  Facebook: '<svg viewBox="0 0 24 24" aria-hidden="true" fill="currentColor"><path d="M14 8h3V4h-3a4 4 0 0 0-4 4v2H8v4h2v8h4v-8h3l1-4h-4V8.5a.5.5 0 0 1 .5-.5z"/></svg>',
+  TikTok: '<svg viewBox="0 0 24 24" aria-hidden="true" fill="currentColor"><path d="M16 3c.3 2.2 1.8 3.8 4 4v3.2c-1.5 0-2.9-.4-4-1.2v6.5a5.5 5.5 0 1 1-5.5-5.5l1 .1v3.3a2.3 2.3 0 1 0 1.3 2.1V3H16z"/></svg>',
+};
+// Clickable icon row for every social account that's set: "Follow us".
+export const followRow = s => {
+  const list = socials(s);
+  return list.length ? `<div class="follow"><p class="kicker">Follow us</p><div class="follow-icons">${list.map(([name, url, h]) => `<a href="${esc(url)}" target="_blank" rel="noopener" aria-label="${name} ${esc(h)}" title="${name} ${esc(h)}">${SOCIAL_ICONS[name]}</a>`).join('')}</div><p class="foot-small">${esc(list[0][2])}</p></div>` : '';
+};
 export const mapLink = s => s.mapUrl || `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(s.venue || 'SamRit Hotel Cape Coast')}`;
 
 const WA_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true" fill="currentColor"><path d="M12 2a10 10 0 0 0-8.6 15.1L2 22l5-1.3A10 10 0 1 0 12 2Zm0 18.2c-1.5 0-3-.4-4.2-1.2l-.3-.2-3 .8.8-2.9-.2-.3A8.2 8.2 0 1 1 12 20.2Zm4.5-6.1c-.2-.1-1.5-.7-1.7-.8-.2-.1-.4-.1-.6.1l-.8 1c-.1.2-.3.2-.5.1a6.7 6.7 0 0 1-3.3-2.9c-.3-.4.2-.4.7-1.3.1-.2 0-.3 0-.4l-.8-1.8c-.2-.5-.4-.4-.6-.4h-.5a1 1 0 0 0-.7.3 3 3 0 0 0-.9 2.2 5.2 5.2 0 0 0 1.1 2.8 12 12 0 0 0 4.6 4c1.7.7 2.4.8 3.2.6.5-.1 1.5-.6 1.7-1.2.2-.6.2-1.1.2-1.2-.1-.1-.3-.2-.5-.3Z"/></svg>';
@@ -87,10 +97,9 @@ export async function chrome(active = '') {
     s.whatsapp && `<li><a href="${waLink(s.whatsapp)}" target="_blank" rel="noopener">WhatsApp ${esc(s.whatsapp)}</a></li>`,
     s.phone && `<li><a href="tel:${digits(s.phone)}">${esc(s.phone)}</a></li>`,
     s.email && `<li><a href="mailto:${esc(s.email)}">${esc(s.email)}</a></li>`,
-    ...socials(s).map(([name, url, h]) => `<li><a href="${esc(url)}" target="_blank" rel="noopener">${name} ${esc(h)}</a></li>`),
   ].filter(Boolean).join('');
   foot.innerHTML = `<div class="wrap foot-grid">
-    <div><a class="logo" href="index.html"><img src="assets/logo.png" alt="Memories" width="110" height="26"></a><p class="foot-small" style="margin-top:14px">${esc(s.nightsLine || 'Friday + Saturday')} · ${esc(s.doorsLine || 'Doors 10PM')}</p></div>
+    <div><a class="logo" href="index.html"><img src="assets/logo.png" alt="Memories" width="110" height="26"></a><p class="foot-small" style="margin-top:14px">${esc(s.nightsLine || 'Friday + Saturday')} · ${esc(s.doorsLine || 'Doors 10PM')}</p>${followRow(s)}</div>
     <ul class="foot-list">${items}</ul>
     <ul class="foot-list"><li><a href="nights.html">Nights</a></li><li><a href="nights.html#calendar">Calendar</a></li><li><a href="tables.html">Tables</a></li><li><a href="private.html">Private night</a></li><li><a href="installment.html">Pay the rest of a ticket</a></li></ul>
     <div><span class="age" title="Strictly 18 and over">18+</span><p class="foot-small" style="margin-top:10px">Strictly 18+.</p></div>
