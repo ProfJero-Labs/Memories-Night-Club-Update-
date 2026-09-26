@@ -56,3 +56,6 @@ table.tbl { width: 100%; border-collapse: collapse; font-size: 14px; }
 .expand td { background: var(--ink-2) !important; }
 details.more > summary { cursor: pointer; font-weight: 700; padding: 8px 0; }
 .empty-row { padding: 26px 12px; color: var(--muted); text-align: center; }
+.tbl tr.dirty td { background: rgba(214, 170, 60, .08); }
+.tbl tr.dirty td:first-child { box-shadow: inset 3px 0 0 var(--mustard); }
+#saveState { display: inline-flex; align-items: center; }

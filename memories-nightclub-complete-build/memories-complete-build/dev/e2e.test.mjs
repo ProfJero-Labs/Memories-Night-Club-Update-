@@ -165,6 +165,31 @@ test('admin changes a flyer and a price; the public page shows it with no deploy
   assert.match(await guest.textContent('[data-type="dev-piano-reg"]'), /GHS 125/);
 });
 
+test('control room: an unsaved flyer is not lost when a ticket row is saved; a private night says it is not public', async () => {
+  const admin = await phone(1280);
+  await admin.goto(`${base}/login.html`); await admin.fill('#email', 'admin@dev'); await admin.fill('#pw', 'memories-dev'); await admin.click('#go');
+  await admin.waitForURL(/admin\.html/); await admin.goto(`${base}/admin.html#nights/dev-afro`); await admin.waitForLoadState('networkidle');
+  await admin.setInputFiles('#artFile', new URL('./fixtures/dnd-party-poster.jpeg', import.meta.url).pathname);
+  await admin.getByText(/uploaded/i).waitFor();
+  assert.match(await admin.textContent('#saveState'), /unsaved/i, 'flyer upload marks the night unsaved');
+  const row = admin.locator('tr[data-row="dev-afro-reg"]');
+  await row.locator('[data-k=price]').fill('99');
+  assert.match(await row.getAttribute('class'), /dirty/, 'changed row is highlighted');
+  const dialog = new Promise(res => admin.once('dialog', d => { res(d.message()); d.accept(); }));
+  await row.locator('[data-save]').click();
+  assert.match(await dialog, /aren’t saved yet/);
+  await admin.getByText(/Saved “/).waitFor();
+  const guest = await phone();
+  await guest.goto(`${base}/event.html?id=dev-afro`, { waitUntil: 'networkidle' });
+  assert.match(await guest.locator('.event-art img').getAttribute('src'), /\/dev\/uploads\//, 'flyer kept and published');
+  assert.match(await guest.textContent('[data-type="dev-afro-reg"]'), /GHS 99/);
+
+  await admin.uncheck('#evPublic'); await admin.click('#save');
+  await admin.getByText(/NOT on the public site/).waitFor();
+  await admin.check('#evPublic'); await admin.click('#save');
+  await admin.getByText(/live on the public site/i).waitFor();
+});
+
 test('door: valid → ENTRY CONFIRMED, second scan → ALREADY CHECKED IN, junk → NOT VALID', async () => {
   const token = docs('tickets').find(t => t.status === 'valid' && t.eventId === 'dev-afro').id;
   const door = await phone();
