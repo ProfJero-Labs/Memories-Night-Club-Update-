@@ -280,7 +280,7 @@ h1, h2, h3 { margin: 0; }
 .money-in::before { content: 'GHS'; position: absolute; left: 16px; top: 50%; transform: translateY(-50%); font-weight: 700; color: var(--muted); }
 .money-in input { padding-left: 64px; }
 
-/* "How are you showing up?" — poster-strip line picker */
+/* "What should others know?" — poster-strip line picker */
 .lines { list-style: none; margin: 0; padding: 0; border-top: 2px solid var(--paper); counter-reset: l; }
 .line-btn {
   display: grid; grid-template-columns: 38px 1fr auto; gap: 12px; align-items: center; width: 100%; text-align: left;

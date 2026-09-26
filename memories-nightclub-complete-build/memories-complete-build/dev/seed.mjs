@@ -11,7 +11,7 @@ export function seed(store, origin) {
   const art = f => `${origin}/dev/fixtures/${f}`;
   store.seed('settings', 'site', {
     venue: 'SamRit Hotel, Cape Coast', nightsLine: 'Friday + Saturday', doorsLine: 'Doors 10PM',
-    phone: '020 000 0000', whatsapp: '0200000000', email: 'dev@example.com', instagram: '@memoriesnightclub.gh',
+    phone: '020 000 0000', whatsapp: '0249050086', email: 'dev@example.com', instagram: '@memoriesnightclub.gh', facebook: 'memoriesnightclub.gh', tiktok: '@memoriesnightclub.gh',
     mapUrl: '', address: '', heroImage: '', defaultLines: [], closedDates: [],
   });
   const lines = ['FULL REPPING.', 'FULLY ACTIVE.', 'OUTSIDE, CORRECT.', 'I CAME DRESSED.', 'CAPE COAST, LOCKED IN.', 'I’M NOT MISSING THIS.'];

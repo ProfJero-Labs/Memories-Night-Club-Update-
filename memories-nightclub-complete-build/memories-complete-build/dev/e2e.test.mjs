@@ -25,10 +25,10 @@ async function buyTicket(page, { name, line, event = 'dev-afro', type }) {
   await page.goto(`${base}/event.html?id=${event}`, { waitUntil: 'networkidle' });
   if (type) await page.click(`[data-type="${type}"]`);
   await page.click('#barGo');
+  if (line.own) await page.fill('#ownLine', line.own); else await page.getByRole('radio', { name: line }).click();
+  await page.click('#toWho');
   await page.fill('#name', name); await page.fill('#phone', '024 555 1234');
   await page.click('#s1 button[type=submit]');
-  await page.getByRole('radio', { name: line }).click();
-  await page.click('#to3');
   await page.click('#pay');
   await page.waitForURL(/dev\/paystack/); await page.getByRole('button', { name: 'Pay' }).click();
   await page.waitForURL(/ticket\.html/, { timeout: 20000 });
@@ -52,6 +52,32 @@ test('homepage "Get tickets" opens a real night and a guest can pay, get a ticke
   assert.deepEqual(page.errors, []);
 });
 
+test('the line comes first, as "What should others know?", and a guest can write their own', async () => {
+  const page = await phone();
+  await page.goto(`${base}/checkout.html?event=dev-afro&type=dev-afro-reg&qty=1`, { waitUntil: 'networkidle' });
+  assert.equal(await page.isVisible('#s2'), true, 'line step shows first');
+  assert.equal(await page.isVisible('#s1'), false);
+  assert.match(await page.textContent('#s2 h1'), /What should others know\?/);
+  assert.equal(await page.isDisabled('#toWho'), true, 'needs a line first');
+  const token = await buyTicket(page, { name: 'Esi Mensah', line: { own: 'birthday girl in the building' } });
+  assert.equal(store.get('tickets', token).fields.identityLine, 'birthday girl in the building');
+  assert.match(await page.textContent('[data-line]'), /birthday girl in the building/i);
+  assert.deepEqual(page.errors, []);
+});
+
+test('footer and visit page show the WhatsApp number and clickable Instagram, Facebook and TikTok; no ID line', async () => {
+  const page = await phone();
+  for (const path of ['index.html', 'visit.html']) {
+    await page.goto(`${base}/${path}`, { waitUntil: 'networkidle' });
+    const hrefs = await page.$$eval('a', as => as.map(a => a.href));
+    for (const url of ['https://wa.me/233249050086', 'https://www.instagram.com/memoriesnightclub.gh/', 'https://www.facebook.com/memoriesnightclub.gh', 'https://www.tiktok.com/@memoriesnightclub.gh'])
+      assert.ok(hrefs.includes(url), `${path} links ${url}`);
+    assert.doesNotMatch(await page.textContent('body'), /ID at the door|18\+ · ID/);
+  }
+  assert.ok((await page.$$eval('a', as => as.map(a => a.getAttribute('href')))).includes('nights.html#calendar'), 'calendar link in the footer');
+  assert.deepEqual(page.errors, []);
+});
+
 test('two guests picking the same line get two different share images', async () => {
   const hashes = [];
   for (const name of ['Ama Owusu', 'Kofi Mensah']) {
@@ -68,8 +94,8 @@ test('pay in bits: partial payment gets no ticket and no draw spot; the final pa
   const page = await phone();
   const spotsBefore = store.get('raffles', 'evt_dev-afro').fields.spotsTaken;
   await page.goto(`${base}/checkout.html?event=dev-afro&type=dev-afro-reg&qty=1`, { waitUntil: 'networkidle' });
+  await page.getByRole('radio', { name: 'I CAME DRESSED.' }).click(); await page.click('#toWho');
   await page.fill('#name', 'Yaw Boateng'); await page.fill('#phone', '0241112222'); await page.click('#s1 button[type=submit]');
-  await page.getByRole('radio', { name: 'I CAME DRESSED.' }).click(); await page.click('#to3');
   await page.getByRole('radio', { name: /pay in bits/i }).click(); await page.fill('#dep', '30'); await page.click('#pay');
   await page.waitForURL(/dev\/paystack/); await page.getByRole('button', { name: 'Pay' }).click();
   await page.getByText(/to go/i).waitFor({ timeout: 20000 });

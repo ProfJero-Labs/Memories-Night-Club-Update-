@@ -60,7 +60,13 @@ let settingsP;
 export const getSettings = () => (settingsP ||= api('/api/settings').then(d => d.settings).catch(() => ({})));
 const digits = s => String(s || '').replace(/\D/g, '');
 export const waLink = n => { const d = digits(n); return d ? `https://wa.me/${d.startsWith('0') ? '233' + d.slice(1) : d}` : ''; };
-export const igLink = h => (h ? `https://instagram.com/${String(h).replace(/^@/, '')}` : '');
+const handle = h => String(h || '').trim().replace(/^@/, '').replace(/^https?:\/\/[^/]+\//, '').replace(/\/$/, '');
+export const igLink = h => (handle(h) ? `https://www.instagram.com/${handle(h)}/` : '');
+export const fbLink = h => (handle(h) ? `https://www.facebook.com/${handle(h)}` : '');
+export const ttLink = h => (handle(h) ? `https://www.tiktok.com/@${handle(h)}` : '');
+// Every social account the site shows, in one place: [label, link, @handle]
+export const socials = s => [['Instagram', igLink(s.instagram), s.instagram], ['Facebook', fbLink(s.facebook), s.facebook], ['TikTok', ttLink(s.tiktok), s.tiktok]]
+  .filter(([, url]) => url).map(([name, url, h]) => [name, url, '@' + handle(h)]);
 export const mapLink = s => s.mapUrl || `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(s.venue || 'SamRit Hotel Cape Coast')}`;
 
 const WA_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true" fill="currentColor"><path d="M12 2a10 10 0 0 0-8.6 15.1L2 22l5-1.3A10 10 0 1 0 12 2Zm0 18.2c-1.5 0-3-.4-4.2-1.2l-.3-.2-3 .8.8-2.9-.2-.3A8.2 8.2 0 1 1 12 20.2Zm4.5-6.1c-.2-.1-1.5-.7-1.7-.8-.2-.1-.4-.1-.6.1l-.8 1c-.1.2-.3.2-.5.1a6.7 6.7 0 0 1-3.3-2.9c-.3-.4.2-.4.7-1.3.1-.2 0-.3 0-.4l-.8-1.8c-.2-.5-.4-.4-.6-.4h-.5a1 1 0 0 0-.7.3 3 3 0 0 0-.9 2.2 5.2 5.2 0 0 0 1.1 2.8 12 12 0 0 0 4.6 4c1.7.7 2.4.8 3.2.6.5-.1 1.5-.6 1.7-1.2.2-.6.2-1.1.2-1.2-.1-.1-.3-.2-.5-.3Z"/></svg>';
@@ -78,15 +84,16 @@ export async function chrome(active = '') {
   if (s.whatsapp) $('#waSlot').outerHTML = `<a class="wa" href="${waLink(s.whatsapp)}" target="_blank" rel="noopener" aria-label="WhatsApp us">${WA_ICON}<span>WhatsApp</span></a>`;
   const items = [
     `<li><a href="${esc(mapLink(s))}" target="_blank" rel="noopener">${esc(s.venue || 'SamRit Hotel, Cape Coast')} ↗</a></li>`,
+    s.whatsapp && `<li><a href="${waLink(s.whatsapp)}" target="_blank" rel="noopener">WhatsApp ${esc(s.whatsapp)}</a></li>`,
     s.phone && `<li><a href="tel:${digits(s.phone)}">${esc(s.phone)}</a></li>`,
     s.email && `<li><a href="mailto:${esc(s.email)}">${esc(s.email)}</a></li>`,
-    s.instagram && `<li><a href="${esc(igLink(s.instagram))}" target="_blank" rel="noopener">Instagram ${esc(s.instagram)}</a></li>`,
+    ...socials(s).map(([name, url, h]) => `<li><a href="${esc(url)}" target="_blank" rel="noopener">${name} ${esc(h)}</a></li>`),
   ].filter(Boolean).join('');
   foot.innerHTML = `<div class="wrap foot-grid">
     <div><a class="logo" href="index.html"><img src="assets/logo.png" alt="Memories" width="110" height="26"></a><p class="foot-small" style="margin-top:14px">${esc(s.nightsLine || 'Friday + Saturday')} · ${esc(s.doorsLine || 'Doors 10PM')}</p></div>
     <ul class="foot-list">${items}</ul>
-    <ul class="foot-list"><li><a href="nights.html">Nights</a></li><li><a href="tables.html">Tables</a></li><li><a href="private.html">Private night</a></li><li><a href="installment.html">Pay the rest of a ticket</a></li></ul>
-    <div><span class="age" title="Strictly 18 and over">18+</span><p class="foot-small" style="margin-top:10px">Strictly 18+. ID at the door.</p></div>
+    <ul class="foot-list"><li><a href="nights.html">Nights</a></li><li><a href="nights.html#calendar">Calendar</a></li><li><a href="tables.html">Tables</a></li><li><a href="private.html">Private night</a></li><li><a href="installment.html">Pay the rest of a ticket</a></li></ul>
+    <div><span class="age" title="Strictly 18 and over">18+</span><p class="foot-small" style="margin-top:10px">Strictly 18+.</p></div>
   </div>`;
   return s;
 }

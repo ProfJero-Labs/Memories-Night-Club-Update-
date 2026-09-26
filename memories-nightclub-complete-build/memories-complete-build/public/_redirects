@@ -1,5 +1,6 @@
 /nights    /nights.html   200
 /events    /nights.html   200
+/calendar  /nights.html#calendar   301
 /tables    /tables.html   200
 /private   /private.html  200
 /visit     /visit.html    200

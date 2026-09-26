@@ -3,21 +3,23 @@ import { now, id, clean, dateKey, normalizePhone, validEmail, firstName } from '
 import { sendEmail } from './lib/notify.js';
 
 // ── Site settings: the one place contact details and venue copy live ──
-// Unknown production values (phone, email, WhatsApp, map) default to empty and simply don't render
-// until an admin fills them in. Venue/nights/doors come from the club's own brief.
+// Unknown production values (phone, email, map) default to empty and simply don't render until an
+// admin fills them in. Venue, nights, doors, WhatsApp and the social handles come from the club.
+// A field saved blank falls back to its default.
 export const DEFAULT_SETTINGS = {
   venue: 'SamRit Hotel, Cape Coast', address: '', nightsLine: 'Friday + Saturday', doorsLine: 'Doors 10PM',
-  phone: '', whatsapp: '', email: '', instagram: '@memoriesnightclub.gh', mapUrl: '',
+  phone: '', whatsapp: '0249050086', email: '', instagram: '@memoriesnightclub.gh', facebook: 'memoriesnightclub.gh', tiktok: '@memoriesnightclub.gh', mapUrl: '',
   heroImage: '', defaultLines: [], closedDates: [],
 };
-export const SETTINGS_FIELDS = { venue: 120, address: 200, nightsLine: 60, doorsLine: 60, phone: 30, whatsapp: 30, email: 120, instagram: 60, mapUrl: 500, heroImage: 500 };
+export const SETTINGS_FIELDS = { venue: 120, address: 200, nightsLine: 60, doorsLine: 60, phone: 30, whatsapp: 30, email: 120, instagram: 60, facebook: 60, tiktok: 60, mapUrl: 500, heroImage: 500 };
 
 export async function getSettings(env) {
   const d = await getDoc(env, 'settings', 'site');
-  return { ...DEFAULT_SETTINGS, ...(d?.fields || {}) };
+  const saved = Object.fromEntries(Object.entries(d?.fields || {}).filter(([, v]) => v !== ''));
+  return { ...DEFAULT_SETTINGS, ...saved };
 }
 
-// An event's selectable "how are you showing up?" lines: the night's own list, else the site-wide
+// An event's selectable "what should others know?" lines: the night's own list, else the site-wide
 // default list, else none (the ticket then leads with the event name — no placeholder copy ships).
 export const resolveLines = (event, settings) => {
   const own = (event?.ticketLines || []).filter(Boolean);

@@ -41,8 +41,14 @@ const first = n => n.trim().split(/\s+/)[0] || '';
 const total = () => T.pricePesewas * qty;
 const preview = () => ticketHTML({ line: S.line, firstName: first(S.name), eventName: B.event.name, date: B.event.date, doors: B.event.doors, venue: B.event.venue, artwork: B.event.artwork, type: T.name, admits: T.admits, inDraw: false }, { preview: true });
 const hasLines = () => B.lines.length > 0;
-const steps = () => (hasLines() ? 3 : 2);
-const stepNo = () => (S.step === 3 && !hasLines() ? 2 : S.step);
+// The line comes first: it's the point of the ticket. Pick one of the night's, or write your own.
+const order = () => ['s2', 's1', 's3'];
+const lineReady = () => !!S.line.trim() || !hasLines();
+function syncLine() {
+  const b = $('#toWho'); b.disabled = !lineReady();
+  b.innerHTML = S.line.trim() || hasLines() ? 'This is me <span class="arrow">→</span>' : 'Skip <span class="arrow">→</span>';
+}
+const at = () => order()[S.step - 1];
 
 function refreshPreview() { $$('[data-preview]').forEach(el => { el.innerHTML = preview(); }); }
 
@@ -52,6 +58,13 @@ function shell() {
       <div class="for" style="margin-bottom:16px"><a class="link" href="event.html?id=${encodeURIComponent(B.event.id)}">← ${esc(B.event.name)}</a><span class="kicker">${esc(shortDate(B.event.date))}</span></div>
       <div class="steps" aria-hidden="true" id="bar"></div>
       <div class="peek" data-preview aria-hidden="true" style="margin-top:22px"></div>
+      <div id="s2" class="step" hidden style="margin-top:22px">
+        <h1 class="display">What should others know?</h1>
+        <p class="muted" style="margin:-8px 0 0">Pick your line. It goes big on your ticket for everyone to see.</p>
+        ${hasLines() ? `<ol class="lines" role="radiogroup" aria-label="Your line">${B.lines.map((l, i) => `<li><button type="button" class="line-btn" role="radio" aria-checked="${S.line === l}" data-line="${esc(l)}"><span class="no">${String(i + 1).padStart(2, '0')}</span><span class="tx">${esc(l)}</span><span class="mk" aria-hidden="true">✓</span></button></li>`).join('')}</ol>` : ''}
+        <div class="field"><label for="ownLine">${hasLines() ? 'Or write your own' : 'Write your line (optional)'}</label><input id="ownLine" maxlength="40" autocomplete="off" autocapitalize="characters" placeholder="e.g. BIRTHDAY GIRL" value="${esc(B.lines.includes(S.line) ? '' : S.line)}"><span class="hint">Up to 40 characters.</span></div>
+        <div class="step-nav"><button class="btn red" type="button" id="toWho"></button></div>
+      </div>
       <form id="s1" class="step" novalidate style="margin-top:22px">
         <h1 class="display">Who’s coming?</h1>
         <div class="field" id="fName"><label for="name">Your name</label><input id="name" name="name" autocomplete="name" autocapitalize="words" required maxlength="80" value="${esc(S.name)}"><span class="hint">First name goes big on the ticket.</span></div>
@@ -59,14 +72,8 @@ function shell() {
         <details ${S.email ? 'open' : ''}><summary class="label" style="cursor:pointer;padding:6px 0">Email receipt (optional)</summary>
           <div class="field" style="margin-top:10px"><label for="email" class="sr">Email</label><input id="email" type="email" autocomplete="email" inputmode="email" value="${esc(S.email)}"></div></details>
         <div class="summary"><div class="r"><span>${qty} × ${esc(T.name)}</span><span>${money(total())}</span></div></div>
-        <div class="step-nav"><button class="btn red" type="submit">Next <span class="arrow">→</span></button></div>
+        <div class="step-nav"><button class="btn back" type="button" data-back aria-label="Back">←</button><button class="btn red" type="submit">Next <span class="arrow">→</span></button></div>
       </form>
-      <div id="s2" class="step" hidden style="margin-top:22px">
-        <h1 class="display">How are you showing up?</h1>
-        <p class="muted" style="margin:-8px 0 0">Pick your line. It goes on your ticket.</p>
-        <ol class="lines" role="radiogroup" aria-label="Your line">${B.lines.map((l, i) => `<li><button type="button" class="line-btn" role="radio" aria-checked="${S.line === l}" data-line="${esc(l)}"><span class="no">${String(i + 1).padStart(2, '0')}</span><span class="tx">${esc(l)}</span><span class="mk" aria-hidden="true">✓</span></button></li>`).join('')}</ol>
-        <div class="step-nav"><button class="btn back" type="button" data-back aria-label="Back">←</button><button class="btn red" type="button" id="to3" ${S.line ? '' : 'disabled'}>This is me <span class="arrow">→</span></button></div>
-      </div>
       <div id="s3" class="step" hidden style="margin-top:22px">
         <h1 class="display">Your night</h1>
         <div class="review-ticket" data-preview></div>
@@ -92,10 +99,10 @@ function shell() {
 
 function go(n) {
   S.step = n;
-  ['s1', 's2', 's3'].forEach((id, i) => { $('#' + id).hidden = i + 1 !== n; });
-  $('#bar').innerHTML = Array.from({ length: steps() }, (_, i) => `<i class="${i < stepNo() ? 'on' : ''}"></i>`).join('');
-  $('.peek').hidden = n === 3;
-  if (n === 3) $('#forWho').textContent = `${S.name.trim()} · ${S.phone.trim()}`;
+  ['s1', 's2', 's3'].forEach(id => { $('#' + id).hidden = id !== at(); });
+  $('#bar').innerHTML = order().map((_, i) => `<i class="${i < n ? 'on' : ''}"></i>`).join('');
+  $('.peek').hidden = at() === 's3';
+  if (at() === 's3') $('#forWho').textContent = `${S.name.trim()} · ${S.phone.trim()}`;
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
@@ -121,15 +128,21 @@ function bind() {
     if (!okName) return $('#name').focus();
     if (!okPhone) return $('#phone').focus();
     remember.set({ name: S.name.trim(), phone: S.phone.trim(), email: S.email });
-    go(hasLines() ? 2 : 3);
+    go(S.step + 1);
   };
   $$('.line-btn').forEach(b => b.onclick = () => {
     S.line = b.dataset.line;
     $$('.line-btn').forEach(x => x.setAttribute('aria-checked', String(x === b)));
-    $('#to3').disabled = false; refreshPreview();
+    $('#ownLine').value = ''; syncLine(); refreshPreview();
   });
-  $('#to3').onclick = () => go(3);
-  $$('[data-back]').forEach(b => b.onclick = () => go(S.step === 3 && hasLines() ? 2 : 1));
+  $('#ownLine').oninput = e => {
+    S.line = e.target.value.replace(/\s+/g, ' ').trimStart();
+    $$('.line-btn').forEach(x => x.setAttribute('aria-checked', 'false'));
+    syncLine(); refreshPreview();
+  };
+  syncLine();
+  $('#toWho').onclick = () => go(S.step + 1);
+  $$('[data-back]').forEach(b => b.onclick = () => go(S.step - 1));
   $$('[data-mode]').forEach(b => b.onclick = () => { S.mode = b.dataset.mode; syncPay(); if (S.mode === 'bits') $('#dep').focus(); });
   $('#dep').oninput = e => { S.deposit = e.target.value; syncPay(); };
   $('#pay').onclick = pay;
@@ -144,7 +157,7 @@ async function pay() {
     if (!(amt >= 1000) || amt > total()) { err.hidden = false; err.textContent = `Pay between GHS 10 and ${money(total())}.`; return $('#dep').focus(); }
   }
   btn.disabled = true; btn.textContent = 'Opening payment…';
-  const body = { eventId: B.event.id, ticketTypeId: T.id, quantity: qty, buyerName: S.name.trim(), buyerPhone: S.phone.trim(), buyerEmail: S.email || undefined, identityLine: S.line, callbackUrl: new URL('payment-return.html', location.href).href };
+  const body = { eventId: B.event.id, ticketTypeId: T.id, quantity: qty, buyerName: S.name.trim(), buyerPhone: S.phone.trim(), buyerEmail: S.email || undefined, identityLine: S.line.trim(), callbackUrl: new URL('payment-return.html', location.href).href };
   try {
     const d = S.mode === 'bits'
       ? await api('/api/installments/start', { method: 'POST', body: { ...body, depositPesewas: payAmount() } })
@@ -163,7 +176,7 @@ async function load() {
       root.innerHTML = `<div class="state-msg"><h2 class="display">That ticket isn’t available.</h2><p>It may have sold out. Pick another one.</p><a class="btn red" href="event.html?id=${encodeURIComponent(B.event.id)}#tickets">Back to tickets</a></div>`;
       return;
     }
-    if (!B.lines.includes(S.line)) S.line = '';
+    S.line = '';
     shell();
   } catch (e) {
     if (e.status === 404) root.innerHTML = '<div class="state-msg"><h2 class="display">This night isn’t on.</h2><a class="btn red" href="nights.html">See what’s on</a></div>';

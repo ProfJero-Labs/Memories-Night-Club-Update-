@@ -19,11 +19,11 @@ const flows = {
     await page.waitForLoadState('networkidle'); await shot('event');
     await page.locator('#barGo:visible, #inlineGo:visible').first().click();
     await page.waitForLoadState('networkidle'); await shot('step1');
+    await page.getByRole('radio', { name: /OUTSIDE, CORRECT/ }).click(); await shot('step1-picked');
+    await page.click('#toWho'); await shot('step2');
     await page.fill('#name', 'Kwame Asante'); await page.fill('#phone', '024 555 1234');
-    await shot('step1-filled');
-    await page.click('#s1 button[type=submit]'); await shot('step2');
-    await page.getByRole('radio', { name: /OUTSIDE, CORRECT/ }).click(); await shot('step2-picked');
-    await page.click('#to3'); await shot('step3', true);
+    await shot('step2-filled');
+    await page.click('#s1 button[type=submit]'); await shot('step3', true);
     await page.click('#pay'); await page.waitForLoadState('networkidle'); await shot('paystack');
     await page.getByRole('button', { name: 'Pay' }).click();
     await page.waitForURL(/payment-return/); await page.waitForTimeout(1500); await shot('return', true);
@@ -50,8 +50,8 @@ const flows = {
   },
   async bits() {
     await page.goto(`${base}/checkout.html?event=dev-piano&type=dev-piano-reg&qty=1`, { waitUntil: 'networkidle' });
+    await page.getByRole('radio', { name: /FULLY ACTIVE/ }).click(); await page.click('#toWho');
     await page.fill('#name', 'Yaw Boateng'); await page.fill('#phone', '0241112222'); await page.click('#s1 button[type=submit]');
-    await page.getByRole('radio', { name: /FULLY ACTIVE/ }).click(); await page.click('#to3');
     await page.getByRole('radio', { name: /pay in bits/i }).click(); await page.fill('#dep', '40'); await shot('bits', true);
     await page.click('#pay'); await page.waitForURL(/dev\/paystack/); await page.getByRole('button', { name: 'Pay' }).click();
     await page.waitForURL(/payment-return/); await page.getByText(/to go/i).waitFor({ timeout: 20000 }); await shot('partial', true);

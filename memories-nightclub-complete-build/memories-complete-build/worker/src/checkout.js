@@ -18,6 +18,7 @@ async function paystack(env, path, options = {}) {
 }
 // Paystack needs an email. Guests don't have to give one; their receipt address then falls back
 // to a per-phone alias on the club's own domain.
+export const LINE_MAX = 40;
 const payEmail = (env, email, phone) => (validEmail(email) ? email : `guest-${phone}@${new URL(env.PUBLIC_SITE_URL || 'https://memoriesnightclub.com').hostname.replace(/^www\./, '')}`);
 
 // Shared validation for anything that becomes a ticket.
@@ -34,10 +35,12 @@ async function ticketContext(env, b) {
   if (!ev || !tt || ev.fields.active === false || ev.fields.visibility !== 'public' || tt.fields.eventId !== b.eventId || tt.fields.active !== true) return { error: 'This ticket is no longer available.' };
   if (ev.fields.soldOut === true || (typeof tt.fields.remaining === 'number' && tt.fields.remaining < qty)) return { error: 'Not enough tickets left for that.' };
   if (isOver(ev.fields)) return { error: 'This night has already happened.' };
-  // The guest picks a line from the night's list; they never type one.
+  // The guest picks one of the night's lines or writes their own (short enough to sit on the ticket).
+  // A night with lines needs one or the other; a night without lines can go without.
   const lines = resolveLines(ev.fields, settings);
-  const identityLine = lines.length ? (lines.includes(b.identityLine) ? b.identityLine : null) : '';
-  if (identityLine === null) return { error: 'Pick how you’re showing up.' };
+  const own = clean(b.identityLine, 400).replace(/\s+/g, ' ').slice(0, LINE_MAX).trim();
+  const identityLine = lines.includes(b.identityLine) ? b.identityLine : own;
+  if (lines.length && !identityLine) return { error: 'Pick a line or write your own.' };
   const unit = Number(tt.fields.pricePesewas || 0);
   if (!(unit > 0)) return { error: 'This ticket is no longer available.' };
   return { ev, tt, qty, buyerName, buyerPhone, buyerEmail: clean(b.buyerEmail, 120), identityLine, totalPesewas: unit * qty, callbackUrl: b.callbackUrl };

@@ -106,24 +106,29 @@ test('check-in: valid → confirmed, second scan → already checked in, junk �
 
 // ── Checkout integrity ──
 
-test('a guest cannot put their own words on a ticket: the line must be one the night offers', async () => {
+test('a guest can pick one of the night’s lines or write their own, kept short enough for the ticket', async () => {
   const { store, env } = createMockEnv();
   seedNight(store);
   const base = { eventId: 'night1', ticketTypeId: 'night1-std', quantity: 1, buyerName: 'Kofi', buyerPhone: '024 123 4567', callbackUrl: `${ORIGIN}/payment-return.html` };
-  const bad = await call(env, 'POST', '/api/checkout/initiate', { body: { ...base, identityLine: 'ANYTHING I WANT' } });
-  assert.equal(bad.status, 400);
+  const none = await call(env, 'POST', '/api/checkout/initiate', { body: { ...base, identityLine: '   ' } });
+  assert.equal(none.status, 400, 'a night with lines needs a picked or written line');
   assert.equal(store.list('pending_checkouts').length, 0);
   const good = await call(env, 'POST', '/api/checkout/initiate', { body: { ...base, identityLine: 'OUTSIDE, CORRECT.' } });
   assert.equal(good.status, 200);
   const p = store.get('pending_checkouts', good.data.reference).fields;
   assert.equal(p.identityLine, 'OUTSIDE, CORRECT.');
   assert.equal(p.buyerPhone, '0241234567', 'phone stored in the SMS worker’s 0XXXXXXXXX format');
+  const own = await call(env, 'POST', '/api/checkout/initiate', { body: { ...base, identityLine: '  Birthday\n girl   in the  building, finally here at last!!  ' } });
+  assert.equal(own.status, 200);
+  const line = store.get('pending_checkouts', own.data.reference).fields.identityLine;
+  assert.equal(line, 'Birthday girl in the building, finally h');
+  assert.ok(line.length <= 40);
 });
 
 test('a night with no lines configured sells tickets with no line (never placeholder copy)', async () => {
   const { store, env } = createMockEnv();
   seedNight(store, 'night1', { ticketLines: [] });
-  const r = await call(env, 'POST', '/api/checkout/initiate', { body: { eventId: 'night1', ticketTypeId: 'night1-std', quantity: 1, buyerName: 'Kofi', buyerPhone: '0241234567', identityLine: 'FULLY ACTIVE.', callbackUrl: `${ORIGIN}/x` } });
+  const r = await call(env, 'POST', '/api/checkout/initiate', { body: { eventId: 'night1', ticketTypeId: 'night1-std', quantity: 1, buyerName: 'Kofi', buyerPhone: '0241234567', identityLine: '', callbackUrl: `${ORIGIN}/x` } });
   assert.equal(r.status, 200);
   assert.equal(store.get('pending_checkouts', r.data.reference).fields.identityLine, '');
 });
