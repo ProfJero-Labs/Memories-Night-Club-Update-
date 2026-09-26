@@ -9,7 +9,7 @@ const user = await requireStaff(CMS);
 staffHeader(user, 'Control room');
 const can = roles => roles.includes(user.role);
 const TABS = [
-  ['overview', 'Overview', CMS], ['nights', 'Nights', CMS], ['bookings', 'Bookings', CMS], ['requests', 'Private nights', CMS],
+  ['overview', 'Overview', CMS], ['nights', 'Nights', CMS], ['bookings', 'Bookings', CMS], ['requests', 'Event requests', CMS],
   ['bits', 'Pay in bits', MONEY], ['bar', 'Bar menu', CMS], ['settings', 'Site settings', MONEY], ['staff', 'Staff', ['superAdmin']],
 ].filter(t => can(t[2]));
 const panel = $('#panel');
@@ -231,10 +231,10 @@ async function bookings() {
   await load();
 }
 
-// ── Private night requests ──
+// ── Event booking requests ──
 async function requests() {
   const { requests: rs } = await sapi('/api/admin/requests');
-  panel.innerHTML = `<h1>Private nights</h1><div class="tbl-wrap"><table class="tbl"><thead><tr><th>Date</th><th>What</th><th>Who</th><th class="num">Guests</th><th>Status</th><th></th></tr></thead><tbody>
+  panel.innerHTML = `<h1>Event requests</h1><div class="tbl-wrap"><table class="tbl"><thead><tr><th>Date</th><th>What</th><th>Who</th><th class="num">Guests</th><th>Status</th><th></th></tr></thead><tbody>
     ${rs.map(r => `<tr><td><strong>${esc(r.date)}</strong></td><td>${esc(r.eventType)}</td><td>${esc(r.name)}</td><td class="num">${esc(r.guests)}</td>
       <td>${pill(r.status, r.status === 'ACCEPTED' ? 'green' : r.status === 'DECLINED' ? 'grey' : 'amber')}</td><td class="actions"><button class="sbtn" data-open="${esc(r.id)}">Open</button></td></tr>
       <tr class="expand" id="x-${esc(r.id)}" hidden><td colspan="6"><div class="grid2">
@@ -304,7 +304,7 @@ async function staff() {
     <div><button class="sbtn red" type="submit">Save role</button></div><div id="roleMsg"></div></form>
     <h2>Who has access</h2><div class="tbl-wrap"><table class="tbl"><thead><tr><th>Email</th><th>Role</th><th>UID (for organiser nights)</th></tr></thead><tbody>
     ${list.map(x => `<tr><td>${esc(x.email)}</td><td>${esc(ROLE_LABEL[x.role] || x.role)}</td><td><code>${esc(x.uid)}</code></td></tr>`).join('') || '<tr><td colspan="3" class="empty-row">No staff recorded yet.</td></tr>'}</tbody></table></div>
-    <p class="hint" style="color:var(--muted)">Super admin: everything. Manager: everything but staff. Event manager: nights, bookings, private nights, comps, the draw. Door: check-in only. Organiser: their own nights’ numbers and door.</p>`;
+    <p class="hint" style="color:var(--muted)">Super admin: everything. Manager: everything but staff. Event manager: nights, bookings, event requests, comps, the draw. Door: check-in only. Organiser: their own nights’ numbers and door.</p>`;
   $('#roleForm').onsubmit = async ev => {
     ev.preventDefault();
     try { const r = await sapi('/api/admin/set-role', { method: 'POST', body: { email: val('#rEmail'), role: val('#rRole') } }); flash($('#roleMsg'), `${r.email} → ${ROLE_LABEL[r.role] || 'no access'}.`); setTimeout(() => staff().catch(fail), 900); }

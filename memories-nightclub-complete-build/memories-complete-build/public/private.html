@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<title>Private night · Memories</title>
+<title>Book an event · Memories</title>
 <meta name="description" content="Make a night at Memories yours: birthdays, corporate, concerts, private celebrations.">
 <meta name="theme-color" content="#0d0a09">
 <link rel="icon" href="assets/icon.svg" type="image/svg+xml">
@@ -25,13 +25,13 @@
 </head>
 <body>
 <main class="wrap flow-narrow">
-  <header class="page-head" style="padding-bottom:10px"><p class="kicker red">Make it yours</p><h1 class="display" style="font-size:clamp(64px,17vw,150px)">Private night</h1></header>
+  <header class="page-head" style="padding-bottom:10px"><p class="kicker red">Make it yours</p><h1 class="display" style="font-size:clamp(64px,17vw,150px)">Book an event</h1></header>
   <div id="root" class="flow" style="padding-top:12px"></div>
 </main>
 <script type="module">
 import { chrome, api, esc, params, $, $$, remember, dow, dd, mon, longDate } from './app.js';
 chrome();
-const TYPES = ['Birthday', 'Corporate', 'Concert', 'Private celebration', 'Other'];
+const TYPES = ['Corporate', 'Event organiser', 'Large group', 'Other'];
 const r = remember.get();
 const S = { step: 1, type: TYPES.find(t => t.toLowerCase() === (params.get('type') || '').toLowerCase()) || '', date: params.get('date') || '', guests: '', name: r.name || '', phone: r.phone || '', instagram: '', message: '' };
 if (S.type) S.step = 2;
@@ -45,7 +45,7 @@ const err = msg => `<div class="notice" role="alert">${esc(msg)}</div>`;
 function render(problem = '') {
   const tomorrow = new Date(Date.now() + 864e5).toISOString().slice(0, 10);
   if (S.step === 1) root.innerHTML = `${bar()}<form class="step" novalidate><h2 class="display">What are you planning?</h2>
-    <ol class="lines" role="radiogroup" aria-label="Type of night">${TYPES.map((t, i) => `<li><button type="button" class="line-btn" role="radio" aria-checked="${S.type === t}" data-type="${esc(t)}"><span class="no">${String(i + 1).padStart(2, '0')}</span><span class="tx">${esc(t)}</span><span class="mk" aria-hidden="true">✓</span></button></li>`).join('')}</ol>
+    <ol class="lines" role="radiogroup" aria-label="Type of event">${TYPES.map((t, i) => `<li><button type="button" class="line-btn" role="radio" aria-checked="${S.type === t}" data-type="${esc(t)}"><span class="no">${String(i + 1).padStart(2, '0')}</span><span class="tx">${esc(t)}</span><span class="mk" aria-hidden="true">✓</span></button></li>`).join('')}</ol>
     ${problem ? err(problem) : ''}${nav('Next')}</form>`;
   if (S.step === 2) {
     const open = days.filter(d => d.date >= tomorrow);

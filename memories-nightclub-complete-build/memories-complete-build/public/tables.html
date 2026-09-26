@@ -127,7 +127,7 @@ async function pay(ev) {
 async function load() {
   try { events = (await api('/api/events')).events.filter(e => !e.soldOut); }
   catch (e) { return errorState(root, e.message, load); }
-  if (!events.length) { root.innerHTML = '<div class="state-msg"><h2 class="display">No nights on sale yet.</h2><p>Tables open when the next night drops.</p><a class="btn red" href="private.html">Plan a private night</a></div>'; return; }
+  if (!events.length) { root.innerHTML = '<div class="state-msg"><h2 class="display">No nights on sale yet.</h2><p>Tables open when the next night drops.</p><a class="btn red" href="private.html">Book an event</a></div>'; return; }
   if (S.eventId && events.some(e => e.id === S.eventId)) pick(S.eventId); else render();
 }
 load();

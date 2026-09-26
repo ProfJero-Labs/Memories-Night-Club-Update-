@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>Memories · Cape Coast</title>
-<meta name="description" content="Memories, SamRit Hotel, Cape Coast. Friday + Saturday. Get tickets, book a table, plan a private night.">
+<meta name="description" content="Memories, SamRit Hotel, Cape Coast. Friday + Saturday. Get tickets, book a table, book an event.">
 <meta name="theme-color" content="#0d0a09">
 <link rel="icon" href="assets/icon.svg" type="image/svg+xml">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -29,8 +29,8 @@
   </section>
   <nav class="split" aria-label="Plan your night">
     <a href="tables.html"><span class="go" aria-hidden="true">↗</span><span class="kicker">From GHS 2,000</span><span class="display">Tables</span></a>
-    <div class="split-tile"><a class="cover" href="private.html" aria-label="Private night"></a><span class="go" aria-hidden="true">↗</span>
-      <span class="kicker hosts"><a href="private.html?type=Birthday">Birthday</a><a href="private.html?type=Corporate">Corporate</a><a href="private.html?type=Concert">Concert</a><a href="private.html?type=Private%20celebration">Yours</a></span><span class="display">Private night</span></div>
+    <div class="split-tile"><a class="cover" href="private.html" aria-label="Book an event"></a><span class="go" aria-hidden="true">↗</span>
+      <span class="kicker hosts"><a href="private.html?type=Corporate">Corporate</a><a href="private.html?type=Event%20organiser">Event organiser</a><a href="private.html?type=Large%20group">Large group</a></span><span class="display">Book an event</span></div>
   </nav>
 </main>
 <script type="module">
@@ -57,8 +57,8 @@ async function load() {
     next.innerHTML = `<p class="kicker red">Next at Memories</p>
       <div class="next-copy" style="margin-top:18px">${open ? dateStamp(open.date + 'T22:00:00Z', 'red') : ''}
       <h2 class="display">${open ? 'The next night drops soon.' : 'New nights drop soon.'}</h2>
-      <p class="muted" style="margin:0;max-width:34ch">Want ${open ? esc(shortDate(open.date + 'T00:00:00Z')) : 'a night'} for yourself? Make it a private night.</p>
-      <div class="row-actions"><a class="btn red" href="private.html${open ? `?date=${open.date}` : ''}">Plan a private night <span class="arrow">→</span></a></div></div>`;
+      <p class="muted" style="margin:0;max-width:34ch">Want ${open ? esc(shortDate(open.date + 'T00:00:00Z')) : 'a night'} for your event? Book it.</p>
+      <div class="row-actions"><a class="btn red" href="private.html${open ? `?date=${open.date}` : ''}">Book an event <span class="arrow">→</span></a></div></div>`;
     return;
   }
   const hero = events.find(e => e.featured && !e.soldOut) || events.find(e => !e.soldOut) || events[0];

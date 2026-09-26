@@ -209,6 +209,16 @@ test('comps: recorded against who issued them, out of the draw unless marked in'
 });
 
 // ── Calendar & private nights ──
+test('Book an event accepts only Corporate, Event organiser, Large group, Other (plus legacy types from cached pages)', async () => {
+  const { store, env } = createMockEnv();
+  const date = new Date(Date.now() + 40 * 864e5).toISOString().slice(0, 10);
+  for (const t of ['Corporate', 'Event organiser', 'Large group', 'Other']) {
+    const r = await createPrivateRequest(env, { eventType: t, date, guests: 10, name: 'Test', phone: '0241112222' });
+    assert.ok(!r.error, `${t}: ${r.error}`);
+  }
+  assert.ok((await createPrivateRequest(env, { eventType: 'Wedding', date, guests: 10, name: 'Test', phone: '0241112222' })).error);
+});
+
 
 test('calendar: every Friday/Saturday exists; event, held and open states come from Firestore', async () => {
   const { store, env } = createMockEnv();
@@ -223,9 +233,9 @@ test('calendar: every Friday/Saturday exists; event, held and open states come f
   const after = (await calendar(env, 4)).days;
   assert.deepEqual(after.find(d => d.date === eventDay), { date: eventDay, state: 'event', eventId: 'e1', name: 'Confirmed Night' });
   assert.equal(after.find(d => d.date === heldDay).state, 'held');
-  const r = await createPrivateRequest(env, { eventType: 'Birthday', date: eventDay, guests: 20, name: 'Adwoa', phone: '0241112222' });
+  const r = await createPrivateRequest(env, { eventType: 'Corporate', date: eventDay, guests: 20, name: 'Adwoa', phone: '0241112222' });
   assert.match(r.error, /Confirmed Night/, 'a date with a public event is not offered for a private night');
-  const ok = await createPrivateRequest(env, { eventType: 'Birthday', date: fridays[2]?.date || after.at(-1).date, guests: 20, name: 'Adwoa', phone: '0241112222', instagram: 'adwoa' });
+  const ok = await createPrivateRequest(env, { eventType: 'Event organiser', date: fridays[2]?.date || after.at(-1).date, guests: 20, name: 'Adwoa', phone: '0241112222', instagram: 'adwoa' });
   assert.equal(ok.error, undefined);
   assert.equal(store.list('private_event_requests').find(x => x.fields.name === 'Adwoa').fields.status, 'NEW', 'a request is not confirmed until admin accepts');
 });

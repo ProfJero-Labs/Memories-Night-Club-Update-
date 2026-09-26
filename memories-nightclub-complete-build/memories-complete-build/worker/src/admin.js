@@ -182,7 +182,7 @@ export async function issueComp(env, b, user) {
   return { token, link, inDraw: res.inDraw, drawRequestedButFull: wantDraw && !res.inDraw, texted };
 }
 
-// ── Private night requests ──
+// ── Event booking requests ──
 export async function listRequests(env, user) {
   if (!requireRole(user, CMS)) return FORBIDDEN;
   return { requests: (await listDocs(env, 'private_event_requests')).map(x => ({ id: x.id, ...x.fields })).sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0)) };
@@ -196,7 +196,7 @@ export async function updatePrivateRequest(env, requestId, b, user) {
   if (status === 'ACCEPTED' && existing.fields.status !== 'ACCEPTED') {
     const clash = (await queryWhere(env, 'private_event_requests', [{ field: 'status', value: 'ACCEPTED' }])).find(r => r.fields.date === existing.fields.date && r.id !== requestId);
     const events = (await listDocs(env, 'events')).find(e => e.fields.active !== false && dateKey(e.fields.date) === existing.fields.date);
-    if (clash) return { error: 'Another private night is already held on that date.' };
+    if (clash) return { error: 'Another event is already held on that date.' };
     if (events) return { error: `${events.fields.name} is already on that date.` };
   }
   await setDoc(env, 'private_event_requests', requestId, { ...existing.fields, status, note, updatedAt: now(), updatedBy: uidOf(user) });
@@ -204,10 +204,10 @@ export async function updatePrivateRequest(env, requestId, b, user) {
   // The guest hears about a real decision once; note edits and repeats send nothing.
   if (status !== existing.fields.status && (status === 'ACCEPTED' || status === 'DECLINED')) {
     const msg = status === 'ACCEPTED'
-      ? `MEMORIES\nYour private night on ${existing.fields.date} is held. We'll call you to lock in the details.`
-      : `MEMORIES\nWe can't hold ${existing.fields.date} for your private night. Reply or call us and we'll find another date.`;
+      ? `MEMORIES\nYour event on ${existing.fields.date} is held. We'll call you to lock in the details.`
+      : `MEMORIES\nWe can't hold ${existing.fields.date} for your event. Reply or call us and we'll find another date.`;
     await sendSms(env, existing.fields.phone, msg);
-    await sendEmail(env, existing.fields.email, status === 'ACCEPTED' ? 'Your Memories private night is held' : 'About your Memories private night', msg.split('\n').slice(1));
+    await sendEmail(env, existing.fields.email, status === 'ACCEPTED' ? 'Your Memories event date is held' : 'About your Memories event booking', msg.split('\n').slice(1));
   }
   return {};
 }

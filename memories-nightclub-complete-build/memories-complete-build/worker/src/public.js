@@ -102,11 +102,13 @@ export async function calendar(env, weeks = 10) {
   return { days };
 }
 
-// ── Private night requests ──
-export const PRIVATE_TYPES = ['Birthday', 'Corporate', 'Concert', 'Private celebration', 'Other'];
+// ── Event booking requests ("Book an event") ──
+export const PRIVATE_TYPES = ['Corporate', 'Event organiser', 'Large group', 'Other'];
+// Older types stay accepted so a page cached from before the rename doesn't fail.
+const LEGACY_TYPES = ['Birthday', 'Concert', 'Private celebration'];
 export async function createPrivateRequest(env, b) {
   const name = clean(b?.name, 80), phone = normalizePhone(b?.phone);
-  const eventType = PRIVATE_TYPES.includes(b?.eventType) ? b.eventType : null;
+  const eventType = [...PRIVATE_TYPES, ...LEGACY_TYPES].includes(b?.eventType) ? b.eventType : null;
   const date = /^\d{4}-\d{2}-\d{2}$/.test(b?.date || '') ? b.date : null;
   const guests = Number(b?.guests);
   if (!eventType) return { error: 'Pick what you are planning.' };
@@ -124,7 +126,7 @@ export async function createPrivateRequest(env, b) {
     eventType, date, guests, name, phone, instagram: clean(b.instagram, 60).replace(/^@?/, b.instagram ? '@' : ''),
     email: clean(b.email, 120), message: clean(b.message, 500), status: 'NEW', createdAt: now(),
   });
-  await sendEmail(env, env.STAFF_NOTIFY_EMAIL || env.BREVO_SENDER_EMAIL, 'New private night request', [
+  await sendEmail(env, env.STAFF_NOTIFY_EMAIL || env.BREVO_SENDER_EMAIL, 'New event booking request', [
     `${eventType} · ${date} · ${guests} guests`, `${name} · ${phone}${b.instagram ? ' · ' + clean(b.instagram, 60) : ''}`, clean(b.message, 500),
   ]);
   return { id: rid };
