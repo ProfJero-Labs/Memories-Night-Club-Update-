@@ -98,6 +98,10 @@ h1, h2, h3 { margin: 0; }
 .nav a[aria-current="page"] { color: var(--crimson); }
 .nav .wa { display: inline-flex; align-items: center; gap: 8px; border: 1.5px solid var(--line-2); padding: 9px 12px; }
 .nav .wa svg { width: 16px; height: 16px; }
+.nav .get { background: var(--crimson); color: var(--paper); padding: 11px 14px; white-space: nowrap; }
+.nav .get:hover { background: var(--paper); color: var(--ink); }
+.nav .get .short { display: none; }
+@media (max-width: 560px) { .nav .nav-nights { display: none; } .nav .get { font-size: 0; padding: 10px 11px; } .nav .get .short { display: inline; font-size: 12px; } }
 @media (max-width: 420px) { .nav { gap: 13px; } .nav a { font-size: 12px; letter-spacing: .12em; } .nav .wa span { display: none; } .nav .wa { padding: 9px; } .logo img { height: 18px; } }
 
 /* ── Footer ── */

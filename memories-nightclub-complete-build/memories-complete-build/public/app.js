@@ -75,7 +75,7 @@ export async function chrome(active = '') {
   const head = document.createElement('header');
   head.className = 'site-head';
   head.innerHTML = `<div class="wrap"><a class="logo" href="index.html" aria-label="Memories — home"><img src="assets/logo.png" alt="Memories" width="93" height="22"></a>
-    <nav class="nav" aria-label="Main">${[['nights', 'Nights'], ['tables', 'Tables'], ['visit', 'Visit']].map(([k, l]) => `<a href="${k}.html"${active === k ? ' aria-current="page"' : ''}>${l}</a>`).join('')}<span id="waSlot"></span></nav></div>`;
+    <nav class="nav" aria-label="Main">${[['nights', 'Nights'], ['tables', 'Tables'], ['visit', 'Visit']].map(([k, l]) => `<a class="nav-${k}" href="${k}.html"${active === k ? ' aria-current="page"' : ''}>${l}</a>`).join('')}<span id="waSlot"></span><a class="get" href="nights.html">Get<span class="long"> tickets</span><span class="short">Tickets</span></a></nav></div>`;
   document.body.prepend(head);
   const foot = document.createElement('footer');
   foot.className = 'site-foot';
