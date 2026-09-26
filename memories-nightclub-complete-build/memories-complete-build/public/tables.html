@@ -98,7 +98,14 @@ async function pick(id) {
   S.eventId = id; S.pkg = ''; S.bottles = {};
   root.innerHTML = '<div class="loading" role="status">PULLING UP THE TABLES…</div>';
   try { B = await api(`/api/events/${encodeURIComponent(id)}`); }
-  catch (e) { return errorState(root, e.message, () => pick(id)); }
+  catch (e) {
+    if (e.status === 404) {
+      root.innerHTML = `<div class="state-msg"><h2 class="display">This night isn’t on.</h2><p>It may have ended or moved.</p><button class="btn red" id="other">See what’s on</button></div>`;
+      $('#other').onclick = () => { S.step = 1; render(); };
+      return;
+    }
+    return errorState(root, e.message, () => pick(id));
+  }
   if (!B.tablePackages.length) { root.innerHTML = `<div class="state-msg"><h2 class="display">No tables online for this night.</h2><p>Message us and we’ll sort you out.</p><button class="btn" id="other">Pick another night</button></div>`; $('#other').onclick = () => { S.step = 1; render(); }; return; }
   S.step = 2; render();
 }
@@ -112,7 +119,7 @@ async function pay(ev) {
   remember.set({ ...remember.get(), name: S.name, phone: S.phone });
   const btn = $('#pay'); btn.disabled = true; btn.textContent = 'Opening payment…';
   try {
-    const d = await api('/api/table-checkout/initiate', { method: 'POST', body: { eventId: B.event.id, packageId: S.pkg, name: S.name, phone: S.phone, email: S.email || undefined, bottles: Object.entries(S.bottles).map(([id, quantity]) => ({ id, quantity })), callbackUrl: `${location.origin}/payment-return.html` } });
+    const d = await api('/api/table-checkout/initiate', { method: 'POST', body: { eventId: B.event.id, packageId: S.pkg, name: S.name, phone: S.phone, email: S.email || undefined, bottles: Object.entries(S.bottles).map(([id, quantity]) => ({ id, quantity })), callbackUrl: new URL('payment-return.html', location.href).href } });
     location.href = d.authorizationUrl;
   } catch (e) { err.hidden = false; err.textContent = e.message; btn.disabled = false; btn.innerHTML = `Pay ${money(total())} <span class="arrow">→</span>`; }
 }

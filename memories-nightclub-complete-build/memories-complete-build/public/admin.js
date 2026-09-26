@@ -61,7 +61,9 @@ async function night(id) {
   const isNew = id === 'new';
   const d = isNew ? { event: { visibility: 'private', active: true, doors: '10PM', venue: '', ticketLines: [] }, ticketTypes: [], tablePackages: [], raffle: null } : await sapi(`/api/admin/events/${encodeURIComponent(id)}`);
   const e = d.event; let lines = [...(e.ticketLines || [])];
-  panel.innerHTML = `<div class="toolbar"><button class="sbtn ghost" id="back">← Nights</button>${isNew ? '' : `<a class="sbtn ghost" target="_blank" href="event.html?id=${encodeURIComponent(e.id)}">Public page ↗</a><a class="sbtn ghost" href="checkin.html?event=${encodeURIComponent(e.id)}">Door ↗</a>`}</div>
+  panel.innerHTML = `<div class="toolbar"><button class="sbtn ghost" id="back">← Nights</button>${isNew ? '' : `${e.visibility === 'public' && e.active !== false
+  ? `<a class="sbtn ghost" target="_blank" href="event.html?id=${encodeURIComponent(e.id)}">Public page ↗</a>`
+  : pill('private — not on the public site', 'amber')}<a class="sbtn ghost" href="checkin.html?event=${encodeURIComponent(e.id)}">Door ↗</a>`}</div>
     <h1>${isNew ? 'New night' : esc(e.name)}</h1>
     <form class="card" id="evForm" novalidate>
       <div class="grid2">

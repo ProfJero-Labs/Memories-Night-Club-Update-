@@ -3,3 +3,5 @@ node_modules/
 *.log
 .dev-data/
 test-results/
+service-account*.json
+*.json.json

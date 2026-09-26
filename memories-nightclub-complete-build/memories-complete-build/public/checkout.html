@@ -144,7 +144,7 @@ async function pay() {
     if (!(amt >= 1000) || amt > total()) { err.hidden = false; err.textContent = `Pay between GHS 10 and ${money(total())}.`; return $('#dep').focus(); }
   }
   btn.disabled = true; btn.textContent = 'Opening payment…';
-  const body = { eventId: B.event.id, ticketTypeId: T.id, quantity: qty, buyerName: S.name.trim(), buyerPhone: S.phone.trim(), buyerEmail: S.email || undefined, identityLine: S.line, callbackUrl: `${location.origin}/payment-return.html` };
+  const body = { eventId: B.event.id, ticketTypeId: T.id, quantity: qty, buyerName: S.name.trim(), buyerPhone: S.phone.trim(), buyerEmail: S.email || undefined, identityLine: S.line, callbackUrl: new URL('payment-return.html', location.href).href };
   try {
     const d = S.mode === 'bits'
       ? await api('/api/installments/start', { method: 'POST', body: { ...body, depositPesewas: payAmount() } })
