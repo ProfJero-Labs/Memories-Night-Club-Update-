@@ -72,16 +72,9 @@ async function load() {
         ${hero.soldOut ? '<span class="btn" aria-disabled="true">Sold out</span>' : `<a class="btn red" href="event.html?id=${encodeURIComponent(hero.id)}#tickets">Get tickets <span class="arrow">→</span></a>`}
         <a class="btn" href="tables.html?event=${encodeURIComponent(hero.id)}">Book a table</a>
       </div>
-      <ol class="teaser-lines" id="lines" hidden aria-label="Lines people are showing up with"></ol>
     </div></div>`;
   const rest = events.filter(e => e.id !== hero.id).slice(0, 3);
   if (rest.length) { $('#more').hidden = false; $('#moreRow').innerHTML = rest.map(poster).join(''); }
-  // The night's lines, as a taste of the ticket.
-  api(`/api/events/${encodeURIComponent(hero.id)}`).then(b => {
-    if (!b.lines?.length) return;
-    const ol = $('#lines'); ol.hidden = false;
-    ol.innerHTML = `<li style="border-bottom:0;padding-bottom:0"><span>WHAT SHOULD OTHERS KNOW?</span></li>` + b.lines.slice(0, 4).map((l, i) => `<li><span>${String(i + 1).padStart(2, '0')}</span>${esc(l)}</li>`).join('');
-  }).catch(() => {});
 }
 load();
 </script>
