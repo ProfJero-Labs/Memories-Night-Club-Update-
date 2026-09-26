@@ -39,7 +39,7 @@ async function buyTicket(page, { name, line, event = 'dev-afro', type }) {
 test('homepage "Get tickets" opens a real night and a guest can pay, get a ticket and a share image', async () => {
   const page = await phone();
   await page.goto(base, { waitUntil: 'networkidle' });
-  await page.getByRole('link', { name: /get tickets/i }).first().click();
+  await page.locator('#next').getByRole('link', { name: /get tickets/i }).click();
   await page.waitForURL(/event\.html\?id=/);
   assert.match(await page.textContent('h1'), /\w/);
   const token = await buyTicket(page, { name: 'Kwame Asante', line: 'SAMPLE LINE THREE.' });
@@ -125,17 +125,17 @@ test('tables: night → table → bottles → pay; the booking shows up for staf
   assert.equal(o.amountPesewas, 450000 + 180000);
 });
 
-test('Birthday opens the short form with Birthday chosen; admin accepts; the calendar shows the date held', async () => {
+test('Book an event: Corporate opens the short form with Corporate chosen; admin accepts; the calendar shows the date held', async () => {
   const page = await phone();
   await page.goto(base, { waitUntil: 'networkidle' });
-  await page.getByRole('link', { name: 'Birthday' }).click();
+  await page.getByRole('link', { name: 'Corporate' }).click();
   await page.getByRole('heading', { name: /when\?/i }).waitFor();
   const date = await page.locator('[data-date]:not([disabled])').nth(2).getAttribute('data-date');
   await page.locator(`[data-date="${date}"]`).click(); await page.fill('#guests', '30'); await page.click('#next');
   await page.fill('#name', 'Akosua Darko'); await page.fill('#phone', '0209998888'); await page.click('#send');
   await page.getByText(/got it/i).waitFor();
   const req = docs('private_event_requests').find(r => r.name === 'Akosua Darko');
-  assert.equal(req.eventType, 'Birthday'); assert.equal(req.status, 'NEW');
+  assert.equal(req.eventType, 'Corporate'); assert.equal(req.status, 'NEW');
 
   const admin = await phone(1280);
   await admin.goto(`${base}/login.html`); await admin.fill('#email', 'manager@dev'); await admin.fill('#pw', 'memories-dev'); await admin.click('#go');

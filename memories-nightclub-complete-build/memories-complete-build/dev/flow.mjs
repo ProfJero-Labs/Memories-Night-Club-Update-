@@ -15,7 +15,7 @@ const shot = async (label, full = false) => { await page.waitForTimeout(350); co
 const flows = {
   async ticket() {
     await page.goto(`${base}/`, { waitUntil: 'networkidle' });
-    await page.getByRole('link', { name: /get tickets/i }).first().click();
+    await page.locator('#next').getByRole('link', { name: /get tickets/i }).click();
     await page.waitForLoadState('networkidle'); await shot('event');
     await page.locator('#barGo:visible, #inlineGo:visible').first().click();
     await page.waitForLoadState('networkidle'); await shot('step1');
@@ -43,7 +43,7 @@ const flows = {
   },
   async private() {
     await page.goto(`${base}/`, { waitUntil: 'networkidle' });
-    await page.getByRole('link', { name: 'Birthday' }).click(); await page.waitForLoadState('networkidle'); await shot('when');
+    await page.getByRole('link', { name: 'Corporate' }).click(); await page.waitForLoadState('networkidle'); await shot('when');
     await page.locator('[data-date]:not([disabled])').nth(1).click(); await page.fill('#guests', '35'); await shot('when-picked');
     await page.click('#next'); await page.fill('#name', 'Akosua Darko'); await page.fill('#phone', '0209998888'); await page.fill('#ig', 'akosua'); await shot('contact');
     await page.click('#send'); await page.getByText(/got it/i).waitFor(); await shot('done');
