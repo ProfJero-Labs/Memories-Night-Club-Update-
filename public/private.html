@@ -29,7 +29,7 @@
   <div id="root" class="flow" style="padding-top:12px"></div>
 </main>
 <script type="module">
-import { chrome, api, esc, params, $, $$, remember, dow, dd, mon, longDate } from './app.js';
+import { chrome, normalizePhone, api, esc, params, $, $$, remember, dow, dd, mon, longDate } from './app.js';
 chrome();
 const TYPES = ['Corporate', 'Event organiser', 'Large group', 'Other'];
 const r = remember.get();
@@ -37,7 +37,7 @@ const S = { step: 1, type: TYPES.find(t => t.toLowerCase() === (params.get('type
 if (S.type) S.step = 2;
 let days = [];
 const root = $('#root');
-const phoneOk = p => /^0\d{9}$/.test(String(p).replace(/[\s\-().]/g, '').replace(/^\+?233/, '0'));
+const phoneOk = p => normalizePhone(p) !== null;
 const bar = () => `<div class="steps" aria-hidden="true">${[1, 2, 3].map(i => `<i class="${i <= S.step ? 'on' : ''}"></i>`).join('')}</div>`;
 const nav = (label, id = 'next') => `<div class="step-nav">${S.step > 1 ? '<button class="btn back" type="button" data-back aria-label="Back">←</button>' : ''}<button class="btn red" type="submit" id="${id}">${label} <span class="arrow">→</span></button></div>`;
 const err = msg => `<div class="notice" role="alert">${esc(msg)}</div>`;

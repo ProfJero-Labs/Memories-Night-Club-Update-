@@ -29,12 +29,12 @@
   <div id="root"><div class="loading" role="status">PULLING UP THE TABLES…</div></div>
 </main>
 <script type="module">
-import { chrome, api, esc, params, money, img, $, $$, errorState, shortDate, doors, remember } from './app.js';
+import { chrome, normalizePhone, api, esc, params, money, img, $, $$, errorState, shortDate, doors, remember } from './app.js';
 chrome('tables');
 const root = $('#root');
 const S = { eventId: params.get('event') || '', pkg: '', bottles: {}, step: 1, ...(({ name = '', phone = '', email = '' }) => ({ name, phone, email }))(remember.get()) };
 let events = [], B = null;
-const phoneOk = p => /^0\d{9}$/.test(String(p).replace(/[\s\-().]/g, '').replace(/^\+?233/, '0'));
+const phoneOk = p => normalizePhone(p) !== null;
 const pkg = () => B?.tablePackages.find(p => p.id === S.pkg);
 const bottleTotal = () => Object.entries(S.bottles).reduce((s, [id, q]) => s + q * (B.bottles.find(b => b.id === id)?.pricePesewas || 0), 0);
 const total = () => (pkg()?.pricePesewas || 0) + bottleTotal();

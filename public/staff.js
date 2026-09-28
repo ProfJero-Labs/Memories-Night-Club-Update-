@@ -47,5 +47,5 @@ export async function compressImage(file, max = 1600) {
   return blob;
 }
 export const ghs = p => (p === null || p === undefined || p === '' ? '' : (Number(p) / 100).toString());
-export const pes = v => Math.round(Number(String(v).replace(/[^\d.]/g, '')) * 100);
+export { pes } from './lib/shared.js'; // strict: throws on anything that isn't an amount
 export const when = d => (d ? new Date(d).toLocaleString('en-GB', { timeZone: 'UTC', day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : '');

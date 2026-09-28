@@ -189,7 +189,7 @@ function bindCatalog(reload) {
   $$('tr[data-kind] [data-save]').forEach(b => b.onclick = async () => {
     const tr = b.closest('tr'), kind = tr.dataset.kind, get = k => $(`[data-k="${k}"]`, tr);
     const body = { id: tr.dataset.row || undefined, eventId: tr.dataset.event, active: get('active').checked };
-    for (const [k] of CAT[kind].cols) { const v = get(k).value.trim(); if (k === 'price') body.pricePesewas = pes(v); else if (['admits', 'capacity'].includes(k)) body[k] = v === '' ? undefined : Number(v); else if (k === 'remaining') body.remaining = v === '' ? null : Number(v); else body[k] = v; }
+    for (const [k] of CAT[kind].cols) { const v = get(k).value.trim(); if (k === 'price') { try { body.pricePesewas = pes(v); } catch (err) { return flash($(`[data-msg="${kind}"]`), err.message, true); } } else if (['admits', 'capacity'].includes(k)) body[k] = v === '' ? undefined : Number(v); else if (k === 'remaining') body.remaining = v === '' ? null : Number(v); else body[k] = v; }
     if (!tr.dataset.row && !body.name) return;
     try { await sapi(`/api/admin/${kind}`, { method: 'POST', body }); reload({ at: `[data-msg="${kind}"]`, text: `Saved “${body.name || body.category || 'item'}”.` }); } catch (err) { flash($(`[data-msg="${kind}"]`), err.message, true); }
   });
