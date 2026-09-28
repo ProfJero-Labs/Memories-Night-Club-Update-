@@ -1,4 +1,5 @@
 import { esc } from './util.js';
+import { logError } from './log.js';
 
 // SMS goes through the club's existing SMS Worker. Payload shape matches what that worker already
 // accepts from the old admin (event/sms.js): {sender, recipients:[phone], message} → {success}.
@@ -18,9 +19,9 @@ export async function sendSms(env, phone, message) {
   try {
     const r = await smsRequest(env, '/send-sms', { method: 'POST', body: JSON.stringify({ sender: env.SMS_SENDER || 'MEMORIES', recipients: [phone], message }) });
     const d = await r.json().catch(() => ({}));
-    if (!r.ok || d.success === false) { console.error('SMS send failed', r.status, d.error || ''); return false; }
+    if (!r.ok || d.success === false) { logError('SMS send failed', String(r.status), d.error || ''); return false; }
     return true;
-  } catch (e) { console.error('SMS send threw', e); return false; }
+  } catch (e) { logError('SMS send threw', e); return false; }
 }
 
 // Email via Brevo, server-side only. Every interpolated value is escaped by the caller's template.
@@ -29,9 +30,9 @@ export async function sendEmail(env, to, subject, lines) {
   const html = `<div style="font-family:Arial,sans-serif;font-size:15px;line-height:1.5;color:#111">${lines.map(l => `<p>${esc(l)}</p>`).join('')}</div>`;
   try {
     const r = await fetch('https://api.brevo.com/v3/smtp/email', { method: 'POST', headers: { 'api-key': env.BREVO_API_KEY, 'Content-Type': 'application/json' }, body: JSON.stringify({ sender: { email: env.BREVO_SENDER_EMAIL, name: env.BREVO_SENDER_NAME || 'Memories Night Club' }, to: [{ email: to }], subject, html }) });
-    if (!r.ok) console.error('Brevo failed', r.status);
+    if (!r.ok) logError('Brevo failed', String(r.status));
     return r.ok;
-  } catch (e) { console.error('Brevo threw', e); return false; }
+  } catch (e) { logError('Brevo threw', e); return false; }
 }
 
 export const siteUrl = (env, path) => `${(env.PUBLIC_SITE_URL || '').replace(/\/$/, '')}${path}`;

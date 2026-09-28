@@ -1,6 +1,7 @@
 // Memories API — Cloudflare Worker. Firestore is the database; this Worker is the only thing that
 // writes business data. See docs/ARCHITECTURE.md for the route map and role matrix.
 import { cors, ok, fail, reply, throttled } from './lib/http.js';
+import { logError } from './lib/log.js';
 import { verifyStaff, requireRole, MONEY, DOOR } from './lib/auth.js';
 import { smsRequest } from './lib/notify.js';
 import { getSettings, publicEvents, eventBundle, calendar, createPrivateRequest, publicTicket } from './public.js';
@@ -29,7 +30,7 @@ async function paystackWebhook(req, env) {
 }
 
 // Work that must not delay (or be visible in) the response. Tests pass no ctx, so it's awaited there.
-const later = async (ctx, promise) => { const p = Promise.resolve(promise).catch(e => console.error('background task failed', e)); if (ctx?.waitUntil) ctx.waitUntil(p); else await p; };
+const later = async (ctx, promise) => { const p = Promise.resolve(promise).catch(e => logError('background task failed', e)); if (ctx?.waitUntil) ctx.waitUntil(p); else await p; };
 
 async function route(req, env, ctx) {
   const u = new URL(req.url), p = u.pathname, m = req.method;
@@ -139,10 +140,10 @@ export default {
   async fetch(req, env, ctx) {
     if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers: cors(req, env) });
     try { return await route(req, env, ctx); }
-    catch (e) { console.error(e); return fail(req, env, 'Something went wrong on our side. Try again.', 500); }
+    catch (e) { logError('request failed', `${req.method} ${new URL(req.url).pathname}`, e); return fail(req, env, 'Something went wrong on our side. Try again.', 500); }
   },
   async scheduled(event, env, ctx) {
-    ctx.waitUntil(forfeitStalePlans(env).catch(e => console.error('forfeitStalePlans failed', e)));
+    ctx.waitUntil(forfeitStalePlans(env).catch(e => logError('forfeitStalePlans failed', e)));
   },
 };
 
