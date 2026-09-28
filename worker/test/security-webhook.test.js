@@ -119,7 +119,7 @@ test('checkout, tables and pay-in-bits all use the Worker’s return page; no PU
   const post = (path, b) => worker.fetch(new Request(`https://worker.test${path}`, { method: 'POST', body: JSON.stringify({ ...b, callbackUrl: 'https://evil.example/x' }) }), env);
   const who = { buyerName: 'Ama', buyerPhone: '0241234567' };
   assert.equal((await post('/api/checkout/initiate', { eventId: 'event1', ticketTypeId: 'tt5', quantity: 1, ...who })).status, 200);
-  assert.equal((await post('/api/installments/start', { eventId: 'event1', ticketTypeId: 'tt5', quantity: 1, ...who, depositPesewas: 1000 })).status, 200);
+  assert.equal((await post('/api/installments/start', { eventId: 'event1', ticketTypeId: 'tt5', quantity: 1, ...who, depositPesewas: 1000, acknowledged: true })).status, 200);
   assert.equal((await post('/api/table-checkout/initiate', { eventId: 'event1', packageId: 'pk1', name: 'Ama', phone: '0241234567' })).status, 200);
   assert.equal(store.paystackInits.length, 3);
   for (const i of store.paystackInits) assert.equal(i.callback_url, `${env.PUBLIC_SITE_URL}/payment-return.html`);

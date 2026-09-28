@@ -92,3 +92,20 @@ test('rate limits: one phone and one order code are limited even across many IPs
   for (let i = 0; i < 14; i++) same.push((await call(env, 'POST', '/api/installments/find', { body: { phone: '0241234567' }, ip: '10.1.1.1' })).status);
   assert.ok(same.includes(429), 'per-IP limit kicks in');
 });
+
+test('pay in bits needs the ticked acknowledgement; the policy version and time are stored', async () => {
+  const { store, env } = createMockEnv();
+  store.seed('events', 'n1', { name: 'Fri', date: '2099-01-01T22:00:00Z', visibility: 'public', active: true });
+  store.seed('ticket_types', 't1', { eventId: 'n1', name: 'Regular', pricePesewas: 15000, admits: 1, remaining: 10, active: true });
+  const base = { eventId: 'n1', ticketTypeId: 't1', quantity: 1, buyerName: 'Ama', buyerPhone: '0241234567', depositPesewas: 1000 };
+  for (const ack of [undefined, false, 'true', 1]) {
+    const r = await call(env, 'POST', '/api/installments/start', { body: { ...base, acknowledged: ack } });
+    assert.equal(r.status, 400, `acknowledged=${ack}`);
+  }
+  assert.equal(store.list('installment_plans').length, 0);
+  const ok = await call(env, 'POST', '/api/installments/start', { body: { ...base, acknowledged: true } });
+  assert.equal(ok.status, 200);
+  const plan = store.list('installment_plans')[0].fields;
+  assert.equal(plan.policyVersion, '2026-09-forfeit-at-start');
+  assert.ok(plan.acknowledgedAt);
+});

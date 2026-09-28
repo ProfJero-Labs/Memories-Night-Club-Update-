@@ -1,5 +1,5 @@
 // checkout.html: page script (kept out of the HTML so the CSP can forbid inline scripts).
-import { chrome, normalizePhone, api, esc, params, money, $, $$, errorState, remember, shortDate, toast, forgetButton, bindForget } from '../app.js';
+import { chrome, normalizePhone, api, esc, params, money, $, $$, errorState, remember, shortDate, toast, forgetButton, bindForget, BITS_ACK_TEXT } from '../app.js';
 import { ticketHTML } from '../ticket-art.js';
 chrome();
 
@@ -54,7 +54,8 @@ function shell() {
           <button type="button" role="radio" data-mode="full" aria-checked="${S.mode === 'full'}"><b>Pay in full · ${money(total())}</b><span>Ticket straight to your phone.${B.raffle?.status === 'open' ? ' You’re in the draw if a spot is left.' : ''}</span></button>
           <button type="button" role="radio" data-mode="bits" aria-checked="${S.mode === 'bits'}"><b>Pay in bits</b><span>Start with GHS 10 or more. Top up any time before the night. Ticket arrives when it’s fully paid.</span></button>
         </div>
-        <div class="field" id="fDep" ${S.mode === 'bits' ? '' : 'hidden'}><label for="dep">Pay now</label><div class="money-in"><input id="dep" type="number" inputmode="decimal" min="10" max="${total() / 100}" step="1" value="${esc(S.deposit)}" placeholder="10"></div><span class="hint">Between GHS 10 and ${money(total())}. Unpaid balances are forfeited once the night starts.</span></div>
+        <div class="field" id="fDep" ${S.mode === 'bits' ? '' : 'hidden'}><label for="dep">Pay now</label><div class="money-in"><input id="dep" type="number" inputmode="decimal" min="10" max="${total() / 100}" step="1" value="${esc(S.deposit)}" placeholder="10"></div><span class="hint">Between GHS 10 and ${money(total())}.</span></div>
+        <label class="check ack" id="fAck" ${S.mode === 'bits' ? '' : 'hidden'}><input type="checkbox" id="ack" ${S.ack ? 'checked' : ''}> <span>${esc(BITS_ACK_TEXT)}</span></label>
         <div class="summary">
           <div class="r"><span>${qty} × ${esc(T.name)}</span><span>${money(total())}</span></div>
           <div class="r muted"><span>For</span><span id="forWho"></span></div>
@@ -81,7 +82,7 @@ function go(n) {
 
 function payAmount() { return S.mode === 'bits' ? Math.round(Number(S.deposit || 0) * 100) : total(); }
 function syncPay() {
-  $('#fDep').hidden = S.mode !== 'bits';
+  $('#fDep').hidden = S.mode !== 'bits'; $('#fAck').hidden = S.mode !== 'bits';
   $$('[data-mode]').forEach(b => b.setAttribute('aria-checked', String(b.dataset.mode === S.mode)));
   $('#payLabel').textContent = S.mode === 'bits' ? 'Paying now' : 'Total';
   $('#payAmt').textContent = money(payAmount());
@@ -129,12 +130,13 @@ async function pay() {
   if (S.mode === 'bits') {
     const amt = payAmount();
     if (!(amt >= 1000) || amt > total()) { err.hidden = false; err.textContent = `Pay between GHS 10 and ${money(total())}.`; return $('#dep').focus(); }
+    if (!$('#ack').checked) { err.hidden = false; err.textContent = 'Tick the box to confirm how pay in bits works.'; return $('#ack').focus(); }
   }
   btn.disabled = true; btn.textContent = 'Opening payment…';
   const body = { eventId: B.event.id, ticketTypeId: T.id, quantity: qty, buyerName: S.name.trim(), buyerPhone: S.phone.trim(), buyerEmail: S.email || undefined, identityLine: S.line.trim() };
   try {
     const d = S.mode === 'bits'
-      ? await api('/api/installments/start', { method: 'POST', body: { ...body, depositPesewas: payAmount() } })
+      ? await api('/api/installments/start', { method: 'POST', body: { ...body, depositPesewas: payAmount(), acknowledged: true } })
       : await api('/api/checkout/initiate', { method: 'POST', body });
     location.href = d.authorizationUrl;
   } catch (e) {

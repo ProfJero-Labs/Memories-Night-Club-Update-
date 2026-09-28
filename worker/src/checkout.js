@@ -2,7 +2,7 @@
 // is computed here from Firestore, and every success is confirmed with Paystack's verify API using
 // the secret key before anything is issued. Issuance is transactional and idempotent per reference.
 import { getDoc, setDoc, createDoc, queryWhere, batchGet, commitTx, updateWrite, foundFields, withTransaction } from './lib/firestore.js';
-import { now, id, paymentRef, ticketToken, displayCode, orderCode, normalizeOrderCode, clean, normalizePhone, validEmail, firstName, money } from './lib/util.js';
+import { BITS_POLICY_VERSION, now, id, paymentRef, ticketToken, displayCode, orderCode, normalizeOrderCode, clean, normalizePhone, validEmail, firstName, money } from './lib/util.js';
 import { sendSms, sendEmail, siteUrl } from './lib/notify.js';
 import { getSettings, resolveLines, isOver } from './public.js';
 import { openRaffleForEvent, raffleSpotWrites } from './raffle.js';
@@ -197,6 +197,8 @@ export async function fulfillTable(env, reference) {
 // charge recorded against the plan by its reference (so a reference can only count once). No stock
 // is held and no ticket, share image or raffle spot exists until the balance reaches zero.
 export async function startInstallment(env, b) {
+  // The guest must tick the pay-in-bits rule; the version and time are kept with the plan.
+  if (b?.acknowledged !== true) return { error: 'Tick the box to confirm how pay in bits works.' };
   const c = await ticketContext(env, b); if (c.error) return c;
   const deposit = Number(b.depositPesewas);
   if (!Number.isInteger(deposit) || deposit < MIN_TOPUP_PESEWAS) return { error: 'The smallest payment is GHS 10.' };
@@ -209,7 +211,7 @@ export async function startInstallment(env, b) {
         eventId: c.ev.id, eventName: c.ev.fields.name || '', eventDate: c.ev.fields.date || '', ticketTypeId: c.tt.id, ticketTypeName: c.tt.fields.name || 'Ticket',
         admits: Number(c.tt.fields.admits || 1), quantity: c.qty, totalPesewas: c.totalPesewas, paidPesewas: 0,
         buyerName: c.buyerName, firstName: firstName(c.buyerName), buyerPhone: c.buyerPhone, buyerEmail: c.buyerEmail, identityLine: c.identityLine,
-        status: 'active', payments: [], createdAt: now(), updatedAt: now(),
+        status: 'active', payments: [], createdAt: now(), updatedAt: now(), policyVersion: BITS_POLICY_VERSION, acknowledgedAt: now(),
       });
       planId = code;
     } catch (e) { if (!String(e.message).includes('ALREADY_EXISTS')) throw e; }

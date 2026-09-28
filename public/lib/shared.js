@@ -43,3 +43,9 @@ export function nightKey(d = new Date()) {
   return Number(p.hour) < NIGHT_ROLLOVER_HOUR ? accraDayKey(t.getTime() - 864e5) : `${p.year}-${p.month}-${p.day}`;
 }
 export const formatAccra = (d, opts = {}) => { const t = new Date(d); return isNaN(t) ? '' : t.toLocaleString('en-GB', { timeZone: TZ, ...opts }); };
+
+// ── Pay in bits: the rule the guest ticks before starting (owner decision #1, OPEN_DECISIONS) ──
+// Changing the rule means changing this text AND the version; the Worker stores the version and
+// the time with each plan, so it's always known which wording a guest agreed to.
+export const BITS_POLICY_VERSION = '2026-09-forfeit-at-start';
+export const BITS_ACK_TEXT = 'I understand my ticket is only issued once the full price is paid, and that if the balance isn’t paid by the time the night starts, the order is forfeited and what I’ve paid is not refunded.';

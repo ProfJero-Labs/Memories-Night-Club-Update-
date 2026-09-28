@@ -4,7 +4,7 @@ export const params = new URLSearchParams(location.search);
 export const $ = (s, el = document) => el.querySelector(s);
 export const $$ = (s, el = document) => [...el.querySelectorAll(s)];
 import { esc } from './lib/shared.js';
-export { esc, normalizePhone, pes, formatAccra, accraDayKey, nightKey } from './lib/shared.js';
+export { esc, normalizePhone, pes, formatAccra, accraDayKey, nightKey, BITS_ACK_TEXT } from './lib/shared.js';
 export const money = p => `GHS ${(Number(p || 0) / 100).toLocaleString('en-GH', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
 
 // ── Dates: Ghana is UTC+0, so every date is formatted in UTC ──

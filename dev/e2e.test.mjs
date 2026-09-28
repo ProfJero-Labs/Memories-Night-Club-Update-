@@ -21,6 +21,8 @@ async function phone(width = 390) {
   return page;
 }
 const docs = col => store.list(col).map(d => ({ id: d.id, ...d.fields }));
+// Wait for a server-side effect instead of a fixed sleep (fails with a clear message after 10s).
+async function until(check, what) { for (let i = 0; i < 100; i++) { if (await check()) return; await new Promise(r => setTimeout(r, 100)); } throw new Error(`timed out waiting for ${what}`); }
 async function buyTicket(page, { name, line, event = 'dev-afro', type }) {
   await page.goto(`${base}/event.html?id=${event}`, { waitUntil: 'networkidle' });
   if (type) await page.click(`[data-type="${type}"]`);
@@ -113,7 +115,12 @@ test('pay in bits: partial payment gets no ticket and no draw spot; the final pa
   await page.goto(`${base}/checkout.html?event=dev-afro&type=dev-afro-reg&qty=1`, { waitUntil: 'networkidle' });
   await page.getByRole('radio', { name: 'SAMPLE LINE FOUR.' }).click(); await page.click('#toWho');
   await page.fill('#name', 'Yaw Boateng'); await page.fill('#phone', '0241112222'); await page.click('#s1 button[type=submit]');
-  await page.getByRole('radio', { name: /pay in bits/i }).click(); await page.fill('#dep', '30'); await page.click('#pay');
+  assert.equal(await page.isVisible('#ack'), false, 'no tick box for paying in full');
+  await page.getByRole('radio', { name: /pay in bits/i }).click(); await page.fill('#dep', '30');
+  assert.equal(await page.isChecked('#ack'), false, 'unticked by default');
+  await page.click('#pay'); await page.getByText(/tick the box/i).waitFor();
+  assert.ok(!/paystack/.test(page.url()), 'no payment without the tick');
+  await page.check('#ack'); await page.click('#pay');
   await page.waitForURL(/dev\/paystack/); await page.getByRole('button', { name: 'Pay' }).click();
   await page.getByText(/to go/i).waitFor({ timeout: 20000 });
   const plan = docs('installment_plans').find(p => p.buyerName === 'Yaw Boateng');
@@ -183,8 +190,7 @@ test('Book an event: Corporate opens the short form with Corporate chosen; admin
   await admin.locator(`[data-open="${req.id}"]`).click();
   admin.once('dialog', d => d.accept());
   await admin.locator(`[data-set="ACCEPTED"][data-id="${req.id}"]`).click();
-  await admin.waitForTimeout(600);
-  assert.equal(store.get('private_event_requests', req.id).fields.status, 'ACCEPTED');
+  await until(() => store.get('private_event_requests', req.id).fields.status === 'ACCEPTED', 'the request to be accepted');
   await page.goto(`${base}/nights.html`, { waitUntil: 'networkidle' });
   const row = page.locator('.cal li').filter({ has: page.locator('.held') });
   assert.ok(await row.count() >= 1, 'a held date is on the calendar');
@@ -198,7 +204,9 @@ test('admin changes a flyer and a price; the public page shows it with no deploy
   await admin.getByText(/uploaded/i).waitFor();
   await admin.click('#save'); await admin.getByText(/saved/i).waitFor();
   const row = admin.locator('tr[data-row="dev-piano-reg"]');
-  await row.locator('[data-k=price]').fill('125'); await row.locator('[data-save]').click(); await admin.waitForTimeout(700);
+  await row.locator('[data-k=price]').fill('125'); await row.locator('[data-save]').click();
+  await until(() => store.get('ticket_types', 'dev-piano-reg').fields.pricePesewas === 12500, 'the new price to be saved');
+  await until(() => /\/dev\/uploads\//.test(store.get('events', 'dev-piano').fields.artwork || ''), 'the flyer to be saved');
   const guest = await phone();
   await guest.goto(`${base}/event.html?id=dev-piano`, { waitUntil: 'networkidle' });
   assert.match(await guest.locator('.event-art img').getAttribute('src'), /\/dev\/uploads\//);
@@ -218,7 +226,8 @@ test('control room: an unsaved flyer is not lost when a ticket row is saved; a p
   const dialog = new Promise(res => admin.once('dialog', d => { res(d.message()); d.accept(); }));
   await row.locator('[data-save]').click();
   assert.match(await dialog, /aren’t saved yet/);
-  await admin.getByText(/Saved “/).waitFor();
+  await until(() => store.get('ticket_types', 'dev-afro-reg').fields.pricePesewas === 9900 && /\/dev\/uploads\//.test(store.get('events', 'dev-afro').fields.artwork || ''), 'the price and the flyer to be saved');
+  await admin.locator('tr[data-row="dev-afro-reg"]:not(.dirty)').waitFor();
   const guest = await phone();
   await guest.goto(`${base}/event.html?id=dev-afro`, { waitUntil: 'networkidle' });
   assert.match(await guest.locator('.event-art img').getAttribute('src'), /\/dev\/uploads\//, 'flyer kept and published');
@@ -226,8 +235,10 @@ test('control room: an unsaved flyer is not lost when a ticket row is saved; a p
 
   await admin.uncheck('#evPublic'); await admin.click('#save');
   await admin.getByText(/NOT on the public site/).waitFor();
+  await until(() => store.get('events', 'dev-afro').fields.visibility === 'private', 'the night to be saved private');
   await admin.check('#evPublic'); await admin.click('#save');
   await admin.getByText(/live on the public site/i).waitFor();
+  await until(() => store.get('events', 'dev-afro').fields.visibility === 'public', 'the night to be public again');
 });
 
 test('control room: refunds owed are listed and can be marked refunded with a note', async () => {

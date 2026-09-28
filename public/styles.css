@@ -432,3 +432,7 @@ h1, h2, h3 { margin: 0; }
 }
 /* Nothing on sale: no flyer, so the hero is one column at every width. */
 @media (min-width: 860px) { .hero:has(> .next-art[hidden]) { grid-template-columns: minmax(0, 1fr); grid-template-areas: "brand" "copy"; min-height: 0; } }
+/* Pay-in-bits acknowledgement: a real checkbox with a 44px target and the rule in full. */
+.ack { display: flex; gap: 12px; align-items: flex-start; font: 400 15px/1.45 var(--sans); cursor: pointer; padding: 10px 0; }
+.ack[hidden] { display: none; }
+.ack input { flex: none; width: 24px; height: 24px; margin: 1px 0 0; accent-color: var(--crimson); }
