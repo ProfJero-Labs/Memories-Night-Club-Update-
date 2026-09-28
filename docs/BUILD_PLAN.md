@@ -8,7 +8,7 @@ A guest opens a link from WhatsApp or Instagram, sees the night, feels like some
 
 The data layer stays Firebase: Firestore, Auth, and Storage. All server-side logic, checkout, the Paystack webhook, raffle, door check-in, admin actions, SMS, runs on a Cloudflare Worker, per the engineer's own stack, not Firebase Cloud Functions. The Worker talks to Firestore over its REST API with a service account rather than the Admin SDK, since the SDK doesn't run in the Workers runtime. The browser never decides that a payment succeeded, and it never decides who won.
 
-On the look and feel: this is a real visual upgrade, not a coat of paint. The ticket is already the most distinctive thing in the current system, stamps, torn edges, condensed type, that's the design DNA the rest of the public site should extend, not a generic dark nightclub template. Live code: github.com/ProfJero-Labs/Memories-Night-Club-Update-, branch ProfJero-patch-1, path memories-nightclub-complete-build/memories-complete-build. Do not start a phase until the one before it is done. Do not open the Supabase repository, it is not part of this work.
+On the look and feel: this is a real visual upgrade, not a coat of paint. The ticket is already the most distinctive thing in the current system, stamps, torn edges, condensed type, that's the design DNA the rest of the public site should extend, not a generic dark nightclub template. Live code: github.com/ProfJero-Labs/Memories-Night-Club-Update-, branch ProfJero-patch-1, path the repo root. Do not start a phase until the one before it is done. Do not open the Supabase repository, it is not part of this work.
 
 Phase 1 — Security, before any new feature
 
