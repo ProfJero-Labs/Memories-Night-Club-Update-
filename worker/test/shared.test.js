@@ -48,6 +48,7 @@ test('esc: escapes every HTML-significant character', () => {
 test('one escape function, one phone rule, one money parser in the codebase', () => {
   const files = [
     ...readdirSync(new URL('../../public', import.meta.url)).filter(f => /\.(js|html)$/.test(f)).map(f => `../../public/${f}`),
+    ...readdirSync(new URL('../../public/pages', import.meta.url)).map(f => `../../public/pages/${f}`),
     ...readdirSync(new URL('../src', import.meta.url)).filter(f => f.endsWith('.js')).map(f => `../src/${f}`),
     ...readdirSync(new URL('../src/lib', import.meta.url)).filter(f => f.endsWith('.js')).map(f => `../src/lib/${f}`),
   ];

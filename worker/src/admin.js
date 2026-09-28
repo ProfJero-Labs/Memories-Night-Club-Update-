@@ -11,6 +11,17 @@ import { balanceMessage } from './checkout.js';
 const FORBIDDEN = { error: 'Forbidden.', status: 403 };
 const audit = (env, user, action, data) => setDoc(env, 'audit_logs', id(), { action, actorUid: uidOf(user), ...data, timestamp: now() });
 const httpsUrl = (s, env) => { const v = clean(s, 500); return !v || (env?.DEV_ALLOW_HTTP_ASSETS ? /^https?:\/\// : /^https:\/\//).test(v) ? v : null; };
+// Flyers and hero images must be files uploaded to this project's own Storage (event-art/), so a
+// night can't be pointed at an image on someone else's server. An image a night already has is
+// kept as it is, so older data still saves. Dev (DEV_ALLOW_HTTP_ASSETS) accepts the local uploads.
+const ownImage = (s, env, previous = '') => {
+  const v = clean(s, 1000);
+  if (!v || v === previous) return v;
+  if (env?.DEV_ALLOW_HTTP_ASSETS) return /^https?:\/\//.test(v) ? v : null;
+  const project = env?.FIREBASE_PROJECT_ID;
+  const buckets = [env?.FIREBASE_STORAGE_BUCKET, `${project}.firebasestorage.app`, `${project}.appspot.com`].filter(Boolean);
+  return buckets.some(bk => v.startsWith(`https://firebasestorage.googleapis.com/v0/b/${bk}/o/event-art%2F`)) ? v : null;
+};
 const intOrNull = v => (v === null || v === '' || v === undefined ? null : Number(v));
 
 // The table tiers the BUILD_PLAN seeds every new night with. All editable per night.
@@ -67,14 +78,14 @@ export async function upsertEvent(env, b, user) {
   const date = b?.date && !isNaN(new Date(b.date)) ? new Date(b.date).toISOString() : null;
   if (!name) return { error: 'Give the night a name.' };
   if (!date) return { error: 'Set the date and start time.' };
-  const artwork = httpsUrl(b.artwork, env), heroImage = httpsUrl(b.heroImage, env);
-  if (artwork === null || heroImage === null) return { error: 'Images must be uploaded (https links only).' };
   const lines = (Array.isArray(b.ticketLines) ? b.ticketLines : []).map(l => clean(l, 48)).filter(Boolean);
   if (lines.length > 12) return { error: 'Keep it to 12 lines or fewer.' };
   if (new Set(lines.map(l => l.toUpperCase())).size !== lines.length) return { error: 'Two of the lines are the same.' };
   const eventId = b.id ? String(b.id) : id();
   const existing = b.id ? await getDoc(env, 'events', eventId) : null;
   if (b.id && !existing) return { error: 'Night not found.', status: 404 };
+  const artwork = ownImage(b.artwork, env, existing?.fields?.artwork), heroImage = ownImage(b.heroImage, env, existing?.fields?.heroImage);
+  if (artwork === null || heroImage === null) return { error: 'Upload images here in the control room (links to other sites aren’t allowed).' };
   const data = {
     name, date, doors: clean(b.doors, 40), venue: clean(b.venue, 120), description: clean(b.description, 240),
     artwork, heroImage, ticketLines: lines, visibility: b.visibility === 'public' ? 'public' : 'private',
@@ -237,7 +248,8 @@ export async function updateSettings(env, b, user) {
   const cur = await getSettings(env);
   const data = {};
   for (const [k, max] of Object.entries(SETTINGS_FIELDS)) if (b?.[k] !== undefined) data[k] = clean(b[k], max);
-  for (const k of ['mapUrl', 'heroImage']) if (data[k] && httpsUrl(data[k], env) === null) return { error: 'Links must start with https://' };
+  if (data.mapUrl && httpsUrl(data.mapUrl, env) === null) return { error: 'Links must start with https://' };
+  if (data.heroImage !== undefined && ownImage(data.heroImage, env, cur.heroImage) === null) return { error: 'Upload the hero image here in the control room.' };
   if (b?.defaultLines !== undefined) {
     const lines = (Array.isArray(b.defaultLines) ? b.defaultLines : []).map(l => clean(l, 48)).filter(Boolean);
     if (lines.length > 12) return { error: 'Keep it to 12 lines or fewer.' };

@@ -15,61 +15,6 @@
 </head>
 <body>
 <main class="wrap"><div id="root" class="state-msg"><h1 class="display lg">Checking your payment…</h1><div class="loading" role="status" style="padding:0">Don’t close this page</div></div></main>
-<script type="module">
-import { chrome, api, esc, params, money, $, MSG } from './app.js';
-chrome();
-const root = $('#root');
-const ref = params.get('reference') || params.get('trxref');
-
-const tryAgain = s => `<div class="state-msg"><span class="stamp" style="color:var(--crimson)">Not paid</span>
-  <h1 class="display lg">Payment didn’t go through.</h1><p>Your night is still here. Nothing was taken${s?.error && !/not successful/i.test(s.error) ? ` (${esc(s.error)})` : ''}.</p>
-  <div class="row-actions" style="width:100%;max-width:520px">${s?.eventId ? `<a class="btn red" href="event.html?id=${encodeURIComponent(s.eventId)}#tickets">Try again</a>` : '<a class="btn red" href="nights.html">Try again</a>'}</div></div>`;
-
-function done(s) {
-  if (s.kind === 'table') {
-    root.outerHTML = `<div class="state-msg"><span class="stamp">Booked</span><h1 class="display lg">Your table is set.</h1>
-      <div class="summary" style="width:100%;max-width:520px">
-        <div class="r"><b>${esc(s.packageName)}</b><span>${esc(s.eventName)}</span></div>
-        ${(s.bottles || []).map(b => `<div class="r muted"><span>${b.quantity} × ${esc(b.name)}</span><span>${money(b.quantity * b.unitPricePesewas)}</span></div>`).join('')}
-        <div class="r t"><span>Paid</span><span>${money(s.amountPesewas)}</span></div></div>
-      <p>Confirmation is on its way by text. Reference <b>${esc(ref)}</b>.</p><a class="btn" href="index.html">Back to Memories</a></div>`;
-    return;
-  }
-  if (s.kind === 'installment_topup' && !s.planComplete) {
-    const pct = Math.round(100 * s.paidPesewas / s.totalPesewas);
-    root.outerHTML = `<div class="state-msg"><span class="stamp">${money(s.amountPesewas)} in</span><h1 class="display lg">${money(s.totalPesewas - s.paidPesewas)} to go.</h1>
-      <div style="width:100%;max-width:520px;display:grid;gap:10px"><div class="draw-meter" style="height:12px"><i style="width:${pct}%;background:var(--crimson)"></i></div>
-      <div class="for" style="display:flex;justify-content:space-between"><span class="muted">${money(s.paidPesewas)} of ${money(s.totalPesewas)} paid</span><span class="muted">${esc(s.eventName)}</span></div></div>
-      <p>Your order code is <b style="font-size:20px;color:var(--paper)">${esc(s.planId)}</b>. We’ve texted it to you with a link to pay the rest. Your ticket comes when it’s fully paid.</p>
-      <div class="row-actions" style="width:100%;max-width:520px"><a class="btn red" href="installment.html?code=${encodeURIComponent(s.planId)}">Pay more now</a><a class="btn" href="index.html">Later</a></div></div>`;
-    return;
-  }
-  const tickets = s.tickets || [];
-  if (tickets.length === 1) { location.replace(`ticket.html?token=${encodeURIComponent(tickets[0].token)}&new=1`); return; }
-  root.outerHTML = `<div class="state-msg"><span class="stamp">Paid</span><h1 class="display lg">You’re in. All ${tickets.length} of you.</h1>
-    <p>Each ticket has its own QR. Open yours, then send the others to your people.</p>
-    <div class="info-rows" style="width:100%;max-width:520px">${tickets.map((t, i) => `<a href="ticket.html?token=${encodeURIComponent(t.token)}&new=1"><span class="k">Ticket ${i + 1}</span><span>Open ↗</span></a>`).join('')}</div></div>`;
-}
-
-async function run() {
-  if (!ref) { root.outerHTML = tryAgain(null); return; }
-  let s;
-  for (let i = 0; i < 20; i++) {
-    try {
-      const v = await api('/api/checkout/verify', { method: 'POST', body: { reference: ref } });
-      if (v.status === 'issued' || v.status === 'failed') { s = await api(`/api/checkout/status?reference=${encodeURIComponent(ref)}`); break; }
-    } catch (e) { if (e.message === MSG.busy) await new Promise(r => setTimeout(r, 4000)); }
-    await new Promise(r => setTimeout(r, Math.min(1500 + i * 500, 5000)));
-  }
-  if (!s) {
-    root.innerHTML = `<h1 class="display lg">Still confirming.</h1><p>MoMo can take a minute. You won’t be charged twice. We’ll text you when it lands, or check again now.</p><button class="btn red" id="again">Check again</button>`;
-    $('#again').onclick = () => { root.innerHTML = '<h1 class="display lg">Checking your payment…</h1><div class="loading" style="padding:0">One moment</div>'; run(); };
-    return;
-  }
-  if (s.status === 'failed') { root.outerHTML = tryAgain(s); return; }
-  done(s);
-}
-run();
-</script>
+<script type="module" src="pages/payment-return.js"></script>
 </body>
 </html>
