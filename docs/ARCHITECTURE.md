@@ -25,10 +25,12 @@ Rules that hold everywhere:
 | `worker/src/public.js` | Events, calendar, settings, private-night requests, public ticket view |
 | `worker/src/checkout.js` | Tickets, tables, pay in bits (installments), Paystack verify and fulfilment |
 | `worker/src/raffle.js` | Draw spots, admin raffle edits, the draw |
-| `worker/src/door.js` | Check-in and public verify |
+| `worker/src/door.js` | Check-in (needs a chosen night; by token or, from search, by display code), headcount summary, door search, public verify |
 | `worker/src/admin.js` | Control room: nights, catalog, comps, orders, requests, installments, settings, staff, organiser view |
-| `worker/src/lib/*` | Firestore REST + transactions, auth, HTTP/CORS/rate limits, SMS/email, helpers |
-| `public/app.js` | Shared public-page code: API client, header/footer from settings, dates, states |
+| `worker/src/lib/*` | Firestore REST + transactions, auth, HTTP/CORS/rate limits (per IP or per phone/code), SMS/email, redacting logger (`log.js`), helpers |
+| `public/lib/shared.js` | One copy of `esc`, `normalizePhone`, `pes`, and Africa/Accra dates (`accraDayKey`, `nightKey`), imported by pages and bundled into the Worker |
+| `public/pages/*.js` | Each page's script (no inline scripts, so the CSP can forbid them) |
+| `public/app.js` | Shared public-page code: API client, header/footer from settings, dates, states, remembered buyer details (clearable) |
 | `public/ticket-art.js` | The ticket layout (live preview and real ticket) and the 1080×1080 share image |
 | `public/staff.js`, `admin.js`, `admin.css` | Staff pages |
 | `firebase/*.rules` | Firestore and Storage rules |
@@ -56,8 +58,8 @@ Roles are Firebase Auth custom claims (`role`, plus `admin: true` for super admi
 | `bottles` | admin | `eventId: 'all'` for the bar menu on every night |
 | `pending_checkouts/{reference}` | Worker | One per Paystack charge; `status: pending → issued/failed` makes fulfilment idempotent |
 | `orders` | Worker | `kind: ticket / table / comp`, amounts, buyer contact, `inDraw` |
-| `tickets/{token}` | Worker | The document id is the bearer token (≈244 random bits) the QR's verify URL carries |
-| `installment_plans/{MEM-XX0000}` | Worker | Pay in bits: total, paid, payments[] keyed by reference, chosen line, status `active / completed / forfeited / sold_out` |
+| `tickets/{token}` | Worker | The document id is the bearer token (≈244 random bits) the QR's verify URL carries. `phoneLast4` (never the full number) for door search |
+| `installment_plans/{MEM-XXXXX-XXXXX}` | Worker | Pay in bits: total, paid, payments[] keyed by reference, chosen line, status `active / completed / forfeited / sold_out`. Codes: 10 Crockford Base32 chars (older `MEM-AB1234` codes still work). The public lookup never returns ticket ids; paid tickets go by SMS (`/api/installments/find`, `/resend-link`). |
 | `raffles/evt_{eventId}` | admin + Worker | `prize, cap (default 20), spotsTaken, status open/closed/drawn`, winner *display* name/code only |
 | `raffle_entries` | Worker | One per spot: `ticketId, orderId, status eligible/won` |
 | `checkins` | Worker | One per admitted ticket |

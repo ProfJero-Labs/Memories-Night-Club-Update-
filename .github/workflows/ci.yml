@@ -45,3 +45,21 @@ jobs:
       - uses: trufflesecurity/trufflehog@main
         with:
           extra_args: --results=verified,unknown
+
+  rules:
+    name: Firestore + Storage rules (emulators)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: firebase/test/package-lock.json
+      - run: npm ci --prefix firebase/test
+      - run: npm run test:rules
