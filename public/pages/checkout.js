@@ -33,7 +33,7 @@ function shell() {
       <div id="s2" class="step" hidden style="margin-top:22px">
         <h1 class="display">What should others know?</h1>
         <p class="muted" style="margin:-8px 0 0">Pick your line. It goes big on your ticket for everyone to see.</p>
-        ${hasLines() ? `<ol class="lines" role="radiogroup" aria-label="Your line">${B.lines.map((l, i) => `<li><button type="button" class="line-btn" role="radio" aria-checked="${S.line === l}" data-line="${esc(l)}"><span class="no">${String(i + 1).padStart(2, '0')}</span><span class="tx">${esc(l)}</span><span class="mk" aria-hidden="true">✓</span></button></li>`).join('')}</ol>` : ''}
+        ${hasLines() ? `<div role="radiogroup" aria-label="Your line"><ol class="lines">${B.lines.map((l, i) => `<li><button type="button" class="line-btn" role="radio" aria-checked="${S.line === l}" data-line="${esc(l)}"><span class="no">${String(i + 1).padStart(2, '0')}</span><span class="tx">${esc(l)}</span><span class="mk" aria-hidden="true">✓</span></button></li>`).join('')}</ol></div>` : ''}
         <div class="field"><label for="ownLine">${hasLines() ? 'Or write your own' : 'Write your line (optional)'}</label><input id="ownLine" maxlength="40" autocomplete="off" autocapitalize="characters" placeholder="e.g. BIRTHDAY GIRL" value="${esc(B.lines.includes(S.line) ? '' : S.line)}"><span class="hint">Up to 40 characters.</span></div>
         <div class="step-nav"><button class="btn red" type="button" id="toWho"></button></div>
       </div>

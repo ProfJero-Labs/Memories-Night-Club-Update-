@@ -116,6 +116,21 @@ test('event page: title, description, canonical, Open Graph and schema.org Event
   assert.match(raw, /<meta property="og:image" content="https:\/\/memoriesnightclub\.com\/assets\/og\.png">/);
 });
 
+test('accessibility: axe finds no WCAG 2 A/AA or best-practice violations on the public pages (phone size)', async () => {
+  const { readFileSync } = await import('node:fs');
+  const axe = readFileSync(new URL('../worker/node_modules/axe-core/axe.min.js', import.meta.url), 'utf8');
+  const found = [];
+  for (const u of ['index.html', 'nights.html', 'event.html?id=dev-afro', 'checkout.html?event=dev-afro&type=dev-afro-reg&qty=1', 'tables.html?event=dev-afro', 'private.html', 'installment.html', 'visit.html', 'login.html']) {
+    const page = await phone();
+    await page.goto(`${base}/${u}`, { waitUntil: 'networkidle' });
+    await page.evaluate(axe);
+    const v = await page.evaluate(async () => (await window.axe.run(document, { runOnly: ['wcag2a', 'wcag2aa', 'best-practice'] })).violations.map(x => `${x.id} (${x.nodes.map(n => n.target.join(' ')).join(', ')})`));
+    for (const x of v) found.push(`${u}: ${x}`);
+    await page.close();
+  }
+  assert.deepEqual(found, []);
+});
+
 test('two guests picking the same line get two different share images', async () => {
   const hashes = [];
   for (const name of ['Ama Owusu', 'Kofi Mensah']) {

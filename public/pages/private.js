@@ -15,7 +15,7 @@ const err = msg => `<div class="notice" role="alert">${esc(msg)}</div>`;
 function render(problem = '') {
   const tomorrow = new Date(Date.now() + 864e5).toISOString().slice(0, 10);
   if (S.step === 1) root.innerHTML = `${bar()}<form class="step" novalidate><h2 class="display">What are you planning?</h2>
-    <ol class="lines" role="radiogroup" aria-label="Type of event">${TYPES.map((t, i) => `<li><button type="button" class="line-btn" role="radio" aria-checked="${S.type === t}" data-type="${esc(t)}"><span class="no">${String(i + 1).padStart(2, '0')}</span><span class="tx">${esc(t)}</span><span class="mk" aria-hidden="true">✓</span></button></li>`).join('')}</ol>
+    <div role="radiogroup" aria-label="Type of event"><ol class="lines">${TYPES.map((t, i) => `<li><button type="button" class="line-btn" role="radio" aria-checked="${S.type === t}" data-type="${esc(t)}"><span class="no">${String(i + 1).padStart(2, '0')}</span><span class="tx">${esc(t)}</span><span class="mk" aria-hidden="true">✓</span></button></li>`).join('')}</ol></div>
     ${problem ? err(problem) : ''}${nav('Next')}</form>`;
   if (S.step === 2) {
     const open = days.filter(d => d.date >= tomorrow);
