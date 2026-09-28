@@ -115,7 +115,8 @@ async function night(id, notice) {
         <div class="toolbar" style="margin-top:8px"><input id="newLine" maxlength="48" placeholder="e.g. a line for this night" style="flex:1;min-width:200px"><button class="sbtn" type="button" id="addLine">Add line</button></div>
       </div>
       <div id="evMsg"></div>
-      <div class="toolbar" style="margin:0"><button class="sbtn red" type="submit" id="save">${isNew ? 'Create night' : 'Save night'}</button><span id="saveState" role="status"></span>${!isNew && user.role === 'superAdmin' ? '<button class="sbtn ghost" type="button" id="del">Delete</button>' : ''}</div>
+      <div class="toolbar savebar"><button class="sbtn red" type="submit" id="save">${isNew ? 'Create night' : 'Save night'}</button><span id="saveState" role="status"></span></div>
+      ${!isNew && user.role === 'superAdmin' ? '<div><button class="sbtn ghost" type="button" id="del">Delete this night</button></div>' : ''}
       ${isNew ? '' : '<p class="hint" style="margin:0;color:var(--muted)">“Save night” saves this box only: name, date, flyer, lines and the ticks above. Tickets, Tables, The draw and Comps below each save with their own button.</p>'}
     </form>
     ${isNew ? '' : `<h2>Tickets</h2>${catalogTable('ticket-types', d.ticketTypes, e.id)}
