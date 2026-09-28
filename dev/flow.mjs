@@ -69,7 +69,7 @@ const flows = {
     await page.setInputFiles('#artFile', new URL('./fixtures/dnd-party-poster.jpeg', import.meta.url).pathname);
     await page.getByText(/uploaded/i).waitFor();
     await page.fill('#evName', 'Afrobeats Friday (Edited)');
-    await page.click('#save'); await page.getByText(/saved/i).waitFor(); await shot('night-editor', true);
+    await page.click('#save'); await page.getByText(/live on the public site/i).waitFor(); await shot('night-editor', true);
     const reg = page.locator('tr[data-row="dev-afro-reg"]'); await reg.locator('[data-k=price]').fill('150'); await reg.locator('[data-save]').click(); await page.waitForTimeout(800);
     const pub = await (await fetch(`${base}/api/events/dev-afro`)).json();
     console.log('PUBLIC AFTER EDIT:', pub.event.name, '|', pub.event.artwork.includes('/dev/uploads/') ? 'new flyer' : 'OLD FLYER', '|', pub.ticketTypes.find(t => t.id === 'dev-afro-reg').pricePesewas);

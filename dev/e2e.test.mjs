@@ -239,7 +239,7 @@ test('admin changes a flyer and a price; the public page shows it with no deploy
   await admin.waitForURL(/admin\.html/); await admin.goto(`${base}/admin.html#nights/dev-piano`); await admin.waitForLoadState('networkidle');
   await admin.setInputFiles('#artFile', new URL('./fixtures/dnd-party-poster.jpeg', import.meta.url).pathname);
   await admin.getByText(/uploaded/i).waitFor();
-  await admin.click('#save'); await admin.getByText(/saved/i).waitFor();
+  await admin.click('#save'); await admin.getByText(/live on the public site/i).waitFor();
   const row = admin.locator('tr[data-row="dev-piano-reg"]');
   await row.locator('[data-k=price]').fill('125'); await row.locator('[data-save]').click();
   await until(() => store.get('ticket_types', 'dev-piano-reg').fields.pricePesewas === 12500, 'the new price to be saved');
