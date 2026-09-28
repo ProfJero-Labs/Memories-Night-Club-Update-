@@ -213,19 +213,41 @@ test('control room: an unsaved flyer is not lost when a ticket row is saved; a p
   await admin.getByText(/live on the public site/i).waitFor();
 });
 
-test('door: valid → ENTRY CONFIRMED, second scan → ALREADY CHECKED IN, junk → NOT VALID', async () => {
-  const token = docs('tickets').find(t => t.status === 'valid' && t.eventId === 'dev-afro').id;
+test('door: no any-night mode; valid → ENTRY CONFIRMED, again → ALREADY CHECKED IN, junk refused; headcount from server; search admits', async () => {
+  const valid = docs('tickets').filter(t => t.status === 'valid' && t.eventId === 'dev-afro');
+  const token = valid[0].id;
   const door = await phone();
   await door.goto(`${base}/login.html`); await door.fill('#email', 'door@dev'); await door.fill('#pw', 'memories-dev'); await door.click('#go');
   await door.waitForURL(/checkin\.html/); await door.waitForLoadState('networkidle');
+  assert.equal(await door.locator('#ev option', { hasText: /any night/i }).count(), 0, 'no Any night option');
+  if (!(await door.inputValue('#ev'))) {
+    await door.fill('#code', token); await door.click('#manual button');
+    await door.locator('#out').getByText(/choose the night/i).waitFor();
+    assert.equal(store.get('tickets', token).fields.status, 'valid', 'nothing admitted without a night');
+  }
   await door.selectOption('#ev', 'dev-afro');
+  await door.waitForFunction(() => /\d/.test(document.querySelector('#inCount').textContent));
+  const before = Number(await door.textContent('#inCount'));
   await door.fill('#code', `${base}/verify.html?token=${token}`); await door.click('#manual button');
   await door.getByText(/entry confirmed/i).waitFor();
+  await door.waitForFunction(n => Number(document.querySelector('#inCount').textContent) > n, before);
   await door.fill('#code', token); await door.click('#manual button');
   await door.getByText(/already checked in/i).waitFor();
   await door.fill('#code', 'deadbeef'); await door.click('#manual button');
+  await door.getByText(/not a ticket code/i).waitFor();
+  await door.fill('#code', 'f'.repeat(64)); await door.click('#manual button');
   await door.getByText(/ticket not valid/i).waitFor();
   assert.equal(docs('checkins').filter(c => c.ticketId === token).length, 1);
+
+  // Search by first name → Admit, with no token anywhere on the page.
+  const other = docs('tickets').find(t => t.status === 'valid' && t.eventId === 'dev-afro' && t.id !== token);
+  await door.fill('#search', other.customerName.split(' ')[0]);
+  const btn = door.locator(`#hits [data-code="${other.displayCode}"]`);
+  await btn.waitFor(); await btn.click();
+  await door.getByText(/entry confirmed/i).waitFor();
+  assert.equal(store.get('tickets', other.id).fields.status, 'used');
+  assert.ok(!(await door.content()).includes(other.id), 'search never puts a token on the page');
+  assert.deepEqual(door.errors, []);
 });
 
 test('organiser A sees only their night and cannot open the control room; a no-role account is refused', async () => {

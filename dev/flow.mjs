@@ -88,7 +88,7 @@ const flows = {
     await page.selectOption('#ev', 'dev-afro');
     await page.fill('#code', `${base}/verify.html?token=${tok}`); await page.click('#manual button'); await page.getByText(/entry confirmed/i).waitFor(); await shot('confirmed');
     await page.fill('#code', tok); await page.click('#manual button'); await page.getByText(/already checked in/i).waitFor(); await shot('again');
-    await page.fill('#code', 'nonsense-token'); await page.click('#manual button'); await page.getByText(/not valid/i).waitFor(); await shot('invalid');
+    await page.fill('#code', 'nonsense-token'); await page.click('#manual button'); await page.getByText(/not a ticket code/i).waitFor(); await shot('invalid');
   },
   async organiser() {
     await page.goto(`${base}/login.html`); await page.fill('#email', 'orga@dev'); await page.fill('#pw', 'memories-dev'); await page.click('#go'); await page.waitForURL(/organiser/); await page.waitForLoadState('networkidle'); await shot('mine', true);
