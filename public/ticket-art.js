@@ -56,7 +56,7 @@ export async function shareImage(t, { withArt = true } = {}) {
   const x = c.getContext('2d');
   // paper
   x.fillStyle = '#e9ddc0'; x.fillRect(0, 0, S, S);
-  const [art, logo] = await Promise.all([withArt ? loadImg(t.artwork) : null, loadImg('assets/logo.png')]);
+  const [art, logo] = await Promise.all([withArt ? loadImg(t.artwork) : null, loadImg('assets/logo.webp')]);
   if (art) {
     x.save(); x.globalAlpha = .08; x.filter = 'grayscale(1) sepia(.5) contrast(1.1)';
     const r = Math.max(S / art.width, S / art.height); x.drawImage(art, (S - art.width * r) / 2, (S - art.height * r) / 2, art.width * r, art.height * r);

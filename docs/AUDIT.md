@@ -89,3 +89,26 @@ full but stock gone; manual refund). Overpayment kept on the plan, never a secon
 8. The Brevo API key is in git history (commits `5730d76`, `c016b4c`, `32ede69`, `037f127`).
    Must be revoked in Brevo; history can't be un-published.
 9. No CI; tests only run locally.
+
+## Performance check (phone, local dev server)
+
+Measured with Playwright at 390px (fonts blocked offline, so real pages add the Google Fonts CSS
++ woff2). Lighthouse was not run in this environment.
+
+| Page | Requests | Transfer before → after the logo change | Script | CSS |
+|---|---|---|---|---|
+| Home | 14 | 263 KB → 166 KB | 19 KB | 32 KB |
+| Nights | 14 | 176 KB → 140 KB | 18 KB | 32 KB |
+| Event | 12 | 148 KB → 77 KB | 24 KB | 32 KB |
+| Checkout | 13 | 115 KB → 87 KB | 34 KB | 32 KB |
+| Tables | 11 | 150 KB → 71 KB | 25 KB | 32 KB |
+| Ticket | 11 | 148 KB → 77 KB | 27 KB | 32 KB |
+
+- No page makes the same API call twice; settings are fetched once per page and shared.
+- The 44 KB, 2083 px PNG logo was loaded on every page to show at 93 px. Now: `logo-sm.webp`
+  (320 px, 8 KB) for header/footer/login/staff, `logo.webp` (1200 px, 26 KB) for the homepage
+  hero and the share image. `logo.png` is kept for other uses.
+- Flyers load lazily except the one above the fold; the 130 KB QR scanner (`jsQR`) loads only on
+  the door page when the camera starts. Fonts already use `display=swap`.
+- The rest of the weight is the flyers themselves (uploaded images are resized to 1600 px WebP
+  in the control room).

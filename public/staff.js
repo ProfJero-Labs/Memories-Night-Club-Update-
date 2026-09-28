@@ -27,7 +27,7 @@ export const sapi = async (path, opts = {}) => api(path, { ...opts, token: await
 export function staffHeader(user, title) {
   const h = document.createElement('header');
   h.className = 'staff-head';
-  h.innerHTML = `<div class="wrap"><a class="logo" href="index.html" title="Public site"><img src="assets/logo.png" alt="Memories" height="18"></a>
+  h.innerHTML = `<div class="wrap"><a class="logo" href="index.html" title="Public site"><img src="assets/logo-sm.webp" alt="Memories" height="18"></a>
     <strong style="font:400 20px var(--display);text-transform:uppercase;letter-spacing:.04em">${esc(title)}</strong>
     <span class="who">${esc(user.email || '')}<br>${esc(ROLE_LABEL[user.role] || user.role)}</span><button type="button" id="signout">Sign out</button></div>`;
   document.body.prepend(h);

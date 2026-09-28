@@ -85,7 +85,7 @@ const WA_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true" fill="currentColor"
 export async function chrome(active = '') {
   const head = document.createElement('header');
   head.className = 'site-head';
-  head.innerHTML = `<div class="wrap"><a class="logo" href="index.html" aria-label="Memories — home"><img src="assets/logo.png" alt="Memories" width="93" height="22"></a>
+  head.innerHTML = `<div class="wrap"><a class="logo" href="index.html" aria-label="Memories — home"><img src="assets/logo-sm.webp" alt="Memories" width="93" height="22"></a>
     <nav class="nav" aria-label="Main">${[['nights', 'Nights'], ['tables', 'Tables'], ['visit', 'Visit']].map(([k, l]) => `<a class="nav-${k}" href="${k}.html"${active === k ? ' aria-current="page"' : ''}>${l}</a>`).join('')}<span id="waSlot"></span><a class="get" href="nights.html">Get<span class="long"> tickets</span><span class="short">Tickets</span></a></nav></div>`;
   document.body.prepend(head);
   const foot = document.createElement('footer');
@@ -100,7 +100,7 @@ export async function chrome(active = '') {
     s.email && `<li><a href="mailto:${esc(s.email)}">${esc(s.email)}</a></li>`,
   ].filter(Boolean).join('');
   foot.innerHTML = `<div class="wrap foot-grid">
-    <div><a class="logo" href="index.html"><img src="assets/logo.png" alt="Memories" width="110" height="26"></a><p class="foot-small" style="margin-top:14px">${esc(s.nightsLine || 'Friday + Saturday')} · ${esc(s.doorsLine || 'Doors 10PM')}</p>${followRow(s)}</div>
+    <div><a class="logo" href="index.html"><img src="assets/logo-sm.webp" alt="Memories" width="110" height="26"></a><p class="foot-small" style="margin-top:14px">${esc(s.nightsLine || 'Friday + Saturday')} · ${esc(s.doorsLine || 'Doors 10PM')}</p>${followRow(s)}</div>
     <ul class="foot-list">${items}</ul>
     <ul class="foot-list"><li><a href="nights.html">Nights</a></li><li><a href="nights.html#calendar">Calendar</a></li><li><a href="tables.html">Tables</a></li><li><a href="private.html">Book an event</a></li><li><a href="installment.html">Pay the rest of a ticket</a></li></ul>
     <div><span class="age" title="Strictly 18 and over">18+</span><p class="foot-small" style="margin-top:10px">Strictly 18+.</p></div>
