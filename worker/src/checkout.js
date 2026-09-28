@@ -2,7 +2,7 @@
 // is computed here from Firestore, and every success is confirmed with Paystack's verify API using
 // the secret key before anything is issued. Issuance is transactional and idempotent per reference.
 import { getDoc, setDoc, createDoc, queryWhere, batchGet, commitTx, updateWrite, foundFields, withTransaction } from './lib/firestore.js';
-import { now, id, paymentRef, ticketToken, displayCode, orderCode, clean, normalizePhone, validEmail, firstName, money } from './lib/util.js';
+import { now, id, paymentRef, ticketToken, displayCode, orderCode, normalizeOrderCode, clean, normalizePhone, validEmail, firstName, money } from './lib/util.js';
 import { allowedOrigin } from './lib/http.js';
 import { sendSms, sendEmail, siteUrl } from './lib/notify.js';
 import { getSettings, resolveLines, isOver } from './public.js';
@@ -229,7 +229,7 @@ export async function startInstallmentTopup(env, planId, amountPesewas, callback
 }
 
 export async function topupInstallment(env, b) {
-  const planId = String(b?.planId || '').toUpperCase();
+  const planId = normalizeOrderCode(b?.planId);
   if (!planId) return { error: 'Enter your order code.' };
   if (!allowedOrigin(b.callbackUrl, env)) return { error: 'Invalid callback URL.' };
   const plan = await getDoc(env, 'installment_plans', planId);
@@ -253,13 +253,46 @@ export async function maybeForfeitPlan(env, plan) {
   return false;
 }
 
-export const planSummary = p => ({ planId: p.id, eventId: p.fields.eventId, eventName: p.fields.eventName, eventDate: p.fields.eventDate || '', ticketTypeName: p.fields.ticketTypeName, quantity: p.fields.quantity, totalPesewas: p.fields.totalPesewas, paidPesewas: p.fields.paidPesewas, status: p.fields.status, firstName: p.fields.firstName || firstName(p.fields.buyerName), identityLine: p.fields.identityLine || '', ticketIds: p.fields.status === 'completed' ? (p.fields.ticketIds || []) : [] });
+// What the public lookup may show about an order. Never ticket ids, links, QR data or the phone:
+// the order code is not proof of who you are, so it can't hand out tickets.
+export const planSummary = p => {
+  const total = Number(p.fields.totalPesewas || 0), paid = Number(p.fields.paidPesewas || 0);
+  return {
+    planId: p.id, eventName: p.fields.eventName || '', eventDate: p.fields.eventDate || '', firstName: p.fields.firstName || firstName(p.fields.buyerName),
+    totalPesewas: total, paidPesewas: paid, remainingPesewas: Math.max(0, total - paid), status: p.fields.status, ticketReady: p.fields.status === 'completed',
+  };
+};
 
-// Lookup needs the order code, or the phone number the order was made with.
-export async function lookupInstallments(env, { phone, code }) {
-  if (code) { const p = await getDoc(env, 'installment_plans', code.toUpperCase()); return p ? [planSummary(p)] : []; }
-  const ph = normalizePhone(phone); if (!ph) return [];
-  return (await queryWhere(env, 'installment_plans', [{ field: 'buyerPhone', value: ph }])).map(planSummary);
+// Lookup is by order code only. (Phone lookups text the codes instead: see textOrderCodes.)
+export async function lookupInstallments(env, { code }) {
+  const c = normalizeOrderCode(code); if (!c) return [];
+  const p = await getDoc(env, 'installment_plans', c);
+  return p ? [planSummary(p)] : [];
+}
+
+// One reply for every case, so these can't be used to learn whether a number or order exists.
+export const NEUTRAL_CODES = 'If that number has orders with us, we’ve texted the order codes to it.';
+export const NEUTRAL_LINK = 'If this order is yours and paid in full, we’ve texted the ticket link to the number on it.';
+
+// "Lost my code": text every open or paid order code to the phone that made them.
+export async function textOrderCodes(env, { phone }) {
+  const ph = normalizePhone(phone); if (!ph) return false;
+  const plans = (await queryWhere(env, 'installment_plans', [{ field: 'buyerPhone', value: ph }]))
+    .filter(p => ['active', 'completed'].includes(p.fields.status)).slice(0, 5);
+  if (!plans.length) return false;
+  const lines = plans.map(p => `${p.id}: ${p.fields.eventName || 'your night'}${p.fields.status === 'completed' ? ' (paid)' : ` (${money(Number(p.fields.totalPesewas) - Number(p.fields.paidPesewas || 0))} left)`}`);
+  return sendSms(env, ph, `MEMORIES\nYour orders:\n${lines.join('\n')}\nPay or check: ${siteUrl(env, '/installment.html')}`);
+}
+
+// "Text me the link" on a paid order: only to the phone on the order, and only if the guest
+// gave that same number.
+export async function resendTicketLink(env, { planId, phone }) {
+  const c = normalizeOrderCode(planId), ph = normalizePhone(phone);
+  if (!c || !ph) return false;
+  const p = await getDoc(env, 'installment_plans', c);
+  if (!p || p.fields.status !== 'completed' || p.fields.buyerPhone !== ph || !(p.fields.ticketIds || []).length) return false;
+  const links = p.fields.ticketIds.map(t => siteUrl(env, `/ticket.html?token=${t}`));
+  return sendSms(env, ph, `MEMORIES\n${p.fields.eventName || 'Your night'}.\nYour ticket${links.length > 1 ? 's' : ''}: ${links.join(' ')}`);
 }
 
 export async function fulfillInstallment(env, reference) {

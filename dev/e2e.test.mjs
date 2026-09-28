@@ -113,6 +113,29 @@ test('pay in bits: partial payment gets no ticket and no draw spot; the final pa
   assert.equal(await page.textContent('[data-line]'), 'SAMPLE LINE FOUR.', 'the line picked at the start is printed at the end');
 });
 
+test('pay-the-rest lookup of a paid order shows no ticket link; "text me the link" is neutral and texts only the right phone', async () => {
+  const plan = docs('installment_plans').find(p => p.buyerName === 'Yaw Boateng' && p.status === 'completed');
+  assert.match(plan.id, /^MEM-[0-9A-Z]{5}-[0-9A-Z]{5}$/, 'new-format order code');
+  const page = await phone();
+  await page.goto(`${base}/installment.html?code=${plan.id.toLowerCase()}`, { waitUntil: 'networkidle' });
+  await page.getByText(/paid in full/i).waitFor();
+  const html = await page.content();
+  assert.ok(!/ticket\.html\?token=/.test(html), 'no ticket link on the page');
+  for (const t of plan.ticketIds) assert.ok(!html.includes(t), 'no ticket token in the page');
+  const before = store.sms.length;
+  await page.fill('form[data-resend] input', '0209999999'); await page.click('form[data-resend] button[type=submit]');
+  await page.waitForFunction(() => { const f = document.querySelector('form[data-resend]'); return !f.querySelector('button[type=submit]').disabled && !f.querySelector('.notice:not(.ok)').hidden; });
+  const wrongMsg = await page.locator('form[data-resend] .notice:not(.ok)').textContent();
+  await page.evaluate(() => { document.querySelector('form[data-resend] .notice:not(.ok)').hidden = true; });
+  await page.fill('form[data-resend] input', '024 111 2222'); await page.click('form[data-resend] button[type=submit]');
+  await page.waitForFunction(() => { const f = document.querySelector('form[data-resend]'); return !f.querySelector('button[type=submit]').disabled && !f.querySelector('.notice:not(.ok)').hidden; });
+  const rightMsg = await page.locator('form[data-resend] .notice:not(.ok)').textContent();
+  assert.equal(wrongMsg, rightMsg, 'same message either way');
+  assert.equal(store.sms.length, before + 1, 'one text, for the matching phone');
+  assert.equal(store.sms.at(-1).to, '0241112222');
+  assert.deepEqual(page.errors, []);
+});
+
 test('tables: night → table → bottles → pay; the booking shows up for staff', async () => {
   const page = await phone();
   await page.goto(`${base}/tables.html?event=dev-piano`, { waitUntil: 'networkidle' });

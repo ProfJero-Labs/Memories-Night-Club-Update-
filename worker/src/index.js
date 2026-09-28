@@ -4,7 +4,8 @@ import { cors, ok, fail, reply, throttled } from './lib/http.js';
 import { verifyStaff, requireRole, MONEY, DOOR } from './lib/auth.js';
 import { smsRequest } from './lib/notify.js';
 import { getSettings, publicEvents, eventBundle, calendar, createPrivateRequest, publicTicket } from './public.js';
-import { initiateTicket, initiateTable, startInstallment, topupInstallment, lookupInstallments, fulfill, checkoutStatus, forfeitStalePlans } from './checkout.js';
+import { initiateTicket, initiateTable, startInstallment, topupInstallment, lookupInstallments, textOrderCodes, resendTicketLink, NEUTRAL_CODES, NEUTRAL_LINK, fulfill, checkoutStatus, forfeitStalePlans } from './checkout.js';
+import { normalizePhone, normalizeOrderCode } from './lib/util.js';
 import { upsertRaffle, drawRaffle } from './raffle.js';
 import { checkin, verifyTicket } from './door.js';
 import * as admin from './admin.js';
@@ -27,7 +28,10 @@ async function paystackWebhook(req, env) {
   return new Response('ok', { status: 200 });
 }
 
-async function route(req, env) {
+// Work that must not delay (or be visible in) the response. Tests pass no ctx, so it's awaited there.
+const later = async (ctx, promise) => { const p = Promise.resolve(promise).catch(e => console.error('background task failed', e)); if (ctx?.waitUntil) ctx.waitUntil(p); else await p; };
+
+async function route(req, env, ctx) {
   const u = new URL(req.url), p = u.pathname, m = req.method;
 
   // ── Public ──
@@ -40,10 +44,27 @@ async function route(req, env) {
   if (m === 'POST' && p === '/api/installments/start') { if (await throttled(req, env, 'checkout', 'standard')) return tooMany(req, env); return reply(req, env, await startInstallment(env, await body(req))); }
   if (m === 'POST' && p === '/api/installments/topup') { if (await throttled(req, env, 'checkout', 'standard')) return tooMany(req, env); return reply(req, env, await topupInstallment(env, await body(req))); }
   if (m === 'GET' && p === '/api/installments/lookup') {
-    if (await throttled(req, env, 'lookup', 'strict')) return tooMany(req, env);
-    const phone = u.searchParams.get('phone') || '', code = u.searchParams.get('code') || '';
-    if (!phone && !code) return fail(req, env, 'Enter your order code or phone number.');
-    return ok(req, env, { plans: await lookupInstallments(env, { phone, code }) });
+    // By order code only. A ?phone= lookup (older cached pages) gets nothing back: see /find.
+    const code = u.searchParams.get('code') || '';
+    if (await throttled(req, env, 'lookup', 'strict') || await throttled(req, env, 'lookup-code', 'strict', code.toUpperCase().replace(/\W/g, '').slice(0, 20))) return tooMany(req, env);
+    if (!code) return ok(req, env, { plans: [] });
+    return ok(req, env, { plans: await lookupInstallments(env, { code }) });
+  }
+  // Lost code / lost ticket link: always the same reply, and the text goes out after the response
+  // so timing doesn't reveal whether anything matched.
+  if (m === 'POST' && p === '/api/installments/find') {
+    const b = await body(req), ph = normalizePhone(b.phone);
+    if (!ph) return fail(req, env, 'Use a Ghana number, e.g. 024 123 4567.');
+    if (await throttled(req, env, 'find', 'strict') || await throttled(req, env, 'find-phone', 'strict', ph)) return tooMany(req, env);
+    await later(ctx, textOrderCodes(env, { phone: ph }));
+    return ok(req, env, { message: NEUTRAL_CODES });
+  }
+  if (m === 'POST' && p === '/api/installments/resend-link') {
+    const b = await body(req), ph = normalizePhone(b.phone), code = normalizeOrderCode(b.planId);
+    if (!ph || !code) return fail(req, env, 'Enter your order code and the phone number you used.');
+    if (await throttled(req, env, 'resend', 'strict') || await throttled(req, env, 'resend-phone', 'strict', ph) || await throttled(req, env, 'resend-plan', 'strict', code)) return tooMany(req, env);
+    await later(ctx, resendTicketLink(env, { planId: code, phone: ph }));
+    return ok(req, env, { message: NEUTRAL_LINK });
   }
   if (m === 'POST' && p === '/api/checkout/verify') {
     if (await throttled(req, env, 'verify', 'standard')) return tooMany(req, env);
@@ -115,9 +136,9 @@ async function route(req, env) {
 }
 
 export default {
-  async fetch(req, env) {
+  async fetch(req, env, ctx) {
     if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers: cors(req, env) });
-    try { return await route(req, env); }
+    try { return await route(req, env, ctx); }
     catch (e) { console.error(e); return fail(req, env, 'Something went wrong on our side. Try again.', 500); }
   },
   async scheduled(event, env, ctx) {

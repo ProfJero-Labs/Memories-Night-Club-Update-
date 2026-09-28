@@ -10,12 +10,21 @@ export const paymentRef = () => `MEM-${Date.now()}-${hex(8).toUpperCase()}`;
 // A ticket's document id is its bearer token: ~244 bits of randomness.
 export const ticketToken = () => id() + id();
 export const displayCode = token => `MEM-${token.slice(0, 6).toUpperCase()}`;
-// Short human-typeable order code for pay-in-bits orders (MEM-4821 style, with a letter pair so
-// the space isn't trivially small).
+// Pay-in-bits order code: MEM-XXXXX-XXXXX, 10 Crockford Base32 characters from the CSPRNG
+// (50 bits; no I, L, O, U, so it reads cleanly over the phone). Uniqueness is checked on create.
+const CROCKFORD = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';
 export function orderCode() {
-  const letters = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
-  const r = crypto.getRandomValues(new Uint32Array(3));
-  return `MEM-${letters[r[0] % 24]}${letters[r[1] % 24]}${1000 + (r[2] % 9000)}`;
+  const c = Array.from(crypto.getRandomValues(new Uint8Array(10)), b => CROCKFORD[b & 31]).join('');
+  return `MEM-${c.slice(0, 5)}-${c.slice(5)}`;
+}
+// What a guest types → the stored code, or null. New codes forgive case, spaces, missing dashes
+// and O/I/L typos. Codes from before the change (MEM-AB1234) are matched exactly as they were.
+export function normalizeOrderCode(raw) {
+  const s = String(raw ?? '').toUpperCase().replace(/\s+/g, '');
+  if (/^MEM-[A-Z]{2}\d{4}$/.test(s)) return s;
+  const body = s.replace(/^MEM-?/, '').replace(/-/g, '').replace(/O/g, '0').replace(/[IL]/g, '1');
+  if (!/^[0-9A-HJKMNP-TV-Z]{10}$/.test(body)) return null;
+  return `MEM-${body.slice(0, 5)}-${body.slice(5)}`;
 }
 
 export const clean = (s, max = 200) => String(s ?? '').replace(/[\u0000-\u001f\u007f]/g, ' ').trim().slice(0, max);

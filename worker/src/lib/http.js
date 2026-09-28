@@ -20,6 +20,14 @@ export const allowedOrigin = (url, env) => {
 // dev, tests): a per-isolate sliding window, which only slows down a single noisy client.
 const buckets = new Map();
 const LIMITS = { strict: { binding: 'RL_STRICT', limit: 10 }, standard: { binding: 'RL_STANDARD', limit: 60 } };
+function rateLimitedKey(k, limit, windowMs) {
+  const t = Date.now();
+  const fresh = (buckets.get(k) || []).filter(x => t - x < windowMs);
+  if (fresh.length >= limit) { buckets.set(k, fresh); return true; }
+  fresh.push(t); buckets.set(k, fresh);
+  if (buckets.size > 5000) buckets.clear();
+  return false;
+}
 export function rateLimited(req, key, limit, windowMs) {
   const ip = req.headers.get('CF-Connecting-IP') || req.headers.get('X-Forwarded-For') || 'unknown';
   const k = `${key}:${ip}`, t = Date.now();
@@ -29,11 +37,13 @@ export function rateLimited(req, key, limit, windowMs) {
   if (buckets.size > 5000) buckets.clear();
   return false;
 }
-export async function throttled(req, env, key, tier = 'standard') {
+// Limits per client IP by default; pass `subject` to limit per something else too (a phone
+// number, an order code), so rotating IPs doesn't help against one target.
+export async function throttled(req, env, key, tier = 'standard', subject) {
   const { binding, limit } = LIMITS[tier];
-  const ip = req.headers.get('CF-Connecting-IP') || 'unknown';
+  const who = subject ?? (req.headers.get('CF-Connecting-IP') || 'unknown');
   if (env[binding]?.limit) {
-    try { const { success } = await env[binding].limit({ key: `${key}:${ip}` }); return !success; } catch { /* fall through */ }
+    try { const { success } = await env[binding].limit({ key: `${key}:${who}` }); return !success; } catch { /* fall through */ }
   }
-  return rateLimited(req, key, limit, 60000);
+  return subject === undefined ? rateLimited(req, key, limit, 60000) : rateLimitedKey(`${key}:${who}`, limit, 60000);
 }
