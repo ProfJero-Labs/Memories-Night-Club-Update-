@@ -13,7 +13,7 @@ body.staff::before { display: none; }
 .panel h1 { font: 400 clamp(34px, 6vw, 52px)/1 var(--display); text-transform: uppercase; margin-bottom: 18px; }
 .panel h2 { font: 400 26px/1 var(--display); text-transform: uppercase; margin: 30px 0 12px; }
 .toolbar { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 16px; }
-.toolbar select, .toolbar input { min-height: 42px; background: var(--ink-2); border: 1px solid var(--line-2); padding: 0 10px; }
+.toolbar select, .toolbar input { min-height: 42px; background: var(--ink-2); border: 1px solid var(--line-2); padding: 0 10px; min-width: 0; max-width: 100%; }
 .sbtn { min-height: 40px; padding: 0 14px; background: var(--ink-3); border: 1px solid var(--line-2); font: 700 12px var(--sans); letter-spacing: .1em; text-transform: uppercase; color: var(--paper); text-decoration: none; display: inline-flex; align-items: center; gap: 6px; }
 .sbtn:hover { border-color: var(--paper); }
 .sbtn.red { background: var(--crimson-btn); border-color: var(--crimson-btn); color: #fff; }
@@ -59,3 +59,27 @@ details.more > summary { cursor: pointer; font-weight: 700; padding: 8px 0; }
 .tbl tr.dirty td { background: rgba(214, 170, 60, .08); }
 .tbl tr.dirty td:first-child { box-shadow: inset 3px 0 0 var(--mustard); }
 #saveState { display: inline-flex; align-items: center; }
+
+/* ── Phones: tables become cards ── */
+/* Each row is a card; each cell shows its column label (data-label, set in admin.js). Editable
+   cells stack the label above the field. Desktop keeps the tables. */
+@media (max-width: 700px) {
+  .tbl-wrap { overflow: visible; border: 0; }
+  .tbl, .tbl tbody, .tbl tr, .tbl td { display: block; width: 100%; }
+  .tbl thead { display: none; }
+  .tbl tr { border: 1px solid var(--line-2); margin-bottom: 12px; padding: 6px 0; background: var(--ink-2); }
+  .tbl tr[hidden] { display: none; }
+  .tbl tr:hover td { background: none; }
+  .tbl td { border: 0; padding: 7px 14px; text-align: right; overflow-wrap: anywhere; }
+  .tbl td::after { content: ''; display: table; clear: both; }
+  .tbl td::before { content: attr(data-label); float: left; max-width: 45%; margin-right: 14px; padding-top: 3px; text-align: left; font: 700 11px var(--sans); letter-spacing: .14em; text-transform: uppercase; color: var(--muted); }
+  .tbl td[data-label=""]::before { content: none; }
+  .tbl td.num { text-align: right; }
+  .tbl td:has(input, select, textarea) { text-align: left; }
+  .tbl td:has(input, select, textarea)::before { float: none; display: block; max-width: none; margin: 0 0 6px; }
+  .tbl .actions { display: flex; justify-content: flex-start; flex-wrap: wrap; white-space: normal; }
+  .tbl .actions::before { content: none; }
+  .tbl tr.expand td { display: block; text-align: left; }
+  .tbl tr.dirty { box-shadow: inset 3px 0 0 var(--mustard); }
+  .tbl tr.dirty td:first-child { box-shadow: none; }
+}

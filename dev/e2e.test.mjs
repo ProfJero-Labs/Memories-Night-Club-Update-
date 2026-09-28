@@ -297,6 +297,21 @@ test('control room: refunds owed are listed and can be marked refunded with a no
   assert.deepEqual(admin.errors, []);
 });
 
+test('control room on a phone: every tab fits the screen; tables become labelled cards', async () => {
+  const page = await phone(390);
+  await page.goto(`${base}/login.html`); await page.fill('#email', 'admin@dev'); await page.fill('#pw', 'memories-dev'); await page.click('#go');
+  await page.waitForURL(/admin\.html/);
+  for (const tab of ['overview', 'nights', 'bookings', 'requests', 'bits', 'refunds', 'bar', 'settings', 'staff']) {
+    await page.click(`[data-tab=${tab}]`); await page.waitForLoadState('networkidle');
+    await page.waitForFunction(() => !document.querySelector('#panel .loading'));
+    const w = await page.evaluate(() => document.documentElement.scrollWidth);
+    assert.ok(w <= 390, `${tab} is ${w}px wide on a 390px phone`);
+  }
+  await page.click('[data-tab=bits]'); await page.waitForFunction(() => !document.querySelector('#panel .loading'));
+  if (await page.locator('table.tbl tbody td').count()) assert.ok(await page.locator('table.tbl tbody td[data-label="Owing"]').count(), 'cells carry their column label');
+  assert.deepEqual(page.errors, []);
+});
+
 test('door: no any-night mode; valid → ENTRY CONFIRMED, again → ALREADY CHECKED IN, junk refused; headcount from server; search admits', async () => {
   const valid = docs('tickets').filter(t => t.status === 'valid' && t.eventId === 'dev-afro');
   const token = valid[0].id;

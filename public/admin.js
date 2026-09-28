@@ -13,6 +13,13 @@ const TABS = [
   ['bits', 'Pay in bits', MONEY], ['refunds', 'Refunds', MONEY], ['bar', 'Bar menu', CMS], ['settings', 'Site settings', MONEY], ['staff', 'Staff', ['superAdmin']],
 ].filter(t => can(t[2]));
 const panel = $('#panel');
+// Phones: every table becomes a stack of cards (CSS in admin.css). Each cell is labelled with its
+// column header here, once, whenever a tab renders, so no tab needs its own phone layout.
+const labelTables = () => $$('table.tbl', panel).forEach(t => {
+  const heads = [...t.querySelectorAll('thead th')].map(th => th.textContent.trim());
+  t.querySelectorAll('tbody tr:not(.expand)').forEach(tr => [...tr.children].forEach((td, i) => { if (!td.hasAttribute('data-label')) td.setAttribute('data-label', heads[i] || ''); }));
+});
+new MutationObserver(labelTables).observe(panel, { childList: true, subtree: true });
 const flash = (el, text, bad = false) => { el.innerHTML = `<div class="msg ${bad ? 'err' : ''}" role="status">${esc(text)}</div>`; if (!bad) setTimeout(() => { el.innerHTML = ''; }, 4000); };
 const pill = (text, c) => `<span class="pill ${c}">${esc(text)}</span>`;
 const fail = e => { panel.innerHTML = `<div class="msg err">${esc(e.message)}</div>`; };
@@ -40,7 +47,7 @@ async function overview() {
   const d = await sapi('/api/admin/overview');
   panel.innerHTML = `<h1>Tonight & next</h1>
     <div class="kpis"><div><span>Revenue (all confirmed)</span><b>${money(d.revenuePesewas)}</b></div><div><span>Owed on pay-in-bits</span><b>${money(d.owingPesewas)}</b></div>
-      <div><span>Active pay-in-bits</span><b>${d.activePlans}</b></div><div><span>New private requests</span><b>${d.newRequests}</b></div></div>
+      <div><span>Active pay-in-bits</span><b>${d.activePlans}</b></div><div><span>New event requests</span><b>${d.newRequests}</b></div></div>
     <div class="tbl-wrap"><table class="tbl"><thead><tr><th>Night</th><th>Date</th><th class="num">Tickets</th><th class="num">Comps</th><th class="num">Tables</th><th class="num">Revenue</th><th class="num">In the door</th><th></th></tr></thead><tbody>
     ${d.nights.map(n => `<tr><td><strong>${esc(n.name)}</strong> ${n.visibility === 'public' ? '' : pill('private', 'grey')}</td><td>${esc(shortDate(n.date))}</td><td class="num">${n.tickets}</td><td class="num">${n.comps}</td><td class="num">${n.tables}</td><td class="num">${money(n.revenuePesewas)}</td><td class="num">${n.checkins}</td>
       <td class="actions"><button class="sbtn" data-open="${esc(n.id)}">Open</button><a class="sbtn ghost" href="checkin.html?event=${encodeURIComponent(n.id)}">Door</a></td></tr>`).join('') || '<tr><td colspan="8" class="empty-row">No upcoming nights. Create one under Nights.</td></tr>'}
