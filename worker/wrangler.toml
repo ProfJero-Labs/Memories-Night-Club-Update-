@@ -7,7 +7,9 @@ workers_dev = true
 
 [vars]
 FIREBASE_PROJECT_ID = "memoriesnightclub-2717f"
-ALLOWED_ORIGINS = "https://memoriesnightclub.com,https://www.memoriesnightclub.com,https://memoriesnightclub.pages.dev,http://localhost:5500,http://127.0.0.1:5500"
+# Sites allowed to call the API from a browser (CORS). Local testing uses `npm run dev`, which
+# sets its own origin, so no localhost entries here.
+ALLOWED_ORIGINS = "https://memoriesnightclub.com,https://www.memoriesnightclub.com,https://memoriesnightclub.pages.dev"
 PUBLIC_SITE_URL = "https://memoriesnightclub.com"
 SMS_SENDER = "MEMORIES"
 # Only used if the SMS service binding below is removed.
