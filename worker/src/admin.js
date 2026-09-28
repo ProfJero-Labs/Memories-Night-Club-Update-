@@ -4,7 +4,7 @@ import { getDoc, setDoc, deleteDoc, listDocs, queryWhere, commitTx, updateWrite,
 import { now, id, clean, normalizePhone, ticketToken, displayCode, dateKey, firstName, TICKET_STYLES, cleanTicketColors } from './lib/util.js';
 import { requireRole, CMS, MONEY, STAFF_ROLES, uidOf } from './lib/auth.js';
 import { sendSms, sendEmail, siteUrl } from './lib/notify.js';
-import { getSettings, DEFAULT_SETTINGS, SETTINGS_FIELDS, isOver } from './public.js';
+import { getSettings, DEFAULT_SETTINGS, SETTINGS_FIELDS, isOver, autoStyleFor } from './public.js';
 import { openRaffleForEvent, raffleSpotWrites } from './raffle.js';
 import { balanceMessage } from './checkout.js';
 
@@ -69,7 +69,7 @@ export async function eventDetail(env, eventId, user) {
   const [tickets, tables, bottles, raffles, entries] = await Promise.all(['ticket_types', 'table_packages', 'bottles', 'raffles'].map(c => queryWhere(env, c, [{ field: 'eventId', value: eventId }])).concat(queryWhere(env, 'raffle_entries', [{ field: 'eventId', value: eventId }])));
   const rows = xs => xs.map(x => ({ id: x.id, ...x.fields })).sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0) || a.pricePesewas - b.pricePesewas);
   const raffle = raffles[0] ? { id: raffles[0].id, ...raffles[0].fields, entryCount: entries.length } : null;
-  return { event: { id: e.id, ...e.fields }, ticketTypes: rows(tickets), tablePackages: rows(tables), bottles: rows(bottles), raffle };
+  return { event: { id: e.id, ...e.fields, autoStyle: await autoStyleFor(env, e.id) }, ticketTypes: rows(tickets), tablePackages: rows(tables), bottles: rows(bottles), raffle };
 }
 
 export async function upsertEvent(env, b, user) {

@@ -62,3 +62,14 @@ test('a night’s ticket design is saved validated and served to the public even
   const pub = await (await worker.fetch(new Request(`https://api.test/api/events/${eventId}`), env)).json();
   assert.equal(pub.event.ticketStyle, 'auto'); assert.equal(pub.event.ticketColors.dark, '#1f180a');
 });
+
+test('the public events list gives each Auto night in a month its own design', async () => {
+  const { store, env } = createMockEnv();
+  const days = ['02', '03', '09', '10', '16', '17', '23', '24'];
+  for (const d of days) store.seed('events', `n${d}`, { name: `Night ${d}`, date: `2099-10-${d}T22:00:00Z`, visibility: 'public', active: true });
+  const { events } = await (await worker.fetch(new Request('https://api.test/api/events'), env)).json();
+  assert.equal(events.length, 8);
+  assert.equal(new Set(events.map(e => e.autoStyle)).size, 8);
+  const one = await (await worker.fetch(new Request('https://api.test/api/events/n09'), env)).json();
+  assert.equal(one.event.autoStyle, events.find(e => e.id === 'n09').autoStyle, 'event page agrees with the list');
+});

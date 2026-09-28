@@ -1,5 +1,5 @@
 import { getDoc, listDocs, queryWhere, setDoc } from './lib/firestore.js';
-import { now, id, clean, dateKey, normalizePhone, validEmail, firstName, cleanTicketColors } from './lib/util.js';
+import { now, id, clean, dateKey, normalizePhone, validEmail, firstName, cleanTicketColors, monthStyles } from './lib/util.js';
 import { sendEmail } from './lib/notify.js';
 
 // ── Site settings: the one place contact details and venue copy live ──
@@ -39,29 +39,36 @@ export function publicEvent(id, f, settings) {
   };
 }
 
+// Each "Auto" night's ticket design, worked out across the whole month (all nights count, public or
+// private, so a private booking still takes its own look).
+export const autoStylesFrom = docs => monthStyles(docs.filter(x => x.fields.active !== false).map(x => ({ id: x.id, date: x.fields.date, ticketStyle: x.fields.ticketStyle })));
+export async function autoStyleFor(env, eventId) { return autoStylesFrom(await listDocs(env, 'events')).get(eventId) || null; }
+
 export async function publicEvents(env) {
   const [docs, settings] = await Promise.all([listDocs(env, 'events'), getSettings(env)]);
+  const auto = autoStylesFrom(docs);
   return docs.filter(x => isLive(x.fields) && !isOver(x.fields))
-    .map(x => publicEvent(x.id, x.fields, settings))
+    .map(x => ({ ...publicEvent(x.id, x.fields, settings), autoStyle: auto.get(x.id) || null }))
     .sort((a, b) => new Date(a.date) - new Date(b.date));
 }
 
 export async function eventBundle(env, eventId) {
   const e = await getDoc(env, 'events', eventId);
   if (!e || !isLive(e.fields)) return null;
-  const [tickets, tables, bottles, globalBottles, raffles, settings] = await Promise.all([
+  const [tickets, tables, bottles, globalBottles, raffles, settings, autoStyle] = await Promise.all([
     queryWhere(env, 'ticket_types', [{ field: 'eventId', value: eventId }]),
     queryWhere(env, 'table_packages', [{ field: 'eventId', value: eventId }]),
     queryWhere(env, 'bottles', [{ field: 'eventId', value: eventId }]),
     queryWhere(env, 'bottles', [{ field: 'eventId', value: 'all' }]),
     queryWhere(env, 'raffles', [{ field: 'eventId', value: eventId }]),
     getSettings(env),
+    autoStyleFor(env, eventId),
   ]);
   const stock = f => (typeof f.remaining === 'number' ? { soldOut: f.remaining <= 0, lastFew: f.remaining > 0 && f.remaining <= 10 } : { soldOut: false, lastFew: false });
   const bySort = (a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0) || a.pricePesewas - b.pricePesewas;
   const raffle = raffles.find(x => x.fields.public === true && x.fields.enabled === true);
   return {
-    event: { ...publicEvent(eventId, e.fields, settings), over: isOver(e.fields) },
+    event: { ...publicEvent(eventId, e.fields, settings), over: isOver(e.fields), autoStyle },
     lines: resolveLines(e.fields, settings),
     ticketTypes: tickets.filter(x => x.fields.active === true).map(x => ({ id: x.id, name: x.fields.name, pricePesewas: Number(x.fields.pricePesewas || 0), admits: Number(x.fields.admits || 1), description: clean(x.fields.description, 140), sortOrder: x.fields.sortOrder ?? 0, ...stock(x.fields) })).sort(bySort),
     tablePackages: tables.filter(x => x.fields.active === true).map(x => ({ id: x.id, name: x.fields.name, pricePesewas: Number(x.fields.pricePesewas || 0), capacity: Number(x.fields.capacity || 0), includes: clean(x.fields.description, 200), sortOrder: x.fields.sortOrder ?? 0, ...stock(x.fields) })).sort(bySort),
@@ -138,13 +145,13 @@ export async function publicTicket(env, token) {
   const d = await getDoc(env, 'tickets', token);
   if (!d) return null;
   const t = d.fields;
-  const [ev, raffles] = await Promise.all([getDoc(env, 'events', t.eventId), queryWhere(env, 'raffles', [{ field: 'eventId', value: t.eventId }])]);
+  const [ev, raffles, autoStyle] = await Promise.all([getDoc(env, 'events', t.eventId), queryWhere(env, 'raffles', [{ field: 'eventId', value: t.eventId }]), autoStyleFor(env, t.eventId)]);
   const raffle = raffles.find(x => x.fields.enabled === true && x.fields.public === true);
   return {
     token, firstName: firstName(t.customerName), type: t.type, admits: Number(t.admitCount || 1),
     eventId: t.eventId, eventName: ev?.fields?.name || t.eventName || '', eventDate: ev?.fields?.date || t.eventDate || '',
     doors: ev?.fields?.doors || '', venue: ev?.fields?.venue || '', artwork: ev?.fields?.artwork || '',
-    ticketStyle: ev?.fields?.ticketStyle || 'auto', ticketColors: cleanTicketColors(ev?.fields?.ticketColors),
+    ticketStyle: ev?.fields?.ticketStyle || 'auto', ticketColors: cleanTicketColors(ev?.fields?.ticketColors), autoStyle,
     identityLine: t.identityLine || '', displayCode: t.displayCode, status: t.revoked || t.cancelled ? 'cancelled' : t.status,
     inDraw: t.inDraw === true, comp: t.comp === true,
     raffle: raffle ? { prize: raffle.fields.prize || '', status: raffle.fields.status, winner: raffle.fields.status === 'drawn' ? { name: raffle.fields.winnerDisplayName, code: raffle.fields.winnerDisplayCode } : null } : null,

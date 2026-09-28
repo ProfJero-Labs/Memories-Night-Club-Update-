@@ -50,7 +50,7 @@ test('homepage "Get tickets" opens a real night and a guest can pay, get a ticke
   assert.equal(await page.textContent('[data-name]'), 'Kwame');
   assert.ok(await page.locator('.t-qr svg').count(), 'QR rendered');
   const style = await page.getAttribute('.ticket', 'data-style');
-  assert.ok(['classic', 'poster', 'neon', 'split', 'stamp'].includes(style), `ticket has its night's design (${style})`);
+  assert.ok(['classic', 'poster', 'neon', 'split', 'stamp', 'marquee', 'vinyl', 'sunburst'].includes(style), `ticket has its night's design (${style})`);
   assert.equal(await page.evaluate(() => getComputedStyle(document.querySelector('.t-qr')).backgroundColor), 'rgb(255, 255, 255)', 'QR on white in every design');
   const t = store.get('tickets', token).fields;
   assert.equal(t.identityLine, 'SAMPLE LINE THREE.');

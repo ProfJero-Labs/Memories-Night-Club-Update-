@@ -21,7 +21,7 @@ export const verifyUrl = token => `${location.origin}/verify.html?token=${encode
 // with a white QR box, whatever the design, so it scans in a dark room.
 const lum = hex => { const c = [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16) / 255).map(v => (v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4)); return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]; };
 export function designFor(t) {
-  const d = ticketDesign({ id: t.eventId || t.eventName, ticketStyle: t.ticketStyle, ticketColors: t.ticketColors });
+  const d = ticketDesign({ id: t.eventId || t.eventName, ticketStyle: t.ticketStyle, ticketColors: t.ticketColors, autoStyle: t.autoStyle });
   // Text on the accent colour: whichever of dark/light reads better.
   const onAccent = (lum(d.colors.accent) + 0.05) / (lum(d.colors.dark) + 0.05) >= (lum(d.colors.light) + 0.05) / (lum(d.colors.accent) + 0.05) ? d.colors.dark : d.colors.light;
   return { ...d, onAccent };
@@ -110,6 +110,29 @@ export async function shareImage(t, { withArt = true } = {}) {
     ink = d.onAccent; lineColor = d.onAccent; accent = d.onAccent; textLogo = true;
     const day = t.date ? formatAccra(t.date, { day: '2-digit' }) : '';
     if (day) { x.save(); x.globalAlpha = 0.2; x.fillStyle = d.onAccent; x.font = '400 560px Anton, Impact, sans-serif'; x.textAlign = 'right'; x.textBaseline = 'top'; x.fillText(day, S - 40, 120); x.restore(); }
+  } else if (d.style === 'marquee') {
+    const g = x.createRadialGradient(S / 2, S * 0.45, 40, S / 2, S * 0.45, 760); g.addColorStop(0, mixHex(C.accent, C.dark, 0.25)); g.addColorStop(1, C.dark);
+    x.fillStyle = g; x.fillRect(0, 0, S, S);
+    x.save(); x.fillStyle = C.accent; x.shadowColor = C.accent; x.shadowBlur = 16;
+    for (let p = 78; p <= S - 78; p += 40) for (const [bx, by] of [[p, 72], [p, S - 72], [72, p], [S - 72, p]]) { x.beginPath(); x.arc(bx, by, 8, 0, Math.PI * 2); x.fill(); }
+    x.restore();
+    ink = C.light; lineColor = C.light; textX = 110; textW = S - 260; glow = 'fill';
+  } else if (d.style === 'vinyl') {
+    x.fillStyle = C.dark; x.fillRect(0, 0, S, S);
+    const cx = S * 0.86, cy = S * 0.46;
+    x.fillStyle = '#111'; x.beginPath(); x.arc(cx, cy, 620, 0, Math.PI * 2); x.fill();
+    x.strokeStyle = 'rgba(255,255,255,.05)'; x.lineWidth = 2; for (let r = 150; r < 620; r += 9) { x.beginPath(); x.arc(cx, cy, r, 0, Math.PI * 2); x.stroke(); }
+    x.fillStyle = C.accent; x.beginPath(); x.arc(cx, cy, 140, 0, Math.PI * 2); x.fill();
+    x.fillStyle = C.dark; x.beginPath(); x.arc(cx, cy, 14, 0, Math.PI * 2); x.fill();
+    const sh = x.createLinearGradient(0, 0, S, S); sh.addColorStop(0.35, 'rgba(255,255,255,0)'); sh.addColorStop(0.45, 'rgba(255,255,255,.06)'); sh.addColorStop(0.55, 'rgba(255,255,255,0)'); x.fillStyle = sh; x.fillRect(0, 0, S, S);
+    const fade = x.createLinearGradient(0, 0, S, 0); fade.addColorStop(0.1, C.dark); fade.addColorStop(0.6, C.dark + '00'); x.fillStyle = fade; x.fillRect(0, 0, S, S);
+    ink = C.light; lineColor = C.light; accent = C.accent;
+  } else if (d.style === 'sunburst') {
+    x.fillStyle = mixHex(C.accent, C.light, 0.62); x.fillRect(0, 0, S, S);
+    const ox = S / 2, oy = S * 1.08; x.fillStyle = C.accent;
+    for (let a = -Math.PI; a < 0; a += Math.PI / 13) { x.beginPath(); x.moveTo(ox, oy); x.arc(ox, oy, 2000, a, a + Math.PI / 26); x.closePath(); x.fill(); }
+    x.fillStyle = mixHex(C.light, C.accent, 0.55); x.beginPath(); x.arc(ox, oy, 380, 0, Math.PI * 2); x.fill();
+    ink = C.dark; lineColor = C.dark; accent = C.dark;
   } else {
     x.fillStyle = mixHex(C.light, '#e9ddc0', 0.88); x.fillRect(0, 0, S, S);
     if (art) cover(art, 0, 0, S, S, 0.08, 'grayscale(1) sepia(.5) contrast(1.1)');
@@ -130,9 +153,15 @@ export async function shareImage(t, { withArt = true } = {}) {
   do { x.font = `400 ${size}px Anton, Impact, sans-serif`; rows = wrapLines(x, big, textW); size -= 6; } while ((rows.length * size * .92 > 560 || rows.some(r => x.measureText(r).width > textW)) && size > 60);
   size += 6; x.font = `400 ${size}px Anton, Impact, sans-serif`;
   const lh = size * .9, blockH = rows.length * lh, top = 190 + (560 - blockH) / 2;
-  x.save(); x.translate(textX, top); if (!glow) x.rotate(d.style === 'stamp' ? -0.045 : -0.02);
-  if (glow) { x.strokeStyle = lineColor; x.lineWidth = Math.max(3, size / 45); x.shadowColor = lineColor; x.shadowBlur = 28; rows.forEach((r, i) => x.strokeText(r, 0, i * lh)); x.shadowBlur = 8; rows.forEach((r, i) => x.strokeText(r, 0, i * lh)); }
-  else { x.fillStyle = t.line ? lineColor : ink; if (d.style === 'poster') { x.shadowColor = 'rgba(0,0,0,.55)'; x.shadowBlur = 24; } rows.forEach((r, i) => x.fillText(r, 0, i * lh)); }
+  x.save(); x.translate(textX, top); if (!glow) x.rotate(d.style === 'stamp' || d.style === 'sunburst' ? -0.06 : -0.02);
+  if (glow === 'fill') { x.fillStyle = lineColor; x.shadowColor = C.accent; x.shadowBlur = 30; rows.forEach((r, i) => x.fillText(r, 0, i * lh)); x.shadowBlur = 10; rows.forEach((r, i) => x.fillText(r, 0, i * lh)); }
+  else if (glow) { x.strokeStyle = lineColor; x.lineWidth = Math.max(3, size / 45); x.shadowColor = lineColor; x.shadowBlur = 28; rows.forEach((r, i) => x.strokeText(r, 0, i * lh)); x.shadowBlur = 8; rows.forEach((r, i) => x.strokeText(r, 0, i * lh)); }
+  else {
+    x.fillStyle = t.line ? lineColor : ink;
+    if (d.style === 'poster' || d.style === 'vinyl') { x.shadowColor = 'rgba(0,0,0,.6)'; x.shadowBlur = 24; }
+    if (d.style === 'sunburst') { x.save(); x.fillStyle = mixHex(C.light, '#ffffff', 0.8); rows.forEach((r, i) => x.fillText(r, 6, i * lh + 6)); x.restore(); }
+    rows.forEach((r, i) => x.fillText(r, 0, i * lh));
+  }
   x.restore();
   // name
   x.fillStyle = ink; x.font = 'italic 400 88px "Instrument Serif", Georgia, serif';

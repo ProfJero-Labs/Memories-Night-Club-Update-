@@ -1,6 +1,6 @@
 // Rules shared with the browser: one copy of escaping, phone, money and Accra time.
 import { accraDayKey } from '../../../public/lib/shared.js';
-export { esc, normalizePhone, maskPhone, pes, accraDayKey, nightKey, formatAccra, NIGHT_ROLLOVER_HOUR, BITS_POLICY_VERSION, TICKET_STYLES, cleanTicketColors } from '../../../public/lib/shared.js';
+export { esc, normalizePhone, maskPhone, pes, accraDayKey, nightKey, formatAccra, NIGHT_ROLLOVER_HOUR, BITS_POLICY_VERSION, TICKET_STYLES, cleanTicketColors, monthStyles } from '../../../public/lib/shared.js';
 
 export const now = () => new Date();
 export const id = () => crypto.randomUUID().replaceAll('-', '');

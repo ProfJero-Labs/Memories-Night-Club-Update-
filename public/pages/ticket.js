@@ -11,7 +11,7 @@ function view(t, qr) {
   const drawNote = r?.status === 'drawn' && r.winner ? `<div class="notice ${t.inDraw ? 'ok' : ''}">The draw is done: won by ${esc(r.winner.name)} (${esc(r.winner.code)}).</div>`
     : t.inDraw ? `<div class="notice ok">You’re in the draw${r?.prize ? ` for ${esc(r.prize)}` : ''}. Winner is picked before the night and gets a text.</div>` : '';
   root.innerHTML = `<div class="ticket-page">
-    <div>${ticketHTML({ line: t.identityLine, firstName: t.firstName, eventName: t.eventName, eventId: t.eventId, ticketStyle: t.ticketStyle, ticketColors: t.ticketColors, date: t.eventDate, doors: t.doors, venue: t.venue, artwork: t.artwork, code: t.displayCode, status: t.status, inDraw: t.inDraw, type: t.type, admits: t.admits }, { qr })}
+    <div>${ticketHTML({ line: t.identityLine, firstName: t.firstName, eventName: t.eventName, eventId: t.eventId, ticketStyle: t.ticketStyle, ticketColors: t.ticketColors, autoStyle: t.autoStyle, date: t.eventDate, doors: t.doors, venue: t.venue, artwork: t.artwork, code: t.displayCode, status: t.status, inDraw: t.inDraw, type: t.type, admits: t.admits }, { qr })}
       <p class="foot-small" style="text-align:center;margin-top:16px">This page is your ticket. Keep the link to yourself; the QR gets you in once.</p></div>
     <div class="post">
       <p class="kicker red">${params.get('new') ? 'You’re in' : esc(shortDate(t.eventDate || new Date()))}</p>
@@ -32,7 +32,7 @@ function view(t, qr) {
 async function makePost(t) {
   const img = $('#postImg');
   try {
-    blob = await shareImage({ line: t.identityLine, firstName: t.firstName, eventName: t.eventName, eventId: t.eventId, ticketStyle: t.ticketStyle, ticketColors: t.ticketColors, doors: t.doors, date: t.eventDate, artwork: t.artwork, inDraw: t.inDraw });
+    blob = await shareImage({ line: t.identityLine, firstName: t.firstName, eventName: t.eventName, eventId: t.eventId, ticketStyle: t.ticketStyle, ticketColors: t.ticketColors, autoStyle: t.autoStyle, doors: t.doors, date: t.eventDate, artwork: t.artwork, inDraw: t.inDraw });
     blobUrl = URL.createObjectURL(blob); img.src = blobUrl;
   } catch { img.replaceWith(Object.assign(document.createElement('p'), { className: 'muted', textContent: 'Your share image couldn’t be drawn on this phone. Screenshot the ticket instead.' })); }
   const file = () => new File([blob], `memories-${(t.identityLine || t.eventName).toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 40)}.png`, { type: 'image/png' });

@@ -11,7 +11,7 @@ Object.assign(S, (({ name = '', phone = '', email = '' }) => ({ name, phone, ema
 const phoneOk = p => normalizePhone(p) !== null;
 const first = n => n.trim().split(/\s+/)[0] || '';
 const total = () => T.pricePesewas * qty;
-const preview = () => ticketHTML({ line: S.line, firstName: first(S.name), eventName: B.event.name, eventId: B.event.id, ticketStyle: B.event.ticketStyle, ticketColors: B.event.ticketColors, date: B.event.date, doors: B.event.doors, venue: B.event.venue, artwork: B.event.artwork, type: T.name, admits: T.admits, inDraw: false }, { preview: true });
+const preview = () => ticketHTML({ line: S.line, firstName: first(S.name), eventName: B.event.name, eventId: B.event.id, ticketStyle: B.event.ticketStyle, ticketColors: B.event.ticketColors, autoStyle: B.event.autoStyle, date: B.event.date, doors: B.event.doors, venue: B.event.venue, artwork: B.event.artwork, type: T.name, admits: T.admits, inDraw: false }, { preview: true });
 const hasLines = () => B.lines.length > 0;
 // The line comes first: it's the point of the ticket. Pick one of the night's, or write your own.
 const order = () => ['s2', 's1', 's3'];

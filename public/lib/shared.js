@@ -52,7 +52,7 @@ export const BITS_ACK_TEXT = 'I understand my ticket is only issued once the ful
 
 // ── Ticket designs: each night looks different ──
 // A night picks a design (or "auto") and carries colours taken from its own flyer at upload.
-export const TICKET_STYLES = ['classic', 'poster', 'neon', 'split', 'stamp'];
+export const TICKET_STYLES = ['classic', 'poster', 'neon', 'split', 'stamp', 'marquee', 'vinyl', 'sunburst'];
 const HEX = /^#[0-9a-f]{6}$/i;
 // Validates stored colours: { accent, dark, light } as #rrggbb, or null.
 export const cleanTicketColors = c => (c && HEX.test(c.accent) && HEX.test(c.dark) && HEX.test(c.light) ? { accent: c.accent.toLowerCase(), dark: c.dark.toLowerCase(), light: c.light.toLowerCase() } : null);
@@ -63,10 +63,34 @@ export const FALLBACK_PALETTES = [
   { accent: '#ff5a36', dark: '#1f0b06', light: '#fbe9e2' }, { accent: '#3b82f6', dark: '#07122a', light: '#e4ecfa' },
 ];
 const hash = s => { let h = 2166136261; for (const ch of String(s || '')) { h ^= ch.charCodeAt(0); h = Math.imul(h, 16777619); } return h >>> 0; };
-// The design a night's tickets use: its chosen style (auto = picked from the night's id, so nights
-// differ by default) and its flyer colours (or a palette picked the same way).
-export function ticketDesign({ id, ticketStyle, ticketColors } = {}) {
+// "Auto" nights in the same month get different designs: in date order, each takes the next design
+// no other night that month has (chosen by hand or already given). The starting design moves on
+// each month. With eight designs, a month of eight Friday/Saturday nights has eight looks.
+// events: [{ id, date, ticketStyle }] (all nights, any visibility). Returns Map(id → style).
+export function monthStyles(events) {
+  const byMonth = new Map();
+  for (const e of events) { const m = accraDayKey(e.date).slice(0, 7); if (m) (byMonth.get(m) || byMonth.set(m, []).get(m)).push(e); }
+  const out = new Map();
+  for (const [month, list] of byMonth) {
+    list.sort((a, b) => new Date(a.date) - new Date(b.date) || String(a.id).localeCompare(String(b.id)));
+    const used = new Set(list.map(e => e.ticketStyle).filter(st => TICKET_STYLES.includes(st)));
+    const [y, mo] = month.split('-').map(Number);
+    let next = (y * 12 + mo) % TICKET_STYLES.length;
+    for (const e of list) {
+      if (TICKET_STYLES.includes(e.ticketStyle)) { out.set(e.id, e.ticketStyle); continue; }
+      let pick = null;
+      for (let k = 0; k < TICKET_STYLES.length; k++) { const st = TICKET_STYLES[(next + k) % TICKET_STYLES.length]; if (!used.has(st)) { pick = st; next = (next + k + 1) % TICKET_STYLES.length; break; } }
+      if (!pick) { pick = TICKET_STYLES[next]; next = (next + 1) % TICKET_STYLES.length; } // a 9th night reuses
+      used.add(pick); out.set(e.id, pick);
+    }
+  }
+  return out;
+}
+
+// The design a night's tickets use: its chosen style, else the month's pick (autoStyle, from
+// monthStyles on the server), else one picked from its id; and its flyer colours (or a palette).
+export function ticketDesign({ id, ticketStyle, ticketColors, autoStyle } = {}) {
   const h = hash(id);
-  const style = TICKET_STYLES.includes(ticketStyle) ? ticketStyle : TICKET_STYLES[h % TICKET_STYLES.length];
+  const style = TICKET_STYLES.includes(ticketStyle) ? ticketStyle : TICKET_STYLES.includes(autoStyle) ? autoStyle : TICKET_STYLES[h % TICKET_STYLES.length];
   return { style, colors: cleanTicketColors(ticketColors) || FALLBACK_PALETTES[(h >>> 8) % FALLBACK_PALETTES.length] };
 }

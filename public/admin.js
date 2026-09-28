@@ -95,7 +95,7 @@ async function night(id, notice) {
       <div class="card" style="background:var(--ink-2)"><h2 style="margin:0">Ticket design</h2>
         <div class="grid2" style="align-items:start">
           <div style="display:grid;gap:12px">
-            <div class="sfield"><label for="tStyle">Design</label><select id="tStyle">${[['auto', 'Auto (a different look for each night)'], ['classic', 'Classic: paper, the night’s colour'], ['poster', 'Poster: the flyer is the ticket'], ['neon', 'Neon: dark, glowing type'], ['split', 'Split: flyer strip + colour block'], ['stamp', 'Stamp: bold colour, halftone, big date']].map(([v, l]) => `<option value="${v}" ${(e.ticketStyle || 'auto') === v ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
+            <div class="sfield"><label for="tStyle">Design</label><select id="tStyle">${[['auto', `Auto: a different design from every other night this month${e.autoStyle ? ` (now ${e.autoStyle})` : ''}`], ['classic', 'Classic: paper, the night’s colour'], ['poster', 'Poster: the flyer is the ticket'], ['neon', 'Neon: dark, glowing type'], ['split', 'Split: flyer strip + colour block'], ['stamp', 'Stamp: bold colour, halftone, big date'], ['marquee', 'Marquee: a frame of bulbs'], ['vinyl', 'Vinyl: record grooves, coloured label'], ['sunburst', 'Sunburst: retro rays']].map(([v, l]) => `<option value="${v}" ${(e.ticketStyle || 'auto') === v ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
             <div class="toolbar" style="margin:0"><label class="check">Accent <input type="color" id="tAccent"></label><label class="check">Dark <input type="color" id="tDark"></label><label class="check">Light <input type="color" id="tLight"></label></div>
             <span class="hint">Colours are taken from the flyer when you upload it. Change them here if you like. Every design keeps the QR on white so it scans at the door.</span>
           </div>
@@ -130,7 +130,7 @@ async function night(id, notice) {
   let colors = designFor({ eventId: e.id || 'new', ticketColors: e.ticketColors }).colors;
   const drawTicketPreview = () => {
     $('#tAccent').value = colors.accent; $('#tDark').value = colors.dark; $('#tLight').value = colors.light;
-    $('#tPrev').innerHTML = ticketHTML({ line: lines[0] || 'YOUR LINE HERE', firstName: 'Ama', eventName: val('#evName') || 'Your night', eventId: e.id || 'new', date: val('#evDate') ? `${val('#evDate')}:00Z` : e.date, doors: val('#evDoors'), venue: val('#evVenue'), artwork: art.artwork, ticketStyle: $('#tStyle').value, ticketColors: colors, type: 'Regular', admits: 1 }, { preview: true });
+    $('#tPrev').innerHTML = ticketHTML({ line: lines[0] || 'YOUR LINE HERE', firstName: 'Ama', eventName: val('#evName') || 'Your night', eventId: e.id || 'new', date: val('#evDate') ? `${val('#evDate')}:00Z` : e.date, doors: val('#evDoors'), venue: val('#evVenue'), artwork: art.artwork, ticketStyle: $('#tStyle').value, ticketColors: colors, autoStyle: e.autoStyle, type: 'Regular', admits: 1 }, { preview: true });
     $('#tPrev .ticket').classList.add('compact');
   };
   $('#tStyle').onchange = () => { touch(); drawTicketPreview(); };
