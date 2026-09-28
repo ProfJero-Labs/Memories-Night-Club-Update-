@@ -10,7 +10,7 @@ staffHeader(user, 'Control room');
 const can = roles => roles.includes(user.role);
 const TABS = [
   ['overview', 'Overview', CMS], ['nights', 'Nights', CMS], ['bookings', 'Bookings', CMS], ['requests', 'Event requests', CMS],
-  ['bits', 'Pay in bits', MONEY], ['bar', 'Bar menu', CMS], ['settings', 'Site settings', MONEY], ['staff', 'Staff', ['superAdmin']],
+  ['bits', 'Pay in bits', MONEY], ['refunds', 'Refunds', MONEY], ['bar', 'Bar menu', CMS], ['settings', 'Site settings', MONEY], ['staff', 'Staff', ['superAdmin']],
 ].filter(t => can(t[2]));
 const panel = $('#panel');
 const flash = (el, text, bad = false) => { el.innerHTML = `<div class="msg ${bad ? 'err' : ''}" role="status">${esc(text)}</div>`; if (!bad) setTimeout(() => { el.innerHTML = ''; }, 4000); };
@@ -32,7 +32,7 @@ function show(tab, arg, notice) {
   if (location.hash.slice(1) !== current) location.hash = current;
   $$('[data-tab]').forEach(b => b.setAttribute('aria-selected', String(b.dataset.tab === tab)));
   panel.innerHTML = '<div class="loading">Loading…</div>';
-  ({ overview, nights, night, bookings, requests, bits, bar, settings, staff })[tab](arg, notice).catch(fail);
+  ({ overview, nights, night, bookings, requests, bits, refunds, bar, settings, staff })[tab](arg, notice).catch(fail);
 }
 
 // ── Overview ──
@@ -291,6 +291,31 @@ async function bits() {
       <tr class="expand" id="h-${esc(p.id)}" hidden><td colspan="7">${(p.payments || []).map(x => `<div>${esc(when(x.paidAt))} · ${money(x.amountPesewas)} · <small>${esc(x.reference)}</small>${x.note ? ` · ${pill(x.note.replace(/_/g, ' '), 'red')}` : ''}</div>`).join('') || 'No payments yet.'}</td></tr>`).join('') || '<tr><td colspan="7" class="empty-row">No pay-in-bits orders yet.</td></tr>'}</tbody></table></div><div id="bMsg"></div>`;
   $$('[data-hist]').forEach(b => b.onclick = () => { const x = $(`#h-${b.dataset.hist}`); x.hidden = !x.hidden; });
   $$('[data-sms]').forEach(b => b.onclick = async () => { b.disabled = true; try { await sapi('/api/admin/installments/resend-sms', { method: 'POST', body: { planId: b.dataset.sms } }); flash($('#bMsg'), `Text sent for ${b.dataset.sms}.`); } catch (err) { flash($('#bMsg'), err.message, true); } b.disabled = false; });
+}
+
+// ── Refunds owed ──
+const REFUND_WHY = {
+  sold_out_after_payment: 'Paid after the night sold out', table_sold_out_after_payment: 'Table sold out after payment',
+  bottle_sold_out_after_payment: 'Bottle sold out after payment', plan_forfeited: 'Paid after the order was forfeited', overpaid: 'Paid more than the ticket',
+};
+async function refunds() {
+  const { refunds: list, totalPesewas } = await sapi('/api/admin/refunds');
+  panel.innerHTML = `<h1>Refunds</h1>
+    <p class="muted" style="margin-top:-8px">Money taken that has to go back. Refund it in the Paystack dashboard (or by MoMo/cash), then mark it here with a note.</p>
+    ${list.length ? `<div class="kpis"><div><span>Owed back</span><b>${money(totalPesewas)}</b></div><div><span>Guests</span><b>${list.length}</b></div></div>
+    <div class="tbl-wrap"><table class="tbl"><thead><tr><th>Who</th><th>Night</th><th>Why</th><th class="num">Amount</th><th></th></tr></thead><tbody>
+    ${list.map((r, i) => `<tr><td>${esc(r.buyerName || '—')}${r.buyerPhone ? `<br><a href="tel:${esc(r.buyerPhone)}">${esc(r.buyerPhone)}</a>` : ''}</td><td>${esc(r.eventName)}${r.planId ? `<br><small class="muted">${esc(r.planId)}</small>` : ''}</td>
+      <td>${esc(REFUND_WHY[r.reason] || r.reason)}${r.at ? `<br><small class="muted">${esc(when(r.at))}</small>` : ''}</td><td class="num"><strong>${money(r.amountPesewas)}</strong></td>
+      <td class="actions"><form class="toolbar" data-refund="${i}" style="margin:0" novalidate><input maxlength="300" placeholder="How it was refunded (required)" aria-label="Refund note" style="min-width:200px"><button class="sbtn red" type="submit">Mark refunded</button></form></td></tr>`).join('')}
+    </tbody></table></div>` : '<div class="msg">Nothing owed back.</div>'}<div id="rfMsg"></div>`;
+  $$('form[data-refund]').forEach(f => f.onsubmit = async ev => {
+    ev.preventDefault();
+    const r = list[Number(f.dataset.refund)], note = $('input', f).value.trim();
+    if (!note) return flash($('#rfMsg'), 'Add a note first: the Paystack refund reference, or how it was paid back.', true);
+    if (!confirm(`Mark ${money(r.amountPesewas)} to ${r.buyerName || 'this guest'} as refunded?`)) return;
+    try { await sapi('/api/admin/refunds/mark', { method: 'POST', body: { source: r.source, id: r.id, note } }); await refunds(); flash($('#rfMsg'), 'Marked refunded.'); }
+    catch (err) { flash($('#rfMsg'), err.message, true); }
+  });
 }
 
 // ── Bar menu (bottles available on every night) ──

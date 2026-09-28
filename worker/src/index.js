@@ -132,6 +132,8 @@ async function route(req, env, ctx) {
   if (m === 'POST' && p === '/api/admin/raffle/draw') { if (await throttled(req, env, 'draw', 'strict')) return tooMany(req, env); return reply(req, env, await drawRaffle(env, await body(req), user)); }
   if (m === 'GET' && p === '/api/admin/requests') return reply(req, env, await admin.listRequests(env, user));
   if (m === 'POST' && p.startsWith('/api/admin/requests/')) return reply(req, env, await admin.updatePrivateRequest(env, last(p), await body(req), user));
+  if (m === 'GET' && p === '/api/admin/refunds') return reply(req, env, await admin.listRefunds(env, user));
+  if (m === 'POST' && p === '/api/admin/refunds/mark') return reply(req, env, await admin.markRefunded(env, await body(req), user));
   if (m === 'GET' && p === '/api/admin/installments') return reply(req, env, await admin.adminInstallments(env, user));
   if (m === 'POST' && p === '/api/admin/installments/resend-sms') { if (await throttled(req, env, 'sms', 'strict')) return tooMany(req, env); return reply(req, env, await admin.resendInstallmentSms(env, await body(req), user)); }
   if (m === 'GET' && p === '/api/admin/settings') { if (!requireRole(user, MONEY)) return fail(req, env, 'Forbidden.', 403); return ok(req, env, { settings: await getSettings(env) }); }

@@ -40,6 +40,8 @@ export const MATRIX = [
   ['GET', '/api/admin/requests', CMS],
   ['POST', '/api/admin/requests/q1', CMS, { note: 'x' }],
   ['GET', '/api/admin/installments', MONEY],
+  ['GET', '/api/admin/refunds', MONEY],
+  ['POST', '/api/admin/refunds/mark', MONEY, { source: 'checkout', id: 'x', note: 'n' }],
   ['POST', '/api/admin/installments/resend-sms', MONEY, { planId: 'MEM-AB1234' }],
   ['GET', '/api/admin/settings', MONEY],
   ['POST', '/api/admin/settings', MONEY, { venue: 'x' }],

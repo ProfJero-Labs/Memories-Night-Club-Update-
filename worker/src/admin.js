@@ -229,6 +229,55 @@ export async function adminInstallments(env, user) {
   const plans = await listDocs(env, 'installment_plans');
   return { plans: plans.map(p => { const x = { id: p.id, ...p.fields }; delete x.ticketIds; return x; }).sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0)) };
 }
+// ── Refunds owed ──
+// Money the club has taken but must give back, which the payment flows only flag:
+//  • checkout: a ticket/table payment that landed after the night sold out, or a top-up on a
+//    forfeited plan (refundStatus: 'manual_required' on the Paystack checkout);
+//  • plan: a pay-in-bits order that sold out before the last payment (everything paid is owed);
+//  • overpay: more paid on a plan than the ticket costs.
+// Staff refund in the Paystack dashboard, then mark it here with a note. Nothing here moves money.
+export async function listRefunds(env, user) {
+  if (!requireRole(user, MONEY)) return FORBIDDEN;
+  const [flagged, plans] = await Promise.all([
+    queryWhere(env, 'pending_checkouts', [{ field: 'refundStatus', value: 'manual_required' }]),
+    listDocs(env, 'installment_plans'),
+  ]);
+  const soldOutPlans = new Set(plans.filter(p => p.fields.status === 'sold_out').map(p => p.id));
+  const who = f => ({ buyerName: f.buyerName || f.name || '', buyerPhone: f.buyerPhone || f.phone || '', eventName: f.eventName || '' });
+  const refunds = [
+    ...flagged.filter(c => !(c.fields.kind === 'installment_topup' && soldOutPlans.has(c.fields.planId)))
+      .map(c => ({ source: 'checkout', id: c.id, reason: c.fields.error || 'refund_required', amountPesewas: Number(c.fields.amountPesewas || 0), ...who(c.fields), planId: c.fields.planId || '', at: c.fields.createdAt || '' })),
+    ...plans.filter(p => p.fields.status === 'sold_out' && p.fields.refundStatus !== 'refunded')
+      .map(p => ({ source: 'plan', id: p.id, reason: 'sold_out_after_payment', amountPesewas: Number(p.fields.paidPesewas || 0), ...who(p.fields), planId: p.id, at: p.fields.updatedAt || '' })),
+    ...plans.filter(p => Number(p.fields.overpaidPesewas || 0) > 0 && p.fields.overpayRefundStatus !== 'refunded')
+      .map(p => ({ source: 'overpay', id: p.id, reason: 'overpaid', amountPesewas: Number(p.fields.overpaidPesewas), ...who(p.fields), planId: p.id, at: p.fields.updatedAt || '' })),
+  ].sort((a, b) => new Date(b.at || 0) - new Date(a.at || 0));
+  return { refunds, totalPesewas: refunds.reduce((n, r) => n + r.amountPesewas, 0) };
+}
+
+export async function markRefunded(env, b, user) {
+  if (!requireRole(user, MONEY)) return FORBIDDEN;
+  const note = clean(b?.note, 300), source = b?.source, rid = String(b?.id || '');
+  if (!note) return { error: 'Add a note: how it was refunded (e.g. Paystack refund ref).' };
+  const col = source === 'checkout' ? 'pending_checkouts' : ['plan', 'overpay'].includes(source) ? 'installment_plans' : null;
+  if (!col || !rid) return { error: 'Unknown refund.' };
+  const doc = await getDoc(env, col, rid);
+  if (!doc) return { error: 'Unknown refund.', status: 404 };
+  const stamp = { refundedAt: now(), refundedBy: uidOf(user), refundNote: note };
+  if (source === 'checkout') {
+    if (doc.fields.refundStatus !== 'manual_required') return { error: 'Already marked refunded.' };
+    await setDoc(env, col, rid, { ...doc.fields, refundStatus: 'refunded', ...stamp });
+  } else if (source === 'plan') {
+    if (doc.fields.status !== 'sold_out' || doc.fields.refundStatus === 'refunded') return { error: 'Already marked refunded.' };
+    await setDoc(env, col, rid, { ...doc.fields, refundStatus: 'refunded', ...stamp });
+  } else {
+    if (!(Number(doc.fields.overpaidPesewas) > 0) || doc.fields.overpayRefundStatus === 'refunded') return { error: 'Already marked refunded.' };
+    await setDoc(env, col, rid, { ...doc.fields, overpayRefundStatus: 'refunded', overpayRefundedAt: stamp.refundedAt, overpayRefundedBy: stamp.refundedBy, overpayRefundNote: note });
+  }
+  await audit(env, user, 'REFUND_MARKED', { source, id: rid, note });
+  return { ok: true };
+}
+
 export async function resendInstallmentSms(env, b, user) {
   if (!requireRole(user, MONEY)) return FORBIDDEN;
   const plan = await getDoc(env, 'installment_plans', String(b?.planId || ''));

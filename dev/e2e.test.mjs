@@ -230,6 +230,26 @@ test('control room: an unsaved flyer is not lost when a ticket row is saved; a p
   await admin.getByText(/live on the public site/i).waitFor();
 });
 
+test('control room: refunds owed are listed and can be marked refunded with a note', async () => {
+  store.seed('pending_checkouts', 'e2e-refund', { kind: 'ticket', eventName: 'Afrobeats Friday', buyerName: 'Refund Me', buyerPhone: '0247778888', amountPesewas: 15000, status: 'failed', error: 'sold_out_after_payment', refundStatus: 'manual_required', createdAt: new Date().toISOString() });
+  const admin = await phone(1280);
+  await admin.goto(`${base}/login.html`); await admin.fill('#email', 'manager@dev'); await admin.fill('#pw', 'memories-dev'); await admin.click('#go');
+  await admin.waitForURL(/admin\.html/); await admin.click('[data-tab=refunds]');
+  const row = admin.locator('tr', { hasText: 'Refund Me' });
+  await row.waitFor();
+  assert.match(await row.textContent(), /GHS 150/);
+  await row.locator('button', { hasText: /mark refunded/i }).click();
+  await admin.getByText(/add a note first/i).waitFor();
+  assert.equal(store.get('pending_checkouts', 'e2e-refund').fields.refundStatus, 'manual_required', 'nothing marked without a note');
+  await row.locator('input').fill('Paystack refund RF-123');
+  admin.once('dialog', d => d.accept());
+  await row.locator('button', { hasText: /mark refunded/i }).click();
+  await admin.getByText(/marked refunded/i).waitFor();
+  assert.equal(store.get('pending_checkouts', 'e2e-refund').fields.refundStatus, 'refunded');
+  assert.equal(await admin.locator('tr', { hasText: 'Refund Me' }).count(), 0);
+  assert.deepEqual(admin.errors, []);
+});
+
 test('door: no any-night mode; valid → ENTRY CONFIRMED, again → ALREADY CHECKED IN, junk refused; headcount from server; search admits', async () => {
   const valid = docs('tickets').filter(t => t.status === 'valid' && t.eventId === 'dev-afro');
   const token = valid[0].id;
