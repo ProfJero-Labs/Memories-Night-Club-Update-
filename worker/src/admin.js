@@ -84,13 +84,19 @@ export async function upsertEvent(env, b, user) {
   const eventId = b.id ? String(b.id) : id();
   const existing = b.id ? await getDoc(env, 'events', eventId) : null;
   if (b.id && !existing) return { error: 'Night not found.', status: 404 };
+  // A night can only be handed to a real organiser account (or keep the one it already has).
+  const organiserId = clean(b.organiserId, 128) || null;
+  if (organiserId && organiserId !== existing?.fields?.organiserId) {
+    const acct = await getDoc(env, 'users', organiserId);
+    if (acct?.fields?.role !== 'organiser') return { error: 'Pick an organiser from the list (give them the Organiser role under Staff first).' };
+  }
   const artwork = ownImage(b.artwork, env, existing?.fields?.artwork), heroImage = ownImage(b.heroImage, env, existing?.fields?.heroImage);
   if (artwork === null || heroImage === null) return { error: 'Upload images here in the control room (links to other sites aren’t allowed).' };
   const data = {
     name, date, doors: clean(b.doors, 40), venue: clean(b.venue, 120), description: clean(b.description, 240),
     artwork, heroImage, ticketLines: lines, visibility: b.visibility === 'public' ? 'public' : 'private',
     active: b.active !== false, soldOut: b.soldOut === true, featured: b.featured === true,
-    organiserId: clean(b.organiserId, 128) || null, updatedAt: now(), createdAt: existing?.fields?.createdAt || now(),
+    organiserId, updatedAt: now(), createdAt: existing?.fields?.createdAt || now(),
   };
   await setDoc(env, 'events', eventId, { ...(existing?.fields || {}), ...data });
   if (!existing) {
@@ -312,6 +318,13 @@ export async function updateSettings(env, b, user) {
 }
 
 // ── Staff ──
+// Organiser accounts, for the night editor's picker (the UID stays behind the scenes).
+export async function listOrganisers(env, user) {
+  if (!requireRole(user, CMS)) return FORBIDDEN;
+  const organisers = (await queryWhere(env, 'users', [{ field: 'role', value: 'organiser' }])).map(x => ({ uid: x.id, email: x.fields.email || '' }));
+  return { organisers: organisers.sort((a, b) => a.email.localeCompare(b.email)) };
+}
+
 export async function listStaff(env, user) {
   if (!requireRole(user, ['superAdmin'])) return FORBIDDEN;
   return { staff: (await listDocs(env, 'users')).map(x => ({ uid: x.id, email: x.fields.email, role: x.fields.role, updatedAt: x.fields.updatedAt })) };

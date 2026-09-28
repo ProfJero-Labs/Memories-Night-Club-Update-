@@ -66,6 +66,7 @@ const localInput = iso => (iso ? new Date(iso).toISOString().slice(0, 16) : '');
 async function night(id, notice) {
   const isNew = id === 'new';
   const d = isNew ? { event: { visibility: 'private', active: true, doors: '10PM', venue: '', ticketLines: [] }, ticketTypes: [], tablePackages: [], raffle: null } : await sapi(`/api/admin/events/${encodeURIComponent(id)}`);
+  const orgs = (await sapi('/api/admin/organisers').catch(() => ({ organisers: [] }))).organisers;
   const e = d.event; let lines = [...(e.ticketLines || [])];
   panel.innerHTML = `<div class="toolbar"><button class="sbtn ghost" id="back">← Nights</button>${isNew ? '' : `${e.visibility === 'public' && e.active !== false
   ? `<a class="sbtn ghost" target="_blank" href="event.html?id=${encodeURIComponent(e.id)}">Public page ↗</a>`
@@ -89,7 +90,7 @@ async function night(id, notice) {
         <label class="check"><input type="checkbox" id="evSold" ${e.soldOut ? 'checked' : ''}> Sold out</label>
         <label class="check"><input type="checkbox" id="evFeat" ${e.featured ? 'checked' : ''}> Lead on the homepage</label>
       </div>
-      <div class="sfield"><label for="evOrg">Organiser (UID, optional)</label><input id="evOrg" value="${esc(e.organiserId || '')}" placeholder="Leave blank for club nights"><span class="hint">Their Firebase UID, shown when you grant them the Organiser role under Staff. They’ll see this night’s sales only.</span></div>
+      <div class="sfield"><label for="evOrg">Organiser</label><select id="evOrg"><option value="">Club night (no outside organiser)</option>${orgs.map(o => `<option value="${esc(o.uid)}" ${o.uid === e.organiserId ? 'selected' : ''}>${esc(o.email || 'Organiser account')}</option>`).join('')}${e.organiserId && !orgs.some(o => o.uid === e.organiserId) ? `<option value="${esc(e.organiserId)}" selected>Account no longer an organiser</option>` : ''}</select><span class="hint">They’ll see this night’s sales and can run its door. To add someone, give them the Organiser role under Staff.</span></div>
       <div>
         <h2 style="margin-top:6px">Ticket lines: what should others know? <span class="kicker" id="lnCount"></span></h2>
         <p class="hint" style="margin:0 0 10px;color:var(--muted)">8 to 12 lines. Guests pick one; it’s the big type on their ticket. With no lines, the ticket leads with the night’s name.</p>

@@ -45,6 +45,7 @@ export const MATRIX = [
   ['POST', '/api/admin/installments/resend-sms', MONEY, { planId: 'MEM-AB1234' }],
   ['GET', '/api/admin/settings', MONEY],
   ['POST', '/api/admin/settings', MONEY, { venue: 'x' }],
+  ['GET', '/api/admin/organisers', CMS],
   ['GET', '/api/admin/staff', SUPER],
   ['POST', '/api/admin/set-role', SUPER, { email: 'a@b.c', role: 'doorStaff' }],
   ['GET', '/api/admin/organiser/overview', ['organiser', 'superAdmin']],
@@ -104,4 +105,18 @@ test('organiser: door and overview only for their own nights', async () => {
   assert.equal(store.get('tickets', 'a'.repeat(64)).fields.status, 'valid', 'not admitted');
   const ov = await (await worker.fetch(new Request('https://api.test/api/admin/organiser/overview', { headers: { Authorization: `Bearer ${org}` } }), env)).json();
   assert.equal(JSON.stringify(ov).includes('"e1"'), false, 'another organiser’s night is not listed');
+});
+
+test('a night can only be handed to a real organiser account; the organiser list hides nothing else', async () => {
+  const { store, env } = createMockEnv();
+  store.seed('users', 'org-1', { email: 'promoter@x.com', role: 'organiser' });
+  store.seed('users', 'door-1', { email: 'door@x.com', role: 'doorStaff' });
+  const token = await idToken({ role: 'eventManager' });
+  const post = async body => (await worker.fetch(new Request('https://api.test/api/admin/events', { method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: JSON.stringify({ name: 'N', date: '2099-01-01T22:00:00Z', ...body }) }), env)).status;
+  assert.equal(await post({ organiserId: 'org-1' }), 200);
+  assert.equal(await post({ organiserId: 'door-1' }), 400, 'not an organiser');
+  assert.equal(await post({ organiserId: 'made-up' }), 400);
+  assert.equal(await post({ organiserId: '' }), 200, 'club night');
+  const r = await worker.fetch(new Request('https://api.test/api/admin/organisers', { headers: { Authorization: `Bearer ${token}` } }), env);
+  assert.deepEqual((await r.json()).organisers, [{ uid: 'org-1', email: 'promoter@x.com' }]);
 });

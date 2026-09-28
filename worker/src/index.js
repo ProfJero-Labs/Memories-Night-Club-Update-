@@ -138,6 +138,7 @@ async function route(req, env, ctx) {
   if (m === 'POST' && p === '/api/admin/installments/resend-sms') { if (await throttled(req, env, 'sms', 'strict')) return tooMany(req, env); return reply(req, env, await admin.resendInstallmentSms(env, await body(req), user)); }
   if (m === 'GET' && p === '/api/admin/settings') { if (!requireRole(user, MONEY)) return fail(req, env, 'Forbidden.', 403); return ok(req, env, { settings: await getSettings(env) }); }
   if (m === 'POST' && p === '/api/admin/settings') return reply(req, env, await admin.updateSettings(env, await body(req), user));
+  if (m === 'GET' && p === '/api/admin/organisers') return reply(req, env, await admin.listOrganisers(env, user));
   if (m === 'GET' && p === '/api/admin/staff') return reply(req, env, await admin.listStaff(env, user));
   if (m === 'POST' && p === '/api/admin/set-role') return reply(req, env, await admin.setRole(env, await body(req), user));
   if (m === 'GET' && p === '/api/admin/organiser/overview') return reply(req, env, await admin.organiserOverview(env, user));

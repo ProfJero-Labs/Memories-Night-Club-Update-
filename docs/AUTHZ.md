@@ -37,6 +37,7 @@ One row per staff route. ✅ = allowed, — = 403. Every route also returns 401 
 | `POST /api/admin/installments/resend-sms` | ✅ | ✅ | — | — | — |
 | `GET /api/admin/settings` | ✅ | ✅ | — | — | — |
 | `POST /api/admin/settings` | ✅ | ✅ | — | — | — |
+| `GET /api/admin/organisers` | ✅ | ✅ | ✅ | — | — |
 | `GET /api/admin/staff` | ✅ | — | — | — | — |
 | `POST /api/admin/set-role` | ✅ | — | — | — | — |
 | `GET /api/admin/organiser/overview` | ✅ | — | — | — | ✅ |

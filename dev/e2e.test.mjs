@@ -220,6 +220,8 @@ test('control room: an unsaved flyer is not lost when a ticket row is saved; a p
   await admin.setInputFiles('#artFile', new URL('./fixtures/dnd-party-poster.jpeg', import.meta.url).pathname);
   await admin.getByText(/uploaded/i).waitFor();
   assert.match(await admin.textContent('#saveState'), /unsaved/i, 'flyer upload marks the night unsaved');
+  assert.equal((await admin.locator('#evOrg option:checked').textContent()).trim(), 'orga@dev', 'organiser shown by email, not UID');
+  assert.ok(!(await admin.locator('#panel').innerText()).includes('uid-org-a'), 'no UID on screen');
   const row = admin.locator('tr[data-row="dev-afro-reg"]');
   await row.locator('[data-k=price]').fill('99');
   assert.match(await row.getAttribute('class'), /dirty/, 'changed row is highlighted');
