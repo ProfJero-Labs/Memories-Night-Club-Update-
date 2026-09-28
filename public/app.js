@@ -124,7 +124,19 @@ export function toast(msg) {
 export const remember = {
   get: () => { try { return JSON.parse(localStorage.getItem('mem-buyer') || '{}'); } catch { return {}; } },
   set: v => { try { localStorage.setItem('mem-buyer', JSON.stringify(v)); } catch { /* private mode */ } },
+  clear: () => { try { localStorage.removeItem('mem-buyer'); } catch { /* private mode */ } },
+  has: () => { const r = remember.get(); return !!(r.name || r.phone || r.email); },
 };
+// "Not you? Clear saved details": a small button that forgets this device's details and empties the
+// given fields. Returns '' when nothing is saved.
+export const forgetButton = () => (remember.has() ? '<button type="button" class="link forget" data-forget>Not you? Clear saved details</button>' : '');
+export function bindForget(root, fields, onClear) {
+  root.querySelectorAll('[data-forget]').forEach(b => b.onclick = () => {
+    remember.clear();
+    for (const id of fields) { const el = root.querySelector('#' + id); if (el) el.value = ''; }
+    b.remove(); onClear?.(); toast('Saved details cleared from this phone.');
+  });
+}
 
 export async function shareUrl(title, url = location.href) {
   if (navigator.share) { try { await navigator.share({ title, url }); return; } catch { return; } }

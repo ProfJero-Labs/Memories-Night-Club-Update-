@@ -1,5 +1,5 @@
 // checkout.html: page script (kept out of the HTML so the CSP can forbid inline scripts).
-import { chrome, normalizePhone, api, esc, params, money, $, $$, errorState, remember, shortDate, toast } from '../app.js';
+import { chrome, normalizePhone, api, esc, params, money, $, $$, errorState, remember, shortDate, toast, forgetButton, bindForget } from '../app.js';
 import { ticketHTML } from '../ticket-art.js';
 chrome();
 
@@ -43,6 +43,7 @@ function shell() {
         <div class="field" id="fPhone"><label for="phone">Phone</label><input id="phone" name="phone" type="tel" inputmode="tel" autocomplete="tel" placeholder="024 123 4567" required value="${esc(S.phone)}"><span class="hint">Your ticket link comes here by text.</span></div>
         <details ${S.email ? 'open' : ''}><summary class="label" style="cursor:pointer;padding:6px 0">Email receipt (optional)</summary>
           <div class="field" style="margin-top:10px"><label for="email" class="sr">Email</label><input id="email" type="email" autocomplete="email" inputmode="email" value="${esc(S.email)}"></div></details>
+        ${forgetButton()}
         <div class="summary"><div class="r"><span>${qty} × ${esc(T.name)}</span><span>${money(total())}</span></div></div>
         <div class="step-nav"><button class="btn back" type="button" data-back aria-label="Back">←</button><button class="btn red" type="submit">Next <span class="arrow">→</span></button></div>
       </form>
@@ -92,6 +93,7 @@ function bind() {
   $('#name').oninput = e => { S.name = e.target.value; refreshPreview(); };
   $('#phone').oninput = e => { S.phone = e.target.value; if (phoneOk(S.phone)) setErr($('#fPhone')); };
   $('#email').oninput = e => { S.email = e.target.value.trim(); };
+  bindForget(document, ['name', 'phone', 'email'], () => { S.name = S.phone = S.email = ''; refreshPreview(); $('#name').focus(); });
   $('#s1').onsubmit = ev => {
     ev.preventDefault();
     const okName = S.name.trim().length > 1, okPhone = phoneOk(S.phone);

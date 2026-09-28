@@ -78,6 +78,23 @@ test('footer and visit page show the WhatsApp number and clickable Instagram, Fa
   assert.deepEqual(page.errors, []);
 });
 
+test('remembered buyer details can be cleared from the phone', async () => {
+  const page = await phone();
+  await page.goto(`${base}/index.html`);
+  await page.evaluate(() => localStorage.setItem('mem-buyer', JSON.stringify({ name: 'Kwame Asante', phone: '0245551234', email: 'k@example.com' })));
+  await page.goto(`${base}/checkout.html?event=dev-afro&type=dev-afro-reg&qty=1`, { waitUntil: 'networkidle' });
+  await page.getByRole('radio').first().click(); await page.click('#toWho');
+  assert.equal(await page.inputValue('#name'), 'Kwame Asante');
+  await page.getByRole('button', { name: /not you\? clear saved details/i }).click();
+  assert.equal(await page.inputValue('#name'), ''); assert.equal(await page.inputValue('#phone'), '');
+  assert.equal(await page.evaluate(() => localStorage.getItem('mem-buyer')), null);
+  await page.reload({ waitUntil: 'networkidle' });
+  await page.getByRole('radio').first().click(); await page.click('#toWho');
+  assert.equal(await page.inputValue('#name'), '', 'stays cleared');
+  assert.equal(await page.getByRole('button', { name: /clear saved details/i }).count(), 0);
+  assert.deepEqual(page.errors, []);
+});
+
 test('two guests picking the same line get two different share images', async () => {
   const hashes = [];
   for (const name of ['Ama Owusu', 'Kofi Mensah']) {

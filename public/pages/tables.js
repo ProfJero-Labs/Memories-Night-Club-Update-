@@ -1,5 +1,5 @@
 // tables.html: page script (kept out of the HTML so the CSP can forbid inline scripts).
-import { chrome, normalizePhone, api, esc, params, money, img, $, $$, errorState, shortDate, doors, remember } from '../app.js';
+import { chrome, normalizePhone, api, esc, params, money, img, $, $$, errorState, shortDate, doors, remember, forgetButton, bindForget } from '../app.js';
 chrome('tables');
 const root = $('#root');
 const S = { eventId: params.get('event') || '', pkg: '', bottles: {}, step: 1, ...(({ name = '', phone = '', email = '' }) => ({ name, phone, email }))(remember.get()) };
@@ -55,10 +55,12 @@ function render() {
         <div class="r t"><span>Total</span><span>${money(total())}</span></div></div>
       <div class="field" id="fName"><label for="name">Booking name</label><input id="name" autocomplete="name" value="${esc(S.name)}" required></div>
       <div class="field" id="fPhone"><label for="phone">Phone</label><input id="phone" type="tel" inputmode="tel" autocomplete="tel" placeholder="024 123 4567" value="${esc(S.phone)}" required><span class="hint">We text your confirmation here.</span></div>
+      ${forgetButton()}
       <div class="notice" id="err" hidden role="alert"></div>
       <button class="btn red block" type="submit" id="pay">Pay ${money(total())} <span class="arrow">→</span></button>
       <p class="foot-small" style="margin:0">Paid in full by Paystack (MoMo or card). Your table is held once it’s paid.</p></form>`;
     $('#rev').onsubmit = pay;
+    bindForget(document, ['name', 'phone'], () => { S.name = S.phone = S.email = ''; });
   }
   $$('[data-back]').forEach(b => b.onclick = () => { S.step = S.step === 4 && !B.bottles.length ? 2 : S.step - 1; render(); });
   $$('[data-next]').forEach(b => b.onclick = () => { S.step = S.step === 2 && !B.bottles.length ? 4 : S.step + 1; render(); window.scrollTo({ top: 0, behavior: 'smooth' }); });
