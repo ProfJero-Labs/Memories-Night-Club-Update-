@@ -138,6 +138,11 @@ h1, h2, h3 { margin: 0; }
 @media (max-width: 420px) { .strip > * { font-size: 11px; letter-spacing: .12em; padding: 11px 10px; } }
 
 /* ── Home ── */
+/* Homepage backdrop: the next night's (or the site's) wide hero photo, dimmed behind the hero. */
+.hero-shell { position: relative; isolation: isolate; }
+.hero-backdrop { position: absolute; inset: 0; z-index: -1; background: center / cover no-repeat; opacity: .38; }
+.hero-backdrop::after { content: ''; position: absolute; inset: 0; background: linear-gradient(to bottom, rgba(13, 10, 9, .35), var(--ink) 92%); }
+.hero-backdrop[hidden] { display: none; }
 .hero { display: grid; grid-template-columns: minmax(0, 1fr); grid-template-areas: "brand" "art" "copy"; column-gap: clamp(20px, 4vw, 56px); row-gap: clamp(22px, 5vw, 36px); padding-bottom: clamp(28px, 6vw, 64px); }
 .hero .brand { grid-area: brand; } .hero .next-art { grid-area: art; } .hero .next-copy { grid-area: copy; }
 .brand { padding: clamp(28px, 7vw, 72px) 0 0; }
@@ -221,6 +226,10 @@ h1, h2, h3 { margin: 0; }
 .cal .state.unavailable { color: var(--muted); }
 
 /* ── Event page ── */
+/* A night's wide hero photo across the top of its page. */
+.event-banner { position: relative; aspect-ratio: 16 / 6; max-height: 48vh; overflow: hidden; background: var(--ink-3); }
+.event-banner img { width: 100%; height: 100%; object-fit: cover; }
+.event-banner::after { content: ''; position: absolute; inset: 0; background: linear-gradient(to top, var(--ink), transparent 60%); }
 .event-hero { display: grid; gap: 0; }
 .event-art { position: relative; background: var(--ink-3); }
 .event-art img { width: 100%; height: auto; max-height: 82vh; object-fit: contain; margin: 0 auto; }
@@ -375,30 +384,37 @@ h1, h2, h3 { margin: 0; }
 .toast.show { opacity: 1; transform: translate(-50%, 0); }
 
 /* ═══ THE TICKET ═══ */
+/* One markup, five designs (.s-classic/.s-poster/.s-neon/.s-split/.s-stamp), coloured per night by
+   --t-accent / --t-dark / --t-light / --t-on-accent (set from the night's flyer). The stub is always
+   light with a white QR box, so every design scans the same at the door. */
 .ticket {
-  --w: 380px; width: min(100%, var(--w)); margin: 0 auto; position: relative; color: var(--t-ink); background: var(--t-paper);
+  --w: 380px; --cut: 72%; width: min(100%, var(--w)); margin: 0 auto; position: relative;
+  --t-accent: var(--burgundy); --t-dark: var(--t-ink); --t-light: var(--t-paper); --t-on-accent: var(--t-paper);
+  --t-mix: color-mix(in srgb, var(--t-accent) 72%, var(--t-dark));
+  color: var(--t-dark); background: color-mix(in srgb, var(--t-light) 88%, var(--t-paper));
   filter: drop-shadow(0 18px 40px rgba(0, 0, 0, .45));
   -webkit-mask: radial-gradient(circle at 0 var(--cut), transparent 13px, #000 13.5px) left / 51% 100% no-repeat, radial-gradient(circle at 100% var(--cut), transparent 13px, #000 13.5px) right / 51% 100% no-repeat;
   mask: radial-gradient(circle at 0 var(--cut), transparent 13px, #000 13.5px) left / 51% 100% no-repeat, radial-gradient(circle at 100% var(--cut), transparent 13px, #000 13.5px) right / 51% 100% no-repeat;
-  --cut: 72%;
 }
 .ticket::before { /* paper fibre */
-  content: ''; position: absolute; inset: 0; pointer-events: none; opacity: .5; mix-blend-mode: multiply;
+  content: ''; position: absolute; inset: 0; pointer-events: none; opacity: .5; mix-blend-mode: multiply; z-index: 2;
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='220' height='220'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.75' numOctaves='3'/%3E%3CfeColorMatrix values='0 0 0 0 .55 0 0 0 0 .45 0 0 0 0 .3 0 0 0 .35 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
 }
-.t-art { position: absolute; left: 0; right: 0; top: 0; height: var(--cut); overflow: hidden; }
-.t-art img { width: 100%; height: 100%; object-fit: cover; filter: grayscale(1) sepia(.5) contrast(1.1) blur(1px); opacity: .11; mix-blend-mode: multiply; }
-.t-main { position: relative; min-height: calc(var(--w) * 1.14); padding: 18px 20px 22px; display: flex; flex-direction: column; }
+.t-main { position: relative; min-height: calc(var(--w) * 1.14); overflow: hidden; display: flex; }
+.t-art { position: absolute; inset: 0; overflow: hidden; }
+.t-art img { width: 100%; height: 100%; object-fit: cover; }
+.t-vert, .t-day { display: none; }
+.t-body { position: relative; z-index: 1; flex: 1; min-width: 0; padding: 18px 20px 22px; display: flex; flex-direction: column; }
 .t-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; font: 700 10px/1.3 var(--sans); letter-spacing: .22em; text-transform: uppercase; }
-.t-top .brandmark { font: 400 22px/1 var(--display); letter-spacing: .12em; color: var(--burgundy); }
-.t-line { margin: auto 0 0; padding-top: 22px; font: 400 clamp(46px, 14.5vw, 64px)/.86 var(--display); text-transform: uppercase; color: var(--burgundy); overflow-wrap: anywhere; transform: rotate(-1.2deg); transform-origin: left bottom; }
+.t-top .brandmark { font: 400 22px/1 var(--display); letter-spacing: .12em; color: var(--t-mix); }
+.t-line { margin: auto 0 0; padding-top: 22px; font: 400 clamp(46px, 14.5vw, 64px)/.86 var(--display); text-transform: uppercase; color: var(--t-mix); overflow-wrap: anywhere; transform: rotate(-1.2deg); transform-origin: left bottom; }
 .t-line.long { font-size: clamp(38px, 11.5vw, 50px); }
-.t-line.event { color: var(--t-ink); }
+.t-line.event { color: var(--t-dark); }
 .t-name { font: italic 400 34px/1 var(--serif); margin-top: 14px; }
 .t-meta { display: flex; flex-wrap: wrap; gap: 4px 14px; margin-top: 10px; font: 700 11px/1.3 var(--sans); letter-spacing: .16em; text-transform: uppercase; }
-.t-meta b { color: var(--teal); }
+.t-meta b { color: var(--t-mix); }
 .t-rule { position: relative; height: 0; border-top: 2px dashed rgba(36, 29, 20, .45); margin: 0 18px; }
-.t-stub { position: relative; display: grid; grid-template-columns: auto 1fr; gap: 16px; align-items: center; padding: 18px 20px 20px; }
+.t-stub { position: relative; display: grid; grid-template-columns: auto 1fr; gap: 16px; align-items: center; padding: 18px 20px 20px; color: var(--t-ink); background: color-mix(in srgb, var(--t-light) 85%, var(--t-paper)); }
 .t-qr { width: 104px; height: 104px; background: #fff; padding: 6px; display: grid; place-items: center; }
 .t-qr svg, .t-qr img { width: 100%; height: 100%; }
 .t-qr.blank { background: repeating-linear-gradient(45deg, rgba(36, 29, 20, .14) 0 6px, transparent 6px 12px); color: var(--burgundy); font: 700 10px/1.2 var(--sans); letter-spacing: .12em; text-align: center; padding: 10px; }
@@ -410,8 +426,56 @@ h1, h2, h3 { margin: 0; }
 .t-stamp.draw { color: var(--mustard); transform: rotate(3deg); }
 .t-stamp.preview { color: var(--burgundy); }
 .t-small { font: 600 10px/1.3 var(--sans); letter-spacing: .14em; text-transform: uppercase; opacity: .75; margin-top: 6px; }
+
+/* Classic: paper, the flyer as a faint watermark, the night's colour in the type. */
+.s-classic .t-art img { filter: grayscale(1) sepia(.5) contrast(1.1) blur(1px); opacity: .11; mix-blend-mode: multiply; }
+
+/* Poster: the flyer is the ticket; the line sits over it on a dark fade. */
+.s-poster .t-main { background: var(--t-dark); color: var(--t-light); }
+.s-poster .t-art::after { content: ''; position: absolute; inset: 0; background: linear-gradient(to bottom, color-mix(in srgb, var(--t-dark) 70%, transparent) 0, transparent 22%), linear-gradient(to top, var(--t-dark) 30%, color-mix(in srgb, var(--t-dark) 80%, transparent) 52%, color-mix(in srgb, var(--t-dark) 25%, transparent) 72%, transparent 88%); }
+.s-poster .t-art.none { background: radial-gradient(120% 90% at 20% 0%, var(--t-accent), var(--t-dark) 70%); }
+.s-poster .t-line, .s-poster .t-line.event { color: var(--t-light); text-shadow: 0 2px 18px rgba(0, 0, 0, .55); }
+.s-poster .t-top { color: var(--t-light); }
+.s-poster .t-top .brandmark, .s-poster .t-meta b { color: var(--t-accent); }
+.s-poster .t-top, .s-poster .t-top .brandmark { text-shadow: 0 1px 8px rgba(0, 0, 0, .6); }
+
+/* Neon: a dark room, the line drawn in light. */
+.s-neon::before { display: none; }
+.s-neon .t-main { color: var(--t-light); background:
+  radial-gradient(90% 60% at 85% 0%, color-mix(in srgb, var(--t-accent) 38%, transparent), transparent 70%),
+  repeating-linear-gradient(0deg, color-mix(in srgb, var(--t-accent) 10%, transparent) 0 1px, transparent 1px 22px),
+  repeating-linear-gradient(90deg, color-mix(in srgb, var(--t-accent) 10%, transparent) 0 1px, transparent 1px 22px),
+  var(--t-dark); }
+.s-neon .t-art { display: none; }
+.s-neon .t-line, .s-neon .t-line.event { color: transparent; -webkit-text-stroke: 2px var(--t-accent); text-shadow: 0 0 14px color-mix(in srgb, var(--t-accent) 70%, transparent), 0 0 34px color-mix(in srgb, var(--t-accent) 45%, transparent); transform: none; }
+.s-neon .t-top .brandmark, .s-neon .t-meta b { color: var(--t-accent); }
+.s-neon .t-name { color: color-mix(in srgb, var(--t-light) 88%, var(--t-accent)); }
+
+/* Split: a strip of flyer with the night's name running up it; colour block beside. */
+.s-split .t-main { background: var(--t-dark); color: var(--t-light); }
+.s-split .t-art { position: relative; inset: auto; flex: 0 0 34%; }
+.s-split .t-art.none { background: var(--t-accent); }
+.s-split .t-art::after { content: ''; position: absolute; inset: 0; background: linear-gradient(90deg, transparent 60%, color-mix(in srgb, var(--t-dark) 70%, transparent)); }
+.s-split .t-vert { display: block; position: absolute; z-index: 1; left: 0; bottom: 14px; width: 34%; writing-mode: vertical-rl; transform: rotate(180deg); padding: 0 12px; max-height: calc(100% - 28px); overflow: hidden; font: 400 26px/1 var(--display); text-transform: uppercase; letter-spacing: .04em; color: var(--t-light); text-shadow: 0 1px 10px rgba(0, 0, 0, .7); white-space: nowrap; }
+.s-split .t-body { padding-left: 18px; }
+.s-split .t-top { flex-direction: column; gap: 6px; }
+.s-split .t-top span:last-child { text-align: left !important; }
+.s-split .t-line, .s-split .t-line.event { color: var(--t-accent); font-size: clamp(30px, 8.6vw, 42px); overflow-wrap: break-word; }
+.s-split .t-line.long { font-size: clamp(26px, 7.4vw, 34px); }
+.s-split .t-top .brandmark, .s-split .t-meta b { color: var(--t-accent); }
+.s-split .t-meta { flex-direction: column; gap: 3px; }
+
+/* Stamp: one bold ink, halftone print, the date huge. */
+.s-stamp .t-main { color: var(--t-on-accent); background: radial-gradient(circle, color-mix(in srgb, var(--t-dark) 22%, transparent) 1.1px, transparent 1.6px) 0 0 / 9px 9px, var(--t-accent); }
+.s-stamp .t-art { display: none; }
+.s-stamp .t-day { display: block; position: absolute; right: -6px; top: 38px; font: 400 190px/.8 var(--display); letter-spacing: -.02em; color: color-mix(in srgb, var(--t-on-accent) 22%, transparent); }
+.s-stamp .t-line, .s-stamp .t-line.event, .s-stamp .t-top .brandmark, .s-stamp .t-meta b { color: var(--t-on-accent); }
+.s-stamp .t-line { transform: rotate(-3deg); }
+
 .ticket.compact { --w: 300px; }
 .ticket.compact .t-line { font-size: 44px; }
+.ticket.compact.s-split .t-line { font-size: 32px; }
+.ticket.compact.s-split .t-line.long { font-size: 26px; }
 
 /* Share card preview */
 .share-actions { display: grid; gap: 10px; grid-template-columns: 1fr 1fr; margin-top: 22px; }

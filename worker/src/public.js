@@ -1,5 +1,5 @@
 import { getDoc, listDocs, queryWhere, setDoc } from './lib/firestore.js';
-import { now, id, clean, dateKey, normalizePhone, validEmail, firstName } from './lib/util.js';
+import { now, id, clean, dateKey, normalizePhone, validEmail, firstName, cleanTicketColors } from './lib/util.js';
 import { sendEmail } from './lib/notify.js';
 
 // ── Site settings: the one place contact details and venue copy live ──
@@ -35,6 +35,7 @@ export function publicEvent(id, f, settings) {
     id, name: f.name || '', date: f.date, doors: f.doors || '', venue: f.venue || settings?.venue || '',
     artwork: f.artwork || '', heroImage: f.heroImage || '', description: clean(f.description, 240),
     soldOut: f.soldOut === true, featured: f.featured === true,
+    ticketStyle: f.ticketStyle || 'auto', ticketColors: cleanTicketColors(f.ticketColors),
   };
 }
 
@@ -143,6 +144,7 @@ export async function publicTicket(env, token) {
     token, firstName: firstName(t.customerName), type: t.type, admits: Number(t.admitCount || 1),
     eventId: t.eventId, eventName: ev?.fields?.name || t.eventName || '', eventDate: ev?.fields?.date || t.eventDate || '',
     doors: ev?.fields?.doors || '', venue: ev?.fields?.venue || '', artwork: ev?.fields?.artwork || '',
+    ticketStyle: ev?.fields?.ticketStyle || 'auto', ticketColors: cleanTicketColors(ev?.fields?.ticketColors),
     identityLine: t.identityLine || '', displayCode: t.displayCode, status: t.revoked || t.cancelled ? 'cancelled' : t.status,
     inDraw: t.inDraw === true, comp: t.comp === true,
     raffle: raffle ? { prize: raffle.fields.prize || '', status: raffle.fields.status, winner: raffle.fields.status === 'drawn' ? { name: raffle.fields.winnerDisplayName, code: raffle.fields.winnerDisplayCode } : null } : null,

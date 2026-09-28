@@ -1,7 +1,8 @@
 // Control room. Every read and write goes through the Worker with the signed-in user's token;
 // the Worker enforces roles, validation and audit logging. Uploads go to Firebase Storage.
 import { esc, money, $, $$, shortDate } from './app.js';
-import { requireStaff, staffHeader, sapi, compressImage, ghs, pes, when, ROLE_LABEL } from './staff.js';
+import { requireStaff, staffHeader, sapi, compressImage, paletteFrom, ghs, pes, when, ROLE_LABEL } from './staff.js';
+import { ticketHTML, designFor } from './ticket-art.js';
 import { uploadImage } from './firebase.js';
 
 const CMS = ['superAdmin', 'manager', 'eventManager'], MONEY = ['superAdmin', 'manager'];
@@ -88,9 +89,18 @@ async function night(id, notice) {
       </div>
       <div class="sfield"><label for="evDesc">Two lines, max (optional)</label><textarea id="evDesc" maxlength="240" style="min-height:64px">${esc(e.description || '')}</textarea></div>
       <div class="grid2">
-        <div class="img-drop"><div class="thumb" id="artThumb" style="background-image:url('${esc(e.artwork || '')}')"></div><div class="sfield"><label for="artFile">Flyer</label><input id="artFile" type="file" accept="image/jpeg,image/png,image/webp"><span class="hint">Portrait works best. Resized before upload.</span></div></div>
-        <div class="img-drop"><div class="thumb wide" id="heroThumb" style="background-image:url('${esc(e.heroImage || '')}')"></div><div class="sfield"><label for="heroFile">Hero image (optional)</label><input id="heroFile" type="file" accept="image/jpeg,image/png,image/webp"></div></div>
+        <div class="img-drop"><div class="thumb" id="artThumb" style="background-image:url('${esc(e.artwork || '')}')"></div><div class="sfield"><label for="artFile">Flyer</label><input id="artFile" type="file" accept="image/jpeg,image/png,image/webp"><span class="hint">Portrait works best. Shown on the homepage (when this is the next night), Nights, this night’s page and its tickets. Its colours become the ticket colours.</span></div></div>
+        <div class="img-drop"><div class="thumb wide" id="heroThumb" style="background-image:url('${esc(e.heroImage || '')}')"></div><div class="sfield"><label for="heroFile">Hero image (optional)</label><input id="heroFile" type="file" accept="image/jpeg,image/png,image/webp"><span class="hint">A wide photo. Shown across the top of this night’s page, and behind it on the homepage when it’s the next night.</span></div></div>
       </div>
+      <div class="card" style="background:var(--ink-2)"><h2 style="margin:0">Ticket design</h2>
+        <div class="grid2" style="align-items:start">
+          <div style="display:grid;gap:12px">
+            <div class="sfield"><label for="tStyle">Design</label><select id="tStyle">${[['auto', 'Auto (a different look for each night)'], ['classic', 'Classic: paper, the night’s colour'], ['poster', 'Poster: the flyer is the ticket'], ['neon', 'Neon: dark, glowing type'], ['split', 'Split: flyer strip + colour block'], ['stamp', 'Stamp: bold colour, halftone, big date']].map(([v, l]) => `<option value="${v}" ${(e.ticketStyle || 'auto') === v ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
+            <div class="toolbar" style="margin:0"><label class="check">Accent <input type="color" id="tAccent"></label><label class="check">Dark <input type="color" id="tDark"></label><label class="check">Light <input type="color" id="tLight"></label></div>
+            <span class="hint">Colours are taken from the flyer when you upload it. Change them here if you like. Every design keeps the QR on white so it scans at the door.</span>
+          </div>
+          <div id="tPrev" aria-label="Ticket preview"></div>
+        </div></div>
       <div class="toolbar" style="margin:0">
         <label class="check"><input type="checkbox" id="evPublic" ${e.visibility === 'public' ? 'checked' : ''}> On the public site</label>
         <label class="check"><input type="checkbox" id="evActive" ${e.active !== false ? 'checked' : ''}> Active</label>
@@ -115,11 +125,20 @@ async function night(id, notice) {
 
   $('#back').onclick = () => show('nights');
   const art = { artwork: e.artwork || '', heroImage: e.heroImage || '' };
+  // Ticket design: the night's colours (from its flyer, or the palette it would get anyway) and style.
+  let colors = designFor({ eventId: e.id || 'new', ticketColors: e.ticketColors }).colors;
+  const drawTicketPreview = () => {
+    $('#tAccent').value = colors.accent; $('#tDark').value = colors.dark; $('#tLight').value = colors.light;
+    $('#tPrev').innerHTML = ticketHTML({ line: lines[0] || 'YOUR LINE HERE', firstName: 'Ama', eventName: val('#evName') || 'Your night', eventId: e.id || 'new', date: val('#evDate') ? `${val('#evDate')}:00Z` : e.date, doors: val('#evDoors'), venue: val('#evVenue'), artwork: art.artwork, ticketStyle: $('#tStyle').value, ticketColors: colors, type: 'Regular', admits: 1 }, { preview: true });
+    $('#tPrev .ticket').classList.add('compact');
+  };
+  $('#tStyle').onchange = () => { touch(); drawTicketPreview(); };
+  for (const [id, k] of [['#tAccent', 'accent'], ['#tDark', 'dark'], ['#tLight', 'light']]) $(id).oninput = ev => { colors = { ...colors, [k]: ev.target.value }; touch(); drawTicketPreview(); };
   // Save state for the top form: anything changed since the last save shows as unsaved, and
   // leaving (or saving a section below, which reloads the page) asks first so a new flyer isn't lost.
   let dirty = false;
   const setState = (html) => { $('#saveState').innerHTML = html; };
-  const touch = () => { dirty = true; setState(pill('Unsaved changes', 'amber')); };
+  const touch = () => { dirty = true; setState(pill('Unsaved changes', 'amber')); if ($('#tPrev')) drawTicketPreview(); };
   unsaved = () => dirty;
   $('#evForm').addEventListener('input', ev => { if (ev.target.id !== 'newLine' && ev.target.type !== 'file') touch(); });
   const drawLines = () => {
@@ -131,6 +150,7 @@ async function night(id, notice) {
     $$('[data-rm]').forEach(b => b.onclick = () => { lines.splice(+b.dataset.rm, 1); drawLines(); touch(); });
   };
   drawLines();
+  drawTicketPreview();
   const addLine = () => { const v = val('#newLine').toUpperCase(); if (!v) return; if (lines.length >= 12) return flash($('#evMsg'), 'Twelve lines is the max.', true); if (lines.includes(v)) return flash($('#evMsg'), 'That line is already there.', true); lines.push(v); $('#newLine').value = ''; drawLines(); touch(); };
   $('#addLine').onclick = addLine;
   $('#newLine').onkeydown = ev => { if (ev.key === 'Enter') { ev.preventDefault(); addLine(); } };
@@ -138,7 +158,9 @@ async function night(id, notice) {
     $(input).onchange = async ev => {
       const f = ev.target.files[0]; if (!f) return;
       flash($('#evMsg'), 'Uploading…');
-      try { art[key] = await uploadImage(await compressImage(f), f.name.replace(/\.\w+$/, '.webp')); $(thumb).style.backgroundImage = `url('${art[key]}')`; touch(); flash($('#evMsg'), 'Uploaded. Click “Save night” to publish it.'); }
+      try {
+        if (key === 'artwork') { const p = await paletteFrom(f).catch(() => null); if (p) colors = p; }
+        art[key] = await uploadImage(await compressImage(f), f.name.replace(/\.\w+$/, '.webp')); $(thumb).style.backgroundImage = `url('${art[key]}')`; touch(); drawTicketPreview(); flash($('#evMsg'), 'Uploaded. Click “Save night” to publish it.'); }
       catch (err) { flash($('#evMsg'), err.message || 'Upload failed.', true); }
     };
   }
@@ -148,7 +170,7 @@ async function night(id, notice) {
       const dt = val('#evDate');
       const r = await sapi('/api/admin/events', { method: 'POST', body: {
         id: isNew ? undefined : e.id, name: val('#evName'), date: dt ? `${dt}:00Z` : '', doors: val('#evDoors'), venue: val('#evVenue'), description: val('#evDesc'),
-        artwork: art.artwork, heroImage: art.heroImage, ticketLines: lines, visibility: $('#evPublic').checked ? 'public' : 'private',
+        artwork: art.artwork, heroImage: art.heroImage, ticketLines: lines, ticketStyle: $('#tStyle').value, ticketColors: colors, visibility: $('#evPublic').checked ? 'public' : 'private',
         active: $('#evActive').checked, soldOut: $('#evSold').checked, featured: $('#evFeat').checked, organiserId: val('#evOrg'),
       } });
       dirty = false;

@@ -1,7 +1,7 @@
 // Staff operations. Every write the admin console makes comes through here: role-checked,
 // validated, and audit-logged. The browser never writes Firestore directly.
 import { getDoc, setDoc, deleteDoc, listDocs, queryWhere, commitTx, updateWrite, withTransaction, googleAccessToken } from './lib/firestore.js';
-import { now, id, clean, normalizePhone, ticketToken, displayCode, dateKey, firstName } from './lib/util.js';
+import { now, id, clean, normalizePhone, ticketToken, displayCode, dateKey, firstName, TICKET_STYLES, cleanTicketColors } from './lib/util.js';
 import { requireRole, CMS, MONEY, STAFF_ROLES, uidOf } from './lib/auth.js';
 import { sendSms, sendEmail, siteUrl } from './lib/notify.js';
 import { getSettings, DEFAULT_SETTINGS, SETTINGS_FIELDS, isOver } from './public.js';
@@ -94,7 +94,9 @@ export async function upsertEvent(env, b, user) {
   if (artwork === null || heroImage === null) return { error: 'Upload images here in the control room (links to other sites aren’t allowed).' };
   const data = {
     name, date, doors: clean(b.doors, 40), venue: clean(b.venue, 120), description: clean(b.description, 240),
-    artwork, heroImage, ticketLines: lines, visibility: b.visibility === 'public' ? 'public' : 'private',
+    artwork, heroImage, ticketLines: lines,
+    ticketStyle: TICKET_STYLES.includes(b.ticketStyle) ? b.ticketStyle : 'auto', ticketColors: cleanTicketColors(b.ticketColors) || existing?.fields?.ticketColors || null,
+    visibility: b.visibility === 'public' ? 'public' : 'private',
     active: b.active !== false, soldOut: b.soldOut === true, featured: b.featured === true,
     organiserId, updatedAt: now(), createdAt: existing?.fields?.createdAt || now(),
   };

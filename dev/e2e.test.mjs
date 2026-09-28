@@ -49,6 +49,9 @@ test('homepage "Get tickets" opens a real night and a guest can pay, get a ticke
   assert.equal(await page.textContent('[data-line]'), 'SAMPLE LINE THREE.');
   assert.equal(await page.textContent('[data-name]'), 'Kwame');
   assert.ok(await page.locator('.t-qr svg').count(), 'QR rendered');
+  const style = await page.getAttribute('.ticket', 'data-style');
+  assert.ok(['classic', 'poster', 'neon', 'split', 'stamp'].includes(style), `ticket has its night's design (${style})`);
+  assert.equal(await page.evaluate(() => getComputedStyle(document.querySelector('.t-qr')).backgroundColor), 'rgb(255, 255, 255)', 'QR on white in every design');
   const t = store.get('tickets', token).fields;
   assert.equal(t.identityLine, 'SAMPLE LINE THREE.');
   assert.deepEqual(page.errors, []);
@@ -310,6 +313,25 @@ test('control room on a phone: every tab fits the screen; tables become labelled
   await page.click('[data-tab=bits]'); await page.waitForFunction(() => !document.querySelector('#panel .loading'));
   if (await page.locator('table.tbl tbody td').count()) assert.ok(await page.locator('table.tbl tbody td[data-label="Owing"]').count(), 'cells carry their column label');
   assert.deepEqual(page.errors, []);
+});
+
+test('images uploaded in the control room appear on the public site: hero image on the homepage and the night’s page; site hero as fallback', async () => {
+  const guest = await phone(1280);
+  await guest.goto(`${base}/index.html`, { waitUntil: 'networkidle' });
+  const heroId = new URL(await guest.locator('#heroArt').getAttribute('href'), base).searchParams.get('id');
+  const admin = await phone(1280);
+  await admin.goto(`${base}/login.html`); await admin.fill('#email', 'admin@dev'); await admin.fill('#pw', 'memories-dev'); await admin.click('#go');
+  await admin.waitForURL(/admin\.html/); await admin.goto(`${base}/admin.html#nights/${heroId}`); await admin.waitForLoadState('networkidle');
+  await admin.setInputFiles('#heroFile', new URL('./fixtures/dnd-party-poster.jpeg', import.meta.url).pathname);
+  await admin.getByText(/uploaded/i).waitFor();
+  await admin.click('#save');
+  await until(() => /\/dev\/uploads\//.test(store.get('events', heroId).fields.heroImage || ''), 'the hero image to be saved');
+  await guest.goto(`${base}/index.html`, { waitUntil: 'networkidle' });
+  assert.equal(await guest.isVisible('#heroBg'), true, 'homepage shows the night’s hero image');
+  assert.match(await guest.evaluate(() => document.querySelector('#heroBg').style.backgroundImage), /\/dev\/uploads\//);
+  await guest.goto(`${base}/event.html?id=${heroId}`, { waitUntil: 'networkidle' });
+  assert.match(await guest.getAttribute('.event-banner img', 'src'), /\/dev\/uploads\//, 'the night’s page shows it as a banner');
+  assert.deepEqual(guest.errors, []);
 });
 
 test('door: no any-night mode; valid → ENTRY CONFIRMED, again → ALREADY CHECKED IN, junk refused; headcount from server; search admits', async () => {

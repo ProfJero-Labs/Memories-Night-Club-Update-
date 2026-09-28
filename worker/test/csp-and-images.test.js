@@ -47,3 +47,18 @@ test('event images must be this project’s own uploads; an image a night alread
   assert.equal((await save({ id: 'old', artwork: 'https://legacy.example/a.jpg' })).status, 200);
   assert.equal((await save({ id: 'old', artwork: 'https://legacy.example/b.jpg' })).status, 400);
 });
+
+test('a night’s ticket design is saved validated and served to the public event and ticket', async () => {
+  const { store, env } = createMockEnv();
+  const token = await idToken({ role: 'manager' });
+  const save = body => worker.fetch(new Request('https://api.test/api/admin/events', { method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: JSON.stringify({ name: 'N', date: '2099-01-01T22:00:00Z', visibility: 'public', ...body }) }), env).then(r => r.json());
+  const { eventId } = await save({ ticketStyle: 'stamp', ticketColors: { accent: '#dba63e', dark: '#1f180a', light: '#f3ede2' } });
+  let ev = store.get('events', eventId).fields;
+  assert.equal(ev.ticketStyle, 'stamp'); assert.equal(ev.ticketColors.accent, '#dba63e');
+  await save({ id: eventId, ticketStyle: 'not-a-style', ticketColors: { accent: 'javascript:1', dark: '#000000', light: '#ffffff' } });
+  ev = store.get('events', eventId).fields;
+  assert.equal(ev.ticketStyle, 'auto', 'unknown style falls back to auto');
+  assert.equal(ev.ticketColors.accent, '#dba63e', 'bad colours are ignored, the good ones kept');
+  const pub = await (await worker.fetch(new Request(`https://api.test/api/events/${eventId}`), env)).json();
+  assert.equal(pub.event.ticketStyle, 'auto'); assert.equal(pub.event.ticketColors.dark, '#1f180a');
+});

@@ -49,3 +49,24 @@ export const formatAccra = (d, opts = {}) => { const t = new Date(d); return isN
 // the time with each plan, so it's always known which wording a guest agreed to.
 export const BITS_POLICY_VERSION = '2026-09-forfeit-at-start';
 export const BITS_ACK_TEXT = 'I understand my ticket is only issued once the full price is paid, and that if the balance isn’t paid by the time the night starts, the order is forfeited and what I’ve paid is not refunded.';
+
+// ── Ticket designs: each night looks different ──
+// A night picks a design (or "auto") and carries colours taken from its own flyer at upload.
+export const TICKET_STYLES = ['classic', 'poster', 'neon', 'split', 'stamp'];
+const HEX = /^#[0-9a-f]{6}$/i;
+// Validates stored colours: { accent, dark, light } as #rrggbb, or null.
+export const cleanTicketColors = c => (c && HEX.test(c.accent) && HEX.test(c.dark) && HEX.test(c.light) ? { accent: c.accent.toLowerCase(), dark: c.dark.toLowerCase(), light: c.light.toLowerCase() } : null);
+// Brand-safe palettes for nights that have no flyer colours yet.
+export const FALLBACK_PALETTES = [
+  { accent: '#e0245e', dark: '#1a0a10', light: '#f3ead9' }, { accent: '#2fb5a3', dark: '#071a18', light: '#e6f2ee' },
+  { accent: '#e8a520', dark: '#1c1406', light: '#f6ecd6' }, { accent: '#8b5cf6', dark: '#130b24', light: '#ede7fb' },
+  { accent: '#ff5a36', dark: '#1f0b06', light: '#fbe9e2' }, { accent: '#3b82f6', dark: '#07122a', light: '#e4ecfa' },
+];
+const hash = s => { let h = 2166136261; for (const ch of String(s || '')) { h ^= ch.charCodeAt(0); h = Math.imul(h, 16777619); } return h >>> 0; };
+// The design a night's tickets use: its chosen style (auto = picked from the night's id, so nights
+// differ by default) and its flyer colours (or a palette picked the same way).
+export function ticketDesign({ id, ticketStyle, ticketColors } = {}) {
+  const h = hash(id);
+  const style = TICKET_STYLES.includes(ticketStyle) ? ticketStyle : TICKET_STYLES[h % TICKET_STYLES.length];
+  return { style, colors: cleanTicketColors(ticketColors) || FALLBACK_PALETTES[(h >>> 8) % FALLBACK_PALETTES.length] };
+}

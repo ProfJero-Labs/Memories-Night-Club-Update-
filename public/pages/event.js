@@ -26,7 +26,7 @@ function render(b, s) {
   describe(b, s);
   const ticketsOpen = !e.soldOut && !e.over && b.ticketTypes.some(t => !t.soldOut);
   const minTable = Math.min(...b.tablePackages.map(t => t.pricePesewas));
-  main.innerHTML = `<div class="event-hero">
+  main.innerHTML = `${e.heroImage ? `<div class="event-banner">${img(e.heroImage, '', '', true)}</div>` : ''}<div class="event-hero">
     <div class="event-art">${img(e.artwork, `${e.name} flyer`, '', true) || `<div style="aspect-ratio:4/5;display:grid;place-items:center">${dateStamp(e.date, 'red')}</div>`}</div>
     <div class="event-info">
       ${dateStamp(e.date, 'red')}

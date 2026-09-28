@@ -59,3 +59,16 @@ test('one escape function, one phone rule, one money parser in the codebase', ()
     assert.doesNotMatch(src, /\b(const|let|function)\s+pes\s*[=(]/, `${f} defines its own pes()`);
   }
 });
+
+test('ticket designs: auto is stable per night and varies across nights; stored choices are validated', async () => {
+  const { ticketDesign, TICKET_STYLES, cleanTicketColors } = await import('../../public/lib/shared.js');
+  assert.deepEqual(ticketDesign({ id: 'night-a' }), ticketDesign({ id: 'night-a' }), 'same night, same design');
+  const styles = new Set(Array.from({ length: 40 }, (_, i) => ticketDesign({ id: `night-${i}` }).style));
+  assert.equal(styles.size, TICKET_STYLES.length, 'auto spreads nights across every design');
+  assert.equal(ticketDesign({ id: 'x', ticketStyle: 'neon' }).style, 'neon');
+  assert.notEqual(ticketDesign({ id: 'x', ticketStyle: '<script>' }).style, '<script>');
+  const own = { accent: '#DBA63E', dark: '#1f180a', light: '#f3ede2' };
+  assert.deepEqual(ticketDesign({ id: 'x', ticketColors: own }).colors, { accent: '#dba63e', dark: '#1f180a', light: '#f3ede2' });
+  assert.equal(cleanTicketColors({ accent: 'red', dark: '#000000', light: '#ffffff' }), null);
+  assert.equal(cleanTicketColors({ accent: '#000000', dark: '#000000', light: 'url(x)' }), null);
+});
