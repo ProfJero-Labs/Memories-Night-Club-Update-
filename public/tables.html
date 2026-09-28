@@ -119,7 +119,7 @@ async function pay(ev) {
   remember.set({ ...remember.get(), name: S.name, phone: S.phone });
   const btn = $('#pay'); btn.disabled = true; btn.textContent = 'Opening payment…';
   try {
-    const d = await api('/api/table-checkout/initiate', { method: 'POST', body: { eventId: B.event.id, packageId: S.pkg, name: S.name, phone: S.phone, email: S.email || undefined, bottles: Object.entries(S.bottles).map(([id, quantity]) => ({ id, quantity })), callbackUrl: new URL('payment-return.html', location.href).href } });
+    const d = await api('/api/table-checkout/initiate', { method: 'POST', body: { eventId: B.event.id, packageId: S.pkg, name: S.name, phone: S.phone, email: S.email || undefined, bottles: Object.entries(S.bottles).map(([id, quantity]) => ({ id, quantity })) } });
     location.href = d.authorizationUrl;
   } catch (e) { err.hidden = false; err.textContent = e.message; btn.disabled = false; btn.innerHTML = `Pay ${money(total())} <span class="arrow">→</span>`; }
 }

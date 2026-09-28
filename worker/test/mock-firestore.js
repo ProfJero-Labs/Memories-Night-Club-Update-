@@ -69,6 +69,7 @@ export class MockFirestore {
     this.seq = 0;
     this.paystack = new Map();  // reference -> {status:'success'|'failed', currency, amount}
     this.commitDelays = new Map(); // "col/id" -> ms to sleep after read, before this tx's commit — lets tests force a specific interleaving
+    this.paystackInits = []; // body of every /transaction/initialize call
     this.sms = [];    // { to, message } — every sendSms() call the code under test made
     this.emails = []; // { to, subject } — every sendBrevo() call the code under test made
   }
@@ -137,6 +138,7 @@ export class MockFirestore {
         return jsonResponse({ status: true, message: 'ok', data: r });
       }
       if (u.pathname === '/transaction/initialize') {
+        this.paystackInits.push(JSON.parse(options.body || '{}'));
         return jsonResponse({ status: true, data: { authorization_url: 'https://paystack.test/pay' } });
       }
       return jsonResponse({ status: false, message: 'not mocked' }, 400);

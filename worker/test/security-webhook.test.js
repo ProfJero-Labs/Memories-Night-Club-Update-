@@ -94,7 +94,7 @@ test('checkout/initiate: a client-supplied price is ignored — the server recom
   assert.equal(pending.fields.amountPesewas, 5000, 'the charge amount must come from ticket_types.pricePesewas (5000), never the client-supplied 1');
 });
 
-test('checkout/initiate: a callback_url pointed at an arbitrary domain is rejected', async () => {
+test('checkout/initiate: a browser-supplied callback URL is ignored; Paystack gets the Worker’s own return page', async () => {
   const { store, env } = createMockEnv();
   store.seed('events', 'event1', { name: 'Test Night', visibility: 'public', active: true, date: '2099-01-01T00:00:00.000Z' });
   store.seed('ticket_types', 'tt4', { eventId: 'event1', name: 'Standard', pricePesewas: 5000, admits: 1, remaining: 10, active: true });
@@ -102,15 +102,31 @@ test('checkout/initiate: a callback_url pointed at an arbitrary domain is reject
   const body = JSON.stringify({
     eventId: 'event1', ticketTypeId: 'tt4', quantity: 1,
     buyerName: 'Attacker', buyerPhone: '0241234567', buyerEmail: 'attacker@test.com',
-    callbackUrl: 'https://evil-phishing-site.example/steal',
+    callbackUrl: 'https://evil-phishing-site.example/steal', callback_url: 'https://evil-phishing-site.example/steal',
   });
-  const req = new Request('https://worker.test/api/checkout/initiate', { method: 'POST', body });
-  const res = await worker.fetch(req, env);
-  const data = await res.json();
-  assert.equal(res.status, 400);
-  assert.equal(data.success, false);
-  assert.match(data.error, /callback/i);
-  assert.equal(store.list('pending_checkouts').length, 0, 'no pending checkout should be created for a rejected origin');
+  const res = await worker.fetch(new Request('https://worker.test/api/checkout/initiate', { method: 'POST', body }), env);
+  assert.equal(res.status, 200);
+  assert.equal(store.paystackInits.length, 1);
+  assert.equal(store.paystackInits[0].callback_url, `${env.PUBLIC_SITE_URL}/payment-return.html`);
+  assert.ok(!JSON.stringify(store.paystackInits).includes('evil'), 'the supplied URL never reaches Paystack');
+});
+
+test('checkout, tables and pay-in-bits all use the Worker’s return page; no PUBLIC_SITE_URL means no payments', async () => {
+  const { store, env } = createMockEnv();
+  store.seed('events', 'event1', { name: 'Test Night', visibility: 'public', active: true, date: '2099-01-01T00:00:00.000Z' });
+  store.seed('ticket_types', 'tt5', { eventId: 'event1', name: 'Standard', pricePesewas: 5000, admits: 1, remaining: 10, active: true });
+  store.seed('table_packages', 'pk1', { eventId: 'event1', name: 'Booth', pricePesewas: 200000, capacity: 6, remaining: 2, active: true });
+  const post = (path, b) => worker.fetch(new Request(`https://worker.test${path}`, { method: 'POST', body: JSON.stringify({ ...b, callbackUrl: 'https://evil.example/x' }) }), env);
+  const who = { buyerName: 'Ama', buyerPhone: '0241234567' };
+  assert.equal((await post('/api/checkout/initiate', { eventId: 'event1', ticketTypeId: 'tt5', quantity: 1, ...who })).status, 200);
+  assert.equal((await post('/api/installments/start', { eventId: 'event1', ticketTypeId: 'tt5', quantity: 1, ...who, depositPesewas: 1000 })).status, 200);
+  assert.equal((await post('/api/table-checkout/initiate', { eventId: 'event1', packageId: 'pk1', name: 'Ama', phone: '0241234567' })).status, 200);
+  assert.equal(store.paystackInits.length, 3);
+  for (const i of store.paystackInits) assert.equal(i.callback_url, `${env.PUBLIC_SITE_URL}/payment-return.html`);
+  delete env.PUBLIC_SITE_URL;
+  const off = await post('/api/checkout/initiate', { eventId: 'event1', ticketTypeId: 'tt5', quantity: 1, ...who });
+  assert.equal(off.status, 503);
+  assert.equal(store.paystackInits.length, 3, 'nothing sent to Paystack');
 });
 
 test('admin routes reject a request with no Authorization header at all', async () => {

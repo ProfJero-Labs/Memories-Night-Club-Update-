@@ -89,7 +89,7 @@ function bind() {
       const v = Math.round(Number(input.value || 0) * 100), left = Number(f.dataset.left);
       if (!v || v < Math.min(1000, left) || v > left) { note.hidden = false; note.textContent = `Pay between ${money(Math.min(1000, left))} and ${money(left)}.`; return input.focus(); }
       btn.disabled = true; btn.textContent = 'Opening payment…';
-      try { const d = await api('/api/installments/topup', { method: 'POST', body: { planId: f.dataset.plan, amountPesewas: v, callbackUrl: `${location.origin}/payment-return.html` } }); location.href = d.authorizationUrl; }
+      try { const d = await api('/api/installments/topup', { method: 'POST', body: { planId: f.dataset.plan, amountPesewas: v } }); location.href = d.authorizationUrl; }
       catch (e) { note.hidden = false; note.textContent = e.message; btn.disabled = false; sync(); }
     };
   });

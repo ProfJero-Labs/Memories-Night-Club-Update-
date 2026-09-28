@@ -3,7 +3,6 @@
 // the secret key before anything is issued. Issuance is transactional and idempotent per reference.
 import { getDoc, setDoc, createDoc, queryWhere, batchGet, commitTx, updateWrite, foundFields, withTransaction } from './lib/firestore.js';
 import { now, id, paymentRef, ticketToken, displayCode, orderCode, normalizeOrderCode, clean, normalizePhone, validEmail, firstName, money } from './lib/util.js';
-import { allowedOrigin } from './lib/http.js';
 import { sendSms, sendEmail, siteUrl } from './lib/notify.js';
 import { getSettings, resolveLines, isOver } from './public.js';
 import { openRaffleForEvent, raffleSpotWrites } from './raffle.js';
@@ -19,6 +18,9 @@ async function paystack(env, path, options = {}) {
 // Paystack needs an email. Guests don't have to give one; their receipt address then falls back
 // to a per-phone alias on the club's own domain.
 export const LINE_MAX = 40;
+// Where Paystack sends the guest back. Set by the Worker from PUBLIC_SITE_URL, never taken from the
+// request, so nobody can point a real payment page at their own site. Empty = payments off.
+export const returnUrl = env => (/^https?:\/\//.test(env.PUBLIC_SITE_URL || '') ? siteUrl(env, '/payment-return.html') : '');
 const payEmail = (env, email, phone) => (validEmail(email) ? email : `guest-${phone}@${new URL(env.PUBLIC_SITE_URL || 'https://memoriesnightclub.com').hostname.replace(/^www\./, '')}`);
 
 // Shared validation for anything that becomes a ticket.
@@ -30,7 +32,7 @@ async function ticketContext(env, b) {
   if (b.buyerEmail && !validEmail(b.buyerEmail)) return { error: 'That email doesn’t look right.' };
   const qty = Number(b.quantity);
   if (!Number.isInteger(qty) || qty < 1 || qty > 6) return { error: 'You can get 1 to 6 tickets at a time.' };
-  if (!allowedOrigin(b.callbackUrl, env)) return { error: 'Invalid callback URL.' };
+  if (!returnUrl(env)) return { error: 'Payments are not set up yet.', status: 503 };
   const [ev, tt, settings] = await Promise.all([getDoc(env, 'events', b.eventId), getDoc(env, 'ticket_types', b.ticketTypeId), getSettings(env)]);
   if (!ev || !tt || ev.fields.active === false || ev.fields.visibility !== 'public' || tt.fields.eventId !== b.eventId || tt.fields.active !== true) return { error: 'This ticket is no longer available.' };
   if (ev.fields.soldOut === true || (typeof tt.fields.remaining === 'number' && tt.fields.remaining < qty)) return { error: 'Not enough tickets left for that.' };
@@ -43,7 +45,7 @@ async function ticketContext(env, b) {
   if (lines.length && !identityLine) return { error: 'Pick a line or write your own.' };
   const unit = Number(tt.fields.pricePesewas || 0);
   if (!(unit > 0)) return { error: 'This ticket is no longer available.' };
-  return { ev, tt, qty, buyerName, buyerPhone, buyerEmail: clean(b.buyerEmail, 120), identityLine, totalPesewas: unit * qty, callbackUrl: b.callbackUrl };
+  return { ev, tt, qty, buyerName, buyerPhone, buyerEmail: clean(b.buyerEmail, 120), identityLine, totalPesewas: unit * qty };
 }
 
 // ── Pay in full ──
@@ -56,7 +58,7 @@ export async function initiateTicket(env, b) {
     buyerEmail: c.buyerEmail, identityLine: c.identityLine, status: 'pending', createdAt: now(),
   });
   try {
-    const p = await paystack(env, '/transaction/initialize', { method: 'POST', body: JSON.stringify({ email: payEmail(env, c.buyerEmail, c.buyerPhone), amount: c.totalPesewas, currency: 'GHS', reference, callback_url: c.callbackUrl, metadata: { kind: 'ticket', eventId: c.ev.id, ticketTypeId: c.tt.id, quantity: c.qty } }) });
+    const p = await paystack(env, '/transaction/initialize', { method: 'POST', body: JSON.stringify({ email: payEmail(env, c.buyerEmail, c.buyerPhone), amount: c.totalPesewas, currency: 'GHS', reference, callback_url: returnUrl(env), metadata: { kind: 'ticket', eventId: c.ev.id, ticketTypeId: c.tt.id, quantity: c.qty } }) });
     return { reference, authorizationUrl: p.authorization_url };
   } catch (e) {
     await setDoc(env, 'pending_checkouts', reference, { reference, kind: 'ticket', eventId: c.ev.id, status: 'failed', error: 'payment_initialization_failed', failedAt: now() });
@@ -130,7 +132,7 @@ export async function initiateTable(env, b) {
   if (!name) return { error: 'We need a name for the booking.' };
   if (!phone) return { error: 'That phone number doesn’t look right. Use a Ghana number, e.g. 024 123 4567.' };
   if (b.email && !validEmail(b.email)) return { error: 'That email doesn’t look right.' };
-  if (!allowedOrigin(b.callbackUrl, env)) return { error: 'Invalid callback URL.' };
+  if (!returnUrl(env)) return { error: 'Payments are not set up yet.', status: 503 };
   const [ev, pkg] = await Promise.all([getDoc(env, 'events', b.eventId), getDoc(env, 'table_packages', b.packageId)]);
   if (!ev || !pkg || ev.fields.active === false || ev.fields.visibility !== 'public' || pkg.fields.eventId !== b.eventId || pkg.fields.active !== true) return { error: 'This table isn’t available any more.' };
   if (isOver(ev.fields)) return { error: 'This night has already happened.' };
@@ -148,7 +150,7 @@ export async function initiateTable(env, b) {
   if (!(amount > 0)) return { error: 'This table isn’t available any more.' };
   const reference = paymentRef();
   await setDoc(env, 'pending_checkouts', reference, { reference, kind: 'table', eventId: b.eventId, eventName: ev.fields.name || '', packageId: b.packageId, packageName: pkg.fields.name || '', packagePricePesewas: Number(pkg.fields.pricePesewas || 0), bottles: bottleItems, amountPesewas: amount, buyerName: name, buyerPhone: phone, buyerEmail: clean(b.email, 120), status: 'pending', createdAt: now() });
-  const p = await paystack(env, '/transaction/initialize', { method: 'POST', body: JSON.stringify({ email: payEmail(env, b.email, phone), amount, currency: 'GHS', reference, callback_url: b.callbackUrl, metadata: { kind: 'table', eventId: b.eventId, packageId: b.packageId } }) });
+  const p = await paystack(env, '/transaction/initialize', { method: 'POST', body: JSON.stringify({ email: payEmail(env, b.email, phone), amount, currency: 'GHS', reference, callback_url: returnUrl(env), metadata: { kind: 'table', eventId: b.eventId, packageId: b.packageId } }) });
   return { reference, authorizationUrl: p.authorization_url };
 }
 
@@ -213,14 +215,14 @@ export async function startInstallment(env, b) {
     } catch (e) { if (!String(e.message).includes('ALREADY_EXISTS')) throw e; }
   }
   if (!planId) return { error: 'Couldn’t start your order right now. Try again.' };
-  return startInstallmentTopup(env, planId, deposit, c.callbackUrl, payEmail(env, c.buyerEmail, c.buyerPhone));
+  return startInstallmentTopup(env, planId, deposit, payEmail(env, c.buyerEmail, c.buyerPhone));
 }
 
-export async function startInstallmentTopup(env, planId, amountPesewas, callbackUrl, email) {
+export async function startInstallmentTopup(env, planId, amountPesewas, email) {
   const reference = paymentRef();
   await setDoc(env, 'pending_checkouts', reference, { reference, kind: 'installment_topup', planId, amountPesewas, status: 'pending', createdAt: now() });
   try {
-    const p = await paystack(env, '/transaction/initialize', { method: 'POST', body: JSON.stringify({ email, amount: amountPesewas, currency: 'GHS', reference, callback_url: callbackUrl, metadata: { kind: 'installment_topup', planId } }) });
+    const p = await paystack(env, '/transaction/initialize', { method: 'POST', body: JSON.stringify({ email, amount: amountPesewas, currency: 'GHS', reference, callback_url: returnUrl(env), metadata: { kind: 'installment_topup', planId } }) });
     return { reference, authorizationUrl: p.authorization_url, planId };
   } catch (e) {
     await setDoc(env, 'pending_checkouts', reference, { reference, kind: 'installment_topup', planId, amountPesewas, status: 'failed', error: 'payment_initialization_failed', failedAt: now() });
@@ -231,7 +233,7 @@ export async function startInstallmentTopup(env, planId, amountPesewas, callback
 export async function topupInstallment(env, b) {
   const planId = normalizeOrderCode(b?.planId);
   if (!planId) return { error: 'Enter your order code.' };
-  if (!allowedOrigin(b.callbackUrl, env)) return { error: 'Invalid callback URL.' };
+  if (!returnUrl(env)) return { error: 'Payments are not set up yet.', status: 503 };
   const plan = await getDoc(env, 'installment_plans', planId);
   if (!plan) return { error: 'We couldn’t find that order.' };
   if (await maybeForfeitPlan(env, plan)) return { error: 'This order was forfeited because the night has passed.' };
@@ -240,7 +242,7 @@ export async function topupInstallment(env, b) {
   const amount = Number(b.amountPesewas);
   if (!Number.isInteger(amount) || amount < Math.min(MIN_TOPUP_PESEWAS, remaining)) return { error: 'The smallest payment is GHS 10.' };
   if (amount > remaining) return { error: `Your balance is ${money(remaining)}. Pay that or less.` };
-  return startInstallmentTopup(env, planId, amount, b.callbackUrl, payEmail(env, plan.fields.buyerEmail, plan.fields.buyerPhone));
+  return startInstallmentTopup(env, planId, amount, payEmail(env, plan.fields.buyerEmail, plan.fields.buyerPhone));
 }
 
 export async function maybeForfeitPlan(env, plan) {
