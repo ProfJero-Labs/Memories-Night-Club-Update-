@@ -14,6 +14,8 @@ const SUPER = ['superAdmin'];
 export const MATRIX = [
   ['POST', '/api/checkin', ALL, { token: 'x' }],
   ['GET', '/api/door/events', ALL],
+  ['GET', '/api/door/summary?eventId=e1', ALL.filter(r => r !== 'organiser')],
+  ['GET', '/api/door/search?eventId=e1&q=am', ALL.filter(r => r !== 'organiser')],
   ['POST', '/api/send-sms', MONEY, { recipients: [], message: 'x' }],
   ['GET', '/api/balance', MONEY],
   ['POST', '/api/admin/sms/send', MONEY, { recipients: [], message: 'x' }],

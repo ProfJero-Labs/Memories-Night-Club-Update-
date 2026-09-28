@@ -181,7 +181,7 @@ export async function issueComp(env, b, user) {
   const res = await withTransaction(env, async tx => {
     const raffle = wantDraw ? await openRaffleForEvent(env, tx, b.eventId) : null;
     await commitTx(env, [
-      updateWrite(env, 'tickets', token, { customerName: name, phone: phone || '', type: 'Comp', admitCount: admits, eventId: b.eventId, eventName: ev.fields.name || '', identityLine: '', reference: orderId, displayCode: displayCode(token), status: 'valid', revoked: false, cancelled: false, comp: true, issuedBy, compNote: clean(b.note, 200), inDraw: !!raffle, issuedAt: now() }),
+      updateWrite(env, 'tickets', token, { customerName: name, phone: phone || '', phoneLast4: (phone || '').slice(-4), type: 'Comp', admitCount: admits, eventId: b.eventId, eventName: ev.fields.name || '', identityLine: '', reference: orderId, displayCode: displayCode(token), status: 'valid', revoked: false, cancelled: false, comp: true, issuedBy, compNote: clean(b.note, 200), inDraw: !!raffle, issuedAt: now() }),
       updateWrite(env, 'orders', orderId, { orderId, kind: 'comp', eventId: b.eventId, eventName: ev.fields.name || '', quantity: 1, admits, amountPesewas: 0, buyerName: name, buyerPhone: phone || '', status: 'confirmed', issuedBy, note: clean(b.note, 200), inDraw: !!raffle, ticketIds: [token], createdAt: now() }),
       ...raffleSpotWrites(env, raffle, b.eventId, token, orderId),
     ], tx);

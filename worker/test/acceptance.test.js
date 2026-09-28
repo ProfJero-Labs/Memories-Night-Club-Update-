@@ -69,10 +69,10 @@ test('organiser can check in their own night only', async () => {
   store.seed('tickets', 'tokenmine0000000000000001', { customerName: 'Ama K', eventId: 'mine', eventName: 'Mine', status: 'valid' });
   store.seed('tickets', 'tokentheirs00000000000001', { customerName: 'Yaw K', eventId: 'theirs', eventName: 'Theirs', status: 'valid' });
   const token = await idToken({ role: 'organiser' }, { uid: 'org-A' });
-  const other = await call(env, 'POST', '/api/checkin', { token, body: { token: 'tokentheirs00000000000001' } });
+  const other = await call(env, 'POST', '/api/checkin', { token, body: { token: 'tokentheirs00000000000001', eventId: 'theirs' } });
   assert.equal(other.data.valid, false);
   assert.equal(store.get('tickets', 'tokentheirs00000000000001').fields.status, 'valid', 'the other organiser’s ticket is untouched');
-  const own = await call(env, 'POST', '/api/checkin', { token, body: { token: 'tokenmine0000000000000001' } });
+  const own = await call(env, 'POST', '/api/checkin', { token, body: { token: 'tokenmine0000000000000001', eventId: 'mine' } });
   assert.equal(own.data.valid, true);
 });
 
@@ -98,9 +98,11 @@ test('check-in: valid → confirmed, second scan → already checked in, junk �
   const first = await call(env, 'POST', '/api/checkin', { token, body: { token: url, eventId: 'night1' } });
   assert.equal(first.data.message, 'ENTRY CONFIRMED');
   assert.equal(first.data.ticket.firstName, 'Esi');
-  const again = await call(env, 'POST', '/api/checkin', { token, body: { token: url } });
+  const again = await call(env, 'POST', '/api/checkin', { token, body: { token: url, eventId: 'night1' } });
   assert.equal(again.data.message, 'ALREADY CHECKED IN');
-  const junk = await call(env, 'POST', '/api/checkin', { token, body: { token: 'not-a-real-ticket' } });
+  const junk = await call(env, 'POST', '/api/checkin', { token, body: { token: 'not-a-real-ticket', eventId: 'night1' } });
+  const noNight = await call(env, 'POST', '/api/checkin', { token, body: { token: url } });
+  assert.equal(noNight.data.code, 'no_event', 'no any-night mode on the server');
   assert.equal(junk.data.message, 'TICKET NOT VALID');
 });
 

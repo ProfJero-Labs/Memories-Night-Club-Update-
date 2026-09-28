@@ -13,8 +13,8 @@ test('two door staff scanning the same ticket at once: exactly one check-in is r
   const doorA = { uid: 'door-a', role: 'doorStaff' };
   const doorB = { uid: 'door-b', role: 'doorStaff' };
   const [a, b] = await Promise.all([
-    checkin(env, 'tok123', doorA),
-    checkin(env, 'tok123', doorB),
+    checkin(env, 'tok123', doorA, { eventId: 'event1' }),
+    checkin(env, 'tok123', doorB, { eventId: 'event1' }),
   ]);
 
   const results = [a, b];
@@ -37,8 +37,8 @@ test('a revoked ticket is refused even under concurrent scans', async () => {
   const { store, env } = createMockEnv();
   store.seed('tickets', 'tokRevoked', { customerName: 'X', eventId: 'event1', status: 'valid', revoked: true, cancelled: false });
   const [a, b] = await Promise.all([
-    checkin(env, 'tokRevoked', { uid: 'd1', role: 'doorStaff' }),
-    checkin(env, 'tokRevoked', { uid: 'd2', role: 'doorStaff' }),
+    checkin(env, 'tokRevoked', { uid: 'd1', role: 'doorStaff' }, { eventId: 'event1' }),
+    checkin(env, 'tokRevoked', { uid: 'd2', role: 'doorStaff' }, { eventId: 'event1' }),
   ]);
   assert.equal(a.valid, false);
   assert.equal(b.valid, false);

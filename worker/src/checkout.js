@@ -78,9 +78,9 @@ async function confirmCharge(env, pending, reference) {
   return null;
 }
 
-function ticketWrites(env, { tokens, holder, eventId, eventName, typeName, admits, identityLine, reference, inDrawToken, extra = {} }) {
+function ticketWrites(env, { tokens, holder, phone, eventId, eventName, typeName, admits, identityLine, reference, inDrawToken, extra = {} }) {
   return tokens.map(token => updateWrite(env, 'tickets', token, {
-    customerName: holder, type: typeName, admitCount: admits, eventId, eventName, identityLine, reference,
+    customerName: holder, phoneLast4: String(phone || '').slice(-4), type: typeName, admitCount: admits, eventId, eventName, identityLine, reference,
     displayCode: displayCode(token), status: 'valid', revoked: false, cancelled: false, inDraw: token === inDrawToken, issuedAt: now(), ...extra,
   }));
 }
@@ -107,7 +107,7 @@ export async function fulfillTicket(env, reference) {
     const tokens = Array.from({ length: P.quantity }, ticketToken);
     const inDraw = !!raffle;
     const writes = [
-      ...ticketWrites(env, { tokens, holder: P.buyerName, eventId: P.eventId, eventName: P.eventName, typeName: P.ticketTypeName, admits: P.admits || 1, identityLine: P.identityLine || '', reference, inDrawToken: inDraw ? tokens[0] : null }),
+      ...ticketWrites(env, { tokens, holder: P.buyerName, phone: P.buyerPhone, eventId: P.eventId, eventName: P.eventName, typeName: P.ticketTypeName, admits: P.admits || 1, identityLine: P.identityLine || '', reference, inDrawToken: inDraw ? tokens[0] : null }),
       ...raffleSpotWrites(env, raffle, P.eventId, tokens[0], orderId),
       updateWrite(env, 'orders', orderId, { orderId, kind: 'ticket', reference, eventId: P.eventId, eventName: P.eventName, ticketTypeId: P.ticketTypeId, ticketTypeName: P.ticketTypeName, quantity: P.quantity, amountPesewas: P.amountPesewas, buyerName: P.buyerName, buyerPhone: P.buyerPhone, buyerEmail: P.buyerEmail || '', status: 'confirmed', inDraw, ticketIds: tokens, createdAt: now() }),
       updateWrite(env, 'pending_checkouts', reference, { ...fresh.fields, status: 'issued', ticketIds: tokens, orderId, issuedAt: now() }),
@@ -342,7 +342,7 @@ export async function fulfillInstallment(env, reference) {
       const raffle = await openRaffleForEvent(env, tx, P.eventId);
       tokens = Array.from({ length: P.quantity }, ticketToken);
       writes.push(
-        ...ticketWrites(env, { tokens, holder: P.buyerName, eventId: P.eventId, eventName: P.eventName, typeName: P.ticketTypeName, admits: P.admits || 1, identityLine: P.identityLine || '', reference, inDrawToken: raffle ? tokens[0] : null, extra: { planId } }),
+        ...ticketWrites(env, { tokens, holder: P.buyerName, phone: P.buyerPhone, eventId: P.eventId, eventName: P.eventName, typeName: P.ticketTypeName, admits: P.admits || 1, identityLine: P.identityLine || '', reference, inDrawToken: raffle ? tokens[0] : null, extra: { planId } }),
         ...raffleSpotWrites(env, raffle, P.eventId, tokens[0], orderId),
         updateWrite(env, 'orders', orderId, { orderId, kind: 'ticket', reference, eventId: P.eventId, eventName: P.eventName, ticketTypeId: P.ticketTypeId, ticketTypeName: P.ticketTypeName, quantity: P.quantity, amountPesewas: P.totalPesewas, buyerName: P.buyerName, buyerPhone: P.buyerPhone, buyerEmail: P.buyerEmail || '', status: 'confirmed', inDraw: !!raffle, paidInInstallments: true, planId, ticketIds: tokens, createdAt: now() }),
         updateWrite(env, 'installment_plans', planId, { ...P, paidPesewas, payments, status: 'completed', ticketIds: tokens, orderId, completedAt: now(), updatedAt: now() }),

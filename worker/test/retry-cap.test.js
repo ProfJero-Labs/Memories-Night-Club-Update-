@@ -17,6 +17,6 @@ test('a transaction under permanent contention gives up after 5 attempts instead
     store.versions.set(k, (store.versions.get(k) || 0) + 1);
   };
 
-  await assert.rejects(() => checkin(env, 'tokX', { uid: 'door-1', role: 'doorStaff' }));
+  await assert.rejects(() => checkin(env, 'tokX', { uid: 'door-1', role: 'doorStaff' }, { eventId: 'event1' }));
   assert.equal(commitAttempts, 5, 'exactly 5 commit attempts — the documented cap, neither fewer nor unbounded');
 });

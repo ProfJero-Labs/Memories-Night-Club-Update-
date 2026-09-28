@@ -6,6 +6,8 @@ One row per staff route. ✅ = allowed, — = 403. Every route also returns 401 
 |---|---|---|---|---|---|
 | `POST /api/checkin` | ✅ | ✅ | ✅ | ✅ | ✅ |
 | `GET /api/door/events` | ✅ | ✅ | ✅ | ✅ | ✅ |
+| `GET /api/door/summary` | ✅ | ✅ | ✅ | ✅ | own nights |
+| `GET /api/door/search` | ✅ | ✅ | ✅ | ✅ | own nights |
 | `POST /api/send-sms` | ✅ | ✅ | — | — | — |
 | `GET /api/balance` | ✅ | ✅ | — | — | — |
 | `POST /api/admin/sms/send` | ✅ | ✅ | — | — | — |
