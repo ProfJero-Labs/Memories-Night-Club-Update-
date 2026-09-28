@@ -511,6 +511,30 @@ h1, h2, h3 { margin: 0; }
 .s-sunburst .t-line, .s-sunburst .t-line.event { color: var(--t-dark); text-shadow: 3px 3px 0 color-mix(in srgb, var(--t-light) 80%, transparent); transform: rotate(-4deg); }
 .s-sunburst .t-top, .s-sunburst .t-top .brandmark, .s-sunburst .t-name, .s-sunburst .t-meta, .s-sunburst .t-meta b { color: var(--t-dark); }
 .s-sunburst .t-meta { background: color-mix(in srgb, var(--t-light) 82%, transparent); padding: 6px 8px; margin-left: -8px; margin-right: -8px; }
+/* Holo: holographic foil, big clean type, a glossy sheen. */
+.s-holo::before { display: none; }
+.s-holo .t-main { color: var(--t-dark); background:
+  linear-gradient(115deg, transparent 30%, rgba(255, 255, 255, .45) 42%, transparent 54%),
+  radial-gradient(70% 55% at 15% 10%, color-mix(in srgb, var(--t-accent) 85%, #ff5fd2), transparent 72%),
+  radial-gradient(60% 50% at 90% 40%, color-mix(in srgb, var(--t-accent) 25%, #3fd8ff), transparent 72%),
+  radial-gradient(70% 60% at 30% 95%, color-mix(in srgb, var(--t-accent) 20%, #a66bff), transparent 72%),
+  linear-gradient(160deg, #f4f1ff, color-mix(in srgb, var(--t-light) 60%, #c9f3ff)); }
+.s-holo .t-art { display: none; }
+.s-holo .t-line, .s-holo .t-line.event { color: var(--t-dark); transform: none; letter-spacing: -.01em; }
+.s-holo .t-top, .s-holo .t-top .brandmark, .s-holo .t-meta, .s-holo .t-meta b, .s-holo .t-name { color: var(--t-dark); }
+.s-holo .t-meta { background: var(--t-dark); color: #fff; padding: 6px 10px; border-radius: 999px; align-self: flex-start; }
+.s-holo .t-meta b { color: var(--t-accent); }
+
+/* Coast: a sunset over the sea at Cape Coast; the line on the sky. */
+.s-coast .t-main { color: var(--t-dark); background:
+  radial-gradient(14px 7px at 50% 0, transparent 6px, color-mix(in srgb, var(--t-light) 55%, transparent) 7px 8px, transparent 9px) 0 74% / 28px 14px repeat-x,
+  linear-gradient(to bottom, transparent 0 66%, var(--t-dark) 66%, color-mix(in srgb, var(--t-dark) 80%, var(--t-accent)) 100%),
+  radial-gradient(circle at 50% 66%, color-mix(in srgb, var(--t-light) 70%, var(--t-accent)) 0 42px, transparent 43px),
+  linear-gradient(to bottom, color-mix(in srgb, var(--t-accent) 35%, var(--t-light)) 0, var(--t-accent) 66%); }
+.s-coast .t-art { display: none; }
+.s-coast .t-line, .s-coast .t-line.event { color: var(--t-dark); margin: 26px 0 auto; transform: none; }
+.s-coast .t-top, .s-coast .t-top .brandmark { color: var(--t-dark); }
+.s-coast .t-name, .s-coast .t-meta, .s-coast .t-meta b { color: var(--t-light); }
 .ticket.compact { --w: 300px; }
 .ticket.compact .t-line { font-size: 44px; }
 .ticket.compact.s-split .t-line { font-size: 32px; }

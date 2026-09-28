@@ -75,14 +75,14 @@ test('ticket designs: auto is stable per night and varies across nights; stored 
 
 test('a month of nights: every Auto night gets a different design; hand-picked designs are kept and not repeated', async () => {
   const { monthStyles, TICKET_STYLES } = await import('../../public/lib/shared.js');
-  const oct = ['02', '03', '09', '10', '16', '17', '23', '24'].map(d => ({ id: `oct-${d}`, date: `2026-10-${d}T22:00:00Z` }));
+  const oct = ['02', '03', '09', '10', '16', '17', '23', '24', '30', '31'].map(d => ({ id: `oct-${d}`, date: `2026-10-${d}T22:00:00Z` }));
   const r = monthStyles(oct);
-  assert.equal(TICKET_STYLES.length, 8);
-  assert.equal(new Set(oct.map(e => r.get(e.id))).size, 8, 'eight nights, eight designs');
+  assert.equal(TICKET_STYLES.length, 10);
+  assert.equal(new Set(oct.map(e => r.get(e.id))).size, 10, 'ten nights (October 2026), ten designs');
   const picked = oct.map((e, i) => (i === 5 ? { ...e, ticketStyle: 'vinyl' } : e));
   const r2 = monthStyles(picked);
   assert.equal(r2.get('oct-17'), 'vinyl');
-  assert.equal(new Set(picked.map(e => r2.get(e.id))).size, 8, 'a hand-picked design is not given to another night');
+  assert.equal(new Set(picked.map(e => r2.get(e.id))).size, 10, 'a hand-picked design is not given to another night');
   const nov = monthStyles([{ id: 'nov-06', date: '2026-11-06T22:00:00Z' }]);
   assert.notEqual(nov.get('nov-06'), r.get('oct-02'), 'the starting design moves on each month');
   assert.equal(monthStyles(oct).get('oct-09'), r.get('oct-09'), 'stable: same nights, same designs');

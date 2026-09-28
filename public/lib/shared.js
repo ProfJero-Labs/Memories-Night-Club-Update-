@@ -52,7 +52,7 @@ export const BITS_ACK_TEXT = 'I understand my ticket is only issued once the ful
 
 // ── Ticket designs: each night looks different ──
 // A night picks a design (or "auto") and carries colours taken from its own flyer at upload.
-export const TICKET_STYLES = ['classic', 'poster', 'neon', 'split', 'stamp', 'marquee', 'vinyl', 'sunburst'];
+export const TICKET_STYLES = ['classic', 'poster', 'neon', 'split', 'stamp', 'marquee', 'vinyl', 'sunburst', 'holo', 'coast'];
 const HEX = /^#[0-9a-f]{6}$/i;
 // Validates stored colours: { accent, dark, light } as #rrggbb, or null.
 export const cleanTicketColors = c => (c && HEX.test(c.accent) && HEX.test(c.dark) && HEX.test(c.light) ? { accent: c.accent.toLowerCase(), dark: c.dark.toLowerCase(), light: c.light.toLowerCase() } : null);
@@ -65,7 +65,7 @@ export const FALLBACK_PALETTES = [
 const hash = s => { let h = 2166136261; for (const ch of String(s || '')) { h ^= ch.charCodeAt(0); h = Math.imul(h, 16777619); } return h >>> 0; };
 // "Auto" nights in the same month get different designs: in date order, each takes the next design
 // no other night that month has (chosen by hand or already given). The starting design moves on
-// each month. With eight designs, a month of eight Friday/Saturday nights has eight looks.
+// each month. With ten designs, a month of up to ten Friday/Saturday nights has ten looks.
 // events: [{ id, date, ticketStyle }] (all nights, any visibility). Returns Map(id → style).
 export function monthStyles(events) {
   const byMonth = new Map();
@@ -80,7 +80,7 @@ export function monthStyles(events) {
       if (TICKET_STYLES.includes(e.ticketStyle)) { out.set(e.id, e.ticketStyle); continue; }
       let pick = null;
       for (let k = 0; k < TICKET_STYLES.length; k++) { const st = TICKET_STYLES[(next + k) % TICKET_STYLES.length]; if (!used.has(st)) { pick = st; next = (next + k + 1) % TICKET_STYLES.length; break; } }
-      if (!pick) { pick = TICKET_STYLES[next]; next = (next + 1) % TICKET_STYLES.length; } // a 9th night reuses
+      if (!pick) { pick = TICKET_STYLES[next]; next = (next + 1) % TICKET_STYLES.length; } // an 11th night reuses
       used.add(pick); out.set(e.id, pick);
     }
   }

@@ -133,6 +133,22 @@ export async function shareImage(t, { withArt = true } = {}) {
     for (let a = -Math.PI; a < 0; a += Math.PI / 13) { x.beginPath(); x.moveTo(ox, oy); x.arc(ox, oy, 2000, a, a + Math.PI / 26); x.closePath(); x.fill(); }
     x.fillStyle = mixHex(C.light, C.accent, 0.55); x.beginPath(); x.arc(ox, oy, 380, 0, Math.PI * 2); x.fill();
     ink = C.dark; lineColor = C.dark; accent = C.dark;
+  } else if (d.style === 'holo') {
+    x.fillStyle = mixHex(C.light, '#c9f3ff', 0.6); x.fillRect(0, 0, S, S);
+    for (const [cx, cy, r, col] of [[160, 100, 800, mixHex(C.accent, '#ff5fd2', 0.85)], [970, 430, 700, mixHex(C.accent, '#3fd8ff', 0.25)], [320, 1030, 760, mixHex(C.accent, '#a66bff', 0.2)]]) {
+      const g = x.createRadialGradient(cx, cy, 0, cx, cy, r); g.addColorStop(0, col); g.addColorStop(1, col + '00'); x.fillStyle = g; x.fillRect(0, 0, S, S);
+    }
+    const sh = x.createLinearGradient(0, 0, S, S * 0.6); sh.addColorStop(0.3, 'rgba(255,255,255,0)'); sh.addColorStop(0.42, 'rgba(255,255,255,.5)'); sh.addColorStop(0.54, 'rgba(255,255,255,0)'); x.fillStyle = sh; x.fillRect(0, 0, S, S);
+    ink = C.dark; lineColor = C.dark; accent = C.dark;
+  } else if (d.style === 'coast') {
+    const sky = x.createLinearGradient(0, 0, 0, S * 0.72); sky.addColorStop(0, mixHex(C.accent, C.dark, 0.4)); sky.addColorStop(1, C.accent);
+    x.fillStyle = sky; x.fillRect(0, 0, S, S);
+    x.fillStyle = mixHex(C.light, C.accent, 0.7); x.beginPath(); x.arc(S / 2, S * 0.72, 150, Math.PI, 0); x.fill();
+    const sea = x.createLinearGradient(0, S * 0.72, 0, S); sea.addColorStop(0, C.dark); sea.addColorStop(1, mixHex(C.dark, C.accent, 0.8));
+    x.fillStyle = sea; x.fillRect(0, S * 0.72, S, S * 0.28);
+    x.strokeStyle = C.light + '66'; x.lineWidth = 3;
+    for (let wy = S * 0.76; wy < S; wy += 34) { x.beginPath(); for (let wx = 0; wx <= S; wx += 60) { x.moveTo(wx, wy); x.quadraticCurveTo(wx + 15, wy - 10, wx + 30, wy); } x.stroke(); }
+    ink = C.light; lineColor = C.light; accent = C.light;
   } else {
     x.fillStyle = mixHex(C.light, '#e9ddc0', 0.88); x.fillRect(0, 0, S, S);
     if (art) cover(art, 0, 0, S, S, 0.08, 'grayscale(1) sepia(.5) contrast(1.1)');
@@ -158,7 +174,7 @@ export async function shareImage(t, { withArt = true } = {}) {
   else if (glow) { x.strokeStyle = lineColor; x.lineWidth = Math.max(3, size / 45); x.shadowColor = lineColor; x.shadowBlur = 28; rows.forEach((r, i) => x.strokeText(r, 0, i * lh)); x.shadowBlur = 8; rows.forEach((r, i) => x.strokeText(r, 0, i * lh)); }
   else {
     x.fillStyle = t.line ? lineColor : ink;
-    if (d.style === 'poster' || d.style === 'vinyl') { x.shadowColor = 'rgba(0,0,0,.6)'; x.shadowBlur = 24; }
+    if (d.style === 'poster' || d.style === 'vinyl' || d.style === 'coast') { x.shadowColor = 'rgba(0,0,0,.6)'; x.shadowBlur = 24; }
     if (d.style === 'sunburst') { x.save(); x.fillStyle = mixHex(C.light, '#ffffff', 0.8); rows.forEach((r, i) => x.fillText(r, 6, i * lh + 6)); x.restore(); }
     rows.forEach((r, i) => x.fillText(r, 0, i * lh));
   }
