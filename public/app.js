@@ -108,6 +108,12 @@ export async function chrome(active = '') {
   return s;
 }
 
+// ── Background video ──
+// Only when the visitor hasn't asked their phone to save data or reduce motion: otherwise the
+// still image (the poster) stays. Muted, looping, inline, never with controls or sound.
+export const videoOk = () => !(navigator.connection?.saveData || matchMedia('(prefers-reduced-motion: reduce)').matches);
+export const bgVideo = (src, poster = '') => `<video src="${esc(src)}" ${poster ? `poster="${esc(poster)}"` : ''} muted autoplay loop playsinline preload="metadata" aria-hidden="true" tabindex="-1"></video>`;
+
 // ── Page metadata (title, description, canonical, Open Graph, structured data) ──
 // Search engines that run scripts see these per page. Link previews on WhatsApp/Facebook don't run
 // scripts and read the static tags in the HTML instead (see docs/OPEN_DECISIONS.md #16).

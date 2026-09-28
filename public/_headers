@@ -4,7 +4,7 @@
   Permissions-Policy: camera=(self), microphone=(), geolocation=()
   X-Frame-Options: SAMEORIGIN
   Strict-Transport-Security: max-age=31536000; includeSubDomains
-  Content-Security-Policy: default-src 'self'; script-src 'self' https://www.gstatic.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' blob: https://memories-paystack-verify.diamondj04102026.workers.dev https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://firebasestorage.googleapis.com https://*.firebasestorage.app; frame-ancestors 'self'; base-uri 'self'; form-action 'self' https://checkout.paystack.com
+  Content-Security-Policy: default-src 'self'; script-src 'self' https://www.gstatic.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' blob: https://memories-paystack-verify.diamondj04102026.workers.dev https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://firebasestorage.googleapis.com https://*.firebasestorage.app; media-src 'self' blob: https://firebasestorage.googleapis.com https://*.firebasestorage.app; frame-ancestors 'self'; base-uri 'self'; form-action 'self' https://checkout.paystack.com
 /ticket.html
   Referrer-Policy: no-referrer
   X-Robots-Tag: noindex

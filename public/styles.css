@@ -143,6 +143,7 @@ h1, h2, h3 { margin: 0; }
 .hero-backdrop { position: absolute; inset: 0; z-index: -1; background: center / cover no-repeat; opacity: .38; }
 .hero-backdrop::after { content: ''; position: absolute; inset: 0; background: linear-gradient(to bottom, rgba(13, 10, 9, .35), var(--ink) 92%); }
 .hero-backdrop[hidden] { display: none; }
+.hero-backdrop video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
 .hero { display: grid; grid-template-columns: minmax(0, 1fr); grid-template-areas: "brand" "art" "copy"; column-gap: clamp(20px, 4vw, 56px); row-gap: clamp(22px, 5vw, 36px); padding-bottom: clamp(28px, 6vw, 64px); }
 .hero .brand { grid-area: brand; } .hero .next-art { grid-area: art; } .hero .next-copy { grid-area: copy; }
 .brand { padding: clamp(28px, 7vw, 72px) 0 0; }
@@ -228,7 +229,7 @@ h1, h2, h3 { margin: 0; }
 /* ── Event page ── */
 /* A night's wide hero photo across the top of its page. */
 .event-banner { position: relative; aspect-ratio: 16 / 6; max-height: 48vh; overflow: hidden; background: var(--ink-3); }
-.event-banner img { width: 100%; height: 100%; object-fit: cover; }
+.event-banner img, .event-banner video { width: 100%; height: 100%; object-fit: cover; display: block; }
 .event-banner::after { content: ''; position: absolute; inset: 0; background: linear-gradient(to top, var(--ink), transparent 60%); }
 .event-hero { display: grid; gap: 0; }
 .event-art { position: relative; background: var(--ink-3); }

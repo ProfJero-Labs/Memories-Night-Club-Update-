@@ -1,9 +1,15 @@
 // index.html: page script (kept out of the HTML so the CSP can forbid inline scripts).
-import { chrome, api, esc, img, dateStamp, doors, shortDate, whenLabel, $, loading, errorState } from '../app.js';
+import { chrome, api, esc, img, dateStamp, doors, shortDate, whenLabel, $, loading, errorState, videoOk, bgVideo } from '../app.js';
 
 const s = await chrome('home');
 // The wide photo behind the homepage hero: the next night's own hero image, else the site's.
-const backdrop = src => { const bg = $('#heroBg'); if (!src) { bg.hidden = true; return; } bg.style.backgroundImage = `url('${src.replace(/'/g, '%27')}')`; bg.hidden = false; };
+// A video (the night's, else the site's) plays over the still image when the visitor's phone allows it.
+const backdrop = (src, video) => {
+  const bg = $('#heroBg');
+  bg.innerHTML = video && videoOk() ? bgVideo(video, src) : '';
+  if (!src && !bg.innerHTML) { bg.hidden = true; return; }
+  bg.style.backgroundImage = src ? `url('${src.replace(/'/g, '%27')}')` : ''; bg.hidden = false;
+};
 $('#facts').innerHTML = [s.venue || 'SamRit Hotel, Cape Coast', s.nightsLine || 'Friday + Saturday', s.doorsLine || 'Doors 10PM'].map(x => `<span>${esc(x)}</span>`).join('');
 
 const poster = e => `<a class="poster" href="event.html?id=${encodeURIComponent(e.id)}">
@@ -18,7 +24,7 @@ async function load() {
   catch (e) { return errorState(next, e.message, load); }
 
   if (!events.length) {
-    backdrop(s.heroImage);
+    backdrop(s.heroImage, s.heroVideo);
     // Nothing on sale: point at the next open night instead of a dead end.
     const cal = await api('/api/calendar?weeks=6').catch(() => ({ days: [] }));
     const open = cal.days.find(d => d.state === 'open' && d.date > new Date().toISOString().slice(0, 10));
@@ -30,7 +36,7 @@ async function load() {
     return;
   }
   const hero = events.find(e => e.featured && !e.soldOut) || events.find(e => !e.soldOut) || events[0];
-  backdrop(hero.heroImage || s.heroImage);
+  backdrop(hero.heroImage || s.heroImage, hero.heroVideo || s.heroVideo);
   const art = $('#heroArt');
   art.href = `event.html?id=${encodeURIComponent(hero.id)}`; art.setAttribute('aria-label', hero.name);
   // The blurred copy fills the frame behind the flyer, so any flyer shape sits well in a tall frame.

@@ -334,6 +334,34 @@ test('images uploaded in the control room appear on the public site: hero image 
   assert.deepEqual(guest.errors, []);
 });
 
+test('a video uploaded for a night plays behind the homepage hero and on its page; reduced motion gets the still image', async () => {
+  const guest = await phone(1280);
+  await guest.goto(`${base}/index.html`, { waitUntil: 'networkidle' });
+  const heroId = new URL(await guest.locator('#heroArt').getAttribute('href'), base).searchParams.get('id');
+  const admin = await phone(1280);
+  await admin.goto(`${base}/login.html`); await admin.fill('#email', 'admin@dev'); await admin.fill('#pw', 'memories-dev'); await admin.click('#go');
+  await admin.waitForURL(/admin\.html/); await admin.goto(`${base}/admin.html#nights/${heroId}`); await admin.waitForLoadState('networkidle');
+  await admin.setInputFiles('#evVidF', new URL('./fixtures/clip.webm', import.meta.url).pathname);
+  await admin.getByText(/video uploaded/i).waitFor();
+  assert.equal(await admin.locator('#evVidT video').count(), 1, 'preview in the editor');
+  await admin.click('#save');
+  await until(() => /\/dev\/uploads\//.test(store.get('events', heroId).fields.heroVideo || ''), 'the video to be saved');
+  await guest.goto(`${base}/index.html`, { waitUntil: 'networkidle' });
+  assert.match(await guest.getAttribute('#heroBg video', 'src'), /\/dev\/uploads\//, 'homepage plays the night’s video');
+  assert.equal(await guest.getAttribute('#heroBg video', 'muted') !== null || await guest.evaluate(() => document.querySelector('#heroBg video').muted), true);
+  await guest.goto(`${base}/event.html?id=${heroId}`, { waitUntil: 'networkidle' });
+  assert.match(await guest.getAttribute('.event-banner video', 'src'), /\/dev\/uploads\//, 'the night’s page plays it');
+  const calm = await browser.newContext({ viewport: { width: 390, height: 844 }, reducedMotion: 'reduce' });
+  const still = await calm.newPage();
+  await still.goto(`${base}/index.html`, { waitUntil: 'networkidle' });
+  assert.equal(await still.locator('#heroBg video').count(), 0, 'no video when the visitor asks for reduced motion');
+  await calm.close();
+  // Remove it again: the homepage falls back to the still image.
+  await admin.click('#evVidX'); await admin.click('#save');
+  await until(() => !store.get('events', heroId).fields.heroVideo, 'the video to be removed');
+  assert.deepEqual(guest.errors, []);
+});
+
 test('door: no any-night mode; valid → ENTRY CONFIRMED, again → ALREADY CHECKED IN, junk refused; headcount from server; search admits', async () => {
   const valid = docs('tickets').filter(t => t.status === 'valid' && t.eventId === 'dev-afro');
   const token = valid[0].id;

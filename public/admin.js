@@ -25,6 +25,23 @@ const flash = (el, text, bad = false) => { el.innerHTML = `<div class="msg ${bad
 const pill = (text, c) => `<span class="pill ${c}">${esc(text)}</span>`;
 const fail = e => { panel.innerHTML = `<div class="msg err">${esc(e.message)}</div>`; };
 const val = id => $(id).value.trim();
+// A video upload field (MP4/WebM/MOV up to 60 MB, the Storage rule's limit): preview, remove.
+const VIDEO_MAX_MB = 60;
+const videoField = (id, label, hint, url) => `<div class="img-drop"><div class="thumb wide vid" id="${id}T">${url ? `<video src="${esc(url)}" muted playsinline preload="metadata"></video>` : ''}</div><div class="sfield"><label for="${id}F">${label}</label><input id="${id}F" type="file" accept="video/mp4,video/webm,video/quicktime"><span class="hint">${hint}</span><button type="button" class="sbtn ghost" id="${id}X" ${url ? '' : 'hidden'}>Remove video</button></div></div>`;
+function bindVideo(id, msgEl, onChange) {
+  $(`#${id}F`).onchange = async ev => {
+    const f = ev.target.files[0]; if (!f) return;
+    if (!/^video\/(mp4|webm|quicktime)$/.test(f.type)) return flash(msgEl, 'Use an MP4, WebM or MOV video.', true);
+    if (f.size > VIDEO_MAX_MB * 1048576) return flash(msgEl, `That video is ${Math.round(f.size / 1048576)} MB. Keep it under ${VIDEO_MAX_MB} MB: a 10–20 second loop is plenty.`, true);
+    flash(msgEl, 'Uploading video…');
+    try {
+      const url = await uploadImage(f, f.name);
+      $(`#${id}T`).innerHTML = `<video src="${esc(url)}" muted playsinline autoplay loop></video>`; $(`#${id}X`).hidden = false;
+      onChange(url); flash(msgEl, 'Video uploaded. Save to publish it.');
+    } catch (err) { flash(msgEl, err.message || 'Upload failed.', true); }
+  };
+  $(`#${id}X`).onclick = () => { $(`#${id}T`).innerHTML = ''; $(`#${id}X`).hidden = true; $(`#${id}F`).value = ''; onChange(''); };
+}
 
 $('#tabs').innerHTML = TABS.map(([k, l]) => `<button role="tab" data-tab="${k}">${l}</button>`).join('') + '<a href="checkin.html">Door ↗</a>';
 $$('[data-tab]').forEach(b => b.onclick = () => show(b.dataset.tab));
@@ -91,6 +108,7 @@ async function night(id, notice) {
       <div class="grid2">
         <div class="img-drop"><div class="thumb" id="artThumb" style="background-image:url('${esc(e.artwork || '')}')"></div><div class="sfield"><label for="artFile">Flyer</label><input id="artFile" type="file" accept="image/jpeg,image/png,image/webp"><span class="hint">Portrait works best. Shown on the homepage (when this is the next night), Nights, this night’s page and its tickets. Its colours become the ticket colours.</span></div></div>
         <div class="img-drop"><div class="thumb wide" id="heroThumb" style="background-image:url('${esc(e.heroImage || '')}')"></div><div class="sfield"><label for="heroFile">Hero image (optional)</label><input id="heroFile" type="file" accept="image/jpeg,image/png,image/webp"><span class="hint">A wide photo. Shown across the top of this night’s page, and behind it on the homepage when it’s the next night.</span></div></div>
+        ${videoField('evVid', 'Video (optional)', 'MP4 or WebM, up to 60 MB; a short silent loop. Plays behind the homepage hero when this is the next night, and across the top of this night’s page. The hero image is shown while it loads and on phones saving data.', e.heroVideo)}
       </div>
       <div class="card" style="background:var(--ink-2)"><h2 style="margin:0">Ticket design</h2>
         <div class="grid2" style="align-items:start">
@@ -125,7 +143,7 @@ async function night(id, notice) {
     <h2>Comps</h2>${compCard()}`}`;
 
   $('#back').onclick = () => show('nights');
-  const art = { artwork: e.artwork || '', heroImage: e.heroImage || '' };
+  const art = { artwork: e.artwork || '', heroImage: e.heroImage || '', heroVideo: e.heroVideo || '' };
   // Ticket design: the night's colours (from its flyer, or the palette it would get anyway) and style.
   let colors = designFor({ eventId: e.id || 'new', ticketColors: e.ticketColors }).colors;
   const drawTicketPreview = () => {
@@ -171,7 +189,7 @@ async function night(id, notice) {
       const dt = val('#evDate');
       const r = await sapi('/api/admin/events', { method: 'POST', body: {
         id: isNew ? undefined : e.id, name: val('#evName'), date: dt ? `${dt}:00Z` : '', doors: val('#evDoors'), venue: val('#evVenue'), description: val('#evDesc'),
-        artwork: art.artwork, heroImage: art.heroImage, ticketLines: lines, ticketStyle: $('#tStyle').value, ticketColors: colors, visibility: $('#evPublic').checked ? 'public' : 'private',
+        artwork: art.artwork, heroImage: art.heroImage, heroVideo: art.heroVideo, ticketLines: lines, ticketStyle: $('#tStyle').value, ticketColors: colors, visibility: $('#evPublic').checked ? 'public' : 'private',
         active: $('#evActive').checked, soldOut: $('#evSold').checked, featured: $('#evFeat').checked, organiserId: val('#evOrg'),
       } });
       dirty = false;
@@ -183,6 +201,7 @@ async function night(id, notice) {
     } catch (err) { flash($('#evMsg'), err.message, true); }
     btn.disabled = false; return false;
   };
+  bindVideo('evVid', $('#evMsg'), url => { art.heroVideo = url; touch(); });
   $('#evForm').onsubmit = ev => { ev.preventDefault(); saveNight(); };
   // Sections below reload the page after saving; don't let that silently drop unsaved night changes.
   const reload = async (msg) => {
@@ -365,16 +384,18 @@ async function settings() {
     <div class="grid2">${f('venue', 'Venue')}${f('address', 'Address line')}${f('nightsLine', 'Nights line', 'e.g. Friday + Saturday')}${f('doorsLine', 'Doors line', 'e.g. Doors 10PM')}
       ${f('phone', 'Public phone', 'Confirm the real number before filling this in.', 'tel')}${f('whatsapp', 'WhatsApp number', '', 'tel')}${f('email', 'Public email', '', 'email')}${f('instagram', 'Instagram handle', '@handle')}${f('facebook', 'Facebook page', 'Page name, e.g. memoriesnightclub.gh')}${f('tiktok', 'TikTok handle', '@handle')}
       ${f('mapUrl', 'Map link', 'Google Maps share link. Blank = search for the venue.', 'url')}</div>
-    <div class="img-drop"><div class="thumb wide" id="heroT" style="background-image:url('${esc(s.heroImage || '')}')"></div><div class="sfield"><label for="heroF">Homepage hero image (optional)</label><input id="heroF" type="file" accept="image/jpeg,image/png,image/webp"></div></div>
+    <div class="img-drop"><div class="thumb wide" id="heroT" style="background-image:url('${esc(s.heroImage || '')}')"></div><div class="sfield"><label for="heroF">Homepage hero image (optional)</label><input id="heroF" type="file" accept="image/jpeg,image/png,image/webp"><span class="hint">Shown behind the homepage hero when the next night has no hero image of its own, and when nothing is on sale.</span></div></div>
+    ${videoField('sVid', 'Homepage video (optional)', 'MP4 or WebM, up to 60 MB; a short silent loop. Plays behind the homepage hero when the next night has no video of its own.', s.heroVideo)}
     <div class="grid2"><div class="sfield"><label for="s-lines">Default lines (one per line)</label><textarea id="s-lines" style="min-height:160px">${esc((s.defaultLines || []).join('\n'))}</textarea><span class="hint">Used for any night without its own lines.</span></div>
       <div class="sfield"><label for="s-closed">Closed dates (YYYY-MM-DD, one per line)</label><textarea id="s-closed" style="min-height:160px">${esc((s.closedDates || []).join('\n'))}</textarea><span class="hint">Shown as closed on the calendar; can’t be requested.</span></div></div>
     <div><button class="sbtn red" type="submit">Save settings</button></div><div id="sMsg"></div></form>`;
-  let hero = s.heroImage || '';
+  let hero = s.heroImage || '', heroVideo = s.heroVideo || '';
+  bindVideo('sVid', $('#sMsg'), url => { heroVideo = url; });
   $('#heroF').onchange = async ev => { const file = ev.target.files[0]; if (!file) return; try { hero = await uploadImage(await compressImage(file, 2000), 'hero.webp'); $('#heroT').style.backgroundImage = `url('${hero}')`; } catch (err) { flash($('#sMsg'), err.message, true); } };
   $('#sForm').onsubmit = async ev => {
     ev.preventDefault();
     const body = Object.fromEntries(['venue', 'address', 'nightsLine', 'doorsLine', 'phone', 'whatsapp', 'email', 'instagram', 'facebook', 'tiktok', 'mapUrl'].map(k => [k, val(`#s-${k}`)]));
-    body.heroImage = hero; body.defaultLines = $('#s-lines').value.split('\n').map(x => x.trim().toUpperCase()).filter(Boolean); body.closedDates = $('#s-closed').value.split(/\s+/).filter(Boolean);
+    body.heroImage = hero; body.heroVideo = heroVideo; body.defaultLines = $('#s-lines').value.split('\n').map(x => x.trim().toUpperCase()).filter(Boolean); body.closedDates = $('#s-closed').value.split(/\s+/).filter(Boolean);
     try { await sapi('/api/admin/settings', { method: 'POST', body }); flash($('#sMsg'), 'Saved. Live on the site now.'); } catch (err) { flash($('#sMsg'), err.message, true); }
   };
 }

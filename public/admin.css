@@ -87,3 +87,4 @@ details.more > summary { cursor: pointer; font-weight: 700; padding: 8px 0; }
 /* The night's Save button stays in reach while scrolling a long editor (pinned to the bottom of the
    screen until the end of the form scrolls into view). */
 .savebar { position: sticky; bottom: 0; z-index: 5; margin: 0 -18px -18px; padding: 12px 18px calc(12px + env(safe-area-inset-bottom)); background: var(--ink-2); border-top: 1px solid var(--line-2); }
+.img-drop .thumb.vid video { width: 100%; height: 100%; object-fit: cover; display: block; }

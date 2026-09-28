@@ -73,3 +73,18 @@ test('the public events list gives each Auto night in a month its own design', a
   const one = await (await worker.fetch(new Request('https://api.test/api/events/n09'), env)).json();
   assert.equal(one.event.autoStyle, events.find(e => e.id === 'n09').autoStyle, 'event page agrees with the list');
 });
+
+test('hero videos: only this project’s uploads are accepted (night and site); the CSP lets them play', async () => {
+  const { store, env } = createMockEnv();
+  const token = await idToken({ role: 'manager' });
+  const post = (path, body) => worker.fetch(new Request(`https://api.test${path}`, { method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: JSON.stringify(body) }), env).then(r => r.status);
+  const own = `https://firebasestorage.googleapis.com/v0/b/${env.FIREBASE_PROJECT_ID}.firebasestorage.app/o/event-art%2F1-loop.mp4?alt=media&token=x`;
+  assert.equal(await post('/api/admin/events', { name: 'N', date: '2099-01-01T22:00:00Z', heroVideo: own }), 200);
+  assert.equal(await post('/api/admin/events', { name: 'N', date: '2099-01-01T22:00:00Z', heroVideo: 'https://evil.example/v.mp4' }), 400);
+  assert.equal(await post('/api/admin/settings', { heroVideo: own }), 200);
+  assert.equal(await post('/api/admin/settings', { heroVideo: 'https://evil.example/v.mp4' }), 400);
+  const s = await (await worker.fetch(new Request('https://api.test/api/settings'), env)).json();
+  assert.equal(s.settings.heroVideo, own);
+  const csp = readFileSync(new URL('_headers', pub), 'utf8').match(/Content-Security-Policy: (.+)/)[1];
+  assert.match(csp, /media-src 'self' blob: https:\/\/firebasestorage\.googleapis\.com/);
+});

@@ -11,7 +11,7 @@ import { balanceMessage } from './checkout.js';
 const FORBIDDEN = { error: 'Forbidden.', status: 403 };
 const audit = (env, user, action, data) => setDoc(env, 'audit_logs', id(), { action, actorUid: uidOf(user), ...data, timestamp: now() });
 const httpsUrl = (s, env) => { const v = clean(s, 500); return !v || (env?.DEV_ALLOW_HTTP_ASSETS ? /^https?:\/\// : /^https:\/\//).test(v) ? v : null; };
-// Flyers and hero images must be files uploaded to this project's own Storage (event-art/), so a
+// Flyers, hero images and hero videos must be files uploaded to this project's own Storage (event-art/), so a
 // night can't be pointed at an image on someone else's server. An image a night already has is
 // kept as it is, so older data still saves. Dev (DEV_ALLOW_HTTP_ASSETS) accepts the local uploads.
 const ownImage = (s, env, previous = '') => {
@@ -90,11 +90,11 @@ export async function upsertEvent(env, b, user) {
     const acct = await getDoc(env, 'users', organiserId);
     if (acct?.fields?.role !== 'organiser') return { error: 'Pick an organiser from the list (give them the Organiser role under Staff first).' };
   }
-  const artwork = ownImage(b.artwork, env, existing?.fields?.artwork), heroImage = ownImage(b.heroImage, env, existing?.fields?.heroImage);
-  if (artwork === null || heroImage === null) return { error: 'Upload images here in the control room (links to other sites aren’t allowed).' };
+  const artwork = ownImage(b.artwork, env, existing?.fields?.artwork), heroImage = ownImage(b.heroImage, env, existing?.fields?.heroImage), heroVideo = ownImage(b.heroVideo, env, existing?.fields?.heroVideo);
+  if (artwork === null || heroImage === null || heroVideo === null) return { error: 'Upload images here in the control room (links to other sites aren’t allowed).' };
   const data = {
     name, date, doors: clean(b.doors, 40), venue: clean(b.venue, 120), description: clean(b.description, 240),
-    artwork, heroImage, ticketLines: lines,
+    artwork, heroImage, heroVideo, ticketLines: lines,
     ticketStyle: TICKET_STYLES.includes(b.ticketStyle) ? b.ticketStyle : 'auto', ticketColors: cleanTicketColors(b.ticketColors) || existing?.fields?.ticketColors || null,
     visibility: b.visibility === 'public' ? 'public' : 'private',
     active: b.active !== false, soldOut: b.soldOut === true, featured: b.featured === true,
@@ -307,6 +307,7 @@ export async function updateSettings(env, b, user) {
   for (const [k, max] of Object.entries(SETTINGS_FIELDS)) if (b?.[k] !== undefined) data[k] = clean(b[k], max);
   if (data.mapUrl && httpsUrl(data.mapUrl, env) === null) return { error: 'Links must start with https://' };
   if (data.heroImage !== undefined && ownImage(data.heroImage, env, cur.heroImage) === null) return { error: 'Upload the hero image here in the control room.' };
+  if (data.heroVideo !== undefined && ownImage(data.heroVideo, env, cur.heroVideo) === null) return { error: 'Upload the video here in the control room.' };
   if (b?.defaultLines !== undefined) {
     const lines = (Array.isArray(b.defaultLines) ? b.defaultLines : []).map(l => clean(l, 48)).filter(Boolean);
     if (lines.length > 12) return { error: 'Keep it to 12 lines or fewer.' };
