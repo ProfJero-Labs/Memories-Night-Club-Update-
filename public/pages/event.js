@@ -1,13 +1,29 @@
 // event.html: page script (kept out of the HTML so the CSP can forbid inline scripts).
-import { chrome, api, esc, img, params, money, dateStamp, doors, longDate, $, $$, errorState, shareUrl, mapLink } from '../app.js';
+import { chrome, api, esc, img, params, money, dateStamp, doors, longDate, $, $$, errorState, shareUrl, mapLink, setMeta, setJsonLd } from '../app.js';
 const settingsP = chrome('nights');
 const id = params.get('id');
 const main = $('#main');
 let sel = null, qty = 1, bundle;
 
+// Title, description, canonical, Open Graph and schema.org Event, from the night's own data only.
+function describe(b, s) {
+  const e = b.event, venue = e.venue || s.venue || '';
+  const url = `${location.origin}/event.html?id=${encodeURIComponent(e.id)}`;
+  const description = [longDate(e.date), doors(e), venue].filter(Boolean).join(' · ') + (e.description ? `. ${e.description}` : '');
+  setMeta({ title: `${e.name} · Memories`, description, image: e.artwork || `${location.origin}/assets/og.png`, url });
+  setJsonLd({
+    '@context': 'https://schema.org', '@type': 'Event', name: e.name, startDate: e.date, url,
+    eventStatus: 'https://schema.org/EventScheduled', eventAttendanceMode: 'https://schema.org/OfflineEventAttendanceMode',
+    ...(e.description ? { description: e.description } : {}), ...(e.artwork ? { image: [e.artwork] } : {}),
+    ...(venue ? { location: { '@type': 'Place', name: venue } } : {}),
+    organizer: { '@type': 'Organization', name: 'Memories', url: location.origin },
+    offers: b.ticketTypes.map(t => ({ '@type': 'Offer', name: t.name, price: (t.pricePesewas / 100).toFixed(2), priceCurrency: 'GHS', url, availability: t.soldOut || e.soldOut || e.over ? 'https://schema.org/SoldOut' : 'https://schema.org/InStock' })),
+  });
+}
+
 function render(b, s) {
   const e = b.event, r = b.raffle;
-  document.title = `${e.name} · Memories`;
+  describe(b, s);
   const ticketsOpen = !e.soldOut && !e.over && b.ticketTypes.some(t => !t.soldOut);
   const minTable = Math.min(...b.tablePackages.map(t => t.pricePesewas));
   main.innerHTML = `<div class="event-hero">

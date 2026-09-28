@@ -19,6 +19,7 @@ Business rules the code must not guess. Each has a proposed default. Until the o
 | 12 | Raffle framing (Ghana lottery law) | Admin warning shown | Owner to confirm with the club | `admin.js` draw card |
 | 13 | Privacy notice, terms, refund policy | None | Owner supplies text; launch requirement since the site collects names, phones, emails | footer links once text exists |
 | 14 | "Private night" vs "Book an event" | **Owner decided: "Book an event"** (Corporate, Event organiser, Large group, Other) | Keep | `public/private.html` |
+| 16 | Per-night link previews on WhatsApp/Facebook/Instagram | Previews show the Memories card (`assets/og.png`) and page title: those apps don't run the page's script, so they can't see the night's name or flyer. Search engines do get per-night title, description and schema.org Event. | Recommended, not built: a small Cloudflare Pages Function for `/event.html` that reads the night from the Worker and writes its title and flyer into the HTML before sending it. New infrastructure, so it needs the owner's OK. | `public/pages/event.js` (`describe`) |
 | 15 | Make the GitHub repo private | Public | Private | GitHub settings (owner) |
 
 ## Owner-only actions (not code)

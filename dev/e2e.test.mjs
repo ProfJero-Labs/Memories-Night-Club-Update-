@@ -97,6 +97,25 @@ test('remembered buyer details can be cleared from the phone', async () => {
   assert.deepEqual(page.errors, []);
 });
 
+test('event page: title, description, canonical, Open Graph and schema.org Event from the night’s data; no private data', async () => {
+  const page = await phone();
+  await page.goto(`${base}/event.html?id=dev-afro`, { waitUntil: 'networkidle' });
+  const meta = sel => page.getAttribute(sel, 'content');
+  assert.match(await page.title(), /^Afrobeats Friday · Memories$/);
+  assert.equal(await meta('meta[property="og:title"]'), 'Afrobeats Friday · Memories');
+  assert.match(await meta('meta[name="description"]'), /Doors 10PM/i);
+  assert.equal(await page.getAttribute('link[rel="canonical"]', 'href'), `${base}/event.html?id=dev-afro`);
+  const ld = JSON.parse(await page.textContent('script[type="application/ld+json"]'));
+  assert.equal(ld['@type'], 'Event'); assert.equal(ld.name, 'Afrobeats Friday');
+  assert.ok(ld.offers.length > 0 && ld.offers.every(o => o.priceCurrency === 'GHS' && /^\d+\.\d{2}$/.test(o.price)));
+  const head = await page.evaluate(() => document.head.innerHTML);
+  for (const t of docs('tickets')) assert.ok(!head.includes(t.id), 'no ticket token in metadata');
+  assert.deepEqual(page.errors, []);
+  // The static tags link previews use are in the HTML itself (they don't run scripts).
+  const raw = await (await page.request.get(`${base}/event.html`)).text();
+  assert.match(raw, /<meta property="og:image" content="https:\/\/memoriesnightclub\.com\/assets\/og\.png">/);
+});
+
 test('two guests picking the same line get two different share images', async () => {
   const hashes = [];
   for (const name of ['Ama Owusu', 'Kofi Mensah']) {

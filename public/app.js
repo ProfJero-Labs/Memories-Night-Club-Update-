@@ -108,6 +108,25 @@ export async function chrome(active = '') {
   return s;
 }
 
+// ── Page metadata (title, description, canonical, Open Graph, structured data) ──
+// Search engines that run scripts see these per page. Link previews on WhatsApp/Facebook don't run
+// scripts and read the static tags in the HTML instead (see docs/OPEN_DECISIONS.md #16).
+export function setMeta({ title, description, image, url }) {
+  const put = (sel, make, attr, val) => { if (!val) return; let el = document.head.querySelector(sel); if (!el) { el = make(); document.head.append(el); } el.setAttribute(attr, val); };
+  const meta = (key, name) => () => { const m = document.createElement('meta'); m.setAttribute(key, name); return m; };
+  if (title) document.title = title;
+  put('meta[name="description"]', meta('name', 'description'), 'content', description);
+  put('link[rel="canonical"]', () => Object.assign(document.createElement('link'), { rel: 'canonical' }), 'href', url);
+  for (const [k, v] of [['og:title', title], ['og:description', description], ['og:image', image], ['og:url', url]]) put(`meta[property="${k}"]`, meta('property', k), 'content', v);
+  if (title) put('meta[property="og:type"]', meta('property', 'og:type'), 'content', 'event');
+}
+// schema.org JSON-LD: data, not script (browsers don't execute this type, so the CSP allows it).
+export function setJsonLd(data) {
+  let el = document.head.querySelector('script[type="application/ld+json"]');
+  if (!el) { el = document.createElement('script'); el.type = 'application/ld+json'; document.head.append(el); }
+  el.textContent = JSON.stringify(data).replace(/</g, '\\u003c');
+}
+
 // ── UI states ──
 export const loading = text => `<div class="loading" role="status">${esc(text)}</div>`;
 export function errorState(el, message, retry) {
