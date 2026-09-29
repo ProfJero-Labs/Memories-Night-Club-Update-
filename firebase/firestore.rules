@@ -1,0 +1,29 @@
+rules_version = '2';
+// Every business write goes through the Cloudflare Worker (service account, not governed by these
+// rules). Browsers only ever read, and only what is safe to read.
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() { return request.auth != null; }
+    function superAdmin() { return signedIn() && request.auth.token.admin == true; }
+    function staff() { return superAdmin() || (signedIn() && request.auth.token.role in ['manager', 'eventManager']); }
+    function organiserOf(data) { return signedIn() && request.auth.token.role == 'organiser' && data.organiserId == request.auth.uid; }
+
+    match /events/{id} {
+      allow read: if (resource.data.visibility == 'public' && resource.data.active == true) || staff() || organiserOf(resource.data);
+      allow write: if false;
+    }
+    match /ticket_types/{id} { allow read: if resource.data.active == true || staff(); allow write: if false; }
+    match /table_packages/{id} { allow read: if resource.data.active == true || staff(); allow write: if false; }
+    match /bottles/{id} { allow read: if resource.data.active == true || staff(); allow write: if false; }
+    // A ticket can be opened by its id (the id is the bearer token); tickets can never be listed
+    // or queried from a browser.
+    match /tickets/{id} { allow get: if true; allow list: if false; allow write: if false; }
+    match /raffles/{id} { allow read: if resource.data.public == true || staff(); allow write: if false; }
+    match /settings/{id} { allow read: if true; allow write: if false; }
+    match /users/{uid} { allow read: if signedIn() && request.auth.uid == uid; allow write: if false; }
+    // Never readable or writable from a browser: orders, payments, guests' contact details.
+    match /{collection}/{id} {
+      allow read, write: if false;
+    }
+  }
+}

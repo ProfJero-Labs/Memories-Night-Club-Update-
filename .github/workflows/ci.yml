@@ -1,0 +1,65 @@
+# Runs on every push and pull request. Keep main deployable: a red check means don't merge.
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Worker tests + browser journeys
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: worker/package-lock.json
+      - name: Install
+        run: npm ci --prefix worker
+      - name: Worker tests (payments, roles, door, lookup, CSP, secrets…)
+        run: npm test
+      - name: Worker bundles for Cloudflare
+        run: npm run worker:check
+      - name: Install Chromium for the browser journeys
+        run: npx --prefix worker playwright install --with-deps chromium
+      - name: Browser journeys
+        run: |
+          export PLAYWRIGHT_CHROMIUM_PATH="$(node -e "import('./worker/node_modules/playwright/index.mjs').then(p => console.log(p.chromium.executablePath()))")"
+          npm run test:e2e
+
+  secrets:
+    name: Secret scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      # Scans the commits in this push / PR (not the whole history, which has a known, revoked-
+      # pending Brevo key: see docs/OPEN_DECISIONS.md).
+      - uses: trufflesecurity/trufflehog@main
+        with:
+          extra_args: --results=verified,unknown
+
+  rules:
+    name: Firestore + Storage rules (emulators)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: firebase/test/package-lock.json
+      - run: npm ci --prefix firebase/test
+      - run: npm run test:rules

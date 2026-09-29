@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Tickets · Memories</title>
+<meta name="robots" content="noindex">
+<meta name="theme-color" content="#0d0a09">
+<link rel="icon" href="assets/icon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Anton&family=Archivo:wght@400;600;700&family=Instrument+Serif:ital@0;1&display=swap">
+<link rel="stylesheet" href="styles.css">
+<style>
+  .tix { max-width: 720px; }
+  .for { display: flex; justify-content: space-between; gap: 12px; align-items: baseline; flex-wrap: wrap; }
+  .qty button:disabled { opacity: .35; cursor: not-allowed; }
+</style>
+<script src="config.js"></script>
+</head>
+<body>
+<main class="wrap tix"><div id="root" class="flow"><div class="loading" role="status">PULLING UP THE TICKETS…</div></div></main>
+<div class="buybar" id="buybar" aria-live="polite">
+  <div class="sum" id="barSum">GHS 0<small>1 ticket</small></div>
+  <a class="btn red" id="barGo" href="#">Get in <span class="arrow">→</span></a>
+</div>
+<script type="module" src="pages/tickets.js"></script>
+</body>
+</html>

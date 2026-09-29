@@ -1,0 +1,29 @@
+/*
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: strict-origin-when-cross-origin
+  Permissions-Policy: camera=(self), microphone=(), geolocation=()
+  X-Frame-Options: SAMEORIGIN
+  Strict-Transport-Security: max-age=31536000; includeSubDomains
+  Content-Security-Policy: default-src 'self'; script-src 'self' https://www.gstatic.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' blob: https://memories-paystack-verify.diamondj04102026.workers.dev https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://api.cloudinary.com; media-src 'self' blob: https://res.cloudinary.com https://firebasestorage.googleapis.com https://*.firebasestorage.app; frame-ancestors 'self'; base-uri 'self'; form-action 'self' https://checkout.paystack.com
+/ticket.html
+  Referrer-Policy: no-referrer
+  X-Robots-Tag: noindex
+/verify.html
+  Referrer-Policy: no-referrer
+  X-Robots-Tag: noindex
+/admin.html
+  Referrer-Policy: no-referrer
+  X-Robots-Tag: noindex
+/organiser.html
+  Referrer-Policy: no-referrer
+  X-Robots-Tag: noindex
+/checkin.html
+  Referrer-Policy: no-referrer
+  X-Robots-Tag: noindex
+/login.html
+  Referrer-Policy: no-referrer
+  X-Robots-Tag: noindex
+/assets/*
+  Cache-Control: public, max-age=604800
+/vendor/*
+  Cache-Control: public, max-age=31536000, immutable
