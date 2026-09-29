@@ -67,11 +67,14 @@ async function route(req, env, ctx) {
   if (m === 'POST' && p === '/api/checkout/verify') {
     if (await throttled(req, env, 'verify', 'standard')) return tooMany(req, env);
     const b = await body(req); if (!b.reference) return fail(req, env, 'Reference is required.');
-    return ok(req, env, await fulfill(env, String(b.reference)));
+    // Only the outcome: ticket links come from /api/checkout/status, and only with the buyer's claim.
+    const r = await fulfill(env, String(b.reference));
+    return ok(req, env, { status: r.status, kind: r.kind, error: r.error, planComplete: r.planComplete });
   }
   if (m === 'GET' && p === '/api/checkout/status') {
     const r = u.searchParams.get('reference'); if (!r) return fail(req, env, 'Reference is required.');
-    const d = await checkoutStatus(env, r); return d ? ok(req, env, d) : fail(req, env, 'Not found.', 404);
+    if (await throttled(req, env, 'verify', 'standard')) return tooMany(req, env);
+    const d = await checkoutStatus(env, r, req.headers.get('X-Checkout-Claim') || ''); return d ? ok(req, env, d) : fail(req, env, 'Not found.', 404);
   }
   if (m === 'GET' && p.startsWith('/api/tickets/')) {
     if (await throttled(req, env, 'ticket', 'standard')) return tooMany(req, env);

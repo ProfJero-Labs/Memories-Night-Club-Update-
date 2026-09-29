@@ -15,10 +15,13 @@ service cloud.firestore {
     match /ticket_types/{id} { allow read: if resource.data.active == true || staff(); allow write: if false; }
     match /table_packages/{id} { allow read: if resource.data.active == true || staff(); allow write: if false; }
     match /bottles/{id} { allow read: if resource.data.active == true || staff(); allow write: if false; }
-    // A ticket can be opened by its id (the id is the bearer token); tickets can never be listed
-    // or queried from a browser.
-    match /tickets/{id} { allow get: if true; allow list: if false; allow write: if false; }
-    match /raffles/{id} { allow read: if resource.data.public == true || staff(); allow write: if false; }
+    // Tickets are never read from a browser, not even by their id: the full record holds the
+    // holder's name, phone and payment reference. Guests open tickets through the Worker
+    // (GET /api/tickets/:token), which returns a first name only.
+    match /tickets/{id} { allow read, write: if false; }
+    // Raffles carry the winner's ticket code, which the door can admit by. Guests see the draw
+    // through the Worker, which leaves the code out.
+    match /raffles/{id} { allow read: if staff(); allow write: if false; }
     match /settings/{id} { allow read: if true; allow write: if false; }
     match /users/{uid} { allow read: if signedIn() && request.auth.uid == uid; allow write: if false; }
     // Never readable or writable from a browser: orders, payments, guests' contact details.

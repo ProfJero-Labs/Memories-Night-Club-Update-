@@ -8,7 +8,8 @@ let T, blob, blobUrl;
 
 function view(t, qr) {
   const r = t.raffle;
-  const drawNote = r?.status === 'drawn' && r.winner ? `<div class="notice ${t.inDraw ? 'ok' : ''}">The draw is done: won by ${esc(r.winner.name)} (${esc(r.winner.code)}).</div>`
+  const drawNote = r?.status === 'drawn' && r.youWon ? `<div class="notice ok">You won the draw${r.prize ? `: ${esc(r.prize)}` : ''}. Show this ticket at the door.</div>`
+    : r?.status === 'drawn' && r.winner ? `<div class="notice">The draw is done: won by ${esc(r.winner.name)}.</div>`
     : t.inDraw ? `<div class="notice ok">You’re in the draw${r?.prize ? ` for ${esc(r.prize)}` : ''}. Winner is picked before the night and gets a text.</div>` : '';
   root.innerHTML = `<div class="ticket-page">
     <div>${ticketHTML({ line: t.identityLine, firstName: t.firstName, eventName: t.eventName, eventId: t.eventId, ticketStyle: t.ticketStyle, ticketColors: t.ticketColors, autoStyle: t.autoStyle, date: t.eventDate, doors: t.doors, venue: t.venue, artwork: t.artwork, code: t.displayCode, status: t.status, inDraw: t.inDraw, type: t.type, admits: t.admits }, { qr })}

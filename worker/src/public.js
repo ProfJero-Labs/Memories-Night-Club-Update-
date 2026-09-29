@@ -73,11 +73,12 @@ export async function eventBundle(env, eventId) {
     ticketTypes: tickets.filter(x => x.fields.active === true).map(x => ({ id: x.id, name: x.fields.name, pricePesewas: Number(x.fields.pricePesewas || 0), admits: Number(x.fields.admits || 1), description: clean(x.fields.description, 140), sortOrder: x.fields.sortOrder ?? 0, ...stock(x.fields) })).sort(bySort),
     tablePackages: tables.filter(x => x.fields.active === true).map(x => ({ id: x.id, name: x.fields.name, pricePesewas: Number(x.fields.pricePesewas || 0), capacity: Number(x.fields.capacity || 0), includes: clean(x.fields.description, 200), sortOrder: x.fields.sortOrder ?? 0, ...stock(x.fields) })).sort(bySort),
     bottles: [...bottles, ...globalBottles].filter(x => x.fields.active === true).map(x => ({ id: x.id, name: x.fields.name, category: x.fields.category || '', pricePesewas: Number(x.fields.pricePesewas || 0), ...stock(x.fields) })).sort((a, b) => a.category.localeCompare(b.category) || a.pricePesewas - b.pricePesewas),
-    // Whitelisted: a drawn raffle's raw ticket id is a bearer token and never leaves the server.
+    // Whitelisted: a drawn raffle's raw ticket id is a bearer token and never leaves the server,
+    // and the winner's display code stays off public pages too (the door can admit by that code).
     raffle: raffle ? {
       prize: raffle.fields.prize || '', status: raffle.fields.status || 'open',
       cap: Number(raffle.fields.cap) > 0 ? Number(raffle.fields.cap) : 20, spotsTaken: Number(raffle.fields.spotsTaken || 0),
-      winner: raffle.fields.status === 'drawn' ? { name: raffle.fields.winnerDisplayName || 'Winner', code: raffle.fields.winnerDisplayCode || '' } : null,
+      winner: raffle.fields.status === 'drawn' ? { name: raffle.fields.winnerDisplayName || 'Winner' } : null,
     } : null,
   };
 }
@@ -154,6 +155,8 @@ export async function publicTicket(env, token) {
     ticketStyle: ev?.fields?.ticketStyle || 'auto', ticketColors: cleanTicketColors(ev?.fields?.ticketColors), autoStyle,
     identityLine: t.identityLine || '', displayCode: t.displayCode, status: t.revoked || t.cancelled ? 'cancelled' : t.status,
     inDraw: t.inDraw === true, comp: t.comp === true,
-    raffle: raffle ? { prize: raffle.fields.prize || '', status: raffle.fields.status, winner: raffle.fields.status === 'drawn' ? { name: raffle.fields.winnerDisplayName, code: raffle.fields.winnerDisplayCode } : null } : null,
+    // Every ticket for the night sees who won, never the winning code; only the winner's own ticket is told it won.
+    raffle: raffle ? { prize: raffle.fields.prize || '', status: raffle.fields.status, winner: raffle.fields.status === 'drawn' ? { name: raffle.fields.winnerDisplayName || 'Winner' } : null,
+      youWon: raffle.fields.status === 'drawn' && !!t.displayCode && raffle.fields.winnerDisplayCode === t.displayCode } : null,
   };
 }

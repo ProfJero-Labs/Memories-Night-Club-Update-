@@ -1,4 +1,4 @@
-// The open checkout: the ticket line is optional, Pay in bits takes any amount above zero, closes
+// The open checkout: the ticket line is optional, Pay in bits takes any amount from GHS 1, closes
 // when the night starts, and every part payment leaves the guest enough to keep paying.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -40,18 +40,18 @@ test('a chosen night line and a custom line are still stored exactly as before',
   assert.deepEqual(lines, ['SAMPLE LINE TWO.', 'birthday girl']);
 });
 
-test('pay in bits: any amount above zero starts an order; zero, blanks and more than the price do not', async () => {
+test('pay in bits: any amount from GHS 1 starts an order; less, blanks and more than the price do not', async () => {
   const { store, post } = setup();
-  for (const depositPesewas of [0, -100, 'abc', 12.5, 10001]) {
+  for (const depositPesewas of [0, -100, 'abc', 12.5, 1, 99, 10001]) {
     const r = await post('/api/installments/start', { ...who, depositPesewas, acknowledged: true });
     assert.equal(r.status, 400, `deposit ${depositPesewas} should be refused`);
   }
   assert.equal(plans(store).length, 0);
-  for (const depositPesewas of [1, 50, 1250, 10000]) {
+  for (const depositPesewas of [100, 150, 1250, 10000]) {
     const r = await post('/api/installments/start', { ...who, depositPesewas, acknowledged: true });
     assert.equal(r.status, 200, `deposit ${depositPesewas}: ${r.data.error}`);
   }
-  assert.deepEqual(store.paystackInits.map(i => i.amount), [1, 50, 1250, 10000]);
+  assert.deepEqual(store.paystackInits.map(i => i.amount), [100, 150, 1250, 10000]);
 });
 
 test('pay in bits closes when the night starts (tickets in full stay on sale)', async () => {
@@ -65,14 +65,18 @@ test('pay in bits closes when the night starts (tickets in full stay on sale)', 
   assert.equal(full.status, 200, full.data.error);
 });
 
-test('top-ups take any amount above zero up to the balance', async () => {
+test('top-ups take any amount from GHS 1 up to the balance (a final balance under GHS 1 can be paid)', async () => {
   const { store, post } = setup();
   store.seed('installment_plans', 'MEM-7K3QX-9WP2M', { eventId: 'n1', eventName: 'Afrobeats Friday', eventDate: FUTURE, totalPesewas: 10000, paidPesewas: 4000, buyerName: 'Ama', buyerPhone: '0241234567', status: 'active', payments: [] });
   assert.equal((await post('/api/installments/topup', { planId: 'MEM-7K3QX-9WP2M', amountPesewas: 0 })).status, 400);
   assert.equal((await post('/api/installments/topup', { planId: 'MEM-7K3QX-9WP2M', amountPesewas: 6001 })).status, 400);
-  const small = await post('/api/installments/topup', { planId: 'MEM-7K3QX-9WP2M', amountPesewas: 1 });
+  assert.equal((await post('/api/installments/topup', { planId: 'MEM-7K3QX-9WP2M', amountPesewas: 99 })).status, 400);
+  const small = await post('/api/installments/topup', { planId: 'MEM-7K3QX-9WP2M', amountPesewas: 100 });
   assert.equal(small.status, 200, small.data.error);
-  assert.equal(store.paystackInits.at(-1).amount, 1);
+  assert.equal(store.paystackInits.at(-1).amount, 100);
+  store.seed('installment_plans', 'MEM-7K3QX-9WP2N', { eventId: 'n1', eventName: 'Afrobeats Friday', eventDate: FUTURE, totalPesewas: 10000, paidPesewas: 9950, buyerName: 'Ama', buyerPhone: '0241234567', status: 'active', payments: [] });
+  const last = await post('/api/installments/topup', { planId: 'MEM-7K3QX-9WP2N', amountPesewas: 50 });
+  assert.equal(last.status, 200, last.data.error);
 });
 
 test('after a part payment: the text and email give the night, what is left, the deadline and the pay link', async () => {

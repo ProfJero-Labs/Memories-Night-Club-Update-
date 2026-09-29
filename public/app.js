@@ -36,11 +36,11 @@ export const MSG = {
   busy: 'TOO MANY TRIES. GIVE IT A MINUTE.',
 };
 export class ApiError extends Error { constructor(message, status) { super(message); this.status = status; } }
-export async function api(path, { method = 'GET', body, token, retries = method === 'GET' ? 1 : 0, timeout = 15000 } = {}) {
+export async function api(path, { method = 'GET', body, token, headers: extra, retries = method === 'GET' ? 1 : 0, timeout = 15000 } = {}) {
   for (let attempt = 0; ; attempt++) {
     const ctl = new AbortController(); const t = setTimeout(() => ctl.abort(), timeout);
     try {
-      const headers = { 'Content-Type': 'application/json' };
+      const headers = { 'Content-Type': 'application/json', ...(extra || {}) };
       if (token) headers.Authorization = `Bearer ${token}`;
       const r = await fetch(`${CFG.apiBase || ''}${path}`, { method, headers, body: body ? JSON.stringify(body) : undefined, signal: ctl.signal });
       const d = await r.json().catch(() => ({}));
@@ -162,6 +162,19 @@ export function bindForget(root, fields, onClear) {
     b.remove(); onClear?.(); toast('Saved details cleared from this phone.');
   });
 }
+
+// A checkout's claim: the secret that lets this browser (and only this one) open the
+// tickets on the payment-return page. Kept per Paystack reference (and per pay-in-bits order code,
+// so later top-ups from this phone carry it too); only the last few are kept.
+export const claims = {
+  get: ref => { try { return JSON.parse(localStorage.getItem('mem-claims') || '{}')[ref] || ''; } catch { return ''; } },
+  set: (ref, claim) => {
+    try {
+      const all = Object.entries(JSON.parse(localStorage.getItem('mem-claims') || '{}')).filter(([k]) => k !== ref).slice(-19);
+      localStorage.setItem('mem-claims', JSON.stringify(Object.fromEntries([...all, [ref, claim]])));
+    } catch { /* private mode: the ticket link still comes by text */ }
+  },
+};
 
 export async function shareUrl(title, url = location.href) {
   if (navigator.share) { try { await navigator.share({ title, url }); return; } catch { return; } }

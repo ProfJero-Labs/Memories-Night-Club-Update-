@@ -36,8 +36,8 @@ beforeEach(async () => {
 const anon = () => env.unauthenticatedContext().firestore();
 const as = (uid, claims) => env.authenticatedContext(uid, claims).firestore();
 
-test('a logged-out browser can open one ticket by its token but can never list or query tickets', async () => {
-  await assertSucceeds(getDoc(doc(anon(), 'tickets/secret-token')));
+test('no browser can open, list or query tickets, even with the token (the Worker serves tickets)', async () => {
+  for (const db of [anon(), as('new-user', {}), as('org-a', { role: 'organiser' })]) await assertFails(getDoc(doc(db, 'tickets/secret-token')));
   await assertFails(getDocs(collection(anon(), 'tickets')));
   await assertFails(getDocs(query(collection(anon(), 'tickets'), where('eventId', '==', 'pub'))));
 });
@@ -61,11 +61,13 @@ test('guest contact details are never readable from a browser', async () => {
   }
 });
 
-test('public reads: live events, settings, public raffle; not private nights', async () => {
+test('public reads: live events, settings; not private nights, not raffles (the winner code admits at the door)', async () => {
   await assertSucceeds(getDoc(doc(anon(), 'events/pub')));
   await assertFails(getDoc(doc(anon(), 'events/priv')));
   await assertSucceeds(getDoc(doc(anon(), 'settings/site')));
-  await assertSucceeds(getDoc(doc(anon(), 'raffles/r')));
+  await assertFails(getDoc(doc(anon(), 'raffles/r')));
+  await assertFails(getDoc(doc(as('org-a', { role: 'organiser' }), 'raffles/r')));
+  await assertSucceeds(getDoc(doc(as('boss', { admin: true, role: 'superAdmin' }), 'raffles/r')));
 });
 
 test('an organiser can read their own private night but not another organiser’s', async () => {

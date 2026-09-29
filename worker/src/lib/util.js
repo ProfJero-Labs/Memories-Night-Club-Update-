@@ -9,6 +9,15 @@ const hex = n => Array.from(crypto.getRandomValues(new Uint8Array(n)), b => b.to
 export const paymentRef = () => `MEM-${Date.now()}-${hex(8).toUpperCase()}`;
 // A ticket's document id is its bearer token: ~244 bits of randomness.
 export const ticketToken = () => id() + id();
+// A checkout's claim secret (pay in full, or a pay-in-bits order): handed only to the buyer's
+// browser, stored only as a hash.
+// The payment-return page needs it (not just the Paystack reference, which staff and receipts see)
+// to be shown the ticket links.
+export const claimSecret = () => id() + id();
+export async function sha256Hex(s) {
+  const d = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(String(s)));
+  return Array.from(new Uint8Array(d), b => b.toString(16).padStart(2, '0')).join('');
+}
 export const displayCode = token => `MEM-${token.slice(0, 6).toUpperCase()}`;
 // Pay-in-bits order code: MEM-XXXXX-XXXXX, 10 Crockford Base32 characters from the CSPRNG
 // (50 bits; no I, L, O, U, so it reads cleanly over the phone). Uniqueness is checked on create.

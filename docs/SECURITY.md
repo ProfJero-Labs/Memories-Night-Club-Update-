@@ -3,7 +3,9 @@
 | Control | Where | Test |
 |---|---|---|
 | Browsers can't write any business data (even admins) | `firebase/firestore.rules` | `firebase/test/rules.test.js`: "nobody writes business data…" |
-| Tickets open by token, never listed or queried | rules + `GET /api/tickets/:token` returns first name only | rules test; `acceptance`: "public ticket shows a first name only" |
+| Tickets never read from a browser (not even by token); guests open them through the Worker | rules + `GET /api/tickets/:token` returns first name only | rules test: "no browser can open…"; `acceptance`: "public ticket shows a first name only" |
+| Ticket links on the payment page need the buyer's claim, not just the Paystack reference (which staff, receipts and every ticket of the order carry); a pay-in-bits helper never gets the ticket | `claimedTokens`, `checkoutStatus` (`X-Checkout-Claim`), `/api/checkout/verify` returns the outcome only | `ticket-links` |
+| The draw winner's ticket code never reaches a public page (the door can admit by code); only the winner's own ticket says it won | `eventBundle`, `publicTicket`, raffles readable by staff only | `ticket-links`; rules test: "public reads…" |
 | Guest contact data never readable from a browser | rules | rules test: "guest contact details…" |
 | Flyer uploads: staff only, images only, < 8 MB | `firebase/storage.rules` | rules test: "flyer uploads…" |
 | No public sign-up; a signed-in account without a role gets nothing | Auth setting + `verifyStaff` | `acceptance`: "a brand-new signup…"; e2e: "no-role account is refused" |

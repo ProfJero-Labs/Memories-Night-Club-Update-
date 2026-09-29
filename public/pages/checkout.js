@@ -1,6 +1,6 @@
 // checkout.html: one page, one job. Details, an optional line, how to pay, pay.
 //   checkout.html?event={id}&type={typeId}&qty={n}   (the ticket was chosen on tickets.html)
-import { chrome, normalizePhone, api, esc, params, money, $, $$, errorState, remember, shortDate, time, forgetButton, bindForget, BITS_ACK_TEXT } from '../app.js';
+import { chrome, normalizePhone, api, esc, params, money, $, $$, errorState, remember, claims, shortDate, time, forgetButton, bindForget, BITS_ACK_TEXT } from '../app.js';
 import { ticketHTML } from '../ticket-art.js';
 chrome();
 
@@ -145,6 +145,7 @@ async function pay(ev) {
       : await api('/api/checkout/initiate', { method: 'POST', body });
     // This order is on its way to Paystack: the next one starts fresh (no borrowed line).
     try { sessionStorage.removeItem(draftKey()); } catch { /* private mode */ }
+    if (d.claim) { claims.set(d.reference, d.claim); if (d.planId) claims.set(d.planId, d.claim); }
     location.href = d.authorizationUrl;
   } catch (e) {
     err.hidden = false; err.textContent = e.message; btn.disabled = false; syncPay();

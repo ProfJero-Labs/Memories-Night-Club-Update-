@@ -1,5 +1,5 @@
 // installment.html: page script (kept out of the HTML so the CSP can forbid inline scripts).
-import { chrome, api, esc, params, money, $, $$, shortDate, time, normalizePhone } from '../app.js';
+import { chrome, api, esc, params, money, $, $$, shortDate, time, normalizePhone, claims } from '../app.js';
 chrome();
 const root = $('#root');
 
@@ -61,7 +61,7 @@ function bind() {
       const v = Math.round(Number(input.value || 0) * 100), left = Number(f.dataset.left);
       if (!(v >= 1) || v > left) { note.hidden = false; note.textContent = `Enter an amount up to ${money(left)}.`; return input.focus(); }
       btn.disabled = true; btn.textContent = 'Opening payment…';
-      try { const d = await api('/api/installments/topup', { method: 'POST', body: { planId: f.dataset.plan, amountPesewas: v } }); location.href = d.authorizationUrl; }
+      try { const d = await api('/api/installments/topup', { method: 'POST', body: { planId: f.dataset.plan, amountPesewas: v } }); const c = claims.get(f.dataset.plan); if (c) claims.set(d.reference, c); location.href = d.authorizationUrl; }
       catch (e) { note.hidden = false; note.textContent = e.message; btn.disabled = false; sync(); }
     };
   });

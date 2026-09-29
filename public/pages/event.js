@@ -49,7 +49,7 @@ function render(b, s) {
       ${r ? `<aside class="draw-box" aria-label="The draw">
         <span class="stamp" style="position:absolute;right:14px;top:-16px;background:var(--ink)">The draw</span>
         ${r.status === 'drawn' && r.winner
-          ? `<span class="display">Won by ${esc(r.winner.name)}</span><span class="muted">Ticket ${esc(r.winner.code)}${r.prize ? ` · ${esc(r.prize)}` : ''}</span>`
+          ? `<span class="display">Won by ${esc(r.winner.name)}</span>${r.prize ? `<span class="muted">${esc(r.prize)}</span>` : ''}`
           : r.status === 'open'
             ? `<span class="display">${r.cap - r.spotsTaken} of ${r.cap} draw spots left</span>
                <div class="draw-meter" aria-hidden="true"><i style="width:${Math.round(100 * r.spotsTaken / r.cap)}%"></i></div>

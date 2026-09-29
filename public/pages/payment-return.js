@@ -1,5 +1,5 @@
 // payment-return.html: page script (kept out of the HTML so the CSP can forbid inline scripts).
-import { chrome, api, esc, params, money, $, MSG, shortDate, time, shareUrl, toast, waLink } from '../app.js';
+import { chrome, api, esc, params, money, $, MSG, shortDate, time, shareUrl, toast, waLink, claims } from '../app.js';
 const settingsP = chrome();
 const root = $('#root');
 const ref = params.get('reference') || params.get('trxref');
@@ -78,6 +78,16 @@ function done(s) {
   }
   if (s.kind === 'installment_topup' && !s.planComplete) { receipt(s); return; }
   const tickets = s.tickets || [];
+  // Paid, but this browser didn't start the checkout (another phone, a cleared browser, or the last
+  // pay-in-bits payment): the ticket link goes by text to the buyer's phone, never to this page.
+  if (!tickets.length) {
+    const n = s.ticketCount || 0;
+    root.outerHTML = `<div class="state-msg"><span class="stamp">Paid</span><h1 class="display lg">You’re in.</h1>
+      <p>Your ticket link${n > 1 ? 's are' : ' is'} on the way by text to ${s.phoneHint ? esc(s.phoneHint) : 'the phone on the order'}. Open ${n > 1 ? 'them' : 'it'} from there.</p>
+      ${s.planId ? `<p>Order ${esc(s.planId)}. No text? Go to <a href="installment.html?code=${encodeURIComponent(s.planId)}">Pay the rest</a> and use “Text me the link”.</p>` : ''}
+      <a class="btn" href="index.html">Back to Memories</a></div>`;
+    return;
+  }
   if (tickets.length === 1) { location.replace(`ticket.html?token=${encodeURIComponent(tickets[0].token)}&new=1`); return; }
   root.outerHTML = `<div class="state-msg"><span class="stamp">Paid</span><h1 class="display lg">You’re in. All ${tickets.length} of you.</h1>
     <p>Each ticket has its own QR. Open yours, then send the others to your people.</p>
@@ -90,7 +100,7 @@ async function run() {
   for (let i = 0; i < 20; i++) {
     try {
       const v = await api('/api/checkout/verify', { method: 'POST', body: { reference: ref } });
-      if (v.status === 'issued' || v.status === 'failed') { s = await api(`/api/checkout/status?reference=${encodeURIComponent(ref)}`); break; }
+      if (v.status === 'issued' || v.status === 'failed') { s = await api(`/api/checkout/status?reference=${encodeURIComponent(ref)}`, { headers: { 'X-Checkout-Claim': claims.get(ref) } }); break; }
     } catch (e) { if (e.message === MSG.busy) await new Promise(r => setTimeout(r, 4000)); }
     await new Promise(r => setTimeout(r, Math.min(1500 + i * 500, 5000)));
   }

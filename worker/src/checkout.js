@@ -5,7 +5,7 @@
 // All payments land in EvolveIT's Paystack account. The three-way split (EvolveIT / Memories /
 // organizer) is recorded on each order for the ledger; distribution happens out of band.
 import { getDoc, setDoc, createDoc, queryWhere, batchGet, commitTx, updateWrite, foundFields, withTransaction } from './lib/firestore.js';
-import { BITS_POLICY_VERSION, now, id, paymentRef, ticketToken, displayCode, orderCode, normalizeOrderCode, clean, normalizePhone, validEmail, firstName, money } from './lib/util.js';
+import { BITS_POLICY_VERSION, now, id, paymentRef, claimSecret, sha256Hex, ticketToken, displayCode, orderCode, normalizeOrderCode, clean, normalizePhone, validEmail, firstName, money, maskPhone, formatAccra } from './lib/util.js';
 import { sendSms, sendEmail, siteUrl } from './lib/notify.js';
 import { getSettings, resolveLines, isOver } from './public.js';
 import { openRaffleForEvent, raffleSpotWrites } from './raffle.js';
@@ -51,10 +51,11 @@ async function ticketContext(env, b) {
   if (!ev || !tt || ev.fields.active === false || ev.fields.visibility !== 'public' || tt.fields.eventId !== b.eventId || tt.fields.active !== true) return { error: 'This ticket is no longer available.' };
   if (ev.fields.soldOut === true || (typeof tt.fields.remaining === 'number' && tt.fields.remaining < qty)) return { error: 'Not enough tickets left for that.' };
   if (isOver(ev.fields)) return { error: 'This night has already happened.' };
+  // The line is optional: the guest can pick one of the night's lines, write their own (short
+  // enough to sit on the ticket), or leave it empty, and the ticket then leads with the night's name.
   const lines = resolveLines(ev.fields, settings);
   const own = clean(b.identityLine, 400).replace(/\s+/g, ' ').slice(0, LINE_MAX).trim();
   const identityLine = lines.includes(b.identityLine) ? b.identityLine : own;
-  if (lines.length && !identityLine) return { error: 'Pick a line or write your own.' };
   const unit = Number(tt.fields.pricePesewas || 0);
   if (!(unit > 0)) return { error: 'This ticket is no longer available.' };
   return { ev, tt, qty, buyerName, buyerPhone, buyerEmail: clean(b.buyerEmail, 120), identityLine, totalPesewas: unit * qty };
@@ -63,17 +64,17 @@ async function ticketContext(env, b) {
 // ── Pay in full ──
 export async function initiateTicket(env, b) {
   const c = await ticketContext(env, b); if (c.error) return c;
-  const reference = paymentRef();
+  const reference = paymentRef(), claim = claimSecret();
   const shares = sharesFor(env, c.ev.fields, c.totalPesewas);
   await setDoc(env, 'pending_checkouts', reference, {
-    reference, kind: 'ticket', eventId: c.ev.id, eventName: c.ev.fields.name || '', ticketTypeId: c.tt.id, ticketTypeName: c.tt.fields.name || 'Ticket',
+    reference, claimHash: await sha256Hex(claim), kind: 'ticket', eventId: c.ev.id, eventName: c.ev.fields.name || '', ticketTypeId: c.tt.id, ticketTypeName: c.tt.fields.name || 'Ticket',
     admits: Number(c.tt.fields.admits || 1), quantity: c.qty, amountPesewas: c.totalPesewas, buyerName: c.buyerName, buyerPhone: c.buyerPhone,
     buyerEmail: c.buyerEmail, identityLine: c.identityLine, status: 'pending', createdAt: now(), shares,
   });
   try {
     const payload = { email: payEmail(env, c.buyerEmail, c.buyerPhone), amount: c.totalPesewas, currency: 'GHS', reference, callback_url: returnUrl(env), metadata: { kind: 'ticket', eventId: c.ev.id, ticketTypeId: c.tt.id, quantity: c.qty } };
     const p = await paystack(env, '/transaction/initialize', { method: 'POST', body: JSON.stringify(payload) });
-    return { reference, authorizationUrl: p.authorization_url };
+    return { reference, authorizationUrl: p.authorization_url, claim };
   } catch (e) {
     await setDoc(env, 'pending_checkouts', reference, { reference, kind: 'ticket', eventId: c.ev.id, status: 'failed', error: 'payment_initialization_failed', failedAt: now() });
     throw e;
@@ -233,11 +234,15 @@ export async function fulfillTable(env, reference) {
 export async function startInstallment(env, b) {
   if (b?.acknowledged !== true) return { error: 'Tick the box to confirm how pay in bits works.' };
   const c = await ticketContext(env, b); if (c.error) return c;
+  // A plan is forfeited when the night starts (maybeForfeitPlan), so none may start after that.
+  if (bitsClosed(c.ev.fields.date)) return { error: 'Pay in bits closes when the night starts. Pay in full instead.' };
   const deposit = Number(b.depositPesewas);
   if (!Number.isInteger(deposit) || deposit < MIN_TOPUP_PESEWAS) return { error: 'The smallest payment is GHS 1.' };
   if (deposit > c.totalPesewas) return { error: 'That’s more than the ticket costs.' };
   // Lock the rates on the plan itself, so mid-plan changes to the event don't move the ledger.
   const shares = sharesFor(env, c.ev.fields, c.totalPesewas);
+  // The browser that starts the order keeps a claim, so its own payments can open the ticket.
+  const claim = claimSecret(), claimHash = await sha256Hex(claim);
   let planId;
   for (let attempt = 0; attempt < 6 && !planId; attempt++) {
     const code = orderCode();
@@ -247,13 +252,13 @@ export async function startInstallment(env, b) {
         admits: Number(c.tt.fields.admits || 1), quantity: c.qty, totalPesewas: c.totalPesewas, paidPesewas: 0,
         buyerName: c.buyerName, firstName: firstName(c.buyerName), buyerPhone: c.buyerPhone, buyerEmail: c.buyerEmail, identityLine: c.identityLine,
         status: 'active', payments: [], createdAt: now(), updatedAt: now(), policyVersion: BITS_POLICY_VERSION, acknowledgedAt: now(),
-        shares,
+        shares, claimHash,
       });
       planId = code;
     } catch (e) { if (!String(e.message).includes('ALREADY_EXISTS')) throw e; }
   }
   if (!planId) return { error: 'Couldn’t start your order right now. Try again.' };
-  return startInstallmentTopup(env, planId, deposit, payEmail(env, c.buyerEmail, c.buyerPhone));
+  return { ...(await startInstallmentTopup(env, planId, deposit, payEmail(env, c.buyerEmail, c.buyerPhone))), claim };
 }
 
 export async function startInstallmentTopup(env, planId, amountPesewas, email) {
@@ -295,10 +300,13 @@ export async function topupInstallment(env, b) {
   return startInstallmentTopup(env, planId, amount, payEmail(env, plan.fields.buyerEmail, plan.fields.buyerPhone));
 }
 
+// Pay in bits closes the moment the night starts: that's also when an unpaid plan is forfeited.
+export const bitsClosed = date => { const t = new Date(date).getTime(); return Number.isFinite(t) && t <= Date.now(); };
+
 export async function maybeForfeitPlan(env, plan) {
   if (plan.fields.status !== 'active') return plan.fields.status === 'forfeited';
   const ev = await getDoc(env, 'events', plan.fields.eventId);
-  if (ev && new Date(ev.fields.date).getTime() <= Date.now()) {
+  if (ev && bitsClosed(ev.fields.date)) {
     await setDoc(env, 'installment_plans', plan.id, { ...plan.fields, status: 'forfeited', updatedAt: now() });
     return true;
   }
@@ -309,6 +317,8 @@ export const planSummary = p => {
   const total = Number(p.fields.totalPesewas || 0), paid = Number(p.fields.paidPesewas || 0);
   return {
     planId: p.id, eventName: p.fields.eventName || '', eventDate: p.fields.eventDate || '', firstName: p.fields.firstName || firstName(p.fields.buyerName),
+    // The balance has to be paid before this moment (the night's start), or the plan is forfeited.
+    deadline: p.fields.eventDate || '',
     totalPesewas: total, paidPesewas: paid, remainingPesewas: Math.max(0, total - paid), status: p.fields.status, ticketReady: p.fields.status === 'completed',
   };
 };
@@ -413,14 +423,46 @@ export async function fulfillInstallment(env, reference) {
       await sendSms(env, P.buyerPhone, `MEMORIES\nPaid in full. Order ${planId}.\nYou're in for ${P.eventName}: ${link}`);
       await sendEmail(env, P.buyerEmail, 'Your Memories ticket', [`Paid in full. Order ${planId}.`, `You're in for ${P.eventName}.`, `Your ticket: ${link}`]);
     } else {
-      await sendSms(env, P.buyerPhone, balanceMessage(env, planId, result.received, P.totalPesewas - result.paidPesewas));
+      const balance = P.totalPesewas - result.paidPesewas;
+      await sendSms(env, P.buyerPhone, balanceMessage(env, planId, result.received, balance, P));
+      await sendEmail(env, P.buyerEmail, `Memories: ${money(balance)} left to pay`, balanceEmailLines(env, planId, result.received, balance, P));
     }
   }
   delete result.already; delete result.plan; delete result.received; delete result.paidPesewas;
   return result;
 }
-export const balanceMessage = (env, planId, received, balance) =>
-  `MEMORIES\n${received ? `${money(received)} received. ` : ''}Balance: ${money(balance)}.\nOrder ${planId}.\nPay the rest: ${siteUrl(env, `/installment.html?code=${planId}`)}`;
+// "Fri 03 Oct" and "Fri 03 Oct, 10PM" in Ghana time, for texts and emails.
+const smsDay = d => formatAccra(d, { weekday: 'short', day: '2-digit', month: 'short' }).replace(/,/g, '');
+const smsWhen = d => { const day = smsDay(d); const t = formatAccra(d, { hour: 'numeric', minute: '2-digit', hour12: true }).replace(':00', '').replace(/\s/g, '').toUpperCase(); return day && t ? `${day}, ${t}` : day; };
+
+// The text after a part payment: enough to keep paying without opening anything else. Plain ASCII
+// so it stays a normal SMS (curly quotes would switch the whole message to 70-character parts).
+// P is the plan's fields; without it (older callers) the text is the short form.
+export const balanceMessage = (env, planId, received, balance, P = null) => {
+  const link = siteUrl(env, `/installment.html?code=${planId}`);
+  if (!P) return `MEMORIES\n${received ? `${money(received)} received. ` : ''}Balance: ${money(balance)}.\nOrder ${planId}.\nPay the rest: ${link}`;
+  const name = String(P.eventName || '').slice(0, 30), day = smsDay(P.eventDate), by = smsWhen(P.eventDate);
+  return [
+    'MEMORIES',
+    `${received ? `${money(received)} received` : 'Your order'}${name ? ` for ${name}${day ? `, ${day}` : ''}` : ''}.`,
+    `Paid ${money(Number(P.totalPesewas) - balance)} of ${money(P.totalPesewas)}. Left: ${money(balance)}.`,
+    by ? `Pay the rest before ${by} or the order is forfeited.` : 'Pay the rest before the night starts or the order is forfeited.',
+    `Order ${planId}`,
+    `Pay: ${link}`,
+  ].join('\n');
+};
+// The same, for the email receipt (one line per paragraph).
+export const balanceEmailLines = (env, planId, received, balance, P) => {
+  const by = smsWhen(P.eventDate);
+  return [
+    `${money(received)} received for ${P.eventName || 'your Memories night'}${P.eventDate ? ` (${smsDay(P.eventDate)})` : ''}.`,
+    `${P.quantity || 1} × ${P.ticketTypeName || 'Ticket'}. Paid ${money(Number(P.totalPesewas) - balance)} of ${money(P.totalPesewas)}. Left to pay: ${money(balance)}.`,
+    `Pay the rest before ${by || 'the night starts'}. If it isn't fully paid by then, the order is forfeited and what you've paid isn't refunded.`,
+    `Your order code: ${planId}. Anyone can pay with it.`,
+    `Pay the rest: ${siteUrl(env, `/installment.html?code=${planId}`)}`,
+    'Your ticket comes by text the moment it is fully paid.',
+  ];
+};
 
 export async function forfeitStalePlans(env) {
   const active = await queryWhere(env, 'installment_plans', [{ field: 'status', value: 'active' }]);
@@ -437,14 +479,36 @@ export async function fulfill(env, reference) {
   return { kind: 'ticket', ...(await fulfillTicket(env, reference)) };
 }
 
-export async function checkoutStatus(env, reference) {
+// Ticket links go only to the browser that started the order (it holds the claim). The Paystack
+// reference alone is not enough: it sits on staff screens, receipts and every ticket of the order.
+// For pay in bits the claim is the plan's, so a helper who pays the last part (anyone can pay)
+// is never shown the ticket; it goes by text to the phone on the order, like every ticket does.
+export async function claimedTokens(f, claim, claimHash = f.claimHash) {
+  if (!claimHash || !claim || typeof claim !== 'string') return [];
+  return (await sha256Hex(claim)) === claimHash ? (f.ticketIds || []) : [];
+}
+
+export async function checkoutStatus(env, reference, claim) {
   const d = await getDoc(env, 'pending_checkouts', reference);
   if (!d) return null;
   const f = d.fields;
-  const out = { status: f.status, kind: f.kind || 'ticket', eventId: f.eventId || '', eventName: f.eventName || '', packageName: f.packageName || '', amountPesewas: f.amountPesewas, bottles: f.bottles || [], tickets: (f.ticketIds || []).map(token => ({ token })), error: f.status === 'failed' ? f.error : undefined };
+  const plan = f.kind === 'installment_topup' && f.planId ? await getDoc(env, 'installment_plans', f.planId) : null;
+  const tokens = f.status === 'issued' ? await claimedTokens(f, claim, f.kind === 'installment_topup' ? plan?.fields?.claimHash : f.claimHash) : [];
+  const out = {
+    status: f.status, kind: f.kind || 'ticket', eventId: f.eventId || '', eventName: f.eventName || '', packageName: f.packageName || '', amountPesewas: f.amountPesewas, bottles: f.bottles || [],
+    tickets: tokens.map(token => ({ token })), ticketCount: (f.ticketIds || []).length, phoneHint: maskPhone(f.buyerPhone), error: f.status === 'failed' ? f.error : undefined,
+  };
   if (f.kind === 'installment_topup' && f.planId) {
-    const plan = await getDoc(env, 'installment_plans', f.planId);
-    if (plan) Object.assign(out, { eventId: plan.fields.eventId, planId: f.planId, planStatus: plan.fields.status, paidPesewas: plan.fields.paidPesewas, totalPesewas: plan.fields.totalPesewas, eventName: plan.fields.eventName, planComplete: f.planComplete === true || plan.fields.status === 'completed' });
+    if (plan) {
+      const P = plan.fields;
+      Object.assign(out, {
+        eventId: P.eventId, planId: f.planId, planStatus: P.status, paidPesewas: P.paidPesewas, totalPesewas: P.totalPesewas, eventName: P.eventName,
+        planComplete: f.planComplete === true || P.status === 'completed',
+        // What the receipt page needs to tell the guest how to keep paying. Never the full phone.
+        eventDate: P.eventDate || '', deadline: P.eventDate || '', ticketTypeName: P.ticketTypeName || '', quantity: Number(P.quantity || 1),
+        firstName: P.firstName || firstName(P.buyerName), phoneHint: maskPhone(P.buyerPhone), reference,
+      });
+    }
   }
   return out;
 }
