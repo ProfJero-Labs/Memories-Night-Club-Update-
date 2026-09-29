@@ -13,6 +13,9 @@ SMS_SENDER = "MEMORIES"
 # SMS over the public URL, authenticated with SMS_WORKER_KEY (set as a secret on both workers).
 SMS_WORKER_URL = "https://memories-sms.diamondj04102026.workers.dev"
 
+# Fallback EvolveIT share % used when an event has no evolveitSharePct of its own.
+EVOLVEIT_SHARE_PCT = "10"
+
 # Edge rate limits (Workers Rate Limiting API). Keys are "<route>:<client IP>".
 [[ratelimits]]
 name = "RL_STRICT"

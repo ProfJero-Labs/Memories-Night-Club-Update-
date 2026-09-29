@@ -10,7 +10,7 @@ const user = await requireStaff(CMS);
 staffHeader(user, 'Control room');
 const can = roles => roles.includes(user.role);
 const TABS = [
-  ['overview', 'Overview', CMS], ['nights', 'Nights', CMS], ['bookings', 'Bookings', CMS], ['requests', 'Event requests', CMS],
+  ['overview', 'Overview', CMS], ['nights', 'Nights', CMS], ['payments', 'Payments', CMS], ['bookings', 'Bookings', CMS], ['requests', 'Event requests', CMS],
   ['bits', 'Pay in bits', MONEY], ['refunds', 'Refunds', MONEY], ['bar', 'Bar menu', CMS], ['settings', 'Site settings', MONEY], ['staff', 'Staff', ['superAdmin']],
 ].filter(t => can(t[2]));
 const panel = $('#panel');
@@ -57,15 +57,20 @@ function show(tab, arg, notice) {
   if (location.hash.slice(1) !== current) location.hash = current;
   $$('[data-tab]').forEach(b => b.setAttribute('aria-selected', String(b.dataset.tab === tab)));
   panel.innerHTML = '<div class="loading">Loading…</div>';
-  ({ overview, nights, night, bookings, requests, bits, refunds, bar, settings, staff })[tab](arg, notice).catch(fail);
+  ({ overview, nights, night, payments, bookings, requests, bits, refunds, bar, settings, staff })[tab](arg, notice).catch(fail);
 }
 
 // ── Overview ──
 async function overview() {
   const d = await sapi('/api/admin/overview');
   panel.innerHTML = `<h1>Tonight & next</h1>
-    <div class="kpis"><div><span>Revenue (all confirmed)</span><b>${money(d.revenuePesewas)}</b></div><div><span>Owed on pay-in-bits</span><b>${money(d.owingPesewas)}</b></div>
-      <div><span>Active pay-in-bits</span><b>${d.activePlans}</b></div><div><span>New event requests</span><b>${d.newRequests}</b></div></div>
+  <div class="kpis">
+      <div><span>Revenue (confirmed only)</span><b>${money(d.revenuePesewas)}</b></div>
+      <div><span>Memories’ share</span><b>${money(d.memoriesSharePesewas)}</b></div>
+      <div><span>Organizers’ share</span><b>${money(d.organizerSharePesewas)}</b></div>
+      <div><span>Pending payments</span><b>${d.pendingCheckouts}${d.staleCheckouts ? ` <small style="font-weight:400">(${d.staleCheckouts} over 30m)</small>` : ''}</b></div>
+      <div><span>Failed payments</span><b>${d.failedCheckouts}</b></div>
+    </div>
     <div class="tbl-wrap"><table class="tbl"><thead><tr><th>Night</th><th>Date</th><th class="num">Tickets</th><th class="num">Comps</th><th class="num">Tables</th><th class="num">Revenue</th><th class="num">In the door</th><th></th></tr></thead><tbody>
     ${d.nights.map(n => `<tr><td><strong>${esc(n.name)}</strong> ${n.visibility === 'public' ? '' : pill('private', 'grey')}</td><td>${esc(shortDate(n.date))}</td><td class="num">${n.tickets}</td><td class="num">${n.comps}</td><td class="num">${n.tables}</td><td class="num">${money(n.revenuePesewas)}</td><td class="num">${n.checkins}</td>
       <td class="actions"><button class="sbtn" data-open="${esc(n.id)}">Open</button><a class="sbtn ghost" href="checkin.html?event=${encodeURIComponent(n.id)}">Door</a></td></tr>`).join('') || '<tr><td colspan="8" class="empty-row">No upcoming nights. Create one under Nights.</td></tr>'}
@@ -126,6 +131,8 @@ async function night(id, notice) {
         <label class="check"><input type="checkbox" id="evFeat" ${e.featured ? 'checked' : ''}> Lead on the homepage</label>
       </div>
       <div class="sfield"><label for="evOrg">Organiser</label><select id="evOrg"><option value="">Club night (no outside organiser)</option>${orgs.map(o => `<option value="${esc(o.uid)}" ${o.uid === e.organiserId ? 'selected' : ''}>${esc(o.email || 'Organiser account')}</option>`).join('')}${e.organiserId && !orgs.some(o => o.uid === e.organiserId) ? `<option value="${esc(e.organiserId)}" selected>Account no longer an organiser</option>` : ''}</select><span class="hint">They’ll see this night’s sales and can run its door. To add someone, give them the Organiser role under Staff.</span></div>
+      <div class="sfield"><label for="evOrgPct">Organiser’s share of each ticket (%)</label><input id="evOrgPct" type="number" min="0" max="100" value="${esc(e.organizerSharePct ?? 0)}"><span class="hint">Whole number, 0 to 100. Snapshotted onto every paid order — changing it later won’t move what’s already earned. Leave 0 for club nights.</span></div>
+      ${(user.role === 'superAdmin' || user.admin === true) ? `<div class="sfield"><label for="evEvolveitPct">Platform share for this event (%)</label><input id="evEvolveitPct" type="number" min="1" max="99" value="${esc(e.evolveitSharePct ?? '')}" placeholder="Blank for the default"><span class="hint">EvolveIT’s cut of every sale on this night. Super-admin only. Leave blank to use the platform default.</span></div>` : ''}
       <div>
         <h2 style="margin-top:6px">Ticket lines: what should others know? <span class="kicker" id="lnCount"></span></h2>
         <p class="hint" style="margin:0 0 10px;color:var(--muted)">8 to 12 lines. Guests pick one; it’s the big type on their ticket. With no lines, the ticket leads with the night’s name.</p>
@@ -189,8 +196,12 @@ async function night(id, notice) {
       const dt = val('#evDate');
       const r = await sapi('/api/admin/events', { method: 'POST', body: {
         id: isNew ? undefined : e.id, name: val('#evName'), date: dt ? `${dt}:00Z` : '', doors: val('#evDoors'), venue: val('#evVenue'), description: val('#evDesc'),
-        artwork: art.artwork, heroImage: art.heroImage, heroVideo: art.heroVideo, ticketLines: lines, ticketStyle: $('#tStyle').value, ticketColors: colors, visibility: $('#evPublic').checked ? 'public' : 'private',
-        active: $('#evActive').checked, soldOut: $('#evSold').checked, featured: $('#evFeat').checked, organiserId: val('#evOrg'),
+        artwork: art.artwork, heroImage: art.heroImage, heroVideo: art.heroVideo, ticketLines: lines, ticketStyle: $('#tStyle').value, ticketColors: colors,
+        visibility: $('#evPublic').checked ? 'public' : 'private',
+        active: $('#evActive').checked, soldOut: $('#evSold').checked, featured: $('#evFeat').checked,
+        organiserId: val('#evOrg'),
+        organizerSharePct: Number(val('#evOrgPct')) || 0,
+        ...($('#evEvolveitPct') ? { evolveitSharePct: val('#evEvolveitPct') === '' ? null : Number(val('#evEvolveitPct')) } : {}),
       } });
       dirty = false;
       if (isNew) { show('nights', r.eventId, { at: '#evMsg', text: 'Night created. Add tickets below, then tick “On the public site” and save to put it live.' }); return true; }
@@ -290,6 +301,29 @@ function bindComp(eventId) {
       $('#compForm').reset();
     } catch (err) { flash($('#cMsg'), err.message, true); }
   };
+}
+
+// ── Payments (all checkout activity, not just confirmed orders) ──
+async function payments() {
+  const d = await sapi('/api/admin/payments');
+  const rows = (d.checkouts || []);
+  const confirmCount = rows.filter(r => r.status === 'issued').length;
+  const pendingCount = rows.filter(r => r.status === 'pending').length;
+  const failedCount = rows.filter(r => r.status === 'failed').length;
+  const statusPill = s => s === 'issued' ? pill('paid', 'green') : s === 'pending' ? pill('pending', 'amber') : s === 'failed' ? pill('failed', 'red') : pill(s || '—', 'grey');
+  panel.innerHTML = `<h1>Payments</h1>
+    <p class="muted" style="margin-top:-8px">Every checkout in the last 24 hours. Only <strong>paid</strong> rows count as revenue — those are the ones that hit the confirmed orders ledger. Anything <em>pending</em> over 30 minutes is worth a call. Anything <em>failed</em> was abandoned by the buyer or rejected by Paystack.</p>
+    <div class="kpis">
+      <div><span>Paid</span><b>${confirmCount}</b></div>
+      <div><span>Pending</span><b>${pendingCount}</b></div>
+      <div><span>Failed</span><b>${failedCount}</b></div>
+    </div>
+    <div class="tbl-wrap"><table class="tbl"><thead><tr><th>When</th><th>Status</th><th>Kind</th><th>Who</th><th>Night</th><th class="num">Amount</th><th>Note</th></tr></thead><tbody>
+    ${rows.map(r => `<tr><td>${esc(when(r.createdAt))}</td><td>${statusPill(r.status)}</td><td>${esc(r.kind)}</td>
+      <td>${esc(r.buyerName || '—')}${r.buyerPhone ? `<br><a href="tel:${esc(r.buyerPhone)}">${esc(r.buyerPhone)}</a>` : ''}</td>
+      <td>${esc(r.eventName || '—')}</td><td class="num">${money(r.amountPesewas)}</td>
+      <td>${r.error ? `<span class="pill red">${esc(r.error.replace(/_/g, ' '))}</span>` : ''}</td></tr>`).join('') || '<tr><td colspan="7" class="empty-row">No checkout activity in the last 24 hours.</td></tr>'}
+    </tbody></table></div>`;
 }
 
 // ── Bookings (tickets, tables, comps) ──

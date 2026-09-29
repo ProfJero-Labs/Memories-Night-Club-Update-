@@ -1,13 +1,18 @@
 // Money paths. The browser never sets a price and never decides a payment succeeded: every amount
 // is computed here from Firestore, and every success is confirmed with Paystack's verify API using
 // the secret key before anything is issued. Issuance is transactional and idempotent per reference.
+//
+// All payments land in EvolveIT's Paystack account. The three-way split (EvolveIT / Memories /
+// organizer) is recorded on each order for the ledger; distribution happens out of band.
 import { getDoc, setDoc, createDoc, queryWhere, batchGet, commitTx, updateWrite, foundFields, withTransaction } from './lib/firestore.js';
-import { BITS_POLICY_VERSION, now, id, paymentRef, ticketToken, displayCode, orderCode, normalizeOrderCode, clean, normalizePhone, validEmail, firstName, money, maskPhone, formatAccra } from './lib/util.js';
+import { BITS_POLICY_VERSION, now, id, paymentRef, ticketToken, displayCode, orderCode, normalizeOrderCode, clean, normalizePhone, validEmail, firstName, money } from './lib/util.js';
 import { sendSms, sendEmail, siteUrl } from './lib/notify.js';
 import { getSettings, resolveLines, isOver } from './public.js';
 import { openRaffleForEvent, raffleSpotWrites } from './raffle.js';
-import { buildSplitObject } from './splits.js';
+import { computeShares } from './shares.js';
 
+// Smallest payment accepted anywhere: GHS 1.
+export const MIN_TOPUP_PESEWAS = 100;
 
 async function paystack(env, path, options = {}) {
   const r = await fetch(`https://api.paystack.co${path}`, { ...options, headers: { Authorization: `Bearer ${env.PAYSTACK_SECRET_KEY}`, 'Content-Type': 'application/json', ...(options.headers || {}) } });
@@ -16,30 +21,28 @@ async function paystack(env, path, options = {}) {
   return d.data;
 }
 
-// Reads the platform split config (EvolveIT's subaccount and share) and returns both the fragment
-// to include in the Paystack initialize body and the snapshot to record on the pending checkout.
-// Returns { split: null, snapshot: null } when the platform subaccount isn't configured, so
-// checkout keeps working if it's ever removed.
-async function platformSplitFor(env) {
-  const split = await buildSplitObject(env);
-  if (!split) return { split: null, snapshot: null };
-  const sub = split.subaccounts[0];
-  return { split, snapshot: { sharePct: sub.share, subaccount: sub.subaccount, capturedAt: now() } };
-}
+// Computes EvolveIT's, Memories' and the organizer's amounts for a paid order. `evolveitSharePct`
+// from the event wins; the env fallback covers events created before the field existed.
+const sharesFor = (env, eventFields, amountPesewas) => computeShares(
+  amountPesewas,
+  { evolveitSharePct: eventFields?.evolveitSharePct, organizerSharePct: eventFields?.organizerSharePct },
+  Number(env.EVOLVEIT_SHARE_PCT),
+);
 
 // Paystack needs an email. Guests don't have to give one; their receipt address then falls back
 // to a per-phone alias on the club's own domain.
 export const LINE_MAX = 40;
-// Where Paystack sends the guest back. Set by the Worker from PUBLIC_SITE_URL, never taken from the
-// request, so nobody can point a real payment page at their own site. Empty = payments off.
 export const returnUrl = env => (/^https?:\/\//.test(env.PUBLIC_SITE_URL || '') ? siteUrl(env, '/payment-return.html') : '');
 const payEmail = (env, email, phone) => (validEmail(email) ? email : `guest-${phone}@${new URL(env.PUBLIC_SITE_URL || 'https://memoriesnightclub.com').hostname.replace(/^www\./, '')}`);
 
-// Shared validation for anything that becomes a ticket.
+// Shared validation for anything that becomes a ticket. Name is optional — a Guest placeholder is
+// used when it's blank, so the ticket, SMS and share image always have something to show.
 async function ticketContext(env, b) {
-  const buyerName = clean(b?.buyerName, 80), buyerPhone = normalizePhone(b?.buyerPhone);
-    if (!b?.eventId || !b?.ticketTypeId) return { error: 'Pick a ticket.' };
-    if (!buyerPhone) return { error: 'That phone number doesn’t look right. Use a Ghana number, e.g. 024 123 4567.' };
+  const rawName = clean(b?.buyerName, 80);
+  const buyerName = rawName || 'Guest';
+  const buyerPhone = normalizePhone(b?.buyerPhone);
+  if (!b?.eventId || !b?.ticketTypeId) return { error: 'Pick a ticket.' };
+  if (!buyerPhone) return { error: 'That phone number doesn’t look right. Use a Ghana number, e.g. 024 123 4567.' };
   if (b.buyerEmail && !validEmail(b.buyerEmail)) return { error: 'That email doesn’t look right.' };
   const qty = Number(b.quantity);
   if (!Number.isInteger(qty) || qty < 1 || qty > 6) return { error: 'You can get 1 to 6 tickets at a time.' };
@@ -48,11 +51,10 @@ async function ticketContext(env, b) {
   if (!ev || !tt || ev.fields.active === false || ev.fields.visibility !== 'public' || tt.fields.eventId !== b.eventId || tt.fields.active !== true) return { error: 'This ticket is no longer available.' };
   if (ev.fields.soldOut === true || (typeof tt.fields.remaining === 'number' && tt.fields.remaining < qty)) return { error: 'Not enough tickets left for that.' };
   if (isOver(ev.fields)) return { error: 'This night has already happened.' };
-  // The line is optional: the guest can pick one of the night's lines, write their own (short
-  // enough to sit on the ticket), or leave it empty, and the ticket then leads with the night's name.
   const lines = resolveLines(ev.fields, settings);
   const own = clean(b.identityLine, 400).replace(/\s+/g, ' ').slice(0, LINE_MAX).trim();
   const identityLine = lines.includes(b.identityLine) ? b.identityLine : own;
+  if (lines.length && !identityLine) return { error: 'Pick a line or write your own.' };
   const unit = Number(tt.fields.pricePesewas || 0);
   if (!(unit > 0)) return { error: 'This ticket is no longer available.' };
   return { ev, tt, qty, buyerName, buyerPhone, buyerEmail: clean(b.buyerEmail, 120), identityLine, totalPesewas: unit * qty };
@@ -62,18 +64,15 @@ async function ticketContext(env, b) {
 export async function initiateTicket(env, b) {
   const c = await ticketContext(env, b); if (c.error) return c;
   const reference = paymentRef();
-  // Snapshot the platform split now (Paystack applies it at settlement, so this must match what
-  // we send below). Stored on the pending checkout and later copied onto the order.
-  const { split, snapshot: platformSplit } = await platformSplitFor(env);
+  const shares = sharesFor(env, c.ev.fields, c.totalPesewas);
   await setDoc(env, 'pending_checkouts', reference, {
     reference, kind: 'ticket', eventId: c.ev.id, eventName: c.ev.fields.name || '', ticketTypeId: c.tt.id, ticketTypeName: c.tt.fields.name || 'Ticket',
     admits: Number(c.tt.fields.admits || 1), quantity: c.qty, amountPesewas: c.totalPesewas, buyerName: c.buyerName, buyerPhone: c.buyerPhone,
-    buyerEmail: c.buyerEmail, identityLine: c.identityLine, status: 'pending', createdAt: now(),
-    ...(platformSplit ? { platformSplit } : {}),
+    buyerEmail: c.buyerEmail, identityLine: c.identityLine, status: 'pending', createdAt: now(), shares,
   });
   try {
     const payload = { email: payEmail(env, c.buyerEmail, c.buyerPhone), amount: c.totalPesewas, currency: 'GHS', reference, callback_url: returnUrl(env), metadata: { kind: 'ticket', eventId: c.ev.id, ticketTypeId: c.tt.id, quantity: c.qty } };
-    const p = await paystack(env, '/transaction/initialize', { method: 'POST', body: JSON.stringify(split ? { ...payload, split } : payload) });
+    const p = await paystack(env, '/transaction/initialize', { method: 'POST', body: JSON.stringify(payload) });
     return { reference, authorizationUrl: p.authorization_url };
   } catch (e) {
     await setDoc(env, 'pending_checkouts', reference, { reference, kind: 'ticket', eventId: c.ev.id, status: 'failed', error: 'payment_initialization_failed', failedAt: now() });
@@ -81,8 +80,6 @@ export async function initiateTicket(env, b) {
   }
 }
 
-// Confirms the charge with Paystack and checks it matches what we asked for. Returns null when
-// the checkout can go on to issuance.
 async function confirmCharge(env, pending, reference) {
   const payment = await paystack(env, `/transaction/verify/${encodeURIComponent(reference)}`);
   if (payment.status !== 'success') return { status: payment.status === 'failed' || payment.status === 'abandoned' ? 'failed' : 'pending', error: payment.status === 'failed' ? 'Payment was not successful.' : undefined };
@@ -121,6 +118,7 @@ export async function fulfillTicket(env, reference) {
     const raffle = await openRaffleForEvent(env, tx, P.eventId);
     const tokens = Array.from({ length: P.quantity }, ticketToken);
     const inDraw = !!raffle;
+    const shares = fresh.fields.shares || {};
     const writes = [
       ...ticketWrites(env, { tokens, holder: P.buyerName, phone: P.buyerPhone, eventId: P.eventId, eventName: P.eventName, typeName: P.ticketTypeName, admits: P.admits || 1, identityLine: P.identityLine || '', reference, inDrawToken: inDraw ? tokens[0] : null }),
       ...raffleSpotWrites(env, raffle, P.eventId, tokens[0], orderId),
@@ -128,7 +126,12 @@ export async function fulfillTicket(env, reference) {
         orderId, kind: 'ticket', reference, eventId: P.eventId, eventName: P.eventName, ticketTypeId: P.ticketTypeId, ticketTypeName: P.ticketTypeName,
         quantity: P.quantity, amountPesewas: P.amountPesewas, buyerName: P.buyerName, buyerPhone: P.buyerPhone, buyerEmail: P.buyerEmail || '',
         status: 'confirmed', inDraw, ticketIds: tokens, createdAt: now(),
-        ...(fresh.fields.platformSplit ? { platformSplit: fresh.fields.platformSplit } : {}),
+        shares,
+        // Flat fields the admin dashboard reads directly.
+        evolveitSharePesewas: shares.evolveitSharePesewas || 0,
+        memoriesSharePesewas: shares.memoriesSharePesewas || 0,
+        organizerSharePesewas: shares.organizerSharePesewas || 0,
+        organizerId: P.organizerId || null,
       }),
       updateWrite(env, 'pending_checkouts', reference, { ...fresh.fields, status: 'issued', ticketIds: tokens, orderId, issuedAt: now() }),
     ];
@@ -147,9 +150,8 @@ export async function fulfillTicket(env, reference) {
 
 // ── Tables: package + bottles, paid in full ──
 export async function initiateTable(env, b) {
-  const name = clean(b?.name, 80), phone = normalizePhone(b?.phone);
+  const name = clean(b?.name, 80) || 'Guest', phone = normalizePhone(b?.phone);
   if (!b?.eventId || !b?.packageId) return { error: 'Pick a table.' };
-  if (!name) return { error: 'We need a name for the booking.' };
   if (!phone) return { error: 'That phone number doesn’t look right. Use a Ghana number, e.g. 024 123 4567.' };
   if (b.email && !validEmail(b.email)) return { error: 'That email doesn’t look right.' };
   if (!returnUrl(env)) return { error: 'Payments are not set up yet.', status: 503 };
@@ -169,15 +171,14 @@ export async function initiateTable(env, b) {
   }
   if (!(amount > 0)) return { error: 'This table isn’t available any more.' };
   const reference = paymentRef();
-  const { split, snapshot: platformSplit } = await platformSplitFor(env);
+  const shares = sharesFor(env, ev.fields, amount);
   await setDoc(env, 'pending_checkouts', reference, {
     reference, kind: 'table', eventId: b.eventId, eventName: ev.fields.name || '', packageId: b.packageId, packageName: pkg.fields.name || '',
     packagePricePesewas: Number(pkg.fields.pricePesewas || 0), bottles: bottleItems, amountPesewas: amount, buyerName: name, buyerPhone: phone,
-    buyerEmail: clean(b.email, 120), status: 'pending', createdAt: now(),
-    ...(platformSplit ? { platformSplit } : {}),
+    buyerEmail: clean(b.email, 120), status: 'pending', createdAt: now(), shares,
   });
   const payload = { email: payEmail(env, b.email, phone), amount, currency: 'GHS', reference, callback_url: returnUrl(env), metadata: { kind: 'table', eventId: b.eventId, packageId: b.packageId } };
-  const p = await paystack(env, '/transaction/initialize', { method: 'POST', body: JSON.stringify(split ? { ...payload, split } : payload) });
+  const p = await paystack(env, '/transaction/initialize', { method: 'POST', body: JSON.stringify(payload) });
   return { reference, authorizationUrl: p.authorization_url };
 }
 
@@ -202,12 +203,16 @@ export async function fulfillTable(env, reference) {
       if (typeof bt.fields.remaining === 'number' && bt.fields.remaining < item.quantity) return soldOut('bottle_sold_out_after_payment');
     }
     const orderId = id();
+    const shares = fresh.fields.shares || {};
     const writes = [
       updateWrite(env, 'orders', orderId, {
         orderId, kind: 'table', reference, eventId: P.eventId, eventName: P.eventName, packageId: P.packageId, packageName: P.packageName,
         bottles: P.bottles || [], amountPesewas: P.amountPesewas, buyerName: P.buyerName, buyerPhone: P.buyerPhone, buyerEmail: P.buyerEmail || '',
-        status: 'confirmed', createdAt: now(),
-        ...(fresh.fields.platformSplit ? { platformSplit: fresh.fields.platformSplit } : {}),
+        status: 'confirmed', createdAt: now(), shares,
+        evolveitSharePesewas: shares.evolveitSharePesewas || 0,
+        memoriesSharePesewas: shares.memoriesSharePesewas || 0,
+        organizerSharePesewas: shares.organizerSharePesewas || 0,
+        organizerId: P.organizerId || null,
       }),
       updateWrite(env, 'pending_checkouts', reference, { ...fresh.fields, status: 'issued', orderId, issuedAt: now() }),
     ];
@@ -225,19 +230,14 @@ export async function fulfillTable(env, reference) {
 }
 
 // ── Pay in bits ──
-// One installment_plans doc per order, keyed by a short code. Each top-up is an ordinary Paystack
-// charge recorded against the plan by its reference (so a reference can only count once). No stock
-// is held and no ticket, share image or raffle spot exists until the balance reaches zero.
 export async function startInstallment(env, b) {
-  // The guest must tick the pay-in-bits rule; the version and time are kept with the plan.
   if (b?.acknowledged !== true) return { error: 'Tick the box to confirm how pay in bits works.' };
   const c = await ticketContext(env, b); if (c.error) return c;
-  // A plan is forfeited when the night starts (maybeForfeitPlan), so none may start after that.
-  if (bitsClosed(c.ev.fields.date)) return { error: 'Pay in bits closes when the night starts. Pay in full instead.' };
-  // Any amount goes: there's no minimum, only the ticket price as the most you can pay now.
   const deposit = Number(b.depositPesewas);
-  if (!Number.isInteger(deposit) || deposit < 100) return { error: `Enter at least ${money(100)} to start.` };
+  if (!Number.isInteger(deposit) || deposit < MIN_TOPUP_PESEWAS) return { error: 'The smallest payment is GHS 1.' };
   if (deposit > c.totalPesewas) return { error: 'That’s more than the ticket costs.' };
+  // Lock the rates on the plan itself, so mid-plan changes to the event don't move the ledger.
+  const shares = sharesFor(env, c.ev.fields, c.totalPesewas);
   let planId;
   for (let attempt = 0; attempt < 6 && !planId; attempt++) {
     const code = orderCode();
@@ -247,6 +247,7 @@ export async function startInstallment(env, b) {
         admits: Number(c.tt.fields.admits || 1), quantity: c.qty, totalPesewas: c.totalPesewas, paidPesewas: 0,
         buyerName: c.buyerName, firstName: firstName(c.buyerName), buyerPhone: c.buyerPhone, buyerEmail: c.buyerEmail, identityLine: c.identityLine,
         status: 'active', payments: [], createdAt: now(), updatedAt: now(), policyVersion: BITS_POLICY_VERSION, acknowledgedAt: now(),
+        shares,
       });
       planId = code;
     } catch (e) { if (!String(e.message).includes('ALREADY_EXISTS')) throw e; }
@@ -257,16 +258,21 @@ export async function startInstallment(env, b) {
 
 export async function startInstallmentTopup(env, planId, amountPesewas, email) {
   const reference = paymentRef();
-  // Every top-up carries the platform split: EvolveIT takes their share of each installment as it
-  // lands, not only at completion. Memories gets the rest per top-up, same as a paid-in-full sale.
-  const { split, snapshot: platformSplit } = await platformSplitFor(env);
+  // The plan carries the shares of the whole order; each top-up is a partial payment of that total.
+  // We record the top-up's own split so partial refunds stay honest if a plan is ever unwound.
+  const plan = await getDoc(env, 'installment_plans', planId);
+  const planShares = plan?.fields?.shares || {};
+  const topupShares = computeShares(amountPesewas, {
+    evolveitSharePct: planShares.evolveitSharePct,
+    organizerSharePct: planShares.organizerSharePct,
+  }, Number(env.EVOLVEIT_SHARE_PCT));
   await setDoc(env, 'pending_checkouts', reference, {
     reference, kind: 'installment_topup', planId, amountPesewas, status: 'pending', createdAt: now(),
-    ...(platformSplit ? { platformSplit } : {}),
+    shares: { ...topupShares, planShares },
   });
   try {
     const payload = { email, amount: amountPesewas, currency: 'GHS', reference, callback_url: returnUrl(env), metadata: { kind: 'installment_topup', planId } };
-    const p = await paystack(env, '/transaction/initialize', { method: 'POST', body: JSON.stringify(split ? { ...payload, split } : payload) });
+    const p = await paystack(env, '/transaction/initialize', { method: 'POST', body: JSON.stringify(payload) });
     return { reference, authorizationUrl: p.authorization_url, planId };
   } catch (e) {
     await setDoc(env, 'pending_checkouts', reference, { reference, kind: 'installment_topup', planId, amountPesewas, status: 'failed', error: 'payment_initialization_failed', failedAt: now() });
@@ -284,48 +290,38 @@ export async function topupInstallment(env, b) {
   if (plan.fields.status !== 'active') return { error: plan.fields.status === 'completed' ? 'This order is already fully paid.' : 'This order is no longer active.' };
   const remaining = Number(plan.fields.totalPesewas) - Number(plan.fields.paidPesewas || 0);
   const amount = Number(b.amountPesewas);
-  if (!Number.isInteger(amount) || amount < 100) return { error: `Enter at least ${money(100)}.` };
+  if (!Number.isInteger(amount) || amount < Math.min(MIN_TOPUP_PESEWAS, remaining)) return { error: 'The smallest payment is GHS 1.' };
   if (amount > remaining) return { error: `Your balance is ${money(remaining)}. Pay that or less.` };
   return startInstallmentTopup(env, planId, amount, payEmail(env, plan.fields.buyerEmail, plan.fields.buyerPhone));
 }
 
-// Pay in bits closes the moment the night starts: that's also when an unpaid plan is forfeited.
-export const bitsClosed = date => { const t = new Date(date).getTime(); return Number.isFinite(t) && t <= Date.now(); };
-
 export async function maybeForfeitPlan(env, plan) {
   if (plan.fields.status !== 'active') return plan.fields.status === 'forfeited';
   const ev = await getDoc(env, 'events', plan.fields.eventId);
-  if (ev && bitsClosed(ev.fields.date)) {
+  if (ev && new Date(ev.fields.date).getTime() <= Date.now()) {
     await setDoc(env, 'installment_plans', plan.id, { ...plan.fields, status: 'forfeited', updatedAt: now() });
     return true;
   }
   return false;
 }
 
-// What the public lookup may show about an order. Never ticket ids, links, QR data or the phone:
-// the order code is not proof of who you are, so it can't hand out tickets.
 export const planSummary = p => {
   const total = Number(p.fields.totalPesewas || 0), paid = Number(p.fields.paidPesewas || 0);
   return {
     planId: p.id, eventName: p.fields.eventName || '', eventDate: p.fields.eventDate || '', firstName: p.fields.firstName || firstName(p.fields.buyerName),
-    // The balance has to be paid before this moment (the night's start), or the plan is forfeited.
-    deadline: p.fields.eventDate || '',
     totalPesewas: total, paidPesewas: paid, remainingPesewas: Math.max(0, total - paid), status: p.fields.status, ticketReady: p.fields.status === 'completed',
   };
 };
 
-// Lookup is by order code only. (Phone lookups text the codes instead: see textOrderCodes.)
 export async function lookupInstallments(env, { code }) {
   const c = normalizeOrderCode(code); if (!c) return [];
   const p = await getDoc(env, 'installment_plans', c);
   return p ? [planSummary(p)] : [];
 }
 
-// One reply for every case, so these can't be used to learn whether a number or order exists.
 export const NEUTRAL_CODES = 'If that number has orders with us, we’ve texted the order codes to it.';
 export const NEUTRAL_LINK = 'If this order is yours and paid in full, we’ve texted the ticket link to the number on it.';
 
-// "Lost my code": text every open or paid order code to the phone that made them.
 export async function textOrderCodes(env, { phone }) {
   const ph = normalizePhone(phone); if (!ph) return false;
   const plans = (await queryWhere(env, 'installment_plans', [{ field: 'buyerPhone', value: ph }]))
@@ -335,8 +331,6 @@ export async function textOrderCodes(env, { phone }) {
   return sendSms(env, ph, `MEMORIES\nYour orders:\n${lines.join('\n')}\nPay or check: ${siteUrl(env, '/installment.html')}`);
 }
 
-// "Text me the link" on a paid order: only to the phone on the order, and only if the guest
-// gave that same number.
 export async function resendTicketLink(env, { planId, phone }) {
   const c = normalizeOrderCode(planId), ph = normalizePhone(phone);
   if (!c || !ph) return false;
@@ -359,13 +353,11 @@ export async function fulfillInstallment(env, reference) {
     if (!fresh || !plan) throw new Error('Installment plan data disappeared.');
     const P = plan.fields;
     if (fresh.fields.status === 'issued') return { status: 'issued', kind: 'installment', planId, ticketIds: fresh.fields.ticketIds || [], planComplete: fresh.fields.planComplete === true, already: true };
-    const payment = { reference, amountPesewas: fresh.fields.amountPesewas, paidAt: now(), ...(fresh.fields.platformSplit ? { platformSplit: fresh.fields.platformSplit } : {}) };
+    const payment = { reference, amountPesewas: fresh.fields.amountPesewas, paidAt: now(), shares: fresh.fields.shares || {} };
     if (P.status === 'forfeited') {
       await commitTx(env, [updateWrite(env, 'pending_checkouts', reference, { ...fresh.fields, status: 'failed', error: 'plan_forfeited', refundStatus: 'manual_required' })], tx);
       return { status: 'failed', error: 'This order was forfeited. Contact us.' };
     }
-    // A stray charge after completion (two top-ups racing) is real money: record it for a manual
-    // refund, never issue a second ticket.
     if (P.status === 'completed') {
       await commitTx(env, [
         updateWrite(env, 'pending_checkouts', reference, { ...fresh.fields, status: 'issued', planComplete: false, overpaid: true, ticketIds: P.ticketIds || [], orderId: P.orderId, issuedAt: now() }),
@@ -390,16 +382,19 @@ export async function fulfillInstallment(env, reference) {
       planComplete = true; orderId = id();
       const raffle = await openRaffleForEvent(env, tx, P.eventId);
       tokens = Array.from({ length: P.quantity }, ticketToken);
+      const planShares = P.shares || {};
       writes.push(
-        ...ticketWrites(env, { tokens, holder: P.buyerName || '', phone: P.buyerPhone, eventId: P.eventId, eventName: P.eventName, typeName: P.ticketTypeName, admits: P.admits || 1, identityLine: P.identityLine || '', reference, inDrawToken: raffle ? tokens[0] : null, extra: { planId } }),
+        ...ticketWrites(env, { tokens, holder: P.buyerName, phone: P.buyerPhone, eventId: P.eventId, eventName: P.eventName, typeName: P.ticketTypeName, admits: P.admits || 1, identityLine: P.identityLine || '', reference, inDrawToken: raffle ? tokens[0] : null, extra: { planId } }),
         ...raffleSpotWrites(env, raffle, P.eventId, tokens[0], orderId),
         updateWrite(env, 'orders', orderId, {
           orderId, kind: 'ticket', reference, eventId: P.eventId, eventName: P.eventName, ticketTypeId: P.ticketTypeId, ticketTypeName: P.ticketTypeName,
           quantity: P.quantity, amountPesewas: P.totalPesewas, buyerName: P.buyerName, buyerPhone: P.buyerPhone, buyerEmail: P.buyerEmail || '',
           status: 'confirmed', inDraw: !!raffle, paidInInstallments: true, planId, ticketIds: tokens, createdAt: now(),
-          // The final top-up's split snapshot: correct because EvolveIT got their share per top-up,
-          // and the amount here equals what all those shares were computed against.
-          ...(fresh.fields.platformSplit ? { platformSplit: fresh.fields.platformSplit } : {}),
+          shares: planShares,
+          evolveitSharePesewas: planShares.evolveitSharePesewas || 0,
+          memoriesSharePesewas: planShares.memoriesSharePesewas || 0,
+          organizerSharePesewas: planShares.organizerSharePesewas || 0,
+          organizerId: P.organizerId || null,
         }),
         updateWrite(env, 'installment_plans', planId, { ...P, paidPesewas, payments, status: 'completed', ticketIds: tokens, orderId, completedAt: now(), updatedAt: now() }),
       );
@@ -411,8 +406,6 @@ export async function fulfillInstallment(env, reference) {
     await commitTx(env, writes, tx);
     return { status: 'issued', kind: 'installment', planId, ticketIds: tokens, planComplete, orderId, plan: P, paidPesewas, received: fresh.fields.amountPesewas };
   });
-  // One message per newly-applied reference: a repeat verify/webhook for the same reference
-  // returns at the 'issued' checks above and never reaches this.
   if (result.status === 'issued' && !result.already && result.plan) {
     const P = result.plan;
     if (result.planComplete) {
@@ -420,46 +413,14 @@ export async function fulfillInstallment(env, reference) {
       await sendSms(env, P.buyerPhone, `MEMORIES\nPaid in full. Order ${planId}.\nYou're in for ${P.eventName}: ${link}`);
       await sendEmail(env, P.buyerEmail, 'Your Memories ticket', [`Paid in full. Order ${planId}.`, `You're in for ${P.eventName}.`, `Your ticket: ${link}`]);
     } else {
-      const balance = P.totalPesewas - result.paidPesewas;
-      await sendSms(env, P.buyerPhone, balanceMessage(env, planId, result.received, balance, P));
-      await sendEmail(env, P.buyerEmail, `Memories: ${money(balance)} left to pay`, balanceEmailLines(env, planId, result.received, balance, P));
+      await sendSms(env, P.buyerPhone, balanceMessage(env, planId, result.received, P.totalPesewas - result.paidPesewas));
     }
   }
   delete result.already; delete result.plan; delete result.received; delete result.paidPesewas;
   return result;
 }
-// "Fri 03 Oct" and "Fri 03 Oct, 10PM" in Ghana time, for texts and emails.
-const smsDay = d => formatAccra(d, { weekday: 'short', day: '2-digit', month: 'short' }).replace(/,/g, '');
-const smsWhen = d => { const day = smsDay(d); const t = formatAccra(d, { hour: 'numeric', minute: '2-digit', hour12: true }).replace(':00', '').replace(/\s/g, '').toUpperCase(); return day && t ? `${day}, ${t}` : day; };
-
-// The text after a part payment: enough to keep paying without opening anything else. Plain ASCII
-// so it stays a normal SMS (curly quotes would switch the whole message to 70-character parts).
-// P is the plan's fields; without it (older callers) the text is the short form.
-export const balanceMessage = (env, planId, received, balance, P = null) => {
-  const link = siteUrl(env, `/installment.html?code=${planId}`);
-  if (!P) return `MEMORIES\n${received ? `${money(received)} received. ` : ''}Balance: ${money(balance)}.\nOrder ${planId}.\nPay the rest: ${link}`;
-  const name = String(P.eventName || '').slice(0, 30), day = smsDay(P.eventDate), by = smsWhen(P.eventDate);
-  return [
-    'MEMORIES',
-    `${received ? `${money(received)} received` : 'Your order'}${name ? ` for ${name}${day ? `, ${day}` : ''}` : ''}.`,
-    `Paid ${money(Number(P.totalPesewas) - balance)} of ${money(P.totalPesewas)}. Left: ${money(balance)}.`,
-    by ? `Pay the rest before ${by} or the order is forfeited.` : 'Pay the rest before the night starts or the order is forfeited.',
-    `Order ${planId}`,
-    `Pay: ${link}`,
-  ].join('\n');
-};
-// The same, for the email receipt (one line per paragraph).
-export const balanceEmailLines = (env, planId, received, balance, P) => {
-  const by = smsWhen(P.eventDate);
-  return [
-    `${money(received)} received for ${P.eventName || 'your Memories night'}${P.eventDate ? ` (${smsDay(P.eventDate)})` : ''}.`,
-    `${P.quantity || 1} × ${P.ticketTypeName || 'Ticket'}. Paid ${money(Number(P.totalPesewas) - balance)} of ${money(P.totalPesewas)}. Left to pay: ${money(balance)}.`,
-    `Pay the rest before ${by || 'the night starts'}. If it isn't fully paid by then, the order is forfeited and what you've paid isn't refunded.`,
-    `Your order code: ${planId}. Anyone can pay with it.`,
-    `Pay the rest: ${siteUrl(env, `/installment.html?code=${planId}`)}`,
-    'Your ticket comes by text the moment it is fully paid.',
-  ];
-};
+export const balanceMessage = (env, planId, received, balance) =>
+  `MEMORIES\n${received ? `${money(received)} received. ` : ''}Balance: ${money(balance)}.\nOrder ${planId}.\nPay the rest: ${siteUrl(env, `/installment.html?code=${planId}`)}`;
 
 export async function forfeitStalePlans(env) {
   const active = await queryWhere(env, 'installment_plans', [{ field: 'status', value: 'active' }]);
@@ -476,8 +437,6 @@ export async function fulfill(env, reference) {
   return { kind: 'ticket', ...(await fulfillTicket(env, reference)) };
 }
 
-// What the payment-return page polls. Ticket tokens are returned only to whoever holds the
-// reference (Paystack puts it in their redirect), which is the buyer.
 export async function checkoutStatus(env, reference) {
   const d = await getDoc(env, 'pending_checkouts', reference);
   if (!d) return null;
@@ -485,16 +444,7 @@ export async function checkoutStatus(env, reference) {
   const out = { status: f.status, kind: f.kind || 'ticket', eventId: f.eventId || '', eventName: f.eventName || '', packageName: f.packageName || '', amountPesewas: f.amountPesewas, bottles: f.bottles || [], tickets: (f.ticketIds || []).map(token => ({ token })), error: f.status === 'failed' ? f.error : undefined };
   if (f.kind === 'installment_topup' && f.planId) {
     const plan = await getDoc(env, 'installment_plans', f.planId);
-    if (plan) {
-      const P = plan.fields;
-      Object.assign(out, {
-        eventId: P.eventId, planId: f.planId, planStatus: P.status, paidPesewas: P.paidPesewas, totalPesewas: P.totalPesewas, eventName: P.eventName,
-        planComplete: f.planComplete === true || P.status === 'completed',
-        // What the receipt page needs to tell the guest how to keep paying. Never the full phone.
-        eventDate: P.eventDate || '', deadline: P.eventDate || '', ticketTypeName: P.ticketTypeName || '', quantity: Number(P.quantity || 1),
-        firstName: P.firstName || firstName(P.buyerName), phoneHint: maskPhone(P.buyerPhone), reference,
-      });
-    }
+    if (plan) Object.assign(out, { eventId: plan.fields.eventId, planId: f.planId, planStatus: plan.fields.status, paidPesewas: plan.fields.paidPesewas, totalPesewas: plan.fields.totalPesewas, eventName: plan.fields.eventName, planComplete: f.planComplete === true || plan.fields.status === 'completed' });
   }
   return out;
 }

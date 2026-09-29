@@ -7,7 +7,6 @@ import { sendSms, sendEmail, siteUrl } from './lib/notify.js';
 import { getSettings, DEFAULT_SETTINGS, SETTINGS_FIELDS, isOver, autoStyleFor } from './public.js';
 import { openRaffleForEvent, raffleSpotWrites } from './raffle.js';
 import { balanceMessage } from './checkout.js';
-import { listSettlementBanks, resolveBankAccount, createPlatformSubaccount } from './splits.js';
 
 
 const FORBIDDEN = { error: 'Forbidden.', status: 403 };
@@ -39,13 +38,42 @@ export const DEFAULT_TABLE_PACKAGES = [
 // ── Overview ──
 export async function adminOverview(env, user) {
   if (!requireRole(user, CMS)) return FORBIDDEN;
-  const [events, orders, checkins, requests, plans] = await Promise.all([listDocs(env, 'events'), listDocs(env, 'orders'), listDocs(env, 'checkins'), queryWhere(env, 'private_event_requests', [{ field: 'status', value: 'NEW' }]), queryWhere(env, 'installment_plans', [{ field: 'status', value: 'active' }])]);
-  const upcoming = events.filter(e => e.fields.active !== false && !isOver(e.fields)).sort((a, b) => new Date(a.fields.date) - new Date(b.fields.date));
+  const [events, orders, checkins, requests, plans, checkouts] = await Promise.all([
+    listDocs(env, 'events'),
+    listDocs(env, 'orders'),
+    listDocs(env, 'checkins'),
+    queryWhere(env, 'private_event_requests', [{ field: 'status', value: 'NEW' }]),
+    queryWhere(env, 'installment_plans', [{ field: 'status', value: 'active' }]),
+    listDocs(env, 'pending_checkouts'),
+  ]);
+
+  // Only confirmed orders count as money.
   const confirmed = orders.filter(o => o.fields.status === 'confirmed');
+
+  // Ledger totals. EvolveIT's share is intentionally not summed or returned: it lives in the
+  // Paystack dashboard, not here.
+  const memoriesSharePesewas = confirmed.reduce((s, o) => s + Number(o.fields.memoriesSharePesewas || 0), 0);
+  const organizerSharePesewas = confirmed.reduce((s, o) => s + Number(o.fields.organizerSharePesewas || 0), 0);
+
+  // Checkout funnel — what the admin should be aware of right now.
+  const now = Date.now();
+  const pendingCutoff = now - 30 * 60 * 1000; // 30 minutes
+  let pending = 0, stale = 0, failed = 0;
+  for (const c of checkouts) {
+    const s = c.fields.status;
+    const created = c.fields.createdAt ? new Date(c.fields.createdAt).getTime() : 0;
+    if (s === 'pending') { pending++; if (created && created < pendingCutoff) stale++; }
+    else if (s === 'failed') failed++;
+  }
+
+  const upcoming = events.filter(e => e.fields.active !== false && !isOver(e.fields)).sort((a, b) => new Date(a.fields.date) - new Date(b.fields.date));
   const nights = upcoming.slice(0, 6).map(e => {
     const mine = confirmed.filter(o => o.fields.eventId === e.id);
     return {
-      id: e.id, name: e.fields.name, date: e.fields.date, visibility: e.fields.visibility,
+      id: e.id,
+      name: e.fields.name,
+      date: e.fields.date,
+      visibility: e.fields.visibility,
       tickets: mine.filter(o => o.fields.kind === 'ticket').reduce((s, o) => s + Number(o.fields.quantity || 0), 0),
       comps: mine.filter(o => o.fields.kind === 'comp').reduce((s, o) => s + Number(o.fields.quantity || 1), 0),
       tables: mine.filter(o => o.fields.kind === 'table').length,
@@ -53,10 +81,18 @@ export async function adminOverview(env, user) {
       checkins: checkins.filter(c => c.fields.eventId === e.id).length,
     };
   });
+
   return {
-    nights, newRequests: requests.length, activePlans: plans.length,
+    nights,
+    newRequests: requests.length,
+    activePlans: plans.length,
     owingPesewas: plans.reduce((s, p) => s + Math.max(0, Number(p.fields.totalPesewas) - Number(p.fields.paidPesewas || 0)), 0),
     revenuePesewas: confirmed.reduce((s, o) => s + Number(o.fields.amountPesewas || 0), 0),
+    memoriesSharePesewas,
+    organizerSharePesewas,
+    pendingCheckouts: pending,
+    staleCheckouts: stale,
+    failedCheckouts: failed,
   };
 }
 
@@ -88,7 +124,25 @@ export async function upsertEvent(env, b, user) {
   if (new Set(lines.map(l => l.toUpperCase())).size !== lines.length) return { error: 'Two of the lines are the same.' };
   const eventId = b.id ? String(b.id) : id();
   const existing = b.id ? await getDoc(env, 'events', eventId) : null;
+  // The organizer's cut, per event. Snapshotted onto every order that's paid, so a later change
+  // never rewrites what someone already earned.
+  const pctRaw = b?.organizerSharePct === undefined ? (existing?.fields?.organizerSharePct ?? 0) : b.organizerSharePct;
+  const pct = Number(pctRaw);
+  if (!Number.isInteger(pct) || pct < 0 || pct > 100) return { error: 'The organizer share must be a whole number from 0 to 100.' };
   if (b.id && !existing) return { error: 'Night not found.', status: 404 };
+    // EvolveIT's share of this event's sales — super-admin only. Non-super-admin requests that try
+  // to change it are rejected. If absent from the request, the existing value is kept.
+  let evolveitSharePct = existing?.fields?.evolveitSharePct ?? null;
+  if (b?.evolveitSharePct !== undefined) {
+    if (!requireRole(user, ['superAdmin'])) return { error: 'Only a super admin can change the platform share.', status: 403 };
+    if (b.evolveitSharePct === null || b.evolveitSharePct === '') {
+      evolveitSharePct = null;                              // unset → use the env fallback at split time
+    } else {
+      const n = Number(b.evolveitSharePct);
+      if (!Number.isInteger(n) || n < 1 || n > 99) return { error: 'The platform share must be a whole number from 1 to 99.' };
+      evolveitSharePct = n;
+    }
+  }
   // A night can only be handed to a real organiser account (or keep the one it already has).
   const organiserId = clean(b.organiserId, 128) || null;
   if (organiserId && organiserId !== existing?.fields?.organiserId) {
@@ -103,7 +157,7 @@ export async function upsertEvent(env, b, user) {
     ticketStyle: TICKET_STYLES.includes(b.ticketStyle) ? b.ticketStyle : 'auto', ticketColors: cleanTicketColors(b.ticketColors) || existing?.fields?.ticketColors || null,
     visibility: b.visibility === 'public' ? 'public' : 'private',
     active: b.active !== false, soldOut: b.soldOut === true, featured: b.featured === true,
-    organiserId, updatedAt: now(), createdAt: existing?.fields?.createdAt || now(),
+    organiserId, organizerSharePct: pct, evolveitSharePct, updatedAt: now(), createdAt: existing?.fields?.createdAt || now(), 
   };
   await setDoc(env, 'events', eventId, { ...(existing?.fields || {}), ...data });
   if (!existing) {
@@ -325,72 +379,6 @@ export async function updateSettings(env, b, user) {
   return { settings: next };
 }
 
-// ── Paystack subaccounts (EvolveIT's platform share) ──
-
-export async function getPlatformSubaccount(env, user) {
-  if (!requireRole(user, ['superAdmin', 'manager'])) return FORBIDDEN;
-  const d = await getDoc(env, 'settings', 'site');
-  const s = d?.fields || {};
-  return {
-    subaccountCode: s.platformSubaccount || '',
-    sharePct: Number(s.platformSharePct) || 0,
-    accountName: s.platformAccountName || '',
-    settlementBank: s.platformSettlementBank || '',
-    accountNumber: s.platformAccountNumber || '',
-    verifiedAt: s.platformAccountVerifiedAt || '',
-  };
-}
-
-export async function listBanks(env, user) {
-  if (!requireRole(user, ['superAdmin', 'manager'])) return FORBIDDEN;
-  try {
-    const banks = await listSettlementBanks(env);
-    return { banks: banks.map(b => ({ code: b.code, name: b.name, type: b.type || '' })) };
-  } catch (e) {
-    return { error: `Couldn't load the settlement list: ${e.message}` };
-  }
-}
-
-export async function resolveSubaccount(env, b, user) {
-  if (!requireRole(user, ['superAdmin', 'manager'])) return FORBIDDEN;
-  try {
-    const r = await resolveBankAccount(env, { bankCode: b?.bankCode, accountNumber: b?.accountNumber });
-    return { accountName: r.accountName, accountNumber: r.accountNumber };
-  } catch (e) {
-    return { error: e.message || 'Could not verify that account.' };
-  }
-}
-
-export async function setupPlatformSubaccount(env, b, user) {
-  if (!requireRole(user, ['superAdmin'])) return FORBIDDEN;
-  try {
-    const r = await createPlatformSubaccount(env, {
-      businessName: b?.businessName,
-      bankCode: b?.bankCode,
-      accountNumber: b?.accountNumber,
-      percentageCharge: b?.sharePct,
-      email: b?.email,
-      phone: b?.phone,
-    });
-    const cur = await getDoc(env, 'settings', 'site');
-    const fields = cur?.fields || {};
-    await setDoc(env, 'settings', 'site', {
-      ...fields,
-      platformSubaccount: r.subaccountCode,
-      platformSharePct: Number(b.sharePct),
-      platformAccountName: r.accountName,
-      platformSettlementBank: r.settlementBank,
-      platformAccountNumber: r.accountNumber,
-      platformAccountVerifiedAt: now(),
-      updatedAt: now(),
-    });
-    await audit(env, user, 'PLATFORM_SUBACCOUNT_SET', { subaccount: r.subaccountCode, sharePct: Number(b.sharePct) });
-    return { subaccountCode: r.subaccountCode, accountName: r.accountName, sharePct: Number(b.sharePct) };
-  } catch (e) {
-    return { error: e.message || 'Paystack refused that subaccount.' };
-  }
-}
-
 // ── Staff ──
 // Organiser accounts, for the night editor's picker (the UID stays behind the scenes).
 export async function listOrganisers(env, user) {
@@ -507,4 +495,72 @@ export async function doorEvents(env, user) {
   const all = await listDocs(env, 'events');
   const mine = user.role === 'organiser' && user.admin !== true ? all.filter(e => e.fields.organiserId === uidOf(user)) : all;
   return { events: mine.filter(e => e.fields.active !== false && new Date(e.fields.date).getTime() + 12 * 3600e3 > Date.now()).map(e => ({ id: e.id, name: e.fields.name, date: e.fields.date })).sort((a, b) => new Date(a.date) - new Date(b.date)) };
+}
+
+// ── Settlements (the club paying an organizer) ──
+// A settlement is a record of the club having sent money to an organizer. The organizer dashboard
+// shows "owed" as (sum of orders.organizerSharePesewas) − (sum of settlements.amountPesewas).
+// A settlement doesn't link to specific orders — it's a credit against the running balance.
+// For an adjustment (refund, deduction), record a settlement with a negative amount and a note.
+
+const SETTLEMENT_METHODS = ['bank_transfer', 'momo', 'cash', 'other'];
+
+export async function recordSettlement(env, b, user) {
+  if (!requireRole(user, ['superAdmin', 'manager'])) return FORBIDDEN;
+  const organizerId = clean(b?.organizerId, 128);
+  const amount = Number(b?.amountPesewas);
+  const method = SETTLEMENT_METHODS.includes(b?.method) ? b.method : 'bank_transfer';
+  const reference = clean(b?.reference, 120);
+  const note = clean(b?.note, 400);
+  const eventId = clean(b?.eventId, 128) || null;
+  if (!organizerId) return { error: 'Pick the organizer being paid.' };
+  if (!Number.isInteger(amount) || amount === 0) return { error: 'Enter the amount paid, in pesewas. Use a negative amount for an adjustment.' };
+  if (!reference && !note) return { error: 'Add a reference or a note so this payment can be traced later.' };
+  const organizer = await getDoc(env, 'users', organizerId);
+  if (!organizer || organizer.fields.role !== 'organiser') return { error: 'That account is not an organizer.', status: 404 };
+  const settlementId = id();
+  await setDoc(env, 'settlements', settlementId, {
+    organizerId, organizerEmail: organizer.fields.email || '', eventId, amountPesewas: amount,
+    method, reference, note, settledAt: now(), settledBy: uidOf(user),
+  });
+  await audit(env, user, 'SETTLEMENT_RECORDED', { organizerId, amountPesewas: amount, method, eventId });
+  return { settlementId };
+}
+
+export async function listSettlements(env, q, user) {
+  if (!requireRole(user, ['superAdmin', 'manager', 'eventManager'])) return FORBIDDEN;
+  const filters = [];
+  if (q?.organizerId) filters.push({ field: 'organizerId', value: q.organizerId });
+  if (q?.eventId) filters.push({ field: 'eventId', value: q.eventId });
+  const docs = filters.length ? await queryWhere(env, 'settlements', filters) : await listDocs(env, 'settlements');
+  return { settlements: docs.map(x => ({ id: x.id, ...x.fields })).sort((a, b) => new Date(b.settledAt || 0) - new Date(a.settledAt || 0)) };
+}
+
+// Recent checkout attempts, for the Payments tab. Confirmed orders live in `orders` and are read
+// separately. This list is deliberately read-only: it's a view, not a ledger.
+export async function listPendingCheckouts(env, q, user) {
+  if (!requireRole(user, CMS)) return FORBIDDEN;
+  const docs = await listDocs(env, 'pending_checkouts');
+  const cutoffMs = Number(q?.sinceMs) || 24 * 60 * 60 * 1000;
+  const from = Date.now() - cutoffMs;
+  return {
+    checkouts: docs
+      .filter(x => {
+        const t = x.fields.createdAt ? new Date(x.fields.createdAt).getTime() : 0;
+        return t >= from;
+      })
+      .map(x => ({
+        id: x.id,
+        kind: x.fields.kind || 'ticket',
+        status: x.fields.status,
+        eventName: x.fields.eventName || '',
+        buyerName: x.fields.buyerName || '',
+        buyerPhone: x.fields.buyerPhone || '',
+        amountPesewas: Number(x.fields.amountPesewas || 0),
+        error: x.fields.error || null,
+        createdAt: x.fields.createdAt || null,
+      }))
+      .sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0))
+      .slice(0, 200),
+  };
 }

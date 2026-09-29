@@ -45,14 +45,11 @@ async function route(req, env, ctx) {
   if (m === 'POST' && p === '/api/installments/start') { if (await throttled(req, env, 'checkout', 'standard')) return tooMany(req, env); return reply(req, env, await startInstallment(env, await body(req))); }
   if (m === 'POST' && p === '/api/installments/topup') { if (await throttled(req, env, 'checkout', 'standard')) return tooMany(req, env); return reply(req, env, await topupInstallment(env, await body(req))); }
   if (m === 'GET' && p === '/api/installments/lookup') {
-    // By order code only. A ?phone= lookup (older cached pages) gets nothing back: see /find.
     const code = u.searchParams.get('code') || '';
     if (await throttled(req, env, 'lookup', 'strict') || await throttled(req, env, 'lookup-code', 'strict', code.toUpperCase().replace(/\W/g, '').slice(0, 20))) return tooMany(req, env);
     if (!code) return ok(req, env, { plans: [] });
     return ok(req, env, { plans: await lookupInstallments(env, { code }) });
   }
-  // Lost code / lost ticket link: always the same reply, and the text goes out after the response
-  // so timing doesn't reveal whether anything matched.
   if (m === 'POST' && p === '/api/installments/find') {
     const b = await body(req), ph = normalizePhone(b.phone);
     if (!ph) return fail(req, env, 'Use a Ghana number, e.g. 024 123 4567.');
@@ -140,17 +137,20 @@ async function route(req, env, ctx) {
   if (m === 'POST' && p === '/api/admin/settings') return reply(req, env, await admin.updateSettings(env, await body(req), user));
   if (m === 'GET' && p === '/api/admin/organisers') return reply(req, env, await admin.listOrganisers(env, user));
   if (m === 'GET' && p === '/api/admin/staff') return reply(req, env, await admin.listStaff(env, user));
-    if (m === 'POST' && p === '/api/admin/set-role') return reply(req, env, await admin.setRole(env, await body(req), user));
+  if (m === 'POST' && p === '/api/admin/set-role') return reply(req, env, await admin.setRole(env, await body(req), user));
   if (m === 'POST' && p === '/api/admin/staff/invite') {
     if (await throttled(req, env, 'invite', 'strict')) return tooMany(req, env);
     return reply(req, env, await admin.inviteStaff(env, await body(req), user));
   }
   if (m === 'GET' && p === '/api/admin/organiser/overview') return reply(req, env, await admin.organiserOverview(env, user));
+
+  if (m === 'GET' && p === '/api/admin/payments') return reply(req, env, await admin.listPendingCheckouts(env, { sinceMs: Number(u.searchParams.get('sinceMs')) || 0 }, user));
+
+  // ── Settlements ──
+  if (m === 'POST' && p === '/api/admin/settlements') return reply(req, env, await admin.recordSettlement(env, await body(req), user));
+  if (m === 'GET'  && p === '/api/admin/settlements') return reply(req, env, await admin.listSettlements(env, { organizerId: u.searchParams.get('organizerId'), eventId: u.searchParams.get('eventId') }, user));
+
   return fail(req, env, 'Not found.', 404);
-  if (m === 'GET'  && p === '/api/admin/subaccounts/banks')   return reply(req, env, await admin.listBanks(env, user));
-  if (m === 'POST' && p === '/api/admin/subaccounts/resolve') return reply(req, env, await admin.resolveSubaccount(env, await body(req), user));
-  if (m === 'GET'  && p === '/api/admin/subaccounts/platform') return reply(req, env, await admin.getPlatformSubaccount(env, user));
-  if (m === 'POST' && p === '/api/admin/subaccounts/platform') return reply(req, env, await admin.setupPlatformSubaccount(env, await body(req), user));
 }
 
 export default {
@@ -170,4 +170,4 @@ export { fulfillTicket, fulfillTable, fulfillInstallment, startInstallment, topu
 export { withTransaction, listDocs, queryWhere } from './lib/firestore.js';
 export { requireRole } from './lib/auth.js';
 export { rateLimited } from './lib/http.js';
-export { setRole, inviteStaff, organiserOverview, updateSettings, updatePrivateRequest, adminInstallments, issueComp, upsertEvent, upsertCatalog, adminOverview, listEvents, listOrders } from './admin.js';
+export { setRole, inviteStaff, recordSettlement, listSettlements, listPendingCheckouts, organiserOverview, updateSettings, updatePrivateRequest, adminInstallments, issueComp, upsertEvent, upsertCatalog, adminOverview, listEvents, listOrders } from './admin.js';
