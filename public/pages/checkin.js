@@ -61,6 +61,7 @@ let phoneCount = 0, busy = false;
 const RESULT = {
   ok: ['ok', 'Entry confirmed'], used: ['no', 'Already checked in'], invalid: ['no', 'Ticket not valid'], cancelled: ['no', 'Ticket cancelled'],
   wrong_night: ['warn', 'Wrong night'], forbidden: ['no', 'Not your night'], no_event: ['warn', 'Choose the night'],
+  seated: ['ok', 'Table seated'], table_used: ['no', 'Table already seated'],
 };
 function show(r) {
   const [cls, title] = RESULT[r.code] || ['no', r.message || 'Not valid'];
@@ -70,7 +71,7 @@ function show(r) {
     <h1 class="display">${esc(title)}</h1>
     ${t.firstName ? `<p style="margin:0;font-size:24px"><strong>${esc(t.firstName)}</strong>${!r.valid && t.admits > 1 ? ` · admits ${t.admits}` : ''}</p>` : ''}
     ${t.eventName ? `<p class="foot-small" style="margin:0">${esc(t.eventName)} · ${esc(t.type || '')} · ${esc(t.displayCode || '')}${t.comp ? ' · comp' : ''}</p>` : ''}
-    ${r.code === 'used' && t.checkedInAt ? `<p class="foot-small" style="margin:0">First scanned ${esc(new Date(t.checkedInAt).toLocaleTimeString('en-GB', { timeZone: 'Africa/Accra', hour: '2-digit', minute: '2-digit' }))}</p>` : ''}</div>`;
+    ${(r.code === 'used' || r.code === 'table_used') && t.checkedInAt ? `<p class="foot-small" style="margin:0">First scanned ${esc(new Date(t.checkedInAt).toLocaleTimeString('en-GB', { timeZone: 'Africa/Accra', hour: '2-digit', minute: '2-digit' }))}</p>` : ''}</div>`;
 }
 const offline = () => { $('#out').innerHTML = '<div class="result offline" role="alert"><h1 class="display">No connection</h1><p style="margin:0">Not checked. Try again when you have signal, or find the guest by name.</p></div>'; navigator.vibrate?.([30, 30, 30]); };
 
@@ -82,7 +83,7 @@ async function admit(body) {
   try {
     const r = await sapi('/api/checkin', { method: 'POST', body: { ...body, eventId: night() } });
     show(r); tone(r.valid);
-    if (r.valid) { phoneCount += r.ticket?.admits || 1; $('#counted').textContent = `This phone: ${phoneCount}`; summary(); }
+    if (r.valid && !r.ticket?.table) { phoneCount += r.ticket?.admits || 1; $('#counted').textContent = `This phone: ${phoneCount}`; summary(); }
   } catch (e) {
     if (e.status === 0) offline();
     else { $('#out').innerHTML = `<div class="result no" role="alert"><h1 class="display">Try again</h1><p style="margin:0">${esc(e.message)}</p></div>`; tone(false); }
@@ -107,8 +108,9 @@ $('#search').oninput = () => {
   searchT = setTimeout(async () => {
     try {
       const { results } = await sapi(`/api/door/search?eventId=${encodeURIComponent(night())}&q=${encodeURIComponent(q)}`);
-      $('#hits').innerHTML = results.length ? results.map(r => `<li><span><strong>${esc(r.firstName)}</strong>${r.phoneLast4 ? ` · …${esc(r.phoneLast4)}` : ''}<br><span class="foot-small">${esc(r.type)} · ${esc(r.code)}${r.admits > 1 ? ` · admits ${r.admits}` : ''}${r.comp ? ' · comp' : ''}</span></span>${r.status === 'valid' ? `<button class="sbtn red" type="button" data-code="${esc(r.code)}">Admit</button>` : `<span class="pill ${r.status === 'used' ? 'amber' : 'red'}">${r.status === 'used' ? 'In' : esc(r.status)}</span>`}</li>`).join('') : '<li>No match for this night.</li>';
+      $('#hits').innerHTML = results.length ? results.map(r => `<li><span><strong>${esc(r.firstName)}</strong>${r.phoneLast4 ? ` · …${esc(r.phoneLast4)}` : ''}<br><span class="foot-small">${r.table ? 'Table · ' : ''}${esc(r.type)} · ${esc(r.code)}${r.admits > 1 ? ` · admits ${r.admits}` : ''}${r.comp ? ' · comp' : ''}</span></span>${r.status === 'valid' ? `<button class="sbtn red" type="button" ${r.table ? 'data-table' : 'data-code'}="${esc(r.code)}">${r.table ? 'Seat' : 'Admit'}</button>` : `<span class="pill ${r.status === 'used' ? 'amber' : 'red'}">${r.status === 'used' ? (r.table ? 'Seated' : 'In') : esc(r.status)}</span>`}</li>`).join('') : '<li>No match for this night.</li>';
       $('#hits').querySelectorAll('[data-code]').forEach(b => b.onclick = () => admit({ code: b.dataset.code }).then(() => $('#search').dispatchEvent(new Event('input'))));
+      $('#hits').querySelectorAll('[data-table]').forEach(b => b.onclick = () => admit({ table: b.dataset.table }).then(() => $('#search').dispatchEvent(new Event('input'))));
     } catch (e) { $('#hits').innerHTML = `<li>${e.status === 0 ? 'No connection.' : esc(e.message)}</li>`; }
   }, 300);
 };

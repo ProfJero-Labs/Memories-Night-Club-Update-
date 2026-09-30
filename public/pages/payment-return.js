@@ -83,7 +83,8 @@ function done(s) {
         <div class="r"><b>${esc(s.packageName)}</b><span>${esc(s.eventName)}</span></div>
         ${(s.bottles || []).map(b => `<div class="r muted"><span>${b.quantity} × ${esc(b.name)}</span><span>${money(b.quantity * b.unitPricePesewas)}</span></div>`).join('')}
         <div class="r t"><span>Paid</span><span>${money(s.amountPesewas)}</span></div></div>
-      <p>Confirmation is on its way by text. Reference <b>${esc(ref)}</b>.</p><a class="btn" href="index.html">Back to Memories</a></div>`;
+      ${s.tableCode ? `<div class="summary" style="width:100%;max-width:520px"><span class="kicker">At the door</span><b style="font:400 clamp(34px,9vw,44px)/1 var(--display);letter-spacing:.04em">${esc(s.tableCode)}</b><span class="muted">Show this, or just give your name. It’s in your text too.</span></div>` : ''}
+      <p class="foot-small">Payment reference ${esc(ref)}.</p><a class="btn" href="index.html">Back to Memories</a></div>`;
     return;
   }
   if (s.kind === 'installment_topup' && !s.planComplete) { receipt(s); return; }

@@ -5,7 +5,7 @@
 // All payments land in EvolveIT's Paystack account. The three-way split (EvolveIT / Memories /
 // organizer) is recorded on each order for the ledger; distribution happens out of band.
 import { getDoc, setDoc, createDoc, queryWhere, batchGet, commitTx, updateWrite, foundFields, withTransaction } from './lib/firestore.js';
-import { BITS_POLICY_VERSION, now, id, paymentRef, claimSecret, sha256Hex, ticketToken, displayCode, orderCode, normalizeOrderCode, clean, normalizePhone, validEmail, firstName, money, maskPhone, formatAccra } from './lib/util.js';
+import { BITS_POLICY_VERSION, now, id, paymentRef, claimSecret, sha256Hex, ticketToken, displayCode, tableCode, orderCode, normalizeOrderCode, clean, normalizePhone, validEmail, firstName, money, maskPhone, formatAccra } from './lib/util.js';
 import { sendSms, sendEmail, siteUrl } from './lib/notify.js';
 import { getSettings, resolveLines, isOver } from './public.js';
 import { openRaffleForEvent, raffleSpotWrites } from './raffle.js';
@@ -223,8 +223,8 @@ export async function fulfillTable(env, reference) {
     return { status: 'issued', orderId };
   });
   if (result.status === 'issued' && !result.already) {
-    await sendSms(env, P.buyerPhone, `MEMORIES\nTable confirmed: ${P.packageName}, ${P.eventName}.\nTotal paid ${money(P.amountPesewas)}. Ref ${reference}.`);
-    await sendEmail(env, P.buyerEmail, 'Your Memories table is confirmed', [`${P.packageName} · ${P.eventName}`, `Total paid: ${money(P.amountPesewas)}`, `Reference: ${reference}`]);
+    await sendSms(env, P.buyerPhone, `MEMORIES\nTable confirmed: ${P.packageName}, ${P.eventName}.\nTotal paid ${money(P.amountPesewas)}.\nAt the door: ${tableCode(result.orderId)}, or give your name.`);
+    await sendEmail(env, P.buyerEmail, 'Your Memories table is confirmed', [`${P.packageName} · ${P.eventName}`, `Total paid: ${money(P.amountPesewas)}`, `At the door, show ${tableCode(result.orderId)} or give your name.`, `Payment reference: ${reference}`]);
   }
   delete result.already;
   return result;
@@ -513,6 +513,7 @@ export async function checkoutStatus(env, reference, claim) {
   const tokens = f.status === 'issued' ? await claimedTokens(f, claim, f.kind === 'installment_topup' ? plan?.fields?.claimHash : f.claimHash) : [];
   const out = {
     status: f.status, kind: f.kind || 'ticket', eventId: f.eventId || '', eventName: f.eventName || '', packageName: f.packageName || '', amountPesewas: f.amountPesewas, bottles: f.bottles || [],
+    tableCode: f.kind === 'table' && f.status === 'issued' && f.orderId ? tableCode(f.orderId) : undefined,
     tickets: tokens.map(token => ({ token })), ticketCount: (f.ticketIds || []).length, phoneHint: maskPhone(f.buyerPhone), error: f.status === 'failed' ? f.error : undefined,
   };
   if (f.kind === 'installment_topup' && f.planId) {

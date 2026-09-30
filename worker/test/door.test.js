@@ -77,3 +77,32 @@ test('20 phones scanning one ticket at the same moment: exactly one entry', asyn
   assert.equal(store.list('checkins').length, 1, 'one check-in record');
   assert.ok(results.filter(r => !r.valid).every(r => r.code === 'used' || r.error), 'the rest see ALREADY CHECKED IN (or a retry error)');
 });
+
+test('tables at the door: found by name, last 4 digits or TBL- code, seated once; another organiser can’t', async () => {
+  const { store, env } = createMockEnv(); seed(store);
+  store.seed('orders', 'abc123ffff', { kind: 'table', status: 'confirmed', eventId: 'fri', eventName: 'Friday', packageName: 'Floor Table', buyerName: 'Efua Mensah', buyerPhone: '0551234567' });
+  store.seed('orders', 'zzz999ffff', { kind: 'table', status: 'confirmed', eventId: 'sat', eventName: 'Saturday', packageName: 'Table', buyerName: 'Efua Other', buyerPhone: '0551234567' });
+  for (const q of ['efua', '4567', 'TBL-ABC1', 'abc123']) {
+    const hits = (await get(env, `/api/door/search?eventId=fri&q=${q}`)).data.results.filter(r => r.table);
+    assert.deepEqual(hits.map(h => h.code), ['TBL-ABC123'], `search "${q}" finds the table on this night only`);
+    assert.equal(hits[0].phoneLast4, '4567');
+  }
+  const first = await post(env, { table: 'TBL-ABC123', eventId: 'fri' });
+  assert.equal(first.code, 'seated'); assert.equal(first.ticket.firstName, 'Efua');
+  assert.ok(store.get('orders', 'abc123ffff').fields.arrivedAt, 'arrival recorded');
+  assert.equal((await post(env, { table: 'TBL-ABC123', eventId: 'fri' })).code, 'table_used');
+  assert.equal((await post(env, { table: 'TBL-ABC123', eventId: 'sat' })).code, 'invalid', 'wrong night');
+  assert.equal((await post(env, { table: 'TBL-ZZZ999', eventId: 'sat' }, { role: 'organiser' })).code, 'forbidden', 'not their night');
+  assert.equal((await get(env, '/api/door/summary?eventId=fri')).data.admitted, 4, 'seating a table doesn’t change the ticket headcount');
+});
+
+test('a paid table’s text gives its door code, not the long payment reference', async () => {
+  const { store, env } = createMockEnv();
+  store.seed('table_packages', 'p1', { eventId: 'fri', name: 'Floor Table', pricePesewas: 350000, remaining: null, active: true });
+  store.seed('pending_checkouts', 'refT', { reference: 'refT', kind: 'table', eventId: 'fri', eventName: 'Friday', packageId: 'p1', packageName: 'Floor Table', bottles: [], amountPesewas: 350000, buyerName: 'Efua', buyerPhone: '0551234567', status: 'pending' });
+  store.setPaystack('refT', { status: 'success', currency: 'GHS', amount: 350000 });
+  const { fulfillTable } = await import('../src/index.js');
+  const r = await fulfillTable(env, 'refT');
+  assert.match(store.sms[0].message, new RegExp(`At the door: TBL-${r.orderId.slice(0, 6).toUpperCase()}`));
+  assert.ok(!store.sms[0].message.includes('refT'));
+});

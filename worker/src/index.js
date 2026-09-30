@@ -8,7 +8,7 @@ import { getSettings, publicEvents, eventBundle, calendar, createPrivateRequest,
 import { initiateTicket, initiateTable, startInstallment, topupInstallment, lookupInstallments, textOrderCodes, resendTicketLink, textTicketLinks, NEUTRAL_CODES, NEUTRAL_LINK, NEUTRAL_TICKETS, fulfill, checkoutStatus, forfeitStalePlans } from './checkout.js';
 import { normalizePhone, normalizeOrderCode } from './lib/util.js';
 import { upsertRaffle, drawRaffle } from './raffle.js';
-import { checkin, verifyTicket, doorSummary, doorSearch } from './door.js';
+import { checkin, verifyTicket, doorSummary, doorSearch, seatTable } from './door.js';
 import * as admin from './admin.js';
 
 const enc = new TextEncoder();
@@ -99,7 +99,9 @@ async function route(req, env, ctx) {
   if (m === 'POST' && p === '/api/checkin') {
     if (!requireRole(user, DOOR)) return fail(req, env, 'Forbidden.', 403);
     if (await throttled(req, env, 'checkin', 'standard')) return tooMany(req, env);
-    const b = await body(req); if (!b.token && !b.code) return fail(req, env, 'Scan or enter a ticket.');
+    const b = await body(req);
+    if (b.table) { if (!b.eventId) return ok(req, env, { valid: false, code: 'no_event', message: 'PICK TONIGHT’S NIGHT FIRST' }); return ok(req, env, await seatTable(env, user, String(b.eventId), b.table)); }
+    if (!b.token && !b.code) return fail(req, env, 'Scan or enter a ticket.');
     return ok(req, env, await checkin(env, b.token || '', user, { eventId: b.eventId || null, code: b.code || null }));
   }
   if (m === 'GET' && p === '/api/door/summary') { if (!requireRole(user, DOOR)) return fail(req, env, 'Forbidden.', 403); return reply(req, env, await doorSummary(env, user, u.searchParams.get('eventId'))); }

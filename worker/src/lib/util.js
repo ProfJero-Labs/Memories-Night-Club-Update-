@@ -19,6 +19,8 @@ export async function sha256Hex(s) {
   return Array.from(new Uint8Array(d), b => b.toString(16).padStart(2, '0')).join('');
 }
 export const displayCode = token => `MEM-${token.slice(0, 6).toUpperCase()}`;
+// What a table booking is called at the door and in its text (the order id is not a credential).
+export const tableCode = orderId => `TBL-${String(orderId).slice(0, 6).toUpperCase()}`;
 // Pay-in-bits order code: MEM-XXXXX-XXXXX, 10 Crockford Base32 characters from the CSPRNG
 // (50 bits; no I, L, O, U, so it reads cleanly over the phone). Uniqueness is checked on create.
 const CROCKFORD = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';

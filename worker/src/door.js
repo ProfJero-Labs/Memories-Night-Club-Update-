@@ -1,7 +1,7 @@
 // Door check-in: the QR carries only a verify URL with the ticket token; the scanner sends the
 // token here and the ticket is marked used inside a transaction, so a second scan always fails.
 import { getDoc, batchGet, commitTx, updateWrite, parseFields, withTransaction, queryWhere } from './lib/firestore.js';
-import { now, id, firstName } from './lib/util.js';
+import { now, id, firstName, tableCode } from './lib/util.js';
 import { requireRole, uidOf } from './lib/auth.js';
 
 export const tokenFrom = raw => {
@@ -76,18 +76,42 @@ export async function doorSummary(env, user, eventId) {
   return { eventId: ev.id, admitted: heads(tickets.filter(t => t.status === 'used')), expected: heads(tickets), comps: heads(tickets.filter(t => t.comp === true)), tickets: tickets.length };
 }
 
+// A table booking arriving: found in door search (name, last 4 digits, TBL- code), seated once.
+export async function seatTable(env, user, eventId, code) {
+  const ev = await doorNight(env, user, eventId); if (!ev) return { valid: false, code: 'forbidden', message: 'NOT YOUR NIGHT' };
+  const want = String(code || '').toUpperCase();
+  const hit = (await queryWhere(env, 'orders', [{ field: 'eventId', value: ev.id }, { field: 'kind', value: 'table' }])).find(o => tableCode(o.id) === want && o.fields.status === 'confirmed');
+  if (!hit) return { valid: false, code: 'invalid', message: 'TABLE NOT FOUND' };
+  return withTransaction(env, async tx => {
+    const f = (await batchGet(env, [`orders/${hit.id}`], tx)).find(x => x.found)?.found;
+    const o = parseFields(f.fields);
+    const summary = { firstName: firstName(o.buyerName), eventName: o.eventName, type: o.packageName || 'Table', displayCode: tableCode(hit.id), table: true };
+    if (o.arrivedAt) return { valid: false, code: 'table_used', message: 'TABLE ALREADY SEATED', ticket: { ...summary, checkedInAt: o.arrivedAt } };
+    const when = now();
+    await commitTx(env, [updateWrite(env, 'orders', hit.id, { ...o, arrivedAt: when, arrivedBy: uidOf(user) })], tx);
+    return { valid: true, code: 'seated', message: 'TABLE SEATED', ticket: summary };
+  });
+}
+
 // Find a guest at the door by first name, ticket code or the last 4 digits of their phone.
 // Returns what the door needs to recognise them; never the token or the full phone number.
+// Table bookings for the night come back too, marked as tables.
 export async function doorSearch(env, user, eventId, q) {
   const ev = await doorNight(env, user, eventId); if (!ev) return { error: 'Not your night.', status: 403 };
   const s = String(q || '').trim().toLowerCase();
   if (s.length < 2) return { results: [] };
-  const code = s.replace(/^mem-?/, '');
+  const code = s.replace(/^mem-?/, ''), tcode = s.replace(/^tbl-?/, '');
+  const tables = (await queryWhere(env, 'orders', [{ field: 'eventId', value: ev.id }, { field: 'kind', value: 'table' }]))
+    .filter(o => o.fields.status === 'confirmed')
+    .filter(o => String(o.fields.buyerName || '').toLowerCase().includes(s) || (/^\d{4}$/.test(s) && String(o.fields.buyerPhone || '').slice(-4) === s)
+      || (tcode.length >= 3 && tableCode(o.id).toLowerCase().replace(/^tbl-/, '').startsWith(tcode)))
+    .slice(0, 10)
+    .map(o => ({ table: true, code: tableCode(o.id), firstName: firstName(o.fields.buyerName), phoneLast4: String(o.fields.buyerPhone || '').slice(-4), type: o.fields.packageName || 'Table', admits: 1, status: o.fields.arrivedAt ? 'used' : 'valid' }));
   const results = (await queryWhere(env, 'tickets', [{ field: 'eventId', value: ev.id }])).map(t => t.fields)
     .filter(t => firstName(t.customerName).toLowerCase().startsWith(s) || String(t.customerName || '').toLowerCase().includes(s)
       || (code.length >= 3 && String(t.displayCode || '').toLowerCase().replace(/^mem-/, '').startsWith(code))
       || (/^\d{4}$/.test(s) && t.phoneLast4 === s))
     .slice(0, 20)
     .map(t => ({ code: t.displayCode, firstName: firstName(t.customerName), phoneLast4: t.phoneLast4 || '', type: t.type || '', admits: Number(t.admitCount || 1), status: t.revoked || t.cancelled ? 'cancelled' : t.status, comp: t.comp === true }));
-  return { results };
+  return { results: [...tables, ...results] };
 }
