@@ -360,7 +360,7 @@ async function payments() {
 // ── Bookings (tickets, tables, comps) ──
 async function bookings() {
   const [{ events }] = await Promise.all([sapi('/api/admin/events')]);
-  panel.innerHTML = `<h1>Bookings</h1><div class="toolbar"><select id="fEv"><option value="">All nights</option>${events.map(e => `<option value="${esc(e.id)}">${esc(shortDate(e.date))} · ${esc(e.name)}</option>`).join('')}</select>
+  panel.innerHTML = `<h1>Orders</h1><div class="toolbar"><select id="fEv"><option value="">All nights</option>${events.map(e => `<option value="${esc(e.id)}">${esc(shortDate(e.date))} · ${esc(e.name)}</option>`).join('')}</select>
     <select id="fKind"><option value="">Everything</option><option value="table">Tables</option><option value="ticket">Tickets</option><option value="comp">Comps</option></select></div><div id="list"></div>`;
   const load = async () => {
     const q = new URLSearchParams(); if (val('#fEv')) q.set('eventId', val('#fEv')); if (val('#fKind')) q.set('kind', val('#fKind'));

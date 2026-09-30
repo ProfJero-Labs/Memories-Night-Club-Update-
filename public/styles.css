@@ -589,9 +589,9 @@ h1, h2, h3 { margin: 0; }
 }
 
 /* Thumb-sized targets (44px) for the small links and header buttons, without changing their look. */
-.nav a, .nav .wa, .nav .get { min-height: 44px; display: inline-flex; align-items: center; justify-content: center; }
+.nav a, .nav .wa, .nav .get { min-height: 44px; min-width: 44px; display: inline-flex; align-items: center; justify-content: center; }
 .nav .wa { min-width: 44px; }
-.for .link, .section-title .link, #share, #noLine, .forget, .hosts a, .meta a { min-height: 44px; display: inline-flex; align-items: center; }
+.site-head .logo, [data-back], .for .link, .section-title .link, #share, #noLine, .forget, .hosts a, .meta a { min-height: 44px; display: inline-flex; align-items: center; }
 #bitsMode, #fullMode { min-height: 44px; }
 /* The ticket's QR, full screen on white for the door scanner. */
 .t-qr[role="button"] { cursor: zoom-in; }
