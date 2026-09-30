@@ -84,6 +84,7 @@ async function overview() {
       <div><span>Pending payments</span><b>${d.pendingCheckouts}${d.staleCheckouts ? ` <small style="font-weight:400">(${d.staleCheckouts} over 30m)</small>` : ''}</b></div>
       <div><span>Failed payments</span><b>${d.failedCheckouts}</b></div>
     </div>
+    ${d.funnel ? `<p class="funnel"><strong>Last 7 days:</strong> ${d.funnel.started} checkouts started · ${d.funnel.paid} paid${d.funnel.started ? ` (${Math.round(100 * d.funnel.paid / d.funnel.started)}%)` : ''} · ${d.funnel.abandoned} left at Paystack · ${d.funnel.failed} failed${d.funnel.waiting ? ` · ${d.funnel.waiting} paying now` : ''}</p>` : ''}
     <div class="tbl-wrap"><table class="tbl"><thead><tr><th>Night</th><th>Date</th><th class="num">Tickets</th><th class="num">Comps</th><th class="num">Tables</th><th class="num">Revenue</th><th class="num">In the door</th><th></th></tr></thead><tbody>
     ${d.nights.map(n => `<tr><td><strong>${esc(n.name)}</strong> ${n.visibility === 'public' ? '' : pill('private', 'grey')}</td><td>${esc(shortDate(n.date))}</td><td class="num">${n.tickets}</td><td class="num">${n.comps}</td><td class="num">${n.tables}</td><td class="num">${money(n.revenuePesewas)}</td><td class="num">${n.checkins}</td>
       <td class="actions"><button class="sbtn" data-open="${esc(n.id)}">Open</button><a class="sbtn ghost" href="checkin.html?event=${encodeURIComponent(n.id)}">Door</a></td></tr>`).join('') || '<tr><td colspan="8" class="empty-row">No upcoming nights. Create one under Nights.</td></tr>'}

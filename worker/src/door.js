@@ -39,13 +39,40 @@ export async function checkin(env, rawToken, user, { eventId, code } = {}) {
     if (eventId && t.eventId !== eventId) return { valid: false, code: 'wrong_night', message: 'WRONG NIGHT', ticket: summary };
     if (t.revoked || t.cancelled) return { valid: false, code: 'cancelled', message: 'TICKET CANCELLED', ticket: summary };
     if (t.status === 'used') return { valid: false, code: 'used', message: 'ALREADY CHECKED IN', ticket: { ...summary, checkedInAt: t.checkedInAt } };
-    const when = now();
+    const when = now(), checkinId = id();
     await commitTx(env, [
       updateWrite(env, 'tickets', token, { ...t, status: 'used', checkedInAt: when, checkedInBy: uidOf(user) }),
-      updateWrite(env, 'checkins', id(), { ticketId: token, eventId: t.eventId, admits: summary.admits, checkedInAt: when, checkedInBy: uidOf(user) }),
+      updateWrite(env, 'checkins', checkinId, { ticketId: token, eventId: t.eventId, admits: summary.admits, checkedInAt: when, checkedInBy: uidOf(user) }),
     ], tx);
-    return { valid: true, code: 'ok', message: 'ENTRY CONFIRMED', ticket: summary };
+    return { valid: true, code: 'ok', message: 'ENTRY CONFIRMED', ticket: summary, checkinId };
   });
+}
+
+// Undo an admission tapped by mistake (owner decision #6's default): whoever admitted can undo it
+// for UNDO_MINUTES; a manager or super admin any time. Nothing is deleted: the check-in keeps who
+// undid it and when, the ticket is valid again, and the audit log has the entry.
+export const UNDO_MINUTES = 2;
+export async function undoCheckin(env, user, checkinId) {
+  if (!/^[0-9a-f]{32}$/.test(String(checkinId || ''))) return { error: 'Nothing to undo.', status: 400 };
+  const r = await withTransaction(env, async tx => {
+    const c = (await batchGet(env, [`checkins/${checkinId}`], tx)).find(x => x.found)?.found;
+    if (!c) return { error: 'Nothing to undo.', status: 404 };
+    const ci = parseFields(c.fields);
+    if (ci.undoneAt) return { error: 'Already undone.', status: 400 };
+    const boss = requireRole(user, ['superAdmin', 'manager']);
+    if (!boss && ci.checkedInBy !== uidOf(user)) return { error: 'Only the person who admitted them (or a manager) can undo it.', status: 403 };
+    if (!boss && Date.now() - new Date(ci.checkedInAt).getTime() > UNDO_MINUTES * 60e3) return { error: `Undo is only open for ${UNDO_MINUTES} minutes. Ask a manager.`, status: 403 };
+    const f = (await batchGet(env, [`tickets/${ci.ticketId}`], tx)).find(x => x.found)?.found;
+    if (!f) return { error: 'Nothing to undo.', status: 404 };
+    const t = parseFields(f.fields), when = now();
+    await commitTx(env, [
+      updateWrite(env, 'tickets', ci.ticketId, { ...t, status: 'valid', checkedInAt: null, checkedInBy: null, lastUndoneAt: when }),
+      updateWrite(env, 'checkins', checkinId, { ...ci, undoneAt: when, undoneBy: uidOf(user) }),
+      updateWrite(env, 'audit_logs', id(), { action: 'CHECKIN_UNDONE', actorUid: uidOf(user), checkinId, eventId: ci.eventId, admittedBy: ci.checkedInBy, admittedAt: ci.checkedInAt, timestamp: when }),
+    ], tx);
+    return { undone: true, ticket: { firstName: firstName(t.customerName), displayCode: t.displayCode, eventName: t.eventName } };
+  });
+  return r;
 }
 
 // Public check of a ticket's state (what the QR's URL opens on a guest's own phone).

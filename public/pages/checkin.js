@@ -71,7 +71,21 @@ function show(r) {
     <h1 class="display">${esc(title)}</h1>
     ${t.firstName ? `<p style="margin:0;font-size:24px"><strong>${esc(t.firstName)}</strong>${!r.valid && t.admits > 1 ? ` · admits ${t.admits}` : ''}</p>` : ''}
     ${t.eventName ? `<p class="foot-small" style="margin:0">${esc(t.eventName)} · ${esc(t.type || '')} · ${esc(t.displayCode || '')}${t.comp ? ' · comp' : ''}</p>` : ''}
-    ${(r.code === 'used' || r.code === 'table_used') && t.checkedInAt ? `<p class="foot-small" style="margin:0">First scanned ${esc(new Date(t.checkedInAt).toLocaleTimeString('en-GB', { timeZone: 'Africa/Accra', hour: '2-digit', minute: '2-digit' }))}</p>` : ''}</div>`;
+    ${(r.code === 'used' || r.code === 'table_used') && t.checkedInAt ? `<p class="foot-small" style="margin:0">First scanned ${esc(new Date(t.checkedInAt).toLocaleTimeString('en-GB', { timeZone: 'Africa/Accra', hour: '2-digit', minute: '2-digit' }))}</p>` : ''}
+    ${r.checkinId ? '<button type="button" class="sbtn undo" id="undo">Undo · admitted by mistake</button>' : ''}</div>`;
+  // Tapped Admit by mistake: undo it while the card is up (the server allows 2 minutes).
+  if (r.checkinId) {
+    const b = $('#undo'), gone = setTimeout(() => b?.remove(), 120e3);
+    b.onclick = async () => {
+      b.disabled = true;
+      try {
+        const u = await sapi('/api/checkin/undo', { method: 'POST', body: { checkinId: r.checkinId } });
+        clearTimeout(gone);
+        $('#out').innerHTML = `<div class="result warn" role="alert"><h1 class="display">Admission undone</h1><p style="margin:0">${esc(u.ticket?.firstName || '')} ${esc(u.ticket?.displayCode || '')} can be scanned again.</p></div>`;
+        phoneCount = Math.max(0, phoneCount - (t.admits || 1)); $('#counted').textContent = `This phone: ${phoneCount}`; summary();
+      } catch (e) { b.disabled = false; b.textContent = e.status === 0 ? 'No connection. Try undo again' : e.message; }
+    };
+  }
 }
 const offline = () => { $('#out').innerHTML = '<div class="result offline" role="alert"><h1 class="display">No connection</h1><p style="margin:0">Not checked. Try again when you have signal, or find the guest by name.</p></div>'; navigator.vibrate?.([30, 30, 30]); };
 

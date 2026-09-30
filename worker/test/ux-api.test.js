@@ -53,3 +53,17 @@ test('lost your ticket is rate limited per phone, whatever the IP', async () => 
   for (let i = 0; i < 12; i++) last = await worker.fetch(new Request('https://worker.test/api/tickets/find', { method: 'POST', headers: { 'CF-Connecting-IP': `10.4.0.${i}` }, body: JSON.stringify({ phone: '0241234567' }) }), env);
   assert.equal(last.status, 429);
 });
+
+test('the overview shows a 7-day checkout funnel: started, paid, left at Paystack, failed', async () => {
+  const { store, env } = createMockEnv();
+  const { adminOverview } = await import('../src/index.js');
+  const ago = min => new Date(Date.now() - min * 60e3).toISOString();
+  store.seed('pending_checkouts', 'a', { status: 'issued', createdAt: ago(60) });
+  store.seed('pending_checkouts', 'b', { status: 'issued', createdAt: ago(600) });
+  store.seed('pending_checkouts', 'c', { status: 'failed', createdAt: ago(90) });
+  store.seed('pending_checkouts', 'd', { status: 'pending', createdAt: ago(45) });
+  store.seed('pending_checkouts', 'e', { status: 'pending', createdAt: ago(2) });
+  store.seed('pending_checkouts', 'old', { status: 'issued', createdAt: ago(8 * 1440) });
+  const d = await adminOverview(env, { role: 'manager' });
+  assert.deepEqual(d.funnel, { started: 5, paid: 2, failed: 1, abandoned: 1, waiting: 1 });
+});

@@ -406,7 +406,7 @@ test('a video uploaded for a night plays behind the homepage hero and on its pag
   assert.equal(await still.locator('#heroBg video').count(), 0, 'no video when the visitor asks for reduced motion');
   await calm.close();
   // Remove it again: the homepage falls back to the still image.
-  await admin.click('#evVidX'); await admin.click('#save');
+  await admin.click('[data-sec-go="look"]'); await admin.click('#evVidX'); await admin.click('#save');
   await until(() => !store.get('events', heroId).fields.heroVideo, 'the video to be removed');
   assert.deepEqual(guest.errors, []);
 });
@@ -446,6 +446,39 @@ test('door: no any-night mode; valid → ENTRY CONFIRMED, again → ALREADY CHEC
   assert.equal(store.get('tickets', other.id).fields.status, 'used');
   assert.ok(!(await door.content()).includes(other.id), 'search never puts a token on the page');
   assert.deepEqual(door.errors, []);
+});
+
+test('door: a table is found by name and seated once; an admit tapped by mistake can be undone', async () => {
+  store.seed('orders', 'e2etable01', { kind: 'table', status: 'confirmed', eventId: 'dev-afro', eventName: 'Afrobeats Friday', packageName: 'Floor Table', buyerName: 'Nana Tablebooker', buyerPhone: '0247770001', createdAt: new Date().toISOString() });
+  const t = 'f'.repeat(56) + 'e2e0undo';
+  store.seed('tickets', t, { customerName: 'Undo Person', phoneLast4: '0002', eventId: 'dev-afro', eventName: 'Afrobeats Friday', type: 'Regular', admitCount: 1, displayCode: 'MEM-FFFFFF', status: 'valid' });
+  const door = await phone();
+  await door.goto(`${base}/login.html`); await door.fill('#email', 'door@dev'); await door.fill('#pw', 'memories-dev'); await door.click('#go');
+  await door.waitForURL(/checkin\.html/); await door.waitForLoadState('networkidle'); await door.selectOption('#ev', 'dev-afro');
+  await door.fill('#search', 'tablebooker');
+  await door.locator('#hits [data-table="TBL-E2ETAB"]').click();
+  await door.locator('#out').getByText(/table seated/i).waitFor();
+  assert.ok(store.get('orders', 'e2etable01').fields.arrivedAt);
+  await door.locator('#hits').getByText('Seated').waitFor();
+
+  await door.fill('#search', 'undo person');
+  await door.locator('#hits [data-code="MEM-FFFFFF"]').click();
+  await door.locator('#out').getByText(/entry confirmed/i).waitFor();
+  await door.click('#undo');
+  await door.locator('#out').getByText(/admission undone/i).waitFor();
+  assert.equal(store.get('tickets', t).fields.status, 'valid', 'the ticket works again');
+  assert.deepEqual(door.errors, []);
+});
+
+test('the ticket’s QR opens full screen on white for the door', async () => {
+  const token = docs('tickets').find(x => x.status === 'valid' && !x.comp)?.id;
+  const page = await phone(360);
+  await page.goto(`${base}/ticket.html?token=${token}`, { waitUntil: 'networkidle' });
+  await page.click('.t-qr');
+  const box = await page.locator('.qr-full[open] .qr-big').boundingBox();
+  assert.ok(box.width >= 300, `QR is ${Math.round(box.width)}px wide on a 360px phone`);
+  assert.equal(await page.evaluate(() => getComputedStyle(document.querySelector('.qr-full')).backgroundColor), 'rgb(255, 255, 255)');
+  await page.click('.qr-full'); assert.equal(await page.locator('.qr-full[open]').count(), 0, 'tap closes it');
 });
 
 test('organiser A sees only their night and cannot open the control room; a no-role account is refused', async () => {

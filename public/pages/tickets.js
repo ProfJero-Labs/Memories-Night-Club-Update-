@@ -37,7 +37,7 @@ function render(b) {
       <div class="qty" role="group" aria-labelledby="qtyLbl"><button type="button" id="minus" aria-label="One fewer">−</button><output id="qty" aria-live="polite">1</output><button type="button" id="plus" aria-label="One more">+</button></div>
       <span class="hint muted" id="qtyMax" hidden style="flex-basis:100%;font-size:13px">Up to 6 per order.</span>
     </div>
-    <a class="btn red block inline-go" id="inlineGo" hidden href="#">Get in <span class="arrow">→</span></a>`;
+    <a class="btn red block inline-go" id="inlineGo" hidden href="#">Continue <span class="arrow">→</span></a>`;
 
   const bar = $('#buybar');
   const update = () => {
@@ -53,8 +53,8 @@ function render(b) {
     const go = `checkout.html?event=${encodeURIComponent(e.id)}&type=${encodeURIComponent(t.id)}&qty=${qty}`;
     $('#barSum').innerHTML = `${money(t.pricePesewas * qty)}<small>${qty} × ${esc(t.name)}</small>`;
     $('#barGo').href = $('#inlineGo').href = go;
-    $('#barGo').innerHTML = `Get in <span class="arrow">→</span>`;
-    $('#inlineGo').hidden = false; $('#inlineGo').innerHTML = `Get in · ${money(t.pricePesewas * qty)} <span class="arrow">→</span>`;
+    $('#barGo').innerHTML = `Continue <span class="arrow">→</span>`;
+    $('#inlineGo').hidden = false; $('#inlineGo').innerHTML = `Continue · ${money(t.pricePesewas * qty)} <span class="arrow">→</span>`;
     bar.classList.add('show'); document.body.style.setProperty('--bar-h', `${bar.offsetHeight}px`);
   };
   $$('.type').forEach(btn => btn.onclick = () => { sel = btn.dataset.type; update(); });

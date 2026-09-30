@@ -19,7 +19,7 @@ body.staff::before { display: none; }
 .panel h2 { font: 400 26px/1 var(--display); text-transform: uppercase; margin: 30px 0 12px; }
 .toolbar { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 16px; }
 .toolbar select, .toolbar input { min-height: 42px; background: var(--ink-2); border: 1px solid var(--line-2); padding: 0 10px; min-width: 0; max-width: 100%; }
-.sbtn { min-height: 40px; padding: 0 14px; background: var(--ink-3); border: 1px solid var(--line-2); font: 700 12px var(--sans); letter-spacing: .1em; text-transform: uppercase; color: var(--paper); text-decoration: none; display: inline-flex; align-items: center; gap: 6px; }
+.sbtn { min-height: 44px; padding: 0 14px; background: var(--ink-3); border: 1px solid var(--line-2); font: 700 12px var(--sans); letter-spacing: .1em; text-transform: uppercase; color: var(--paper); text-decoration: none; display: inline-flex; align-items: center; gap: 6px; }
 .sbtn:hover { border-color: var(--paper); }
 .sbtn.red { background: var(--crimson-btn); border-color: var(--crimson-btn); color: #fff; }
 .sbtn.ok { background: var(--teal); border-color: var(--teal); }
@@ -101,3 +101,5 @@ details.more > summary { cursor: pointer; font-weight: 700; padding: 8px 0; }
 .sec-tabs button[aria-pressed="true"] { background: var(--paper); color: var(--ink); border-color: var(--paper); }
 .sec { display: grid; gap: 16px; }
 .sec[hidden], #evForm[hidden] { display: none !important; }
+.result .undo { justify-self: start; margin-top: 4px; }
+.funnel { margin: 0 0 18px; color: var(--muted); font-size: 15px; } .funnel strong { color: var(--paper); }

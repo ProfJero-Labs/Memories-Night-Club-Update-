@@ -5,6 +5,8 @@ One row per staff route. ✅ = allowed, — = 403. Every route also returns 401 
 | Route | superAdmin | manager | eventManager | doorStaff | organiser |
 |---|---|---|---|---|---|
 | `POST /api/checkin` | ✅ | ✅ | ✅ | ✅ | ✅ |
+| `POST /api/checkin` with `table` (seat a table booking) | ✅ | ✅ | ✅ | ✅ | own nights |
+| `POST /api/checkin/undo` | ✅ any time | ✅ any time | own admits, 2 min | own admits, 2 min | own admits, 2 min |
 | `GET /api/door/events` | ✅ | ✅ | ✅ | ✅ | ✅ |
 | `GET /api/door/summary` | ✅ | ✅ | ✅ | ✅ | own nights |
 | `GET /api/door/search` | ✅ | ✅ | ✅ | ✅ | own nights |

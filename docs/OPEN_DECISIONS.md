@@ -10,7 +10,7 @@ Business rules the code must not guess. Each has a proposed default. Until the o
 | 3 | Acknowledgement tick box for pay-in-bits | **Built** for the current rule: required tick box, version + time stored on the plan | Reword if #1 changes | `BITS_ACK_TEXT`, `BITS_POLICY_VERSION` in `public/lib/shared.js` |
 | 4 | When does "tonight" end at the door? | n/a | 04:00 Africa/Accra next day (built) | `NIGHT_ROLLOVER_HOUR` in `public/lib/shared.js` |
 | 5 | Re-entry | A second scan says ALREADY CHECKED IN | Allowed, audited, doesn't change headcount | not built |
-| 6 | Undo an admission | Not possible | 2 min for door staff; managers any time; audited | not built |
+| 6 | Undo an admission | **Built with the proposed default** (UX audit): 2 min for whoever admitted; managers any time; kept on record and audited | Owner to confirm | `undoCheckin`, `worker/src/door.js` |
 | 7 | Settle a balance at the door | Not possible | Cash or MoMo, manager/superAdmin only, note required | not built |
 | 8 | Reminder texts before the cutoff | Balance text after each payment only | 48h, 24h, 6h before cutoff | not built |
 | 9 | Customers writing their own ticket line | Allowed, 40 characters, no filter | Keep; add a word filter, or staff approval | `LINE_MAX`, `worker/src/checkout.js` |

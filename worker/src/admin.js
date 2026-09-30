@@ -59,6 +59,17 @@ export async function adminOverview(env, user) {
   const now = Date.now();
   const pendingCutoff = now - 30 * 60 * 1000; // 30 minutes
   let pending = 0, stale = 0, failed = 0;
+  // The last 7 days of checkouts, as a funnel: started → paid, and what happened to the rest.
+  const funnel = { started: 0, paid: 0, failed: 0, abandoned: 0, waiting: 0 };
+  for (const c of checkouts) {
+    const t = c.fields.createdAt ? new Date(c.fields.createdAt).getTime() : 0;
+    if (t < now - 7 * 864e5) continue;
+    funnel.started++;
+    if (c.fields.status === 'issued') funnel.paid++;
+    else if (c.fields.status === 'failed') funnel.failed++;
+    else if (t < pendingCutoff) funnel.abandoned++;
+    else funnel.waiting++;
+  }
   for (const c of checkouts) {
     const s = c.fields.status;
     const created = c.fields.createdAt ? new Date(c.fields.createdAt).getTime() : 0;
@@ -78,7 +89,7 @@ export async function adminOverview(env, user) {
       comps: mine.filter(o => o.fields.kind === 'comp').reduce((s, o) => s + Number(o.fields.quantity || 1), 0),
       tables: mine.filter(o => o.fields.kind === 'table').length,
       revenuePesewas: mine.reduce((s, o) => s + Number(o.fields.amountPesewas || 0), 0),
-      checkins: checkins.filter(c => c.fields.eventId === e.id).length,
+      checkins: checkins.filter(c => c.fields.eventId === e.id && !c.fields.undoneAt).length,
     };
   });
 
@@ -93,6 +104,7 @@ export async function adminOverview(env, user) {
     pendingCheckouts: pending,
     staleCheckouts: stale,
     failedCheckouts: failed,
+    funnel,
   };
 }
 
@@ -483,7 +495,7 @@ export async function organiserOverview(env, user) {
       revenuePesewas: confirmed.reduce((s, o) => s + Number(o.fields.amountPesewas || 0), 0),
       moneyOwingPesewas: active.reduce((s, p) => s + Math.max(0, Number(p.fields.totalPesewas || 0) - Number(p.fields.paidPesewas || 0)), 0),
       partialOrdersCount: active.length,
-      checkins: checkins.reduce((s, c) => s + Number(c.fields.admits || 1), 0),
+      checkins: checkins.filter(c => !c.fields.undoneAt).reduce((s, c) => s + Number(c.fields.admits || 1), 0),
       raffle: r ? { prize: r.fields.prize, cap: Number(r.fields.cap) > 0 ? Number(r.fields.cap) : 20, spotsTaken: Number(r.fields.spotsTaken || 0), status: r.fields.status, winner: r.fields.status === 'drawn' ? { name: r.fields.winnerDisplayName || 'Winner', code: r.fields.winnerDisplayCode || '' } : null } : null,
     });
   }

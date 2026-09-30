@@ -11,7 +11,7 @@ const S = { name: '', phone: '', email: '', line: '', mode: 'full', deposit: '',
 Object.assign(S, (({ name = '', phone = '', email = '' }) => ({ name, phone, email }))(remember.get()));
 let B, T;
 
-// The line and how they chose to pay survive "Change" → back to tickets → "Get in" (this tab only).
+// The line and how they chose to pay survive "Change" → back to tickets → "Continue" (this tab only).
 const draftKey = () => `mem-checkout-${eventId}`;
 const loadDraft = () => { try { return JSON.parse(sessionStorage.getItem(draftKey()) || '{}'); } catch { return {}; } };
 const saveDraft = () => { try { sessionStorage.setItem(draftKey(), JSON.stringify({ line: S.line, mode: S.mode, deposit: S.deposit })); } catch { /* private mode */ } };

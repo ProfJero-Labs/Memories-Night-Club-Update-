@@ -13,7 +13,7 @@ function view(t, qr) {
     : t.inDraw ? `<div class="notice ok">You’re in the draw${r?.prize ? ` for ${esc(r.prize)}` : ''}. Winner is picked before the night and gets a text.</div>` : '';
   root.innerHTML = `<div class="ticket-page">
     <div>${ticketHTML({ line: t.identityLine, firstName: t.firstName, eventName: t.eventName, eventId: t.eventId, ticketStyle: t.ticketStyle, ticketColors: t.ticketColors, autoStyle: t.autoStyle, date: t.eventDate, doors: t.doors, venue: t.venue, artwork: t.artwork, code: t.displayCode, status: t.status, inDraw: t.inDraw, type: t.type, admits: t.admits }, { qr })}
-      <p class="foot-small" style="text-align:center;margin-top:16px">This page is your ticket. Keep the link to yourself; the QR gets you in once.</p></div>
+      <p class="foot-small" style="text-align:center;margin-top:16px">This page is your ticket. Tap the QR to make it big at the door. Keep the link to yourself; it gets you in once.</p></div>
     <div class="post">
       <p class="kicker red">${params.get('new') ? 'You’re in' : esc(shortDate(t.eventDate || new Date()))}</p>
       <h1 class="display md">${t.status === 'used' ? 'Checked in. Enjoy it.' : t.status === 'cancelled' ? 'This ticket was cancelled.' : 'See you inside.'}</h1>
@@ -28,6 +28,15 @@ function view(t, qr) {
     </div></div>`;
   $('#print').onclick = () => print();
   if (t.status !== 'cancelled') makePost(t);
+  // A dark doorway and a dim phone: tap the QR and it fills the screen on white.
+  const small = $('.t-qr'); if (!qr || !small || t.status !== 'valid') return;
+  small.setAttribute('role', 'button'); small.tabIndex = 0; small.setAttribute('aria-label', 'Show the QR code full screen');
+  const big = document.createElement('dialog'); big.className = 'qr-full';
+  big.innerHTML = `<div class="qr-big">${qr}</div><p class="qr-code">${esc(t.displayCode || '')}</p><p class="qr-hint">Turn your brightness up. Tap anywhere to close.</p>`;
+  document.body.append(big);
+  const open = () => { big.showModal(); navigator.wakeLock?.request('screen').catch(() => {}); };
+  small.onclick = open; small.onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(); } };
+  big.onclick = () => big.close();
 }
 
 async function makePost(t) {

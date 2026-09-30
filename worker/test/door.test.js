@@ -106,3 +106,30 @@ test('a paid table’s text gives its door code, not the long payment reference'
   assert.match(store.sms[0].message, new RegExp(`At the door: TBL-${r.orderId.slice(0, 6).toUpperCase()}`));
   assert.ok(!store.sms[0].message.includes('refT'));
 });
+
+test('undo an admission: the admitter within 2 minutes, a manager any time; kept on record, never deleted', async () => {
+  const { store, env } = createMockEnv(); seed(store);
+  const undo = async (checkinId, claims, uid) => {
+    const r = await worker.fetch(new Request('https://api.test/api/checkin/undo', { method: 'POST', headers: { Authorization: `Bearer ${await idToken(claims, uid ? { uid } : undefined)}` }, body: JSON.stringify({ checkinId }) }), env);
+    return { status: r.status, data: await r.json() };
+  };
+  const door = { role: 'doorStaff' };
+  const r = await checkin(env, T(1), { role: 'doorStaff', uid: 'door-1' }, { eventId: 'fri' });
+  assert.equal(r.code, 'ok'); assert.match(r.checkinId, /^[0-9a-f]{32}$/);
+  assert.equal((await undo(r.checkinId, door, 'door-2')).status, 403, 'another door phone can’t undo it');
+  const ok = await undo(r.checkinId, door, 'door-1');
+  assert.equal(ok.status, 200, ok.data.error); assert.equal(ok.data.ticket.firstName, 'Ama');
+  assert.equal(store.get('tickets', T(1)).fields.status, 'valid', 'the ticket works again');
+  const ci = store.get('checkins', r.checkinId).fields;
+  assert.ok(ci.undoneAt && ci.undoneBy === 'door-1' && ci.checkedInBy === 'door-1', 'the check-in stays, marked undone');
+  assert.ok(store.list('audit_logs').some(a => a.fields.action === 'CHECKIN_UNDONE' && a.fields.checkinId === r.checkinId));
+  assert.equal((await undo(r.checkinId, door, 'door-1')).status, 400, 'once only');
+  assert.equal((await get(env, '/api/door/summary?eventId=fri')).data.admitted, 4, 'headcount back to before');
+
+  const again = await checkin(env, T(1), { role: 'doorStaff', uid: 'door-1' }, { eventId: 'fri' });
+  assert.equal(again.code, 'ok', 'it can be scanned again');
+  const ci2 = store.get('checkins', again.checkinId);
+  store.seed('checkins', again.checkinId, { ...ci2.fields, checkedInAt: new Date(Date.now() - 3 * 60e3).toISOString() });
+  assert.equal((await undo(again.checkinId, door, 'door-1')).status, 403, 'door staff: 2 minutes only');
+  assert.equal((await undo(again.checkinId, { role: 'manager' }, 'mgr-1')).status, 200, 'a manager can later');
+});
