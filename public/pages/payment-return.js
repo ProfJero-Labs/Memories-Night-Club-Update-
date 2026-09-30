@@ -7,6 +7,16 @@ const ref = params.get('reference') || params.get('trxref');
 const tryAgain = s => `<div class="state-msg"><span class="stamp" style="color:var(--crimson)">Not paid</span>
   <h1 class="display lg">Payment didn’t go through.</h1><p>Your night is still here. Nothing was taken${s?.error && !/not successful/i.test(s.error) ? ` (${esc(s.error)})` : ''}.</p>
   <div class="row-actions" style="width:100%;max-width:520px"><a class="btn red" href="${retryUrl(s)}">Try again</a></div></div>`;
+// Paid, but it can't be honoured (sold out while the payment confirmed, an order forfeited, an
+// amount that didn't match): the money was taken, so never say "nothing was taken".
+const REFUND = ['sold_out_after_payment', 'table_sold_out_after_payment', 'bottle_sold_out_after_payment', 'plan_forfeited', 'amount_mismatch'];
+const refundOwed = async s => {
+  const settings = await settingsP.catch(() => ({}));
+  return `<div class="state-msg"><span class="stamp" style="color:var(--crimson)">Paid · not issued</span>
+  <h1 class="display lg">${s.error === 'plan_forfeited' ? 'This order was forfeited.' : /sold_out/.test(s.error) ? 'It sold out as you paid.' : 'We couldn’t match that payment.'}</h1>
+  <p>Your payment reached us but we couldn’t issue it. We’ll refund you. Keep this reference: <b>${esc(ref)}</b>.</p>
+  ${settings.whatsapp ? `<div class="row-actions" style="width:100%;max-width:520px"><a class="btn red" href="${waLink(settings.whatsapp)}" target="_blank" rel="noopener">WhatsApp us</a></div>` : ''}</div>`;
+};
 // Back to where this payment started: the order for a top-up, the tables for a table, else the tickets.
 function retryUrl(s) {
   if (s?.kind === 'installment_topup' && s.planId) return `installment.html?code=${encodeURIComponent(s.planId)}`;
@@ -96,11 +106,14 @@ function done(s) {
 
 async function run() {
   if (!ref) { root.outerHTML = tryAgain(null); return; }
-  let s;
+  // Paystack's verify decides: "issued" is the only outcome that ever shows as paid. A declined or
+  // abandoned payment stays pending on our side (the guest may still finish it on the same
+  // reference), so the verify verdict wins over the stored status here.
+  let s, verdict;
   for (let i = 0; i < 20; i++) {
     try {
-      const v = await api('/api/checkout/verify', { method: 'POST', body: { reference: ref } });
-      if (v.status === 'issued' || v.status === 'failed') { s = await api(`/api/checkout/status?reference=${encodeURIComponent(ref)}`, { headers: { 'X-Checkout-Claim': claims.get(ref) } }); break; }
+      verdict = await api('/api/checkout/verify', { method: 'POST', body: { reference: ref } });
+      if (verdict.status === 'issued' || verdict.status === 'failed') { s = await api(`/api/checkout/status?reference=${encodeURIComponent(ref)}`, { headers: { 'X-Checkout-Claim': claims.get(ref) } }); break; }
     } catch (e) { if (e.message === MSG.busy) await new Promise(r => setTimeout(r, 4000)); }
     await new Promise(r => setTimeout(r, Math.min(1500 + i * 500, 5000)));
   }
@@ -109,7 +122,8 @@ async function run() {
     $('#again').onclick = () => { root.innerHTML = '<h1 class="display lg">Checking your payment…</h1><div class="loading" style="padding:0">One moment</div>'; run(); };
     return;
   }
-  if (s.status === 'failed') { root.outerHTML = tryAgain(s); return; }
+  if (s.status === 'failed' && REFUND.includes(s.error)) { root.outerHTML = await refundOwed(s); return; }
+  if (verdict.status === 'failed' || s.status !== 'issued') { root.outerHTML = tryAgain({ ...s, error: verdict.error }); return; }
   done(s);
 }
 run();

@@ -60,6 +60,23 @@ test('homepage "Get tickets" opens a real night and a guest can pay, get a ticke
   assert.deepEqual(page.errors, []);
 });
 
+test('a declined payment never shows as paid: the guest sees "not paid" and a way back', async () => {
+  const page = await phone();
+  const before = docs('tickets').length;
+  await page.goto(`${base}/tickets.html?event=dev-afro`, { waitUntil: 'networkidle' });
+  await page.click('.type:not([disabled])'); await page.click('#barGo');
+  await page.waitForURL(/checkout\.html/); await page.fill('#phone', '024 555 0101');
+  await page.click('#pay');
+  await page.waitForURL(/dev\/paystack/); await page.getByRole('button', { name: 'Decline' }).click();
+  await page.waitForURL(/payment-return/);
+  await page.getByText(/payment didn’t go through/i).waitFor({ timeout: 20000 });
+  assert.doesNotMatch(await page.textContent('body'), /you’re in/i, 'nothing says you are in');
+  assert.equal(await page.textContent('.stamp'), 'Not paid');
+  assert.match(await page.getAttribute('a:has-text("Try again")', 'href'), /tickets\.html\?event=dev-afro/);
+  assert.equal(docs('tickets').length, before, 'no ticket issued');
+  assert.deepEqual(page.errors, []);
+});
+
 test('checkout is one page: details first, the line is optional and folded away; write your own or skip it', async () => {
   const page = await phone();
   await page.goto(`${base}/checkout.html?event=dev-afro&type=dev-afro-reg&qty=1`, { waitUntil: 'networkidle' });
