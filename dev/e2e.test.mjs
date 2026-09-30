@@ -174,7 +174,7 @@ test('pay in bits: partial payment gets no ticket and no draw spot; the final pa
   await page.click('#lineBox summary'); await page.getByRole('radio', { name: 'SAMPLE LINE FOUR.' }).click();
   await page.fill('#name', 'Yaw Boateng'); await page.fill('#phone', '0241112222');
   assert.equal(await page.isVisible('#ack'), false, 'no tick box for paying in full');
-  await page.getByRole('radio', { name: /pay in bits/i }).click(); await page.fill('#dep', '30');
+  await page.click('#bitsMode'); await page.fill('#dep', '30');
   assert.match(await page.textContent('#bitsNote'), /forfeited once the night starts/, 'the deadline shows above Pay');
   assert.equal(await page.isChecked('#ack'), false, 'unticked by default');
   await page.click('#pay'); await page.getByText(/tick the box/i).waitFor();

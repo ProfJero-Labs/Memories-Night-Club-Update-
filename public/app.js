@@ -26,6 +26,14 @@ export function whenLabel(d) {
   if (days > 1 && days < 7) return `This ${new Date(d).toLocaleDateString('en-GB', { timeZone: 'UTC', weekday: 'long' })}`;
   return 'Next at Memories';
 }
+// Phones: the sticky bar that keeps the one next step on screen (tickets, tables, a night). Hidden
+// on desktop, where the page's own button is already in view.
+export function buyBar({ sum = '', small = '', label, href }) {
+  let bar = $('#buybar');
+  if (!bar) { bar = document.createElement('aside'); bar.className = 'buybar'; bar.id = 'buybar'; bar.setAttribute('aria-label', label); document.body.append(bar); }
+  bar.innerHTML = `${sum ? `<div class="sum">${esc(sum)}${small ? `<small>${esc(small)}</small>` : ''}</div>` : ''}<a class="btn red" href="${esc(href)}">${esc(label)} <span class="arrow">→</span></a>`;
+  requestAnimationFrame(() => { bar.classList.add('show'); if (innerWidth < 900) document.body.style.setProperty('--bar-h', `${bar.offsetHeight}px`); });
+}
 export const img = (src, alt, cls = '', eager = false) => src ? `<img src="${esc(src)}" alt="${esc(alt)}" class="${cls}" ${eager ? 'fetchpriority="high"' : 'loading="lazy"'} decoding="async">` : '';
 
 // ── API ──

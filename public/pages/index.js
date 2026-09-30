@@ -1,5 +1,5 @@
 // index.html: page script (kept out of the HTML so the CSP can forbid inline scripts).
-import { chrome, api, esc, img, dateStamp, doors, shortDate, whenLabel, $, loading, errorState, videoOk, bgVideo } from '../app.js';
+import { chrome, api, esc, img, dateStamp, doors, shortDate, whenLabel, $, loading, errorState, videoOk, bgVideo, money, buyBar } from '../app.js';
 
 const s = await chrome('home');
 // The wide photo behind the homepage hero: the next night's own hero image, else the site's.
@@ -47,9 +47,10 @@ async function load() {
       <h2 class="display">${esc(hero.name)}</h2>
       <div class="meta"><span>${esc(shortDate(hero.date))}</span><span class="muted">${esc(doors(hero))}</span></div>
       <div class="row-actions">
-        ${hero.soldOut ? '<span class="btn" aria-disabled="true">Sold out</span>' : `<a class="btn red" href="tickets.html?event=${encodeURIComponent(hero.id)}">Get tickets <span class="arrow">→</span></a>`}
+        ${hero.soldOut ? '<span class="btn" aria-disabled="true">Sold out</span>' : `<a class="btn red" href="tickets.html?event=${encodeURIComponent(hero.id)}">Get tickets${hero.fromPesewas ? ` · from ${money(hero.fromPesewas)}` : ''} <span class="arrow">→</span></a>`}
         <a class="btn" href="tables.html?event=${encodeURIComponent(hero.id)}">Book a table</a>
       </div>`;
+  if (!hero.soldOut) buyBar({ sum: hero.fromPesewas ? `From ${money(hero.fromPesewas)}` : '', small: `${hero.name} · ${shortDate(hero.date)}`, label: 'Get tickets', href: `tickets.html?event=${encodeURIComponent(hero.id)}` });
   const rest = events.filter(e => e.id !== hero.id).slice(0, 3);
   if (rest.length) { $('#more').hidden = false; $('#moreRow').innerHTML = rest.map(poster).join(''); }
 }

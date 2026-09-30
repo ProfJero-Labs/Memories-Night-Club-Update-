@@ -45,10 +45,17 @@ export const autoStylesFrom = docs => monthStyles(docs.filter(x => x.fields.acti
 export async function autoStyleFor(env, eventId) { return autoStylesFrom(await listDocs(env, 'events')).get(eventId) || null; }
 
 export async function publicEvents(env) {
-  const [docs, settings] = await Promise.all([listDocs(env, 'events'), getSettings(env)]);
+  const [docs, settings, onSale] = await Promise.all([listDocs(env, 'events'), getSettings(env), queryWhere(env, 'ticket_types', [{ field: 'active', value: true }])]);
   const auto = autoStylesFrom(docs);
+  // "From GHS 100" on the home page and the nights wall: the cheapest ticket still on sale per night.
+  const from = new Map();
+  for (const t of onSale) {
+    const p = Number(t.fields.pricePesewas || 0), left = t.fields.remaining;
+    if (!(p > 0) || (typeof left === 'number' && left <= 0)) continue;
+    if (!from.has(t.fields.eventId) || p < from.get(t.fields.eventId)) from.set(t.fields.eventId, p);
+  }
   return docs.filter(x => isLive(x.fields) && !isOver(x.fields))
-    .map(x => ({ ...publicEvent(x.id, x.fields, settings), autoStyle: auto.get(x.id) || null }))
+    .map(x => ({ ...publicEvent(x.id, x.fields, settings), autoStyle: auto.get(x.id) || null, fromPesewas: from.get(x.id) ?? null }))
     .sort((a, b) => new Date(a.date) - new Date(b.date));
 }
 

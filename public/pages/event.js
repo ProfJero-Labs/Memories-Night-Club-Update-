@@ -1,5 +1,5 @@
 // event.html: page script (kept out of the HTML so the CSP can forbid inline scripts).
-import { chrome, api, esc, img, params, dateStamp, doors, longDate, $, errorState, shareUrl, setMeta, setJsonLd, videoOk, bgVideo } from '../app.js';
+import { chrome, api, esc, img, params, dateStamp, doors, longDate, shortDate, $, errorState, shareUrl, setMeta, setJsonLd, videoOk, bgVideo, money, buyBar } from '../app.js';
 const id = params.get('id');
 // Buying moved to its own page. Old links (flyers, WhatsApp, "#tickets", "?type=") go straight there.
 const legacyType = params.get('type');
@@ -32,6 +32,7 @@ function render(b, s) {
   describe(b, s);
   const ticketsOpen = !e.soldOut && !e.over && b.ticketTypes.some(t => !t.soldOut);
   // The one way in, or an honest reason there isn't one.
+  const from = Math.min(...b.ticketTypes.filter(t => !t.soldOut).map(t => t.pricePesewas));
   const closed = e.over ? 'This night has passed' : !b.ticketTypes.length ? 'Tickets aren’t on sale yet' : 'Sold out';
   main.innerHTML = `${e.heroVideo && videoOk() ? `<div class="event-banner">${bgVideo(e.heroVideo, e.heroImage)}</div>` : e.heroImage ? `<div class="event-banner">${img(e.heroImage, '', '', true)}</div>` : ''}<div class="event-hero">
     <div class="event-art">${img(e.artwork, `${e.name} flyer`, '', true) || `<div style="aspect-ratio:4/5;display:grid;place-items:center">${dateStamp(e.date, 'red')}</div>`}</div>
@@ -41,7 +42,7 @@ function render(b, s) {
       <div class="meta"><span>${esc(longDate(e.date))}</span><span class="muted">${esc(doors(e))}</span>${venue ? `<a class="muted" href="visit.html" style="color:inherit">${esc(venue)}</a>` : ''}</div>
       ${e.description ? `<p class="desc">${esc(e.description)}</p>` : ''}
       <div class="row-actions">
-        ${ticketsOpen ? `<a class="btn red" href="tickets.html?event=${encodeURIComponent(e.id)}">Get tickets <span class="arrow">→</span></a>` : `<span class="btn" aria-disabled="true">${closed}</span>`}
+        ${ticketsOpen ? `<a class="btn red" href="tickets.html?event=${encodeURIComponent(e.id)}">Get tickets · from ${money(from)} <span class="arrow">→</span></a>` : `<span class="btn" aria-disabled="true">${closed}</span>`}
         ${b.tablePackages.length && !e.over ? `<a class="btn" href="tables.html?event=${encodeURIComponent(e.id)}">Book a table</a>` : ''}
       </div>
       <button type="button" class="link" id="share" style="justify-self:start">Share this night ↗</button>
@@ -59,6 +60,7 @@ function render(b, s) {
     </div>
   </div>`;
   $('#share').onclick = () => shareUrl(`${e.name} · Memories`);
+  if (ticketsOpen) buyBar({ sum: `From ${money(from)}`, small: `${e.name} · ${shortDate(e.date)}`, label: 'Get tickets', href: `tickets.html?event=${encodeURIComponent(e.id)}` });
 }
 
 async function load() {

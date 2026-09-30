@@ -50,7 +50,7 @@ const flows = {
   async bits() {
     await page.goto(`${base}/checkout.html?event=dev-piano&type=dev-piano-reg&qty=1`, { waitUntil: 'networkidle' });
     await page.fill('#name', 'Yaw Boateng'); await page.fill('#phone', '0241112222');
-    await page.getByRole('radio', { name: /pay in bits/i }).click(); await page.fill('#dep', '40'); await page.check('#ack'); await shot('bits', true);
+    await page.click('#bitsMode'); await page.fill('#dep', '40'); await page.check('#ack'); await shot('bits', true);
     await page.click('#pay'); await page.waitForURL(/dev\/paystack/); await page.getByRole('button', { name: 'Pay' }).click();
     await page.waitForURL(/payment-return/); await page.getByText(/to go/i).waitFor({ timeout: 20000 }); await shot('partial', true);
     await page.getByRole('link', { name: /pay more now/i }).click(); await page.waitForLoadState('networkidle'); await shot('installment', true);

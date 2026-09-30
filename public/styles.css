@@ -154,6 +154,12 @@ h1, h2, h3 { margin: 0; }
 .next-art { position: relative; display: block; background: var(--ink-3); min-height: 200px; overflow: hidden; }
 .next-art[hidden] { display: none; }
 .next-art img { position: relative; width: 100%; height: auto; max-height: 86vh; object-fit: contain; margin: 0 auto; }
+/* Phones: the flyer shares the first screen with the night and its button (the sticky bar does the rest). */
+@media (max-width: 859px) {
+  .brand { padding-top: 18px; } .brand-logo { max-width: 300px; } .brand .strip { margin-top: 14px; }
+  .next-art img { max-height: 52vh; }
+  .event-art img { max-height: 58vh; }
+}
 .next-art .art-fill { position: absolute; inset: -40px; background: center / cover no-repeat; filter: blur(40px) brightness(.45) saturate(1.2); }
 .next-art .date-stamp { position: absolute; left: 14px; top: 14px; background: rgba(13, 10, 9, .82); }
 .next-copy { display: grid; gap: 18px; align-content: start; }
@@ -277,7 +283,8 @@ h1, h2, h3 { margin: 0; }
   transform: translateY(110%); transition: transform .25s cubic-bezier(.2, .7, .2, 1);
 }
 .buybar.show { transform: none; }
-.buybar .sum { font: 400 26px/1 var(--display); white-space: nowrap; }
+.buybar .sum { font: 400 26px/1 var(--display); white-space: nowrap; min-width: 0; }
+.buybar .sum small { max-width: 42vw; overflow: hidden; text-overflow: ellipsis; }
 .buybar .sum small { display: block; font: 600 11px var(--sans); letter-spacing: .14em; color: var(--muted); margin-top: 4px; text-transform: uppercase; }
 .buybar .btn { flex: 1; min-height: 54px; }
 @media (min-width: 900px) { .buybar { display: none; } body { padding-bottom: 0; } }
@@ -564,3 +571,18 @@ h1, h2, h3 { margin: 0; }
 .ack { display: flex; gap: 12px; align-items: flex-start; font: 400 15px/1.45 var(--sans); cursor: pointer; padding: 10px 0; }
 .ack[hidden] { display: none; }
 .ack input { flex: none; width: 24px; height: 24px; margin: 1px 0 0; accent-color: var(--crimson); }
+
+/* Checkout: optional sections fold away behind full-width, thumb-sized rows. */
+.fold { border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+.fold + .fold { border-top: 0; }
+.fold > summary { list-style: none; cursor: pointer; min-height: 48px; display: flex; align-items: center; justify-content: space-between; gap: 12px; font: 600 15px var(--sans); color: var(--paper); }
+.fold > summary::-webkit-details-marker { display: none; }
+.fold > summary::after { content: '+'; font: 400 24px/1 var(--sans); color: var(--muted); }
+.fold[open] > summary::after { content: '−'; }
+.fold[open] { padding-bottom: 16px; }
+.bits-box { display: grid; gap: 16px; }
+.bits-box[hidden] { display: none; }
+/* Phones: Pay stays in reach while the guest scrolls the form. */
+@media (max-width: 899px) {
+  .pay-dock { position: sticky; bottom: 0; z-index: 5; background: var(--ink); margin: 0 calc(-1 * var(--gutter)); padding: 10px var(--gutter) calc(10px + env(safe-area-inset-bottom)); border-top: 1px solid var(--line-2); }
+}
