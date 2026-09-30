@@ -5,7 +5,7 @@ import { logError } from './lib/log.js';
 import { verifyStaff, requireRole, MONEY, DOOR } from './lib/auth.js';
 import { smsRequest } from './lib/notify.js';
 import { getSettings, publicEvents, eventBundle, calendar, createPrivateRequest, publicTicket } from './public.js';
-import { initiateTicket, initiateTable, startInstallment, topupInstallment, lookupInstallments, textOrderCodes, resendTicketLink, NEUTRAL_CODES, NEUTRAL_LINK, fulfill, checkoutStatus, forfeitStalePlans } from './checkout.js';
+import { initiateTicket, initiateTable, startInstallment, topupInstallment, lookupInstallments, textOrderCodes, resendTicketLink, textTicketLinks, NEUTRAL_CODES, NEUTRAL_LINK, NEUTRAL_TICKETS, fulfill, checkoutStatus, forfeitStalePlans } from './checkout.js';
 import { normalizePhone, normalizeOrderCode } from './lib/util.js';
 import { upsertRaffle, drawRaffle } from './raffle.js';
 import { checkin, verifyTicket, doorSummary, doorSearch } from './door.js';
@@ -56,6 +56,13 @@ async function route(req, env, ctx) {
     if (await throttled(req, env, 'find', 'strict') || await throttled(req, env, 'find-phone', 'strict', ph)) return tooMany(req, env);
     await later(ctx, textOrderCodes(env, { phone: ph }));
     return ok(req, env, { message: NEUTRAL_CODES });
+  }
+  if (m === 'POST' && p === '/api/tickets/find') {
+    const b = await body(req), ph = normalizePhone(b.phone);
+    if (!ph) return fail(req, env, 'Use a Ghana number, e.g. 024 123 4567.');
+    if (await throttled(req, env, 'tickets-find', 'strict') || await throttled(req, env, 'tickets-find-phone', 'strict', ph)) return tooMany(req, env);
+    await later(ctx, textTicketLinks(env, { phone: ph }));
+    return ok(req, env, { message: NEUTRAL_TICKETS });
   }
   if (m === 'POST' && p === '/api/installments/resend-link') {
     const b = await body(req), ph = normalizePhone(b.phone), code = normalizeOrderCode(b.planId);

@@ -94,7 +94,7 @@ function done(s) {
     const n = s.ticketCount || 0;
     root.outerHTML = `<div class="state-msg"><span class="stamp">Paid</span><h1 class="display lg">You’re in.</h1>
       <p>Your ticket link${n > 1 ? 's are' : ' is'} on the way by text to ${s.phoneHint ? esc(s.phoneHint) : 'the phone on the order'}. Open ${n > 1 ? 'them' : 'it'} from there.</p>
-      ${s.planId ? `<p>Order ${esc(s.planId)}. No text? Go to <a href="installment.html?code=${encodeURIComponent(s.planId)}">Pay the rest</a> and use “Text me the link”.</p>` : ''}
+      ${s.planId ? `<p>Order ${esc(s.planId)}. No text? Go to <a href="installment.html?code=${encodeURIComponent(s.planId)}">Pay the rest</a> and use “Text me the link”.</p>` : '<p>No text in a few minutes? <a href="find.html">Find my ticket</a>.</p>'}
       <a class="btn" href="index.html">Back to Memories</a></div>`;
     return;
   }

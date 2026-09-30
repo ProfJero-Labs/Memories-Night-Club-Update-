@@ -6,8 +6,13 @@ body.staff::before { display: none; }
 .staff-head .logo img { height: 18px; }
 .staff-head .who { margin-left: auto; font-size: 12px; color: var(--muted); letter-spacing: .06em; text-align: right; line-height: 1.3; }
 .staff-head button { background: none; border: 1px solid var(--line-2); padding: 8px 12px; font-size: 12px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; }
-.tabs { display: flex; gap: 0; overflow-x: auto; border-bottom: 1px solid var(--line); scrollbar-width: none; max-width: 1400px; margin: 0 auto; padding: 0 var(--gutter); }
-.tabs button, .tabs a { flex: 0 0 auto; background: none; border: 0; border-bottom: 3px solid transparent; padding: 14px 14px 11px; font: 700 12px var(--sans); letter-spacing: .14em; text-transform: uppercase; color: var(--muted); text-decoration: none; }
+.tabs { display: flex; gap: 0; border-bottom: 1px solid var(--line); max-width: 1400px; margin: 0 auto; padding: 0 var(--gutter); }
+.tabs button, .tabs a { flex: 0 0 auto; min-height: 48px; background: none; border: 0; border-bottom: 3px solid transparent; padding: 14px 14px 11px; font: 700 12px var(--sans); letter-spacing: .14em; text-transform: uppercase; color: var(--muted); text-decoration: none; cursor: pointer; }
+@media (max-width: 600px) { .tabs { padding: 0 8px; } .tabs button { flex: 1 1 0; padding: 14px 2px 11px; letter-spacing: .04em; text-align: center; } }
+.subtabs { display: flex; flex-wrap: wrap; gap: 8px; max-width: 1400px; margin: 0 auto; padding: 12px var(--gutter) 0; }
+.subtabs[hidden] { display: none; }
+.subtabs button, .subtabs a { min-height: 44px; padding: 0 14px; display: inline-flex; align-items: center; border: 1px solid var(--line-2); background: transparent; color: var(--paper); font: 600 14px var(--sans); text-decoration: none; cursor: pointer; }
+.subtabs [aria-pressed="true"] { background: var(--paper); color: var(--ink); border-color: var(--paper); }
 .tabs [aria-selected="true"] { color: var(--paper); border-bottom-color: var(--crimson); }
 .panel { max-width: 1400px; margin: 0 auto; padding: 24px var(--gutter) 80px; }
 .panel h1 { font: 400 clamp(34px, 6vw, 52px)/1 var(--display); text-transform: uppercase; margin-bottom: 18px; }
@@ -88,3 +93,11 @@ details.more > summary { cursor: pointer; font-weight: 700; padding: 8px 0; }
    screen until the end of the form scrolls into view). */
 .savebar { position: sticky; bottom: 0; z-index: 5; margin: 0 -18px -18px; padding: 12px 18px calc(12px + env(safe-area-inset-bottom)); background: var(--ink-2); border-top: 1px solid var(--line-2); }
 .img-drop .thumb.vid video { width: 100%; height: 100%; object-fit: cover; display: block; }
+
+/* Night editor: one part of the night at a time. */
+.night-sum { margin: -6px 0 14px; color: var(--muted); font-size: 14px; }
+.sec-tabs { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 18px; }
+.sec-tabs button { min-height: 44px; padding: 0 16px; border: 1px solid var(--line-2); background: transparent; color: var(--paper); font: 700 13px var(--sans); letter-spacing: .08em; text-transform: uppercase; cursor: pointer; }
+.sec-tabs button[aria-pressed="true"] { background: var(--paper); color: var(--ink); border-color: var(--paper); }
+.sec { display: grid; gap: 16px; }
+.sec[hidden], #evForm[hidden] { display: none !important; }

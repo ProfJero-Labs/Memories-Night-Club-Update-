@@ -53,7 +53,7 @@ async function load() {
     document.title = `${T.eventName} · Your ticket · Memories`;
     view(T, await qrSvg(verifyUrl(token)).catch(() => ''));
   } catch (e) {
-    if (e.status === 404) root.innerHTML = '<div class="state-msg"><h2 class="display">This ticket isn’t valid.</h2><p>Check the link from your text message.</p><a class="btn" href="index.html">Back to Memories</a></div>';
+    if (e.status === 404) root.innerHTML = '<div class="state-msg"><h2 class="display">This ticket isn’t valid.</h2><p>Check the link from your text message, or have it sent again.</p><a class="btn red" href="find.html">Find my ticket</a></div>';
     else errorState(root, e.message, load);
   }
 }

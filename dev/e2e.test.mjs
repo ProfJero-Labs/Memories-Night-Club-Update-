@@ -41,6 +41,16 @@ async function buyTicket(page, { name, line, event = 'dev-afro', type }) {
   return new URL(page.url()).searchParams.get('token');
 }
 
+// Control-room tabs open by address; wait until that tab is the one showing and has loaded.
+async function openTab(page, tab) {
+  await page.evaluate(t => { location.hash = t; }, tab);
+  await page.waitForFunction(t => {
+    const single = { overview: 'tonight', nights: 'nights', requests: 'requests' }[t];
+    const on = single ? document.querySelector(`[data-group="${single}"]`)?.getAttribute('aria-selected') === 'true' : document.querySelector(`.subtabs [data-tab="${t}"]`)?.getAttribute('aria-pressed') === 'true';
+    return on && location.hash === `#${t}` && !document.querySelector('#panel .loading');
+  }, tab);
+}
+
 test('homepage "Get tickets" opens a real night and a guest can pay, get a ticket and a share image', async () => {
   const page = await phone();
   await page.goto(base, { waitUntil: 'networkidle' });
@@ -144,7 +154,7 @@ test('accessibility: axe finds no WCAG 2 A/AA or best-practice violations on the
   const { readFileSync } = await import('node:fs');
   const axe = readFileSync(new URL('../worker/node_modules/axe-core/axe.min.js', import.meta.url), 'utf8');
   const found = [];
-  for (const u of ['index.html', 'nights.html', 'event.html?id=dev-afro', 'tickets.html?event=dev-afro', 'checkout.html?event=dev-afro&type=dev-afro-reg&qty=1', 'tables.html?event=dev-afro', 'private.html', 'installment.html', 'visit.html', 'login.html']) {
+  for (const u of ['index.html', 'nights.html', 'event.html?id=dev-afro', 'tickets.html?event=dev-afro', 'checkout.html?event=dev-afro&type=dev-afro-reg&qty=1', 'tables.html?event=dev-afro', 'private.html', 'installment.html', 'find.html', 'visit.html', 'login.html']) {
     const page = await phone();
     await page.goto(`${base}/${u}`, { waitUntil: 'networkidle' });
     await page.evaluate(axe);
@@ -250,7 +260,7 @@ test('Book an event: Corporate opens the short form with Corporate chosen; admin
 
   const admin = await phone(1280);
   await admin.goto(`${base}/login.html`); await admin.fill('#email', 'manager@dev'); await admin.fill('#pw', 'memories-dev'); await admin.click('#go');
-  await admin.waitForURL(/admin\.html/); await admin.click('[data-tab=requests]');
+  await admin.waitForURL(/admin\.html/); await openTab(admin, 'requests');
   await admin.locator(`[data-open="${req.id}"]`).click();
   admin.once('dialog', d => d.accept());
   await admin.locator(`[data-set="ACCEPTED"][data-id="${req.id}"]`).click();
@@ -267,6 +277,7 @@ test('admin changes a flyer and a price; the public page shows it with no deploy
   await admin.setInputFiles('#artFile', new URL('./fixtures/dnd-party-poster.jpeg', import.meta.url).pathname);
   await admin.getByText(/uploaded/i).waitFor();
   await admin.click('#save'); await admin.getByText(/live on the public site/i).waitFor();
+  await admin.click('[data-sec-go="tickets"]');
   const row = admin.locator('tr[data-row="dev-piano-reg"]');
   await row.locator('[data-k=price]').fill('125'); await row.locator('[data-save]').click();
   await until(() => store.get('ticket_types', 'dev-piano-reg').fields.pricePesewas === 12500, 'the new price to be saved');
@@ -287,6 +298,8 @@ test('control room: an unsaved flyer is not lost when a ticket row is saved; a p
   assert.match(await admin.textContent('#saveState'), /unsaved/i, 'flyer upload marks the night unsaved');
   assert.equal((await admin.locator('#evOrg option:checked').textContent()).trim(), 'orga@dev', 'organiser shown by email, not UID');
   assert.ok(!(await admin.locator('#panel').innerText()).includes('uid-org-a'), 'no UID on screen');
+  await admin.click('[data-sec-go="tickets"]');
+  assert.equal(await admin.isVisible('#evForm'), false, 'one part of the night at a time');
   const row = admin.locator('tr[data-row="dev-afro-reg"]');
   await row.locator('[data-k=price]').fill('99');
   assert.match(await row.getAttribute('class'), /dirty/, 'changed row is highlighted');
@@ -301,6 +314,8 @@ test('control room: an unsaved flyer is not lost when a ticket row is saved; a p
   await guest.goto(`${base}/tickets.html?event=dev-afro`, { waitUntil: 'networkidle' });
   assert.match(await guest.textContent('[data-type="dev-afro-reg"]'), /GHS 99/);
 
+  assert.equal(await admin.getAttribute('[data-sec-go="tickets"]', 'aria-pressed'), 'true', 'still on Tickets after the reload');
+  await admin.click('[data-sec-go="details"]');
   await admin.uncheck('#evPublic'); await admin.click('#save');
   await admin.getByText(/NOT on the public site/).waitFor();
   await until(() => store.get('events', 'dev-afro').fields.visibility === 'private', 'the night to be saved private');
@@ -313,7 +328,7 @@ test('control room: refunds owed are listed and can be marked refunded with a no
   store.seed('pending_checkouts', 'e2e-refund', { kind: 'ticket', eventName: 'Afrobeats Friday', buyerName: 'Refund Me', buyerPhone: '0247778888', amountPesewas: 15000, status: 'failed', error: 'sold_out_after_payment', refundStatus: 'manual_required', createdAt: new Date().toISOString() });
   const admin = await phone(1280);
   await admin.goto(`${base}/login.html`); await admin.fill('#email', 'manager@dev'); await admin.fill('#pw', 'memories-dev'); await admin.click('#go');
-  await admin.waitForURL(/admin\.html/); await admin.click('[data-tab=refunds]');
+  await admin.waitForURL(/admin\.html/); await openTab(admin, 'refunds');
   const row = admin.locator('tr', { hasText: 'Refund Me' });
   await row.waitFor();
   assert.match(await row.textContent(), /GHS 150/);
@@ -334,12 +349,17 @@ test('control room on a phone: every tab fits the screen; tables become labelled
   await page.goto(`${base}/login.html`); await page.fill('#email', 'admin@dev'); await page.fill('#pw', 'memories-dev'); await page.click('#go');
   await page.waitForURL(/admin\.html/);
   for (const tab of ['overview', 'nights', 'bookings', 'requests', 'bits', 'refunds', 'bar', 'settings', 'staff']) {
-    await page.click(`[data-tab=${tab}]`); await page.waitForLoadState('networkidle');
+    await openTab(page, tab);
     await page.waitForFunction(() => !document.querySelector('#panel .loading'));
     const w = await page.evaluate(() => document.documentElement.scrollWidth);
     assert.ok(w <= 390, `${tab} is ${w}px wide on a 390px phone`);
   }
-  await page.click('[data-tab=bits]'); await page.waitForFunction(() => !document.querySelector('#panel .loading'));
+  assert.ok(await page.locator('[data-group]').count() <= 5, 'five places at most in the top bar');
+  for (const b of await page.locator('[data-group]').all()) { const r = await b.boundingBox(); assert.ok(r.x >= 0 && r.x + r.width <= 390 && r.height >= 44, 'every top button is on screen and thumb-sized'); }
+  await page.click('[data-group=money]');
+  await page.locator('.subtabs [data-tab=refunds]').click(); await page.waitForFunction(() => !document.querySelector('#panel .loading'));
+  assert.match(page.url(), /#refunds$/);
+  await openTab(page, 'bits');
   if (await page.locator('table.tbl tbody td').count()) assert.ok(await page.locator('table.tbl tbody td[data-label="Owing"]').count(), 'cells carry their column label');
   assert.deepEqual(page.errors, []);
 });
@@ -458,7 +478,7 @@ test('XSS payloads in admin-entered and guest-entered text render as text on pub
 });
 
 test('every public page renders at 320px with no sideways scroll and no script errors', async () => {
-  for (const p of ['/', '/nights.html', '/event.html?id=dev-afro', '/checkout.html?event=dev-afro&type=dev-afro-reg&qty=2', '/tables.html?event=dev-afro', '/private.html', '/installment.html', '/visit.html', '/login.html']) {
+  for (const p of ['/', '/nights.html', '/event.html?id=dev-afro', '/checkout.html?event=dev-afro&type=dev-afro-reg&qty=2', '/tables.html?event=dev-afro', '/private.html', '/installment.html', '/find.html', '/visit.html', '/login.html']) {
     const page = await phone(320);
     await page.goto(base + p, { waitUntil: 'networkidle' });
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth), 0, `overflow on ${p}`);

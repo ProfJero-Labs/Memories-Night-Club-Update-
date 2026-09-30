@@ -341,6 +341,23 @@ export async function textOrderCodes(env, { phone }) {
   return sendSms(env, ph, `MEMORIES\nYour orders:\n${lines.join('\n')}\nPay or check: ${siteUrl(env, '/installment.html')}`);
 }
 
+// "Lost your ticket?" for anyone: every ticket bought (or comped) on this phone for a night that
+// hasn't happened yet is texted to that same phone. The reply on the page never changes, so this
+// can't be used to learn whether a number has tickets.
+export const NEUTRAL_TICKETS = 'If that number has tickets for an upcoming night, we’ve texted the links to it.';
+export async function textTicketLinks(env, { phone }) {
+  const ph = normalizePhone(phone); if (!ph) return false;
+  const orders = (await queryWhere(env, 'orders', [{ field: 'buyerPhone', value: ph }]))
+    .filter(o => o.fields.status === 'confirmed' && ['ticket', 'comp'].includes(o.fields.kind) && (o.fields.ticketIds || []).length);
+  const nights = new Map();
+  for (const id of new Set(orders.map(o => o.fields.eventId))) { const ev = await getDoc(env, 'events', id); if (ev && !isOver(ev.fields)) nights.set(id, ev.fields); }
+  const upcoming = orders.filter(o => nights.has(o.fields.eventId))
+    .sort((a, b) => new Date(nights.get(a.fields.eventId).date) - new Date(nights.get(b.fields.eventId).date)).slice(0, 3);
+  if (!upcoming.length) return false;
+  const lines = upcoming.map(o => `${nights.get(o.fields.eventId).name || o.fields.eventName || 'Your night'}: ${o.fields.ticketIds.map(t => siteUrl(env, `/ticket.html?token=${t}`)).join(' ')}`);
+  return sendSms(env, ph, `MEMORIES\nYour tickets:\n${lines.join('\n')}`);
+}
+
 export async function resendTicketLink(env, { planId, phone }) {
   const c = normalizeOrderCode(planId), ph = normalizePhone(phone);
   if (!c || !ph) return false;

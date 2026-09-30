@@ -62,20 +62,21 @@ const flows = {
   async admin() {
     const login = async (email) => { await page.goto(`${base}/login.html`); await page.fill('#email', email); await page.fill('#pw', 'memories-dev'); await page.click('#go'); await page.waitForLoadState('networkidle'); };
     await login('admin@dev'); await shot('overview', true);
-    await page.click('[data-tab=nights]'); await page.waitForLoadState('networkidle'); await shot('nights');
+    await page.evaluate(t => { location.hash = t; }, 'nights'); await page.waitForLoadState('networkidle'); await shot('nights');
     await page.locator('[data-edit="dev-afro"]').click(); await page.waitForLoadState('networkidle');
     await page.setInputFiles('#artFile', new URL('./fixtures/dnd-party-poster.jpeg', import.meta.url).pathname);
     await page.getByText(/uploaded/i).waitFor();
     await page.fill('#evName', 'Afrobeats Friday (Edited)');
     await page.click('#save'); await page.getByText(/live on the public site/i).waitFor(); await shot('night-editor', true);
+    await page.click('[data-sec-go="tickets"]'); await shot('night-tickets', true);
     const reg = page.locator('tr[data-row="dev-afro-reg"]'); await reg.locator('[data-k=price]').fill('150'); await reg.locator('[data-save]').click(); await page.waitForTimeout(800);
     const pub = await (await fetch(`${base}/api/events/dev-afro`)).json();
     console.log('PUBLIC AFTER EDIT:', pub.event.name, '|', pub.event.artwork.includes('/dev/uploads/') ? 'new flyer' : 'OLD FLYER', '|', pub.ticketTypes.find(t => t.id === 'dev-afro-reg').pricePesewas);
-    await page.click('[data-tab=requests]'); await page.waitForLoadState('networkidle'); await page.locator('[data-open]').first().click(); await shot('requests', true);
+    await page.evaluate(t => { location.hash = t; }, 'requests'); await page.waitForLoadState('networkidle'); await page.locator('[data-open]').first().click(); await shot('requests', true);
     page.once('dialog', d => d.accept()); await page.locator('[data-set="ACCEPTED"]').first().click(); await page.waitForTimeout(800); await shot('requests-accepted');
-    await page.click('[data-tab=settings]'); await page.waitForLoadState('networkidle'); await shot('settings', true);
-    await page.click('[data-tab=bookings]'); await page.waitForLoadState('networkidle'); await shot('bookings', true);
-    await page.click('[data-tab=staff]'); await page.waitForLoadState('networkidle'); await shot('staff', true);
+    await page.evaluate(t => { location.hash = t; }, 'settings'); await page.waitForLoadState('networkidle'); await shot('settings', true);
+    await page.evaluate(t => { location.hash = t; }, 'bookings'); await page.waitForLoadState('networkidle'); await shot('bookings', true);
+    await page.evaluate(t => { location.hash = t; }, 'staff'); await page.waitForLoadState('networkidle'); await shot('staff', true);
     await page.goto(`${base}/nights.html`, { waitUntil: 'networkidle' }); await shot('public-nights', true);
   },
   async door() {

@@ -10,9 +10,13 @@ const user = await requireStaff(CMS);
 staffHeader(user, 'Control room');
 const can = roles => roles.includes(user.role);
 const TABS = [
-  ['overview', 'Overview', CMS], ['nights', 'Nights', CMS], ['payments', 'Payments', CMS], ['bookings', 'Bookings', CMS], ['requests', 'Event requests', CMS],
+  ['overview', 'Overview', CMS], ['nights', 'Nights', CMS], ['payments', 'Payments', CMS], ['bookings', 'Orders', CMS], ['requests', 'Event requests', CMS],
   ['bits', 'Pay in bits', MONEY], ['refunds', 'Refunds', MONEY], ['bar', 'Bar menu', CMS], ['settings', 'Site settings', MONEY], ['staff', 'Staff', ['superAdmin']],
 ].filter(t => can(t[2]));
+// Five places, not ten: related tabs sit together behind one button, with their own row underneath.
+const GROUPS = [['tonight', 'Tonight', ['overview']], ['nights', 'Nights', ['nights']], ['money', 'Money', ['payments', 'bookings', 'bits', 'refunds']], ['requests', 'Requests', ['requests']], ['setup', 'Setup', ['settings', 'bar', 'staff']]]
+  .map(([k, l, tabs]) => [k, l, tabs.filter(t => TABS.some(x => x[0] === t))]).filter(([, , tabs]) => tabs.length);
+const groupOf = tab => GROUPS.find(g => g[2].includes(tab)) || GROUPS[0];
 const panel = $('#panel');
 // Phones: every table becomes a stack of cards (CSS in admin.css). Each cell is labelled with its
 // column header here, once, whenever a tab renders, so no tab needs its own phone layout.
@@ -43,8 +47,17 @@ function bindVideo(id, msgEl, onChange) {
   $(`#${id}X`).onclick = () => { $(`#${id}T`).innerHTML = ''; $(`#${id}X`).hidden = true; $(`#${id}F`).value = ''; onChange(''); };
 }
 
-$('#tabs').innerHTML = TABS.map(([k, l]) => `<button role="tab" data-tab="${k}">${l}</button>`).join('') + '<a href="checkin.html">Door ↗</a>';
-$$('[data-tab]').forEach(b => b.onclick = () => show(b.dataset.tab));
+$('#tabs').innerHTML = GROUPS.map(([k, l]) => `<button role="tab" data-group="${k}">${l}</button>`).join('');
+$$('[data-group]').forEach(b => b.onclick = () => show(GROUPS.find(g => g[0] === b.dataset.group)[2][0]));
+const subtabs = document.createElement('nav'); subtabs.className = 'subtabs'; subtabs.setAttribute('aria-label', 'In this section'); $('#tabs').after(subtabs);
+function drawSubtabs(tab) {
+  const [g, , tabs] = groupOf(tab);
+  $$('[data-group]').forEach(b => b.setAttribute('aria-selected', String(b.dataset.group === g)));
+  const items = tabs.length > 1 ? tabs.map(k => `<button type="button" data-tab="${k}" aria-pressed="${k === tab}">${TABS.find(t => t[0] === k)[1]}</button>`) : [];
+  if (g === 'tonight') items.push('<a href="checkin.html">Door ↗</a>');
+  subtabs.innerHTML = items.join(''); subtabs.hidden = !items.length;
+  $$('[data-tab]', subtabs).forEach(b => b.onclick = () => show(b.dataset.tab));
+}
 let current = '';
 // Set by an editor with unsaved work; leaving asks first (tabs, back, closing the page).
 let unsaved = null;
@@ -55,7 +68,7 @@ function show(tab, arg, notice) {
   unsaved = null;
   current = next;
   if (location.hash.slice(1) !== current) location.hash = current;
-  $$('[data-tab]').forEach(b => b.setAttribute('aria-selected', String(b.dataset.tab === tab)));
+  drawSubtabs(tab);
   panel.innerHTML = '<div class="loading">Loading…</div>';
   ({ overview, nights, night, payments, bookings, requests, bits, refunds, bar, settings, staff })[tab](arg, notice).catch(fail);
 }
@@ -92,6 +105,8 @@ async function nights(id, notice) {
   $$('[data-edit]').forEach(b => b.onclick = () => show('nights', b.dataset.edit));
 }
 
+const NIGHT_SECS = [['details', 'Details'], ['look', 'Look'], ['tickets', 'Tickets'], ['tables', 'Tables'], ['draw', 'Draw'], ['comps', 'Comps']];
+let nightSec = 'details', nightSecId = null;
 const localInput = iso => (iso ? new Date(iso).toISOString().slice(0, 16) : ''); // Ghana = UTC
 async function night(id, notice) {
   const isNew = id === 'new';
@@ -102,7 +117,10 @@ async function night(id, notice) {
   ? `<a class="sbtn ghost" target="_blank" href="event.html?id=${encodeURIComponent(e.id)}">Public page ↗</a>`
   : pill('private — not on the public site', 'amber')}<a class="sbtn ghost" href="checkin.html?event=${encodeURIComponent(e.id)}">Door ↗</a>`}</div>
     <h1>${isNew ? 'New night' : esc(e.name)}</h1>
-    <form class="card" id="evForm" novalidate>
+    ${isNew ? '' : `<p class="night-sum">${[d.ticketTypes.filter(t => t.active !== false).length + ' ticket types', d.tablePackages.filter(t => t.active !== false).length + ' tables', d.raffle ? `draw ${d.raffle.status}` : 'no draw'].map(esc).join(' · ')}</p>`}
+    <nav class="sec-tabs" aria-label="Edit this night">${NIGHT_SECS.filter(([k]) => !isNew || ['details', 'look'].includes(k)).map(([k, l]) => `<button type="button" data-sec-go="${k}" aria-pressed="false">${l}</button>`).join('')}</nav>
+    <form class="card" id="evForm" data-sec-group="details look" novalidate>
+      <div data-sec="details" class="sec">
       <div class="grid2">
         <div class="sfield"><label for="evName">Name</label><input id="evName" maxlength="80" value="${esc(e.name || '')}" required></div>
         <div class="sfield"><label for="evDate">Date & start time (Ghana time)</label><input id="evDate" type="datetime-local" value="${esc(localInput(e.date))}" required></div>
@@ -110,6 +128,17 @@ async function night(id, notice) {
         <div class="sfield"><label for="evVenue">Venue (blank = site venue)</label><input id="evVenue" maxlength="120" value="${esc(e.venue || '')}"></div>
       </div>
       <div class="sfield"><label for="evDesc">Two lines, max (optional)</label><textarea id="evDesc" maxlength="240" style="min-height:64px">${esc(e.description || '')}</textarea></div>
+      <div class="toolbar" style="margin:0">
+        <label class="check"><input type="checkbox" id="evPublic" ${e.visibility === 'public' ? 'checked' : ''}> On the public site</label>
+        <label class="check"><input type="checkbox" id="evActive" ${e.active !== false ? 'checked' : ''}> Active</label>
+        <label class="check"><input type="checkbox" id="evSold" ${e.soldOut ? 'checked' : ''}> Sold out</label>
+        <label class="check"><input type="checkbox" id="evFeat" ${e.featured ? 'checked' : ''}> Lead on the homepage</label>
+      </div>
+      <div class="sfield"><label for="evOrg">Organiser</label><select id="evOrg"><option value="">Club night (no outside organiser)</option>${orgs.map(o => `<option value="${esc(o.uid)}" ${o.uid === e.organiserId ? 'selected' : ''}>${esc(o.email || 'Organiser account')}</option>`).join('')}${e.organiserId && !orgs.some(o => o.uid === e.organiserId) ? `<option value="${esc(e.organiserId)}" selected>Account no longer an organiser</option>` : ''}</select><span class="hint">They’ll see this night’s sales and can run its door. To add someone, give them the Organiser role under Staff.</span></div>
+      <div class="sfield"><label for="evOrgPct">Organiser’s share of each ticket (%)</label><input id="evOrgPct" type="number" min="0" max="100" value="${esc(e.organizerSharePct ?? 0)}"><span class="hint">Whole number, 0 to 100. Snapshotted onto every paid order — changing it later won’t move what’s already earned. Leave 0 for club nights.</span></div>
+      ${(user.role === 'superAdmin' || user.admin === true) ? `<div class="sfield"><label for="evEvolveitPct">Platform share for this event (%)</label><input id="evEvolveitPct" type="number" min="1" max="99" value="${esc(e.evolveitSharePct ?? '')}" placeholder="Blank for the default"><span class="hint">EvolveIT’s cut of every sale on this night. Super-admin only. Leave blank to use the platform default.</span></div>` : ''}
+      </div>
+      <div data-sec="look" class="sec">
       <div class="grid2">
         <div class="img-drop"><div class="thumb" id="artThumb" style="background-image:url('${esc(e.artwork || '')}')"></div><div class="sfield"><label for="artFile">Flyer</label><input id="artFile" type="file" accept="image/jpeg,image/png,image/webp"><span class="hint">Portrait works best. Shown on the homepage (when this is the next night), Nights, this night’s page and its tickets. Its colours become the ticket colours.</span></div></div>
         <div class="img-drop"><div class="thumb wide" id="heroThumb" style="background-image:url('${esc(e.heroImage || '')}')"></div><div class="sfield"><label for="heroFile">Hero image (optional)</label><input id="heroFile" type="file" accept="image/jpeg,image/png,image/webp"><span class="hint">A wide photo. Shown across the top of this night’s page, and behind it on the homepage when it’s the next night.</span></div></div>
@@ -124,30 +153,31 @@ async function night(id, notice) {
           </div>
           <div id="tPrev" aria-label="Ticket preview"></div>
         </div></div>
-      <div class="toolbar" style="margin:0">
-        <label class="check"><input type="checkbox" id="evPublic" ${e.visibility === 'public' ? 'checked' : ''}> On the public site</label>
-        <label class="check"><input type="checkbox" id="evActive" ${e.active !== false ? 'checked' : ''}> Active</label>
-        <label class="check"><input type="checkbox" id="evSold" ${e.soldOut ? 'checked' : ''}> Sold out</label>
-        <label class="check"><input type="checkbox" id="evFeat" ${e.featured ? 'checked' : ''}> Lead on the homepage</label>
-      </div>
-      <div class="sfield"><label for="evOrg">Organiser</label><select id="evOrg"><option value="">Club night (no outside organiser)</option>${orgs.map(o => `<option value="${esc(o.uid)}" ${o.uid === e.organiserId ? 'selected' : ''}>${esc(o.email || 'Organiser account')}</option>`).join('')}${e.organiserId && !orgs.some(o => o.uid === e.organiserId) ? `<option value="${esc(e.organiserId)}" selected>Account no longer an organiser</option>` : ''}</select><span class="hint">They’ll see this night’s sales and can run its door. To add someone, give them the Organiser role under Staff.</span></div>
-      <div class="sfield"><label for="evOrgPct">Organiser’s share of each ticket (%)</label><input id="evOrgPct" type="number" min="0" max="100" value="${esc(e.organizerSharePct ?? 0)}"><span class="hint">Whole number, 0 to 100. Snapshotted onto every paid order — changing it later won’t move what’s already earned. Leave 0 for club nights.</span></div>
-      ${(user.role === 'superAdmin' || user.admin === true) ? `<div class="sfield"><label for="evEvolveitPct">Platform share for this event (%)</label><input id="evEvolveitPct" type="number" min="1" max="99" value="${esc(e.evolveitSharePct ?? '')}" placeholder="Blank for the default"><span class="hint">EvolveIT’s cut of every sale on this night. Super-admin only. Leave blank to use the platform default.</span></div>` : ''}
       <div>
         <h2 style="margin-top:6px">Ticket lines: what should others know? <span class="kicker" id="lnCount"></span></h2>
         <p class="hint" style="margin:0 0 10px;color:var(--muted)">8 to 12 lines. Guests pick one; it’s the big type on their ticket. With no lines, the ticket leads with the night’s name.</p>
         <ol class="lines-ed" id="lines"></ol>
         <div class="toolbar" style="margin-top:8px"><input id="newLine" maxlength="48" placeholder="e.g. a line for this night" style="flex:1;min-width:200px"><button class="sbtn" type="button" id="addLine">Add line</button></div>
       </div>
+      </div>
       <div id="evMsg"></div>
       <div class="toolbar savebar"><button class="sbtn red" type="submit" id="save">${isNew ? 'Create night' : 'Save night'}</button><span id="saveState" role="status"></span></div>
       ${!isNew && user.role === 'superAdmin' ? '<div><button class="sbtn ghost" type="button" id="del">Delete this night</button></div>' : ''}
-      ${isNew ? '' : '<p class="hint" style="margin:0;color:var(--muted)">“Save night” saves this box only: name, date, flyer, lines and the ticks above. Tickets, Tables, The draw and Comps below each save with their own button.</p>'}
+      ${isNew ? '' : '<p class="hint" style="margin:0;color:var(--muted)">“Save night” saves Details and Look together. Tickets, Tables, Draw and Comps each save with their own button.</p>'}
     </form>
-    ${isNew ? '' : `<h2>Tickets</h2>${catalogTable('ticket-types', d.ticketTypes, e.id)}
-    <h2>Tables</h2>${catalogTable('table-packages', d.tablePackages, e.id)}
-    <h2>The draw</h2>${raffleCard(d.raffle, e.id)}
-    <h2>Comps</h2>${compCard()}`}`;
+    ${isNew ? '' : `<section data-sec="tickets" class="sec"><h2>Tickets</h2>${catalogTable('ticket-types', d.ticketTypes, e.id)}</section>
+    <section data-sec="tables" class="sec"><h2>Tables</h2>${catalogTable('table-packages', d.tablePackages, e.id)}</section>
+    <section data-sec="draw" class="sec"><h2>The draw</h2>${raffleCard(d.raffle, e.id)}</section>
+    <section data-sec="comps" class="sec"><h2>Comps</h2>${compCard()}</section>`}`;
+  // One part of the night at a time. The choice survives the reload after a section saves.
+  const openSec = k => {
+    nightSec = k; nightSecId = id;
+    $$('[data-sec-go]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.secGo === k)));
+    $$('#panel .sec').forEach(x => { x.hidden = x.dataset.sec !== k; });
+    $('#evForm').hidden = !$('#evForm').dataset.secGroup.split(' ').includes(k);
+  };
+  $$('[data-sec-go]').forEach(b => b.onclick = () => openSec(b.dataset.secGo));
+  openSec(!isNew && nightSecId === id && NIGHT_SECS.some(([k]) => k === nightSec) ? nightSec : 'details');
 
   $('#back').onclick = () => show('nights');
   const art = { artwork: e.artwork || '', heroImage: e.heroImage || '', heroVideo: e.heroVideo || '' };
@@ -204,7 +234,7 @@ async function night(id, notice) {
         ...($('#evEvolveitPct') ? { evolveitSharePct: val('#evEvolveitPct') === '' ? null : Number(val('#evEvolveitPct')) } : {}),
       } });
       dirty = false;
-      if (isNew) { show('nights', r.eventId, { at: '#evMsg', text: 'Night created. Add tickets below, then tick “On the public site” and save to put it live.' }); return true; }
+      if (isNew) { nightSec = 'tickets'; nightSecId = r.eventId; show('nights', r.eventId, { at: '[data-msg="ticket-types"]', text: 'Night created. Add its tickets here, then under Details tick “On the public site” and save to put it live.' }); return true; }
       const live = $('#evPublic').checked && $('#evActive').checked;
       setState(pill(`Saved ${new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}`, 'green'));
       flash($('#evMsg'), live ? 'Saved. It’s live on the public site now.' : 'Saved, but this night is NOT on the public site. Tick “On the public site” (and “Active”), then save to show it.', !live);
