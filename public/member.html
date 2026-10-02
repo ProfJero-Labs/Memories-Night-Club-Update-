@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Memories Pass</title>
+<meta name="robots" content="noindex">
+<meta name="theme-color" content="#0d0a09">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Memories">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="assets/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="assets/apple-touch-icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Anton&family=Archivo:wght@400;600;700&family=Instrument+Serif:ital@0;1&display=swap">
+<link rel="stylesheet" href="styles.css">
+<style>
+  .pass-wrap { max-width: 460px; margin: 0 auto; padding: 18px var(--gutter) 40px; display: grid; gap: 18px; }
+  .pass-top { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+  .pass { border: 2px solid var(--line-2); padding: 22px; display: grid; gap: 14px; position: relative; overflow: hidden; background: var(--ink-2); }
+  .pass::before { content: ''; position: absolute; inset: 0; background: linear-gradient(115deg, transparent 30%, rgba(224, 36, 94, .16) 50%, transparent 70%); background-size: 250% 100%; animation: sheen 3.2s linear infinite; pointer-events: none; }
+  @keyframes sheen { from { background-position: 150% 0; } to { background-position: -100% 0; } }
+  @media (prefers-reduced-motion: reduce) { .pass::before { animation: none; } }
+  .pass .who { font: 400 clamp(40px, 12vw, 56px)/.95 var(--display); text-transform: uppercase; margin: 0; overflow-wrap: anywhere; }
+  .pass .role { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .badge { font: 700 13px var(--sans); letter-spacing: .14em; text-transform: uppercase; padding: 6px 10px; background: var(--crimson-btn); color: #fff; }
+  .badge.member { background: var(--paper); color: var(--ink); }
+  .qr-live { background: #fff; padding: 14px; display: grid; justify-items: center; gap: 8px; color: #000; }
+  .qr-live svg { width: min(72vw, 300px); height: auto; display: block; }
+  .qr-live .tick { font: 700 15px var(--sans); letter-spacing: .06em; }
+  .clock { font: 400 44px/1 var(--display); letter-spacing: .04em; text-align: center; }
+  .bar { height: 4px; background: var(--line); } .bar i { display: block; height: 100%; background: var(--crimson); transition: width 1s linear; }
+  .pass.bad { border-color: var(--crimson); } .pass.bad .qr-live { opacity: .15; }
+  .meta-rows { display: grid; gap: 6px; font-size: 15px; } .meta-rows span { color: var(--muted); }
+  .gate-code { background: var(--mustard); color: var(--ink); padding: 14px; display: grid; gap: 4px; text-align: center; }
+  .gate-code span { font: 700 13px var(--sans); letter-spacing: .12em; text-transform: uppercase; }
+  .gate-code b { font: 400 clamp(56px, 18vw, 80px)/1 var(--display); letter-spacing: .08em; }
+  .gate-code small { font-weight: 600; }
+</style>
+<script src="config.js"></script>
+</head>
+<body>
+<main class="pass-wrap" id="root"><div class="loading" role="status">OPENING YOUR PASS…</div></main>
+<script type="module" src="pages/member.js"></script>
+</body>
+</html>

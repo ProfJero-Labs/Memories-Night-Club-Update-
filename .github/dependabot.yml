@@ -1,0 +1,15 @@
+# Weekly checks for vulnerable or outdated dependencies. GitHub opens a pull request for each
+# update; CI must pass before it can be merged. Security updates are raised as soon as a
+# vulnerability is published (turn on "Dependabot security updates" in the repo settings).
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /worker
+    schedule: { interval: weekly }
+    open-pull-requests-limit: 5
+  - package-ecosystem: npm
+    directory: /firebase/test
+    schedule: { interval: monthly }
+  - package-ecosystem: github-actions
+    directory: /
+    schedule: { interval: monthly }
