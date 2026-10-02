@@ -10,6 +10,7 @@ import { sendSms, sendEmail, siteUrl } from './lib/notify.js';
 import { getSettings, resolveLines, isOver } from './public.js';
 import { openRaffleForEvent, raffleSpotWrites } from './raffle.js';
 import { computeShares } from './shares.js';
+import { issueCounter } from './bar.js';
 
 // Smallest payment accepted anywhere: GHS 1.
 export const MIN_TOPUP_PESEWAS = 100;
@@ -528,11 +529,21 @@ export async function forfeitStalePlans(env) {
   return { checked: active.length, forfeited };
 }
 
+// Scan-to-order bar payments: same confirmation as tickets, then the bar order gets its pickup code.
+async function fulfillCounter(env, reference) {
+  const pending = await getDoc(env, 'pending_checkouts', reference);
+  if (pending.fields.status === 'issued') return { status: 'issued', kind: 'counter', orderId: pending.fields.orderId };
+  if (pending.fields.status === 'failed') return { status: 'failed', kind: 'counter', error: pending.fields.error || 'Payment was not successful.' };
+  const bad = await confirmCharge(env, pending, reference); if (bad) return { kind: 'counter', ...bad };
+  return issueCounter(env, reference, pending.fields);
+}
+
 export async function fulfill(env, reference) {
   const p = await getDoc(env, 'pending_checkouts', reference);
   if (!p) return { status: 'failed', error: 'Checkout not found.' };
   if (p.fields.kind === 'table') return { kind: 'table', ...(await fulfillTable(env, reference)) };
   if (p.fields.kind === 'installment_topup') return fulfillInstallment(env, reference);
+  if (p.fields.kind === 'counter') return fulfillCounter(env, reference);
   return { kind: 'ticket', ...(await fulfillTicket(env, reference)) };
 }
 

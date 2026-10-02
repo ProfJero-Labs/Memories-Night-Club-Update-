@@ -6,6 +6,7 @@ The Memories website, ticketing, tables, pay-in-bits, the draw, door check-in, a
 - **How it works** (code map, roles, data, money flows): [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)
 - **Going live:** [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md)
 - **Security controls and their tests:** [`docs/SECURITY.md`](docs/SECURITY.md), audit: [`docs/SECURITY_AUDIT.md`](docs/SECURITY_AUDIT.md), who can call what: [`docs/AUTHZ.md`](docs/AUTHZ.md)
+- **Monitoring and alerts:** [`docs/MONITORING.md`](docs/MONITORING.md) (secrets to set, uptime monitors, drills)
 - **System map** (pages, routes, states): [`docs/AUDIT.md`](docs/AUDIT.md). **Owner decisions:** [`docs/OPEN_DECISIONS.md`](docs/OPEN_DECISIONS.md)
 
 The live site deploys `public/` from `main` (Cloudflare Pages). The Worker is deployed separately with `npm run worker:deploy`: deploy the Worker **before** merging front-end changes that depend on it. CI (`.github/workflows/ci.yml`) runs all three test suites and a secret scan on every push and pull request.
@@ -19,7 +20,7 @@ cd worker && npm install && cd ..
 npm run dev            # http://localhost:8787
 ```
 
-This runs the real Worker code against an in-memory Firestore, a fake Paystack checkout (a Pay / Decline page) and dev staff logins. The password is `memories-dev` for all of them: `admin@dev`, `manager@dev`, `door@dev`, `orga@dev`, `orgb@dev`, and `guest@dev` (no role). Seed nights, lines and prices are dev placeholders from `dev/seed.mjs`; none of it is production data.
+This runs the real Worker code against an in-memory Firestore, a fake Paystack checkout (a Pay / Decline page) and dev staff logins. The password is `memories-dev` for all of them: `admin@dev`, `manager@dev`, `door@dev`, `bar@dev`, `orga@dev`, `orgb@dev`, and `guest@dev` (no role). The dev bar's order page is `/b/0123456789abcdef0123456789abcdef`; the member pass is `/member.html` (add a member under People first; the texted code is in `/dev/state`). Seed nights, lines and prices are dev placeholders from `dev/seed.mjs`; none of it is production data.
 
 ## Tests
 

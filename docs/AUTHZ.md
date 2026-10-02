@@ -4,6 +4,11 @@ One row per staff route. ✅ = allowed, — = 403. Every route also returns 401 
 
 | Route | superAdmin | manager | eventManager | doorStaff | organiser |
 |---|---|---|---|---|---|
+| `POST /api/members/door/pass`, `/send-code`, `/confirm` (verify staff and members at the gate) | ✅ | ✅ | ✅ | ✅ | — |
+| `GET /api/admin/members`, `POST /api/admin/members`, `GET /api/admin/attendance` | ✅ | ✅ | — | — | — |
+| `GET /api/admin/system` | ✅ | ✅ | — | — | — |
+| `GET /api/bar/queue`, `POST /api/bar/order`, `POST /api/bar/station-open` | ✅ | ✅ | ✅ | — (barStaff ✅) | — |
+| `GET /api/admin/bar-setup`, `POST /api/admin/bar-stations`, `POST /api/admin/menu-items` | ✅ | ✅ | ✅ | — | — |
 | `POST /api/checkin` | ✅ | ✅ | ✅ | ✅ | ✅ |
 | `POST /api/checkin` with `table` (seat a table booking) | ✅ | ✅ | ✅ | ✅ | own nights |
 | `POST /api/checkin/undo` | ✅ any time | ✅ any time | own admits, 2 min | own admits, 2 min | own admits, 2 min |
@@ -45,3 +50,7 @@ One row per staff route. ✅ = allowed, — = 403. Every route also returns 401 
 | `GET /api/admin/organiser/overview` | ✅ | — | — | — | ✅ |
 
 Scoping inside allowed routes: an organiser can check in only tickets for nights where they are the organiser, and sees only their own nights in `/api/door/events` and `/api/admin/organiser/overview` (tested). Public routes (events, checkout, pay-in-bits, tickets by token, webhook) are listed in `AUDIT.md`.
+
+**barStaff** (role added with scan to order) can use the bar routes above and nothing else; they sign in straight to `bar.html`.
+
+Public (no sign-in, rate limited): `POST /api/members/pass-code` and `/api/members/pass` (the member's own phone proves itself with a texted code), `POST /api/members/pass-status` (authenticated by a fresh pass QR), `GET /api/guest/menu`, `POST /api/guest/counter/checkout`, `GET /api/guest/counter/:orderId` (the random order id is the guest's key), `GET /api/guest/receipt/:code`, `POST /api/installments/phone-code` and `/phone-verify`.

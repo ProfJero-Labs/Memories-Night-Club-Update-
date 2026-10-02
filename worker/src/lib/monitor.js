@@ -59,7 +59,7 @@ export async function alertOnce(env, key, text) {
 // The route group (/api/checkout) is used instead of the full path so an id in the URL never
 // reaches an alert, a tag or a transaction name.
 export const routeGroup = path => String(path).split('/').slice(0, 3).join('/') || '/';
-export const isCritical = path => /^\/api\/(checkout|table-checkout|installments|paystack)(\/|$)/.test(path);
+export const isCritical = path => /^\/api\/(checkout|table-checkout|installments|paystack)(\/|$)|^\/api\/guest\/counter\/checkout$/.test(path);
 
 const lastText = new Map();           // per-isolate floor, so an outage cannot become a flood of texts
 const TEXT_EVERY_MS = 15 * 60_000;

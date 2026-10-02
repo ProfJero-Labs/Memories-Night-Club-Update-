@@ -31,8 +31,11 @@ export function seed(store, origin) {
   store.seed('raffles', 'evt_dev-afro', { eventId: 'dev-afro', prize: 'Dev prize (placeholder)', cap: 20, spotsTaken: 6, enabled: true, public: true, status: 'open' });
   [['Dev Vodka', 'Spirits', 90000], ['Dev Whisky', 'Spirits', 120000], ['Dev Champagne', 'Champagne', 180000], ['Dev Rosé', 'Wine', 60000], ['Dev Mixers (x6)', 'Soft', 12000]]
     .forEach(([name, category, price], i) => store.seed('bottles', `dev-b${i}`, { eventId: 'all', name, category, pricePesewas: price, active: true }));
-  const staff = [['admin@dev', 'uid-admin', { role: 'superAdmin', admin: true }], ['manager@dev', 'uid-mgr', { role: 'manager', admin: false }], ['door@dev', 'uid-door', { role: 'doorStaff', admin: false }], ['orga@dev', 'uid-org-a', { role: 'organiser', admin: false }], ['orgb@dev', 'uid-org-b', { role: 'organiser', admin: false }], ['guest@dev', 'uid-guest', {}]];
+  const staff = [['admin@dev', 'uid-admin', { role: 'superAdmin', admin: true }], ['manager@dev', 'uid-mgr', { role: 'manager', admin: false }], ['door@dev', 'uid-door', { role: 'doorStaff', admin: false }], ['bar@dev', 'uid-bar', { role: 'barStaff', admin: false }], ['orga@dev', 'uid-org-a', { role: 'organiser', admin: false }], ['orgb@dev', 'uid-org-b', { role: 'organiser', admin: false }], ['guest@dev', 'uid-guest', {}]];
   store.claims = {};
   for (const [email, uid, claims] of staff) { store.authUsers.push({ email, localId: uid }); store.claims[uid] = claims; if (claims.role) store.seed('users', uid, { email, role: claims.role }); }
+  // Scan to order: one bar (QR → /b/0123…cdef) and a short drinks menu. Dev placeholders.
+  store.seed('bar_stations', 'dev-main-bar', { name: 'Main bar', token: '0123456789abcdef0123456789abcdef', open: true });
+  for (const [id, name, category, pricePesewas, available] of [['dev-m-beer', 'Club beer', 'Beer', 2500, true], ['dev-m-stout', 'Stout', 'Beer', 3000, true], ['dev-m-shot', 'Tequila shot', 'Shots', 3000, true], ['dev-m-cock', 'House cocktail', 'Cocktails', 6000, true], ['dev-m-water', 'Water', 'Soft', 1000, true], ['dev-m-flute', 'Champagne flute', 'Wine', 9000, false]]) store.seed('menu_items', id, { name, category, pricePesewas, available, sortOrder: 0 });
   store.seed('private_event_requests', 'dev-req1', { eventType: 'Birthday', date: nextDow(6, 2).slice(0, 10), guests: 25, name: 'Dev Requester', phone: '0240000000', instagram: '@dev', message: 'Thirtieth. Want the booth.', status: 'NEW', createdAt: new Date().toISOString() });
 }

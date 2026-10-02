@@ -154,7 +154,7 @@ test('accessibility: axe finds no WCAG 2 A/AA or best-practice violations on the
   const { readFileSync } = await import('node:fs');
   const axe = readFileSync(new URL('../worker/node_modules/axe-core/axe.min.js', import.meta.url), 'utf8');
   const found = [];
-  for (const u of ['index.html', 'nights.html', 'event.html?id=dev-afro', 'tickets.html?event=dev-afro', 'checkout.html?event=dev-afro&type=dev-afro-reg&qty=1', 'tables.html?event=dev-afro', 'private.html', 'installment.html', 'find.html', 'member.html', 'visit.html', 'login.html']) {
+  for (const u of ['index.html', 'nights.html', 'event.html?id=dev-afro', 'tickets.html?event=dev-afro', 'checkout.html?event=dev-afro&type=dev-afro-reg&qty=1', 'tables.html?event=dev-afro', 'private.html', 'installment.html', 'find.html', 'member.html', 'b/0123456789abcdef0123456789abcdef', 'visit.html', 'login.html']) {
     const page = await phone();
     await page.goto(`${base}/${u}`, { waitUntil: 'networkidle' });
     await page.evaluate(axe);
@@ -528,6 +528,30 @@ test('membership: a manager adds staff; they sign in to their pass; the door ver
   await ctx.close();
 });
 
+test('scan to order: the bar QR opens the menu; pay; the pickup code shows only once paid; the bar hands over; the guest sees it', async () => {
+  const g = await phone(360);
+  await g.goto(`${base}/b/0123456789abcdef0123456789abcdef`, { waitUntil: 'networkidle' });
+  assert.match(await g.textContent('#label'), /main bar/i);
+  assert.equal(await g.locator('[data-p="dev-m-flute"]').count(), 0, 'sold-out drink can’t be added');
+  await g.click('[data-p="dev-m-beer"]'); await g.click('[data-p="dev-m-beer"]'); await g.click('[data-p="dev-m-water"]');
+  assert.match(await g.textContent('#dockBtn'), /Pay GHS 60/);
+  await g.fill('#ph', '024 123 9876'); await g.click('#dockBtn');
+  await g.waitForURL(/dev\/paystack/);
+  assert.equal(docs('counter_orders').find(o => o.phone === '0241239876').pickupCode, undefined, 'no pickup code before payment');
+  await g.getByRole('button', { name: 'Pay' }).click();
+  await g.waitForURL(/counter\.html/); await g.waitForSelector('.pickup', { timeout: 15000 });
+  const code = (await g.textContent('.pickup')).trim();
+  assert.match(store.sms.at(-1).message, new RegExp(code));
+  const bar = await phone(390);
+  await bar.goto(`${base}/login.html`); await bar.fill('#email', 'bar@dev'); await bar.fill('#pw', 'memories-dev'); await bar.click('#go');
+  await bar.waitForURL(/bar\.html/); await bar.waitForSelector('.ord');
+  await bar.fill('#find', code); await bar.locator('.ord.hit [data-go]').click();
+  await bar.getByText('Handed over.').waitFor();
+  await g.getByText(/collected/i).waitFor({ timeout: 15000 });
+  assert.equal(docs('counter_orders').find(o => o.pickupCode === code).status, 'delivered');
+  assert.deepEqual([...g.errors, ...bar.errors], []);
+});
+
 test('organiser A sees only their night and cannot open the control room; a no-role account is refused', async () => {
   const org = await phone(1280);
   await org.goto(`${base}/login.html`); await org.fill('#email', 'orga@dev'); await org.fill('#pw', 'memories-dev'); await org.click('#go');
@@ -558,7 +582,7 @@ test('XSS payloads in admin-entered and guest-entered text render as text on pub
 });
 
 test('every public page renders at 320px with no sideways scroll and no script errors', async () => {
-  for (const p of ['/', '/nights.html', '/event.html?id=dev-afro', '/checkout.html?event=dev-afro&type=dev-afro-reg&qty=2', '/tables.html?event=dev-afro', '/private.html', '/installment.html', '/find.html', '/member.html', '/visit.html', '/login.html']) {
+  for (const p of ['/', '/nights.html', '/event.html?id=dev-afro', '/checkout.html?event=dev-afro&type=dev-afro-reg&qty=2', '/tables.html?event=dev-afro', '/private.html', '/installment.html', '/find.html', '/member.html', '/b/0123456789abcdef0123456789abcdef', '/visit.html', '/login.html']) {
     const page = await phone(320);
     await page.goto(base + p, { waitUntil: 'networkidle' });
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth), 0, `overflow on ${p}`);

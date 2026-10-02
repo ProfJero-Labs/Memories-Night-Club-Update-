@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Bar · Memories</title>
+<meta name="robots" content="noindex">
+<meta name="theme-color" content="#0d0a09">
+<link rel="icon" href="assets/icon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Anton&family=Archivo:wght@400;600;700&family=Instrument+Serif:ital@0;1&display=swap">
+<link rel="stylesheet" href="styles.css">
+<link rel="stylesheet" href="admin.css">
+<style>
+  .barq { max-width: 900px; margin: 0 auto; padding: 16px var(--gutter) 40px; display: grid; gap: 14px; }
+  .orders { display: grid; gap: 12px; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); }
+  .ord { border: 2px solid var(--line-2); padding: 14px; display: grid; gap: 10px; background: var(--ink-2); }
+  .ord .code { font: 400 56px/1 var(--display); letter-spacing: .08em; }
+  .ord .waited { color: var(--muted); font-size: 14px; }
+  .ord .waited.late { color: var(--mustard); font-weight: 700; }
+  .ord ul { margin: 0; padding-left: 18px; font-size: 18px; }
+  .ord .act { display: flex; gap: 8px; flex-wrap: wrap; } .ord .act .sbtn { min-height: 52px; flex: 1; }
+  .ord.hit { border-color: var(--crimson); }
+</style>
+<script src="config.js"></script>
+</head>
+<body class="staff">
+<main class="barq">
+  <div class="toolbar" style="margin:0"><select id="st" aria-label="Which bar"></select><button class="sbtn" id="open" type="button"></button><span id="state" role="status"></span></div>
+  <div class="sfield"><label for="find">Pickup code</label><input id="find" autocomplete="off" autocapitalize="characters" maxlength="4" placeholder="e.g. K7Q2"></div>
+  <div id="msg"></div>
+  <h2 style="margin:0">Waiting <span id="n" class="kicker"></span></h2>
+  <div class="orders" id="orders"></div>
+  <h2 style="margin:6px 0 0">Handed over</h2>
+  <div class="tbl-wrap"><table class="tbl"><thead><tr><th>Code</th><th>Drinks</th><th>When</th></tr></thead><tbody id="done"></tbody></table></div>
+</main>
+<script type="module" src="pages/bar.js"></script>
+</body>
+</html>

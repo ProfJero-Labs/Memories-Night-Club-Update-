@@ -2,7 +2,7 @@
 // the Worker enforces roles, validation and audit logging. Uploads go to Firebase Storage.
 import { esc, money, $, $$, shortDate } from './app.js';
 import { requireStaff, staffHeader, sapi, compressImage, paletteFrom, ghs, pes, when, ROLE_LABEL } from './staff.js';
-import { ticketHTML, designFor } from './ticket-art.js';
+import { ticketHTML, designFor, qrSvg } from './ticket-art.js';
 import { uploadImage } from './firebase.js';
 
 const CMS = ['superAdmin', 'manager', 'eventManager'], MONEY = ['superAdmin', 'manager'];
@@ -11,10 +11,10 @@ staffHeader(user, 'Control room');
 const can = roles => roles.includes(user.role);
 const TABS = [
   ['overview', 'Overview', CMS], ['nights', 'Nights', CMS], ['payments', 'Payments', CMS], ['bookings', 'Orders', CMS], ['requests', 'Event requests', CMS],
-  ['system', 'System', MONEY], ['members', 'Members', MONEY], ['attendance', 'Attendance', MONEY], ['bits', 'Pay in bits', MONEY], ['refunds', 'Refunds', MONEY], ['bar', 'Bar menu', CMS], ['settings', 'Site settings', MONEY], ['staff', 'Staff', ['superAdmin']],
+  ['system', 'System', MONEY], ['members', 'Members', MONEY], ['attendance', 'Attendance', MONEY], ['bits', 'Pay in bits', MONEY], ['refunds', 'Refunds', MONEY], ['counter', 'Bar orders', CMS], ['bar', 'Table bottles', CMS], ['settings', 'Site settings', MONEY], ['staff', 'Staff', ['superAdmin']],
 ].filter(t => can(t[2]));
 // Five places, not ten: related tabs sit together behind one button, with their own row underneath.
-const GROUPS = [['tonight', 'Tonight', ['overview', 'system']], ['nights', 'Nights', ['nights', 'requests']], ['money', 'Money', ['payments', 'bookings', 'bits', 'refunds']], ['people', 'People', ['members', 'attendance', 'staff']], ['setup', 'Setup', ['settings', 'bar']]]
+const GROUPS = [['tonight', 'Tonight', ['overview', 'system']], ['nights', 'Nights', ['nights', 'requests']], ['money', 'Money', ['payments', 'bookings', 'bits', 'refunds']], ['people', 'People', ['members', 'attendance', 'staff']], ['setup', 'Setup', ['counter', 'bar', 'settings']]]
   .map(([k, l, tabs]) => [k, l, tabs.filter(t => TABS.some(x => x[0] === t))]).filter(([, , tabs]) => tabs.length);
 const groupOf = tab => GROUPS.find(g => g[2].includes(tab)) || GROUPS[0];
 const panel = $('#panel');
@@ -72,7 +72,7 @@ function show(tab, arg, notice) {
   panel.innerHTML = '<div class="loading">Loading…</div>';
   // Renders run one after another, so a slow tab that was left (e.g. Overview still loading when
   // a link opens Members) can't finish last and paint over the tab that was asked for.
-  const run = () => ({ overview, system, members, attendance, nights, night, payments, bookings, requests, bits, refunds, bar, settings, staff })[tab](arg, notice).catch(fail);
+  const run = () => ({ overview, system, members, attendance, counter, nights, night, payments, bookings, requests, bits, refunds, bar, settings, staff })[tab](arg, notice).catch(fail);
   rendering = rendering.then(run, run);
 }
 let rendering = Promise.resolve();
@@ -183,6 +183,46 @@ async function attendance() {
     document.body.append(a); a.click(); a.remove();
   };
   await load();
+}
+
+// ── Scan to order: bars (each with its own QR) and the drinks menu ──
+async function counter(arg, notice) {
+  const d = await sapi('/api/admin/bar-setup');
+  const qrs = await Promise.all(d.stations.map(s => qrSvg(s.url).catch(() => '')));
+  panel.innerHTML = `<h1>Bar orders</h1>
+    <p class="muted" style="margin-top:-6px">Guests scan a bar’s QR, pay by MoMo or card, and show a pickup code. The bar works from the <a href="bar.html">bar screen</a>.</p>
+    <h2>Bars</h2><div id="sMsg"></div>
+    <div class="orders-qr" style="display:grid;gap:12px;grid-template-columns:repeat(auto-fill,minmax(240px,1fr))">${d.stations.map((s, i) => `<div class="card" data-station="${esc(s.id)}">
+      <div class="sfield"><label>Name</label><input data-k="name" maxlength="40" value="${esc(s.name)}"></div>
+      <label class="check"><input type="checkbox" data-k="open" ${s.open ? 'checked' : ''}> Taking app orders</label>
+      <div style="background:#fff;padding:10px;max-width:220px">${qrs[i]}</div><small class="muted" style="overflow-wrap:anywhere">${esc(s.url)}</small>
+      <div class="toolbar" style="margin:0"><button class="sbtn red" data-ssave>Save</button><button class="sbtn ghost" data-snew>New QR</button><button class="sbtn ghost" data-sprint>Print</button></div></div>`).join('')}
+      <form class="card" id="newSt" novalidate><div class="sfield"><label for="nsName">Add a bar</label><input id="nsName" maxlength="40" placeholder="Main bar, VIP bar…"></div><button class="sbtn" type="submit">Add bar</button></form></div>
+    <h2>Drinks menu</h2><p class="hint" style="color:var(--muted);margin-top:-6px">Untick “On” when something runs out: guests see “out tonight”.</p>
+    <div class="tbl-wrap"><table class="tbl"><thead><tr><th>Category</th><th>Name</th><th>Price (GHS)</th><th>Order</th><th></th><th></th></tr></thead><tbody>
+      ${[...d.items, { id: '', available: true }].map(it => `<tr data-item="${esc(it.id)}"><td><input data-k="category" value="${esc(it.category || '')}" aria-label="Category" placeholder="Beer"></td><td><input data-k="name" value="${esc(it.name || '')}" aria-label="Name" placeholder="${it.id ? '' : 'New drink'}"></td><td><input data-k="price" inputmode="decimal" value="${esc(it.id ? ghs(it.pricePesewas) : '')}" aria-label="Price"></td><td><input data-k="sort" inputmode="numeric" value="${esc(it.sortOrder ?? '')}" aria-label="Order"></td>
+        <td><label class="check"><input type="checkbox" data-k="available" ${it.available !== false ? 'checked' : ''}> On</label></td><td class="actions"><button class="sbtn" data-isave>${it.id ? 'Save' : 'Add'}</button></td></tr>`).join('')}</tbody></table></div><div id="iMsg"></div>`;
+  const saveStation = async (card, newQr = false) => {
+    const get = k => $(`[data-k="${k}"]`, card);
+    try { await sapi('/api/admin/bar-stations', { method: 'POST', body: { id: card.dataset.station, name: get('name').value.trim(), open: get('open').checked, newQr } }); counter(null, { at: '#sMsg', text: newQr ? 'New QR made. Print it: the old one no longer works.' : 'Saved.' }); }
+    catch (e) { flash($('#sMsg'), e.message, true); }
+  };
+  $$('[data-ssave]').forEach(b => b.onclick = () => saveStation(b.closest('[data-station]')));
+  $$('[data-snew]').forEach(b => b.onclick = () => { if (confirm('Make a new QR for this bar? The printed one stops working.')) saveStation(b.closest('[data-station]'), true); });
+  $$('[data-sprint]').forEach(b => b.onclick = () => {
+    const card = b.closest('[data-station]'), w = open('', '_blank');
+    if (!w) return flash($('#sMsg'), 'Allow pop-ups to print the QR.', true);
+    w.document.write(`<title>QR</title><body style="font-family:Arial,sans-serif;text-align:center;padding:30px"><h1 style="font-size:40px;margin:0">Order &amp; pay here</h1><p style="font-size:22px">${esc($('[data-k=name]', card).value)} · scan with your phone camera</p><div style="width:420px;margin:20px auto">${card.querySelector('svg').outerHTML}</div><p style="font-size:18px">Pay by MoMo or card. Show your pickup code at the bar.</p></body>`);
+    w.document.close(); w.print();
+  });
+  $('#newSt').onsubmit = async ev => { ev.preventDefault(); try { await sapi('/api/admin/bar-stations', { method: 'POST', body: { name: val('#nsName'), open: true } }); counter(null, { at: '#sMsg', text: 'Bar added. Print its QR and put it on the counter.' }); } catch (e) { flash($('#sMsg'), e.message, true); } };
+  $$('[data-isave]').forEach(b => b.onclick = async () => {
+    const tr = b.closest('tr'), get = k => $(`[data-k="${k}"]`, tr);
+    let price; try { price = pes(get('price').value); } catch (e) { return flash($('#iMsg'), e.message, true); }
+    try { await sapi('/api/admin/menu-items', { method: 'POST', body: { id: tr.dataset.item || undefined, name: get('name').value.trim(), category: get('category').value.trim(), pricePesewas: price, sortOrder: Number(get('sort').value) || 0, available: get('available').checked } }); counter(null, { at: '#iMsg', text: `Saved “${get('name').value.trim()}”.` }); }
+    catch (e) { flash($('#iMsg'), e.message, true); }
+  });
+  if (notice) flash($(notice.at), notice.text);
 }
 
 // ── Nights ──

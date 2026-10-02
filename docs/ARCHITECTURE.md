@@ -26,6 +26,9 @@ Rules that hold everywhere:
 | `worker/src/checkout.js` | Tickets, tables, pay in bits (installments), Paystack verify and fulfilment |
 | `worker/src/raffle.js` | Draw spots, admin raffle edits, the draw |
 | `worker/src/door.js` | Check-in (needs a chosen night; by token or, from search, by display code), headcount summary, door search, public verify |
+| `worker/src/members.js` | Membership: staff/member records, the Memories Pass (rotating HMAC QR), gate verification by pass or texted code, HR attendance |
+| `worker/src/bar.js` | Scan to order: bar stations (QR per bar), drinks menu, guest checkout, pickup codes, the bar queue, bar refunds |
+| `worker/src/reconcile.js`, `lib/monitor.js` | Monitoring: 10-minute payment reconciliation, health check, Sentry, SMS alerts, security signals (docs/MONITORING.md) |
 | `worker/src/admin.js` | Control room: nights, catalog, comps, orders, requests, installments, settings, staff, organiser view |
 | `worker/src/lib/*` | Firestore REST + transactions, auth, HTTP/CORS/rate limits (per IP or per phone/code), SMS/email, redacting logger (`log.js`), helpers |
 | `public/lib/shared.js` | One copy of `esc`, `normalizePhone`, `pes`, and Africa/Accra dates (`accraDayKey`, `nightKey`), imported by pages and bundled into the Worker |
@@ -75,3 +78,7 @@ Roles are Firebase Auth custom claims (`role`, plus `admin: true` for super admi
 **Pay in bits.** `POST /api/installments/start` creates the order (`MEM-AB1234`) with the server price and the chosen line, then charges the first amount (GHS 10 or more). Each top-up is a normal charge recorded by reference. Before the balance reaches zero there is no ticket, no share image, no draw spot and no stock held. The payment that completes it issues the ticket and takes a draw spot in one transaction. Every top-up sends one text with the amount, the balance, the order code and the link. A daily cron forfeits orders still unpaid when the night starts.
 
 **Tables.** Package plus bottles, priced by the Worker from Firestore and paid in full. Stock is re-checked inside the fulfilment transaction.
+
+**Membership.** A manager adds a person (People → Members); they're texted a link to `member.html`, the installable Memories Pass. They sign in with a code texted to their phone; the Worker gives that phone a pass id and secret. The pass shows `MP1.{passId}.{30s step}.{HMAC}`: computed on the phone (works offline), checked by the Worker at the gate (current or previous two steps). At the door, staff scan the pass, or type the member's phone: the Worker texts the member a code, the member says it, the door enters it. Each verified entry is a `member_entries` record (HR attendance). Suspending someone retires their passes.
+
+**Scan to order.** Each bar has a QR (`/b/{token}`, served by `counter.html` via `public/_redirects`). The guest picks drinks; prices come from `menu_items`; one basket (`clientId`) is one payment. The pickup code is created only when Paystack confirms the charge (same `confirmCharge` and `fulfill` path as tickets, so the webhook, the order page's polling and the reconciliation job all complete it). The bar screen (`bar.html`, role `barStaff`) hands over once; "can't make it" puts the order in Refunds.

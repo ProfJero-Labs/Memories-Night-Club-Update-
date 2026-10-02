@@ -4,8 +4,8 @@ import { onUser, idToken, signOutUser } from './firebase.js';
 import { api, esc } from './app.js';
 
 export const roleOf = claims => (claims?.admin === true ? 'superAdmin' : claims?.role || '');
-export const ROLE_LABEL = { superAdmin: 'Super admin', manager: 'Manager', eventManager: 'Event manager', doorStaff: 'Door', organiser: 'Organiser' };
-export const home = role => (role === 'organiser' ? 'organiser.html' : role === 'doorStaff' ? 'checkin.html' : 'admin.html');
+export const ROLE_LABEL = { superAdmin: 'Super admin', manager: 'Manager', eventManager: 'Event manager', doorStaff: 'Door', barStaff: 'Bar', organiser: 'Organiser' };
+export const home = role => (role === 'organiser' ? 'organiser.html' : role === 'doorStaff' ? 'checkin.html' : role === 'barStaff' ? 'bar.html' : 'admin.html');
 
 // Resolves with the signed-in staff user, or sends them to the right place.
 export function requireStaff(allowed) {

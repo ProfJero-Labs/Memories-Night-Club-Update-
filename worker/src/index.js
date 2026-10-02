@@ -11,6 +11,7 @@ import { upsertRaffle, drawRaffle } from './raffle.js';
 import { checkin, verifyTicket, doorSummary, doorSearch, seatTable, undoCheckin } from './door.js';
 import * as admin from './admin.js';
 import * as members from './members.js';
+import * as bar from './bar.js';
 import { reconcilePayments, health } from './reconcile.js';
 import * as Sentry from '@sentry/cloudflare';
 import { sentryOptions, reportError, routeGroup, isCritical, clientError, securitySignal } from './lib/monitor.js';
@@ -107,6 +108,17 @@ async function route(req, env, ctx) {
   if (m === 'GET' && p.startsWith('/api/verify/')) { if (await throttled(req, env, 'ticket', 'standard')) return tooMany(req, env); return ok(req, env, await verifyTicket(env, last(p))); }
   if (m === 'POST' && p === '/api/private-requests') { if (await throttled(req, env, 'private', 'strict')) return tooMany(req, env); return reply(req, env, await createPrivateRequest(env, await body(req))); }
   if (m === 'POST' && p === '/api/paystack/webhook') return paystackWebhook(req, env, ctx);
+  // ── Scan to order (guests at the bar) ──
+  if (m === 'GET' && p === '/api/guest/menu') { if (await throttled(req, env, 'menu', 'standard')) return tooMany(req, env); return reply(req, env, await bar.guestMenu(env, u.searchParams.get('station'))); }
+  if (m === 'POST' && p === '/api/guest/counter/checkout') { if (await throttled(req, env, 'checkout', 'standard')) return tooMany(req, env); return reply(req, env, await bar.counterCheckout(env, await body(req))); }
+  if (m === 'GET' && p.startsWith('/api/guest/counter/')) {
+    if (await throttled(req, env, 'counter-poll', 'standard')) return tooMany(req, env);
+    const o = await bar.guestOrder(env, last(p), r => fulfill(env, r)); return o ? ok(req, env, o) : fail(req, env, 'Order not found.', 404);
+  }
+  if (m === 'GET' && p.startsWith('/api/guest/receipt/')) {
+    if (await throttled(req, env, 'ticket', 'standard')) return tooMany(req, env);
+    const r = await bar.receipt(env, last(p)); return r ? ok(req, env, { receipt: r }) : fail(req, env, 'Receipt not found.', 404);
+  }
   // ── Member pass (the member's own phone) ──
   if (m === 'POST' && p === '/api/members/pass-code') {
     const b = await body(req), ph = normalizePhone(b.phone);
@@ -125,7 +137,7 @@ async function route(req, env, ctx) {
   if (m === 'POST' && p === '/api/client-error') { if (await throttled(req, env, 'client-error', 'strict')) return tooMany(req, env); return reply(req, env, await clientError(req, env, allowedOrigin)); }
 
   // ── Staff (Firebase ID token with a role claim) ──
-  if (!p.startsWith('/api/admin/') && !p.startsWith('/api/members/door/') && !['/api/checkin', '/api/checkin/undo', '/api/door/events', '/api/door/summary', '/api/door/search', '/api/send-sms', '/api/balance'].includes(p)) return fail(req, env, 'Not found.', 404);
+  if (!p.startsWith('/api/admin/') && !p.startsWith('/api/members/door/') && !p.startsWith('/api/bar/') && !['/api/checkin', '/api/checkin/undo', '/api/door/events', '/api/door/summary', '/api/door/search', '/api/send-sms', '/api/balance'].includes(p)) return fail(req, env, 'Not found.', 404);
   const user = await verifyStaff(req, env);
   if (!user) return fail(req, env, 'Sign in again.', 401);
 
@@ -142,6 +154,10 @@ async function route(req, env, ctx) {
     if (await throttled(req, env, 'checkin', 'standard')) return tooMany(req, env);
     return reply(req, env, await undoCheckin(env, user, (await body(req)).checkinId));
   }
+  // ── The bar's screen ──
+  if (m === 'GET' && p === '/api/bar/queue') return reply(req, env, await bar.barQueue(env, user, u.searchParams.get('stationId')));
+  if (m === 'POST' && p === '/api/bar/order') return reply(req, env, await bar.barUpdate(env, user, await body(req)));
+  if (m === 'POST' && p === '/api/bar/station-open') return reply(req, env, await bar.setStationOpen(env, user, await body(req)));
   // ── Members at the gate ──
   if (m === 'POST' && p.startsWith('/api/members/door/')) {
     if (await throttled(req, env, 'member-door', 'standard')) return tooMany(req, env);
@@ -202,6 +218,9 @@ async function route(req, env, ctx) {
   }
   if (m === 'GET' && p === '/api/admin/organiser/overview') return reply(req, env, await admin.organiserOverview(env, user));
 
+  if (m === 'GET' && p === '/api/admin/bar-setup') return reply(req, env, await bar.barSetup(env, user));
+  if (m === 'POST' && p === '/api/admin/bar-stations') return reply(req, env, await bar.upsertStation(env, await body(req), user));
+  if (m === 'POST' && p === '/api/admin/menu-items') return reply(req, env, await bar.upsertMenuItem(env, await body(req), user));
   if (m === 'GET' && p === '/api/admin/members') return reply(req, env, await members.listMembers(env, user));
   if (m === 'POST' && p === '/api/admin/members') return reply(req, env, await members.upsertMember(env, await body(req), user));
   if (m === 'GET' && p === '/api/admin/attendance') return reply(req, env, await members.attendance(env, { days: u.searchParams.get('days'), memberId: u.searchParams.get('memberId') }, user));

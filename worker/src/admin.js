@@ -7,6 +7,7 @@ import { sendSms, sendEmail, siteUrl } from './lib/notify.js';
 import { getSettings, DEFAULT_SETTINGS, SETTINGS_FIELDS, isOver, autoStyleFor } from './public.js';
 import { openRaffleForEvent, raffleSpotWrites } from './raffle.js';
 import { balanceMessage } from './checkout.js';
+import { counterRefunds } from './bar.js';
 
 
 const FORBIDDEN = { error: 'Forbidden.', status: 403 };
@@ -330,6 +331,7 @@ export async function listRefunds(env, user) {
       .map(p => ({ source: 'plan', id: p.id, reason: 'sold_out_after_payment', amountPesewas: Number(p.fields.paidPesewas || 0), ...who(p.fields), planId: p.id, at: p.fields.updatedAt || '' })),
     ...plans.filter(p => Number(p.fields.overpaidPesewas || 0) > 0 && p.fields.overpayRefundStatus !== 'refunded')
       .map(p => ({ source: 'overpay', id: p.id, reason: 'overpaid', amountPesewas: Number(p.fields.overpaidPesewas), ...who(p.fields), planId: p.id, at: p.fields.updatedAt || '' })),
+    ...(await counterRefunds(env)),
   ].sort((a, b) => new Date(b.at || 0) - new Date(a.at || 0));
   return { refunds, totalPesewas: refunds.reduce((n, r) => n + r.amountPesewas, 0) };
 }
@@ -338,12 +340,15 @@ export async function markRefunded(env, b, user) {
   if (!requireRole(user, MONEY)) return FORBIDDEN;
   const note = clean(b?.note, 300), source = b?.source, rid = String(b?.id || '');
   if (!note) return { error: 'Add a note: how it was refunded (e.g. Paystack refund ref).' };
-  const col = source === 'checkout' ? 'pending_checkouts' : ['plan', 'overpay'].includes(source) ? 'installment_plans' : null;
+  const col = source === 'checkout' ? 'pending_checkouts' : ['plan', 'overpay'].includes(source) ? 'installment_plans' : source === 'counter' ? 'counter_orders' : null;
   if (!col || !rid) return { error: 'Unknown refund.' };
   const doc = await getDoc(env, col, rid);
   if (!doc) return { error: 'Unknown refund.', status: 404 };
   const stamp = { refundedAt: now(), refundedBy: uidOf(user), refundNote: note };
-  if (source === 'checkout') {
+  if (source === 'counter') {
+    if (doc.fields.status !== 'refund_due') return { error: 'Already marked refunded.' };
+    await setDoc(env, col, rid, { ...doc.fields, status: 'refunded', ...stamp });
+  } else if (source === 'checkout') {
     if (doc.fields.refundStatus !== 'manual_required') return { error: 'Already marked refunded.' };
     await setDoc(env, col, rid, { ...doc.fields, refundStatus: 'refunded', ...stamp });
   } else if (source === 'plan') {
