@@ -1,5 +1,9 @@
 import { esc } from './util.js';
 import { logError } from './log.js';
+import * as Sentry from '@sentry/cloudflare';
+
+// A failed text means a guest may not get their ticket link. Sentry groups these by message.
+const smsFailed = reason => { try { Sentry.captureMessage(`SMS send failed: ${reason}`, 'warning'); } catch { /* never break a payment */ } };
 
 // SMS goes through the club's existing SMS Worker. Payload shape matches what that worker already
 // accepts from the old admin (event/sms.js): {sender, recipients:[phone], message} → {success}.
@@ -19,9 +23,9 @@ export async function sendSms(env, phone, message) {
   try {
     const r = await smsRequest(env, '/send-sms', { method: 'POST', body: JSON.stringify({ sender: env.SMS_SENDER || 'MEMORIES', recipients: [phone], message }) });
     const d = await r.json().catch(() => ({}));
-    if (!r.ok || d.success === false) { logError('SMS send failed', String(r.status), d.error || ''); return false; }
+    if (!r.ok || d.success === false) { logError('SMS send failed', String(r.status), d.error || ''); smsFailed(`status ${r.status}`); return false; }
     return true;
-  } catch (e) { logError('SMS send threw', e); return false; }
+  } catch (e) { logError('SMS send threw', e); smsFailed('threw'); return false; }
 }
 
 // Email via Brevo, server-side only. Every interpolated value is escaped by the caller's template.

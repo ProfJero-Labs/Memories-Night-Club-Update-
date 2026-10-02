@@ -92,6 +92,18 @@ export async function queryWhere(env, col, filters, { limit = 1000, transaction 
   return (d || []).filter(x => x.document).map(x => ({ id: x.document.name.split('/').pop(), fields: parseFields(x.document.fields) }));
 }
 
+// Newest first: documents whose `field` is at or after `since`, ordered by it, descending.
+// (A single-field range plus its own orderBy needs no composite index.)
+export async function queryRecent(env, col, field, since, limit = 50) {
+  const body = { structuredQuery: {
+    from: [{ collectionId: col }],
+    where: { fieldFilter: { field: { fieldPath: field }, op: 'GREATER_THAN_OR_EQUAL', value: firestoreValue(since) } },
+    orderBy: [{ field: { fieldPath: field }, direction: 'DESCENDING' }], limit,
+  } };
+  const d = await call(env, `${basePath(env)}:runQuery`, { method: 'POST', body: JSON.stringify(body) });
+  return (d || []).filter(x => x.document).map(x => ({ id: x.document.name.split('/').pop(), fields: parseFields(x.document.fields) }));
+}
+
 // ── Transactions ──
 async function beginTx(env) { const d = await fs(env, ':beginTransaction', { method: 'POST', body: JSON.stringify({ options: { readWrite: {} } }) }); return d.transaction; }
 export async function batchGet(env, paths, transaction) {

@@ -22,6 +22,8 @@ jobs:
           cache-dependency-path: worker/package-lock.json
       - name: Install
         run: npm ci --prefix worker
+      - name: Known vulnerabilities in the Worker's dependencies (fails on high or critical)
+        run: npm audit --prefix worker --omit=dev --audit-level=high
       - name: Worker tests (payments, roles, door, lookup, CSP, secrets…)
         run: npm test
       - name: Worker bundles for Cloudflare

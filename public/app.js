@@ -1,4 +1,5 @@
 // Shared code for the public pages. No framework, no Firebase: everything goes through the Worker.
+import './lib/report.js'; // quiet browser-error reporting to the Worker (see docs/MONITORING.md)
 const CFG = window.MEMORIES_CONFIG || {};
 export const params = new URLSearchParams(location.search);
 export const $ = (s, el = document) => el.querySelector(s);

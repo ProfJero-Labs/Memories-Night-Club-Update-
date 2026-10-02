@@ -1,6 +1,6 @@
 // Memories API — Cloudflare Worker. Firestore is the database; this Worker is the only thing that
 // writes business data. See docs/ARCHITECTURE.md for the route map and role matrix.
-import { cors, ok, fail, reply, throttled } from './lib/http.js';
+import { cors, ok, fail, reply, throttled, allowedOrigin } from './lib/http.js';
 import { logError } from './lib/log.js';
 import { verifyStaff, requireRole, MONEY, DOOR } from './lib/auth.js';
 import { smsRequest } from './lib/notify.js';
@@ -10,6 +10,9 @@ import { normalizePhone, normalizePlanCode } from './lib/util.js';
 import { upsertRaffle, drawRaffle } from './raffle.js';
 import { checkin, verifyTicket, doorSummary, doorSearch, seatTable, undoCheckin } from './door.js';
 import * as admin from './admin.js';
+import { reconcilePayments, health } from './reconcile.js';
+import * as Sentry from '@sentry/cloudflare';
+import { sentryOptions, reportError, routeGroup, isCritical, clientError, securitySignal } from './lib/monitor.js';
 
 const enc = new TextEncoder();
 const fromHex = s => Uint8Array.from(String(s).match(/.{2}/g) || [], x => parseInt(x, 16));
@@ -17,12 +20,12 @@ const body = async req => { try { return await req.json(); } catch { return {}; 
 const tooMany = (req, env) => fail(req, env, 'Too many attempts. Wait a minute and try again.', 429);
 const last = p => decodeURIComponent(p.split('/').pop());
 
-async function paystackWebhook(req, env) {
+async function paystackWebhook(req, env, ctx) {
   const raw = await req.text();
   const key = await crypto.subtle.importKey('raw', enc.encode(env.PAYSTACK_SECRET_KEY), { name: 'HMAC', hash: 'SHA-512' }, false, ['verify']);
   const sig = req.headers.get('x-paystack-signature') || '';
   const valid = /^[0-9a-f]{128}$/i.test(sig) && await crypto.subtle.verify('HMAC', key, fromHex(sig), enc.encode(raw));
-  if (!valid) return new Response('ignored', { status: 200 });
+  if (!valid) { await later(ctx, securitySignal(env, 'webhook_forged')); return new Response('ignored', { status: 200 }); }
   const event = JSON.parse(raw);
   // fulfill() re-verifies with Paystack and is idempotent per reference, so redelivery is harmless.
   if (event.event === 'charge.success' && event.data?.reference) await fulfill(env, event.data.reference);
@@ -102,7 +105,9 @@ async function route(req, env, ctx) {
   }
   if (m === 'GET' && p.startsWith('/api/verify/')) { if (await throttled(req, env, 'ticket', 'standard')) return tooMany(req, env); return ok(req, env, await verifyTicket(env, last(p))); }
   if (m === 'POST' && p === '/api/private-requests') { if (await throttled(req, env, 'private', 'strict')) return tooMany(req, env); return reply(req, env, await createPrivateRequest(env, await body(req))); }
-  if (m === 'POST' && p === '/api/paystack/webhook') return paystackWebhook(req, env);
+  if (m === 'POST' && p === '/api/paystack/webhook') return paystackWebhook(req, env, ctx);
+  if (m === 'GET' && p === '/api/health') return health(req, env);
+  if (m === 'POST' && p === '/api/client-error') { if (await throttled(req, env, 'client-error', 'strict')) return tooMany(req, env); return reply(req, env, await clientError(req, env, allowedOrigin)); }
 
   // ── Staff (Firebase ID token with a role claim) ──
   if (!p.startsWith('/api/admin/') && !['/api/checkin', '/api/checkin/undo', '/api/door/events', '/api/door/summary', '/api/door/search', '/api/send-sms', '/api/balance'].includes(p)) return fail(req, env, 'Not found.', 404);
@@ -174,6 +179,7 @@ async function route(req, env, ctx) {
   }
   if (m === 'GET' && p === '/api/admin/organiser/overview') return reply(req, env, await admin.organiserOverview(env, user));
 
+  if (m === 'GET' && p === '/api/admin/system') return reply(req, env, await admin.systemStatus(env, user));
   if (m === 'GET' && p === '/api/admin/payments') return reply(req, env, await admin.listPendingCheckouts(env, { sinceMs: Number(u.searchParams.get('sinceMs')) || 0 }, user));
 
   // ── Settlements ──
@@ -183,19 +189,44 @@ async function route(req, env, ctx) {
   return fail(req, env, 'Not found.', 404);
 }
 
-export default {
+const STAFF_PATH = /^\/api\/(admin|checkin|door|members\/door|bar)(\/|$)|^\/api\/(send-sms|balance)$/;
+const handler = {
   async fetch(req, env, ctx) {
     if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers: cors(req, env) });
-    try { return await route(req, env, ctx); }
-    catch (e) { logError('request failed', `${req.method} ${new URL(req.url).pathname}`, e); return fail(req, env, 'Something went wrong on our side. Try again.', 500); }
+    try {
+      const res = await route(req, env, ctx);
+      // Probing looks like a run of refusals from one address; a guest having a bad night doesn't.
+      const ip = req.headers.get('CF-Connecting-IP') || 'unknown', path = new URL(req.url).pathname;
+      if ((res.status === 401 || res.status === 403) && STAFF_PATH.test(path)) await later(ctx, securitySignal(env, 'staff_denied', ip));
+      else if (res.status === 429) await later(ctx, securitySignal(env, 'rate_limited', ip));
+      return res;
+    }
+    catch (e) {
+      const path = new URL(req.url).pathname;
+      logError('request failed', `${req.method} ${path}`, e);
+      // Sentry gets every unexpected error; a payment-path failure also texts the team (throttled).
+      await later(ctx, reportError(env, `${req.method} ${routeGroup(path)}`, e, { critical: isCritical(path) }));
+      return fail(req, env, 'Something went wrong on our side. Try again.', 500);
+    }
   },
   async scheduled(event, env, ctx) {
-    ctx.waitUntil(forfeitStalePlans(env).catch(e => logError('forfeitStalePlans failed', e)));
+    // Two crons (wrangler.toml): every 10 minutes the payment reconciliation, daily the forfeit sweep.
+    if (event.cron === '*/10 * * * *') ctx.waitUntil(reconcilePayments(env, event.scheduledTime));
+    else ctx.waitUntil(forfeitStalePlans(env).catch(e => { logError('forfeitStalePlans failed', e); return reportError(env, 'cron.forfeitStalePlans', e); }));
   },
+};
+
+// Sentry wraps the handler only when SENTRY_DSN is set (and a real execution context exists), so
+// without a DSN the Worker runs exactly as before and the tests exercise the bare handler.
+const instrumented = Sentry.withSentry(sentryOptions, handler);
+export default {
+  fetch: (req, env, ctx) => (env.SENTRY_DSN && ctx ? instrumented.fetch(req, env, ctx) : handler.fetch(req, env, ctx)),
+  scheduled: (event, env, ctx) => (env.SENTRY_DSN && ctx ? instrumented.scheduled(event, env, ctx) : handler.scheduled(event, env, ctx)),
 };
 
 // Exposed for the test suite.
 export { checkin, verifyTicket, drawRaffle, upsertRaffle, forfeitStalePlans, getSettings, calendar, createPrivateRequest, eventBundle, publicTicket };
+export { reconcilePayments, health };
 export { fulfillTicket, fulfillTable, fulfillInstallment, startInstallment, topupInstallment, initiateTicket, initiateTable, startInstallmentTopup, lookupInstallments, textTicketLinks } from './checkout.js';
 export { withTransaction, listDocs, queryWhere } from './lib/firestore.js';
 export { requireRole } from './lib/auth.js';

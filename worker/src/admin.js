@@ -1,6 +1,6 @@
 // Staff operations. Every write the admin console makes comes through here: role-checked,
 // validated, and audit-logged. The browser never writes Firestore directly.
-import { getDoc, setDoc, deleteDoc, listDocs, queryWhere, commitTx, updateWrite, withTransaction, googleAccessToken } from './lib/firestore.js';
+import { getDoc, setDoc, deleteDoc, listDocs, queryWhere, queryRecent, commitTx, updateWrite, withTransaction, googleAccessToken } from './lib/firestore.js';
 import { now, id, clean, normalizePhone, ticketToken, displayCode, dateKey, firstName, TICKET_STYLES, cleanTicketColors, generatePassword } from './lib/util.js';
 import { requireRole, CMS, MONEY, STAFF_ROLES, uidOf } from './lib/auth.js';
 import { sendSms, sendEmail, siteUrl } from './lib/notify.js';
@@ -574,5 +574,23 @@ export async function listPendingCheckouts(env, q, user) {
       }))
       .sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0))
       .slice(0, 200),
+  };
+}
+// ── System status: the control room's view of monitoring ──
+// The last payment check (worker/src/reconcile.js writes it every 10 minutes) and the alerts sent
+// in the last 7 days. If the check is more than 30 minutes old, the panel says so: the cron, or the
+// Worker, has stopped.
+export async function systemStatus(env, user) {
+  if (!requireRole(user, MONEY)) return FORBIDDEN;
+  const [rec, alerts] = await Promise.all([
+    getDoc(env, 'system', 'reconcile'),
+    queryRecent(env, 'recon_alerts', 'at', new Date(Date.now() - 7 * 864e5), 30),
+  ]);
+  const last = rec?.fields || null;
+  const age = last?.at ? Date.now() - new Date(last.at).getTime() : null;
+  return {
+    reconcile: last ? { at: last.at, ok: last.ok !== false, checked: last.checked || 0, recovered: last.recovered || 0, alerts: last.alerts || 0, errors: last.errors || 0, stale: age > 30 * 60_000 } : null,
+    alerts: alerts.map(a => ({ at: a.fields.at, kind: String(a.id).replace(/_\d+$|_MEM-.*$/, '').replace(/^sec_/, 'security: ').replace(/_/g, ' '), text: a.fields.text })),
+    configured: { alertPhones: !!env.ALERT_PHONES, sentry: !!env.SENTRY_DSN, heartbeat: !!env.HEARTBEAT_URL, healthKey: !!env.HEALTH_KEY },
   };
 }

@@ -10,6 +10,7 @@
     "test": "node --test test/*.test.js"
   },
   "dependencies": {
+    "@sentry/cloudflare": "^11.1.0",
     "jose": "^6.2.12"
   },
   "devDependencies": {

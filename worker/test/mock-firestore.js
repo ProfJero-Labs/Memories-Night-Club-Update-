@@ -137,6 +137,10 @@ export class MockFirestore {
         const r = this.paystack.get(ref) || { status: 'failed' };
         return jsonResponse({ status: true, message: 'ok', data: r });
       }
+      if (u.pathname === '/transaction' && method === 'GET') {
+        if (this.paystackListDown) return jsonResponse({ status: false, message: 'down' }, 503);
+        return jsonResponse({ status: true, data: (this.paystackTransactions || []).slice((Number(u.searchParams.get('page') || 1) - 1) * 100, Number(u.searchParams.get('page') || 1) * 100) });
+      }
       if (u.pathname === '/transaction/initialize') {
         this.paystackInits.push(JSON.parse(options.body || '{}'));
         return jsonResponse({ status: true, data: { authorization_url: 'https://paystack.test/pay' } });
@@ -182,9 +186,16 @@ export class MockFirestore {
       const matches = this.list(col).filter(({ fields }) =>
         filters.every(f => {
           const ff = f.fieldFilter;
-          return fields[ff.field.fieldPath] === decodeValue(ff.value);
+          const have = fields[ff.field.fieldPath], want = decodeValue(ff.value);
+          if (ff.op === 'GREATER_THAN_OR_EQUAL') return new Date(have).getTime() >= new Date(want).getTime();
+          return have === want;
         })
-      ).slice(0, sq.limit || 1000);
+      );
+      for (const o of [...(sq.orderBy || [])].reverse()) {
+        const f = o.field.fieldPath, dir = o.direction === 'DESCENDING' ? -1 : 1;
+        matches.sort((a, b) => { const x = a.fields[f], y = b.fields[f]; const xa = isNaN(Date.parse(x)) ? x : Date.parse(x), ya = isNaN(Date.parse(y)) ? y : Date.parse(y); return xa < ya ? -dir : xa > ya ? dir : 0; });
+      }
+      matches.splice(sq.limit || 1000);
       const out = matches.map(({ id, fields }) => {
         const k = this.key(col, id);
         if (tx) tx.set(k, this.versions.get(k) ?? 0);

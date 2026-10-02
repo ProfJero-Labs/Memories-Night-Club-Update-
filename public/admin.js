@@ -11,10 +11,10 @@ staffHeader(user, 'Control room');
 const can = roles => roles.includes(user.role);
 const TABS = [
   ['overview', 'Overview', CMS], ['nights', 'Nights', CMS], ['payments', 'Payments', CMS], ['bookings', 'Orders', CMS], ['requests', 'Event requests', CMS],
-  ['bits', 'Pay in bits', MONEY], ['refunds', 'Refunds', MONEY], ['bar', 'Bar menu', CMS], ['settings', 'Site settings', MONEY], ['staff', 'Staff', ['superAdmin']],
+  ['system', 'System', MONEY], ['bits', 'Pay in bits', MONEY], ['refunds', 'Refunds', MONEY], ['bar', 'Bar menu', CMS], ['settings', 'Site settings', MONEY], ['staff', 'Staff', ['superAdmin']],
 ].filter(t => can(t[2]));
 // Five places, not ten: related tabs sit together behind one button, with their own row underneath.
-const GROUPS = [['tonight', 'Tonight', ['overview']], ['nights', 'Nights', ['nights']], ['money', 'Money', ['payments', 'bookings', 'bits', 'refunds']], ['requests', 'Requests', ['requests']], ['setup', 'Setup', ['settings', 'bar', 'staff']]]
+const GROUPS = [['tonight', 'Tonight', ['overview', 'system']], ['nights', 'Nights', ['nights']], ['money', 'Money', ['payments', 'bookings', 'bits', 'refunds']], ['requests', 'Requests', ['requests']], ['setup', 'Setup', ['settings', 'bar', 'staff']]]
   .map(([k, l, tabs]) => [k, l, tabs.filter(t => TABS.some(x => x[0] === t))]).filter(([, , tabs]) => tabs.length);
 const groupOf = tab => GROUPS.find(g => g[2].includes(tab)) || GROUPS[0];
 const panel = $('#panel');
@@ -70,7 +70,7 @@ function show(tab, arg, notice) {
   if (location.hash.slice(1) !== current) location.hash = current;
   drawSubtabs(tab);
   panel.innerHTML = '<div class="loading">Loading…</div>';
-  ({ overview, nights, night, payments, bookings, requests, bits, refunds, bar, settings, staff })[tab](arg, notice).catch(fail);
+  ({ overview, system, nights, night, payments, bookings, requests, bits, refunds, bar, settings, staff })[tab](arg, notice).catch(fail);
 }
 
 // ── Overview ──
@@ -90,6 +90,25 @@ async function overview() {
       <td class="actions"><button class="sbtn" data-open="${esc(n.id)}">Open</button><a class="sbtn ghost" href="checkin.html?event=${encodeURIComponent(n.id)}">Door</a></td></tr>`).join('') || '<tr><td colspan="8" class="empty-row">No upcoming nights. Create one under Nights.</td></tr>'}
     </tbody></table></div>`;
   $$('[data-open]').forEach(b => b.onclick = () => show('nights', b.dataset.open));
+}
+
+// ── System: is the money being watched? ──
+// The payment check runs every 10 minutes (worker/src/reconcile.js); alerts are what was texted.
+async function system() {
+  const d = await sapi('/api/admin/system');
+  const r = d.reconcile, c = d.configured;
+  const state = !r ? pill('never run', 'red') : r.stale ? pill('stopped', 'red') : r.ok ? pill('watching', 'green') : pill('failing', 'red');
+  const setup = [['Alert phones', c.alertPhones], ['Sentry', c.sentry], ['Heartbeat', c.heartbeat], ['Health key', c.healthKey]];
+  panel.innerHTML = `<h1>System</h1>
+    <div class="card"><div class="toolbar" style="margin:0"><strong>Payment check</strong> ${state}</div>
+      ${r ? `<p style="margin:0">Last run ${esc(when(r.at))}: ${r.checked} checked, ${r.recovered} fixed automatically, ${r.alerts} alerts, ${r.errors} errors.</p>` : '<p style="margin:0">No run recorded yet. It starts within 10 minutes of the Worker being deployed.</p>'}
+      ${r?.stale ? '<p class="msg err" style="margin:0">The check hasn’t run for over 30 minutes. Check the Worker’s cron in Cloudflare.</p>' : ''}
+      <p class="hint" style="margin:0;color:var(--muted)">Every 10 minutes it finishes paid orders that missed their ticket, and texts the alert phones about anything a person must fix.</p></div>
+    <h2>Set up</h2><div class="toolbar">${setup.map(([l, on]) => pill(`${l}: ${on ? 'on' : 'off'}`, on ? 'green' : 'amber')).join(' ')}</div>
+    <p class="hint" style="color:var(--muted)">Anything off is set as a Worker secret: see docs/MONITORING.md.</p>
+    <h2>Alerts, last 7 days</h2>
+    <div class="tbl-wrap"><table class="tbl"><thead><tr><th>When</th><th>What</th><th>Message</th></tr></thead><tbody>
+    ${d.alerts.map(a => `<tr><td>${esc(when(a.at))}</td><td>${esc(a.kind)}</td><td>${esc(a.text)}</td></tr>`).join('') || '<tr><td colspan="3" class="empty-row">No alerts. Quiet is good.</td></tr>'}</tbody></table></div>`;
 }
 
 // ── Nights ──
