@@ -213,9 +213,12 @@ test('pay in bits: partial payment gets no ticket and no draw spot; the final pa
 
 test('pay-the-rest lookup of a paid order shows no ticket link; "text me the link" is neutral and texts only the right phone', async () => {
   const plan = docs('installment_plans').find(p => p.buyerName === 'Yaw Boateng' && p.status === 'completed');
-  assert.match(plan.id, /^MEM-[0-9A-Z]{5}-[0-9A-Z]{5}$/, 'new-format order code');
+  assert.match(plan.id, /^[A-Z0-9]{1,10}-\d{3}$/, 'readable order code from the night, e.g. AMAPIANOSA-001');
   const page = await phone();
   await page.goto(`${base}/installment.html?code=${plan.id.toLowerCase()}`, { waitUntil: 'networkidle' });
+  await page.getByText(/enter the phone number you paid with/i).waitFor();
+  assert.equal(await page.locator('#root .plan').count(), 0, 'the code alone opens nothing');
+  await page.fill('#phone', '024 111 2222'); await page.click('#find button[type=submit]');
   await page.getByText(/paid in full/i).waitFor();
   const html = await page.content();
   assert.ok(!/ticket\.html\?token=/.test(html), 'no ticket link on the page');

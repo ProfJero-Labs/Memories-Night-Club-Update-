@@ -35,24 +35,56 @@ test('order codes: 10 Crockford characters, unpredictable; typing slips are forg
   assert.equal(normalizeOrderCode('<script>'), null);
 });
 
-test('lookup by code shows the order but no ticket id, link, QR data or phone', async () => {
+test('lookup needs the code AND the phone on the order; it shows the order but no ticket id, link, QR data or phone', async () => {
   const { store, env } = createMockEnv(); seed(store);
-  const r = await call(env, 'GET', '/api/installments/lookup?code=mem-7k3qx-9wp2m');
+  const r = await call(env, 'GET', '/api/installments/lookup?code=mem-7k3qx-9wp2m&phone=024%20123%204567');
   assert.equal(r.status, 200);
   const [p] = r.data.plans;
   assert.deepEqual(Object.keys(p).sort(), ['deadline', 'eventDate', 'eventName', 'firstName', 'paidPesewas', 'planId', 'remainingPesewas', 'status', 'ticketReady', 'totalPesewas']);
   assert.equal(p.ticketReady, true);
-  assert.equal(p.remainingPesewas, 0);
   for (const leak of [TOKEN, 'ticket.html', 'token', '0241234567', '4567', 'Owusu']) assert.ok(!r.text.includes(leak), `response contains ${leak}`);
-  const legacy = await call(env, 'GET', '/api/installments/lookup?code=MEM-AB1234');
+  const legacy = await call(env, 'GET', '/api/installments/lookup?code=MEM-AB1234&phone=0551112222');
   assert.equal(legacy.data.plans[0].remainingPesewas, 10000);
+  for (const q of ['code=MEM-7K3QX-9WP2M', 'code=MEM-7K3QX-9WP2M&phone=0209999999', 'phone=0241234567']) {
+    assert.deepEqual((await call(env, 'GET', `/api/installments/lookup?${q}`)).data.plans, [], `${q} shows nothing`);
+  }
 });
 
-test('lookup by phone (older pages) returns nothing', async () => {
+test('phone alone: a 6-digit code is texted to that phone; the right code shows the orders, wrong ones run out', async () => {
   const { store, env } = createMockEnv(); seed(store);
-  const r = await call(env, 'GET', '/api/installments/lookup?phone=0241234567');
-  assert.deepEqual(r.data.plans, []);
-  assert.ok(!r.text.includes(TOKEN));
+  const known = await call(env, 'POST', '/api/installments/phone-code', { body: { phone: '0241234567' } });
+  const unknown = await call(env, 'POST', '/api/installments/phone-code', { body: { phone: '0209999999' } });
+  assert.equal(known.text, unknown.text, 'same reply either way');
+  assert.equal(store.sms.length, 1); assert.equal(store.sms[0].to, '0241234567');
+  const code = /(\d{6})/.exec(store.sms[0].message)[1];
+  assert.ok(!JSON.stringify(store.get('phone_sessions', '0241234567').fields).includes(code), 'stored hashed');
+  const wrong = String((Number(code) + 1) % 1000000).padStart(6, '0');
+  assert.equal((await call(env, 'POST', '/api/installments/phone-verify', { body: { phone: '0241234567', code: wrong } })).status, 400);
+  const ok = await call(env, 'POST', '/api/installments/phone-verify', { body: { phone: '0241234567', code } });
+  assert.equal(ok.status, 200); assert.equal(ok.data.plans[0].planId, 'MEM-7K3QX-9WP2M');
+  assert.ok(!ok.text.includes(TOKEN));
+  assert.equal((await call(env, 'POST', '/api/installments/phone-verify', { body: { phone: '0241234567', code } })).status, 400, 'a code works once');
+
+  await call(env, 'POST', '/api/installments/phone-code', { body: { phone: '0241234567' } });
+  const code2 = /(\d{6})/.exec(store.sms.at(-1).message)[1];
+  const bad = String((Number(code2) + 1) % 1000000).padStart(6, '0');
+  for (let i = 0; i < 5; i++) await call(env, 'POST', '/api/installments/phone-verify', { body: { phone: '0241234567', code: bad } });
+  assert.equal((await call(env, 'POST', '/api/installments/phone-verify', { body: { phone: '0241234567', code: code2 } })).status, 400, 'after 5 wrong tries even the right code is dead');
+});
+
+test('new orders get readable codes from the night (NOSADDAYS-001, -002); typing slips are forgiven', async () => {
+  const { normalizePlanCode, eventSlug } = await import('../src/lib/util.js');
+  assert.equal(eventSlug('No Sad Days!'), 'NOSADDAYS');
+  assert.equal(normalizePlanCode('nosaddays 1'), 'NOSADDAYS-001');
+  assert.equal(normalizePlanCode('NOSADDAYS-012'), 'NOSADDAYS-012');
+  assert.equal(normalizePlanCode('mem 7k3qx 9wp2m'), 'MEM-7K3QX-9WP2M', 'legacy codes still work');
+  assert.equal(normalizePlanCode('<script>'), null);
+  const { store, env } = createMockEnv();
+  store.seed('events', 'n1', { name: 'No Sad Days', visibility: 'public', active: true, date: '2099-10-02T22:00:00Z' });
+  store.seed('ticket_types', 't1', { eventId: 'n1', name: 'Regular', pricePesewas: 10000, remaining: 50, active: true });
+  const start = () => call(env, 'POST', '/api/installments/start', { body: { eventId: 'n1', ticketTypeId: 't1', quantity: 1, buyerPhone: '0241234567', depositPesewas: 2000, acknowledged: true } });
+  assert.equal((await start()).data.planId, 'NOSADDAYS-001');
+  assert.equal((await start()).data.planId, 'NOSADDAYS-002');
 });
 
 test('lost code: same reply for a known and an unknown number; only the known one gets a text', async () => {

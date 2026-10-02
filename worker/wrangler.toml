@@ -13,14 +13,15 @@ SMS_SENDER = "MEMORIES"
 # SMS over the public URL, authenticated with SMS_WORKER_KEY (set as a secret on both workers).
 SMS_WORKER_URL = "https://memories-sms.diamondj04102026.workers.dev"
 
+# Fallback EvolveIT share % used when an event has no evolveitSharePct of its own.
+EVOLVEIT_SHARE_PCT = "10"
+
 # Worker-to-worker SMS over Cloudflare's internal network. The paystack worker calls
 # memories-sms directly, no public URL involved.
+# (Kept after [vars]: in TOML everything below a table header belongs to that table.)
 [[services]]
 binding = "SMS"
 service = "memories-sms"
-
-# Fallback EvolveIT share % used when an event has no evolveitSharePct of its own.
-EVOLVEIT_SHARE_PCT = "10"
 
 # Edge rate limits (Workers Rate Limiting API). Keys are "<route>:<client IP>".
 [[ratelimits]]

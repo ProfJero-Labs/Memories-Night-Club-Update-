@@ -1,5 +1,5 @@
 // installment.html: page script. Look up an order by phone, or code + phone, then pay the rest.
-import { chrome, api, esc, params, money, $, $$, shortDate, time, normalizePhone, claims } from '../app.js';
+import { chrome, api, esc, params, money, $, $$, shortDate, time, normalizePhone, claims, remember } from '../app.js';
 chrome();
 const root = $('#root');
 
@@ -27,20 +27,38 @@ function planCard(p) {
     <button class="btn red" type="submit">Pay <span class="arrow">→</span></button></form>`;
 }
 
+const showPlans = plans => { root.innerHTML = `<div style="display:grid;gap:18px">${plans.map(planCard).join('')}</div>`; bind(); };
+
+// Code + phone opens the order. Phone alone: we text that phone a 6-digit code first, so nobody
+// can look up someone else's orders by typing their number.
 async function find() {
   const code = ($('#q')?.value || '').trim();
   const phone = ($('#phone')?.value || '').trim();
-  if (!phone && !code) return;
-  root.innerHTML = '<div class="loading">FINDING YOUR ORDER…</div>';
-  const qs = new URLSearchParams();
-  if (code) qs.set('code', code);
-  if (phone) qs.set('phone', phone);
+  if (!normalizePhone(phone)) { root.innerHTML = '<div class="notice" role="alert">Enter the phone number you paid with, e.g. 024 123 4567.</div>'; return $('#phone').focus(); }
+  remember.set({ ...remember.get(), phone });
+  if (!code) return askCode(phone);
+  root.innerHTML = '<div class="loading" role="status">FINDING YOUR ORDER…</div>';
   try {
-    const { plans } = await api(`/api/installments/lookup?${qs}`);
-    if (!plans.length) { root.innerHTML = '<div class="notice">No orders found. Check the phone number you paid with, or the code from your text.</div>'; return; }
-    root.innerHTML = `<div style="display:grid;gap:18px">${plans.map(planCard).join('')}</div>`;
-    bind();
+    const { plans } = await api(`/api/installments/lookup?${new URLSearchParams({ code, phone })}`);
+    if (!plans.length) { root.innerHTML = '<div class="notice">No order with that code on that number. Check both against your text, or leave the code blank and we’ll text you one to sign in.</div>'; return; }
+    showPlans(plans);
   } catch (e) { root.innerHTML = `<div class="notice" role="alert">${esc(e.message)}</div>`; }
+}
+
+async function askCode(phone) {
+  root.innerHTML = '<div class="loading" role="status">SENDING A CODE…</div>';
+  let sent;
+  try { sent = await api('/api/installments/phone-code', { method: 'POST', body: { phone } }); }
+  catch (e) { root.innerHTML = `<div class="notice" role="alert">${esc(e.message)}</div>`; return; }
+  root.innerHTML = `<form id="otp" class="step" novalidate><div class="notice ok" role="status">${esc(sent.message)}</div>
+    <div class="field"><label for="otpCode">6-digit code</label><input id="otpCode" inputmode="numeric" autocomplete="one-time-code" maxlength="6" pattern="[0-9]*"></div>
+    <button class="btn red" type="submit">Show my orders <span class="arrow">→</span></button><div class="notice" id="otpErr" hidden role="alert"></div></form>`;
+  $('#otpCode').focus();
+  $('#otp').onsubmit = async ev => {
+    ev.preventDefault();
+    try { const { plans } = await api('/api/installments/phone-verify', { method: 'POST', body: { phone, code: $('#otpCode').value } }); plans.length ? showPlans(plans) : (root.innerHTML = '<div class="notice">No open orders on this number.</div>'); }
+    catch (e) { $('#otpErr').hidden = false; $('#otpErr').textContent = e.message; }
+  };
 }
 
 async function neutral(form, path, body) {
@@ -72,5 +90,7 @@ function bind() {
 }
 
 $('#find').onsubmit = ev => { ev.preventDefault(); find(); };
+// From the link in our text: the code is in the address; the phone is remembered on this phone.
+$('#phone').value = remember.get().phone || '';
 const code = params.get('code');
-if (code && $('#q')) { $('#q').value = code; find(); }
+if (code) { $('#q').value = code; if ($('#phone').value) find(); else { root.innerHTML = '<div class="notice">Enter the phone number you paid with to open this order.</div>'; $('#phone').focus(); } }

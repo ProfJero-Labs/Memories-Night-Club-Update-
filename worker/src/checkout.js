@@ -5,7 +5,7 @@
 // All payments land in EvolveIT's Paystack account. The three-way split (EvolveIT / Memories /
 // organizer) is recorded on each order for the ledger; distribution happens out of band.
 import { getDoc, setDoc, createDoc, deleteDoc, queryWhere, batchGet, commitTx, updateWrite, foundFields, withTransaction } from './lib/firestore.js';
-import { BITS_POLICY_VERSION, now, id, paymentRef, ticketToken, displayCode, clean, normalizePhone, validEmail, firstName, money } from './lib/util.js';
+import { BITS_POLICY_VERSION, now, id, paymentRef, claimSecret, sha256Hex, ticketToken, displayCode, tableCode, eventSlug, normalizePlanCode, sixDigits, clean, normalizePhone, validEmail, firstName, money, maskPhone, formatAccra } from './lib/util.js';
 import { sendSms, sendEmail, siteUrl } from './lib/notify.js';
 import { getSettings, resolveLines, isOver } from './public.js';
 import { openRaffleForEvent, raffleSpotWrites } from './raffle.js';
@@ -21,7 +21,8 @@ async function paystack(env, path, options = {}) {
   return d.data;
 }
 
-// Computes EvolveIT's, Memories' and the organizer's amounts for a paid order.
+// Computes EvolveIT's, Memories' and the organizer's amounts for a paid order. `evolveitSharePct`
+// from the event wins; the env fallback covers events created before the field existed.
 const sharesFor = (env, eventFields, amountPesewas) => computeShares(
   amountPesewas,
   { evolveitSharePct: eventFields?.evolveitSharePct, organizerSharePct: eventFields?.organizerSharePct },
@@ -34,32 +35,8 @@ export const LINE_MAX = 40;
 export const returnUrl = env => (/^https?:\/\//.test(env.PUBLIC_SITE_URL || '') ? siteUrl(env, '/payment-return.html') : '');
 const payEmail = (env, email, phone) => (validEmail(email) ? email : `guest-${phone}@${new URL(env.PUBLIC_SITE_URL || 'https://memoriesnightclub.com').hostname.replace(/^www\./, '')}`);
 
-// ── Plan codes ──
-// "NO SAD DAYS" → "NOSADDAYS". Falls back to "MEM" if the name has no usable characters.
-export function eventSlug(name) {
-  const s = String(name || '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 10);
-  return s || 'MEM';
-}
-
-// Next free SLUG-NNN for an event, e.g. NOSADDAYS-001, NOSADDAYS-002. The create itself fails
-// on collision (ALREADY_EXISTS) so a race just moves the caller on to the next attempt.
-export async function nextPlanCode(env, eventId, eventName) {
-  const slug = eventSlug(eventName);
-  const existing = await queryWhere(env, 'installment_plans', [{ field: 'eventId', value: eventId }]);
-  const used = new Set(existing.map(p => p.id));
-  for (let n = 1; n <= 999; n++) {
-    const code = `${slug}-${String(n).padStart(3, '0')}`;
-    if (!used.has(code)) return code;
-  }
-  return `${slug}-${1000 + Math.floor(Math.random() * 9000)}`;
-}
-
-// Accepts user-typed variants: "nosaddays-001", "NOSADDAYS 001", "Nosaddays-1".
-const normalizePlanCode = s => String(s || '').toUpperCase().replace(/[^A-Z0-9-]/g, '').slice(0, 24);
-
-// ── Shared ticket validation ──
-// Name is optional — a Guest placeholder is used when it's blank, so the ticket, SMS and share
-// image always have something to show.
+// Shared validation for anything that becomes a ticket. Name is optional — a Guest placeholder is
+// used when it's blank, so the ticket, SMS and share image always have something to show.
 async function ticketContext(env, b) {
   const rawName = clean(b?.buyerName, 80);
   const buyerName = rawName || 'Guest';
@@ -74,10 +51,11 @@ async function ticketContext(env, b) {
   if (!ev || !tt || ev.fields.active === false || ev.fields.visibility !== 'public' || tt.fields.eventId !== b.eventId || tt.fields.active !== true) return { error: 'This ticket is no longer available.' };
   if (ev.fields.soldOut === true || (typeof tt.fields.remaining === 'number' && tt.fields.remaining < qty)) return { error: 'Not enough tickets left for that.' };
   if (isOver(ev.fields)) return { error: 'This night has already happened.' };
+  // The line is optional: the guest can pick one of the night's lines, write their own (short
+  // enough to sit on the ticket), or leave it empty, and the ticket then leads with the night's name.
   const lines = resolveLines(ev.fields, settings);
   const own = clean(b.identityLine, 400).replace(/\s+/g, ' ').slice(0, LINE_MAX).trim();
   const identityLine = lines.includes(b.identityLine) ? b.identityLine : own;
-  if (lines.length && !identityLine) return { error: 'Pick a line or write your own.' };
   const unit = Number(tt.fields.pricePesewas || 0);
   if (!(unit > 0)) return { error: 'This ticket is no longer available.' };
   return { ev, tt, qty, buyerName, buyerPhone, buyerEmail: clean(b.buyerEmail, 120), identityLine, totalPesewas: unit * qty };
@@ -86,17 +64,17 @@ async function ticketContext(env, b) {
 // ── Pay in full ──
 export async function initiateTicket(env, b) {
   const c = await ticketContext(env, b); if (c.error) return c;
-  const reference = paymentRef();
+  const reference = paymentRef(), claim = claimSecret();
   const shares = sharesFor(env, c.ev.fields, c.totalPesewas);
   await setDoc(env, 'pending_checkouts', reference, {
-    reference, kind: 'ticket', eventId: c.ev.id, eventName: c.ev.fields.name || '', ticketTypeId: c.tt.id, ticketTypeName: c.tt.fields.name || 'Ticket',
+    reference, claimHash: await sha256Hex(claim), kind: 'ticket', eventId: c.ev.id, eventName: c.ev.fields.name || '', ticketTypeId: c.tt.id, ticketTypeName: c.tt.fields.name || 'Ticket',
     admits: Number(c.tt.fields.admits || 1), quantity: c.qty, amountPesewas: c.totalPesewas, buyerName: c.buyerName, buyerPhone: c.buyerPhone,
     buyerEmail: c.buyerEmail, identityLine: c.identityLine, status: 'pending', createdAt: now(), shares,
   });
   try {
     const payload = { email: payEmail(env, c.buyerEmail, c.buyerPhone), amount: c.totalPesewas, currency: 'GHS', reference, callback_url: returnUrl(env), metadata: { kind: 'ticket', eventId: c.ev.id, ticketTypeId: c.tt.id, quantity: c.qty } };
     const p = await paystack(env, '/transaction/initialize', { method: 'POST', body: JSON.stringify(payload) });
-    return { reference, authorizationUrl: p.authorization_url };
+    return { reference, authorizationUrl: p.authorization_url, claim };
   } catch (e) {
     await setDoc(env, 'pending_checkouts', reference, { reference, kind: 'ticket', eventId: c.ev.id, status: 'failed', error: 'payment_initialization_failed', failedAt: now() });
     throw e;
@@ -150,6 +128,7 @@ export async function fulfillTicket(env, reference) {
         quantity: P.quantity, amountPesewas: P.amountPesewas, buyerName: P.buyerName, buyerPhone: P.buyerPhone, buyerEmail: P.buyerEmail || '',
         status: 'confirmed', inDraw, ticketIds: tokens, createdAt: now(),
         shares,
+        // Flat fields the admin dashboard reads directly.
         evolveitSharePesewas: shares.evolveitSharePesewas || 0,
         memoriesSharePesewas: shares.memoriesSharePesewas || 0,
         organizerSharePesewas: shares.organizerSharePesewas || 0,
@@ -170,7 +149,7 @@ export async function fulfillTicket(env, reference) {
   return result;
 }
 
-// ── Tables ──
+// ── Tables: package + bottles, paid in full ──
 export async function initiateTable(env, b) {
   const name = clean(b?.name, 80) || 'Guest', phone = normalizePhone(b?.phone);
   if (!b?.eventId || !b?.packageId) return { error: 'Pick a table.' };
@@ -244,8 +223,8 @@ export async function fulfillTable(env, reference) {
     return { status: 'issued', orderId };
   });
   if (result.status === 'issued' && !result.already) {
-    await sendSms(env, P.buyerPhone, `MEMORIES\nTable confirmed: ${P.packageName}, ${P.eventName}.\nTotal paid ${money(P.amountPesewas)}. Ref ${reference}.`);
-    await sendEmail(env, P.buyerEmail, 'Your Memories table is confirmed', [`${P.packageName} · ${P.eventName}`, `Total paid: ${money(P.amountPesewas)}`, `Reference: ${reference}`]);
+    await sendSms(env, P.buyerPhone, `MEMORIES\nTable confirmed: ${P.packageName}, ${P.eventName}.\nTotal paid ${money(P.amountPesewas)}.\nAt the door: ${tableCode(result.orderId)}, or give your name.`);
+    await sendEmail(env, P.buyerEmail, 'Your Memories table is confirmed', [`${P.packageName} · ${P.eventName}`, `Total paid: ${money(P.amountPesewas)}`, `At the door, show ${tableCode(result.orderId)} or give your name.`, `Payment reference: ${reference}`]);
   }
   delete result.already;
   return result;
@@ -255,10 +234,15 @@ export async function fulfillTable(env, reference) {
 export async function startInstallment(env, b) {
   if (b?.acknowledged !== true) return { error: 'Tick the box to confirm how pay in bits works.' };
   const c = await ticketContext(env, b); if (c.error) return c;
+  // A plan is forfeited when the night starts (maybeForfeitPlan), so none may start after that.
+  if (bitsClosed(c.ev.fields.date)) return { error: 'Pay in bits closes when the night starts. Pay in full instead.' };
   const deposit = Number(b.depositPesewas);
   if (!Number.isInteger(deposit) || deposit < MIN_TOPUP_PESEWAS) return { error: 'The smallest payment is GHS 1.' };
   if (deposit > c.totalPesewas) return { error: 'That’s more than the ticket costs.' };
+  // Lock the rates on the plan itself, so mid-plan changes to the event don't move the ledger.
   const shares = sharesFor(env, c.ev.fields, c.totalPesewas);
+  // The browser that starts the order keeps a claim, so its own payments can open the ticket.
+  const claim = claimSecret(), claimHash = await sha256Hex(claim);
   let planId;
   for (let attempt = 0; attempt < 8 && !planId; attempt++) {
     const code = await nextPlanCode(env, c.ev.id, c.ev.fields.name);
@@ -268,17 +252,19 @@ export async function startInstallment(env, b) {
         admits: Number(c.tt.fields.admits || 1), quantity: c.qty, totalPesewas: c.totalPesewas, paidPesewas: 0,
         buyerName: c.buyerName, firstName: firstName(c.buyerName), buyerPhone: c.buyerPhone, buyerEmail: c.buyerEmail, identityLine: c.identityLine,
         status: 'active', payments: [], createdAt: now(), updatedAt: now(), policyVersion: BITS_POLICY_VERSION, acknowledgedAt: now(),
-        shares,
+        shares, claimHash,
       });
       planId = code;
     } catch (e) { if (!String(e.message).includes('ALREADY_EXISTS')) throw e; }
   }
   if (!planId) return { error: 'Couldn’t start your order right now. Try again.' };
-  return startInstallmentTopup(env, planId, deposit, payEmail(env, c.buyerEmail, c.buyerPhone));
+  return { ...(await startInstallmentTopup(env, planId, deposit, payEmail(env, c.buyerEmail, c.buyerPhone))), claim };
 }
 
 export async function startInstallmentTopup(env, planId, amountPesewas, email) {
   const reference = paymentRef();
+  // The plan carries the shares of the whole order; each top-up is a partial payment of that total.
+  // We record the top-up's own split so partial refunds stay honest if a plan is ever unwound.
   const plan = await getDoc(env, 'installment_plans', planId);
   const planShares = plan?.fields?.shares || {};
   const topupShares = computeShares(amountPesewas, {
@@ -314,10 +300,13 @@ export async function topupInstallment(env, b) {
   return startInstallmentTopup(env, planId, amount, payEmail(env, plan.fields.buyerEmail, plan.fields.buyerPhone));
 }
 
+// Pay in bits closes the moment the night starts: that's also when an unpaid plan is forfeited.
+export const bitsClosed = date => { const t = new Date(date).getTime(); return Number.isFinite(t) && t <= Date.now(); };
+
 export async function maybeForfeitPlan(env, plan) {
   if (plan.fields.status !== 'active') return plan.fields.status === 'forfeited';
   const ev = await getDoc(env, 'events', plan.fields.eventId);
-  if (ev && new Date(ev.fields.date).getTime() <= Date.now()) {
+  if (ev && bitsClosed(ev.fields.date)) {
     await setDoc(env, 'installment_plans', plan.id, { ...plan.fields, status: 'forfeited', updatedAt: now() });
     return true;
   }
@@ -327,43 +316,62 @@ export async function maybeForfeitPlan(env, plan) {
 export const planSummary = p => {
   const total = Number(p.fields.totalPesewas || 0), paid = Number(p.fields.paidPesewas || 0);
   return {
-    planId: p.id, eventName: p.fields.eventName || '', eventDate: p.fields.eventDate || '',
-    firstName: p.fields.firstName || firstName(p.fields.buyerName),
-    quantity: Number(p.fields.quantity || 1), ticketTypeName: p.fields.ticketTypeName || '',
-    totalPesewas: total, paidPesewas: paid, remainingPesewas: Math.max(0, total - paid),
-    status: p.fields.status, ticketReady: p.fields.status === 'completed',
+    planId: p.id, eventName: p.fields.eventName || '', eventDate: p.fields.eventDate || '', firstName: p.fields.firstName || firstName(p.fields.buyerName),
+    // The balance has to be paid before this moment (the night's start), or the plan is forfeited.
+    deadline: p.fields.eventDate || '',
+    totalPesewas: total, paidPesewas: paid, remainingPesewas: Math.max(0, total - paid), status: p.fields.status, ticketReady: p.fields.status === 'completed',
   };
 };
 
-// Lookup by phone alone, or code + phone. The plan code is memorable on purpose (NOSADDAYS-001)
-// so it is not a secret; the phone number is what proves ownership. Anyone who finds a plan
-// through the wrong phone can only help pay it — no ticket is issued and no data is exposed
-// beyond the first name on the plan.
-//
-// Rate limits in index.js cap enumeration: 10 requests/minute/IP on this route.
-export async function lookupInstallments(env, { code, phone }) {
-  const ph = normalizePhone(phone);
-  if (!ph) return [];
-  if (code) {
-    const c = normalizePlanCode(code);
-    if (!c) return [];
-    const p = await getDoc(env, 'installment_plans', c);
-    if (!p || p.fields.buyerPhone !== ph) return [];
-    return [planSummary(p)];
-  }
-  const plans = await queryWhere(env, 'installment_plans', [{ field: 'buyerPhone', value: ph }]);
-  return plans
-    .filter(p => ['active', 'completed'].includes(p.fields.status))
-    .map(planSummary)
-    .sort((a, b) => new Date(b.eventDate || 0) - new Date(a.eventDate || 0));
+// Next free SLUG-NNN for a night (NOSADDAYS-001, -002…). The create fails on a collision
+// (ALREADY_EXISTS), so a race just moves the caller on to the next number.
+export async function nextPlanCode(env, eventId, eventName) {
+  const slug = eventSlug(eventName);
+  const used = new Set((await queryWhere(env, 'installment_plans', [{ field: 'eventId', value: eventId }])).map(p => p.id));
+  for (let n = 1; n <= 999; n++) { const code = `${slug}-${String(n).padStart(3, '0')}`; if (!used.has(code)) return code; }
+  return `${slug}-${1000 + (crypto.getRandomValues(new Uint32Array(1))[0] % 9000)}`;
 }
 
-// One reply for every case, so these can't be used to learn whether a number or order exists.
+// An order is shown only to someone who has both its code and the phone on it. Readable codes
+// (NOSADDAYS-001) are guessable, so the code alone shows nothing.
+export async function lookupInstallments(env, { code, phone }) {
+  const c = normalizePlanCode(code), ph = normalizePhone(phone);
+  if (!c || !ph) return [];
+  const p = await getDoc(env, 'installment_plans', c);
+  return p && p.fields.buyerPhone === ph ? [planSummary(p)] : [];
+}
+
+// No code? The phone proves itself with a 6-digit code texted to it. Codes are stored hashed, last
+// 10 minutes and die after 5 wrong tries. The reply never says whether the number has orders.
+const PHONE_CODE_TTL_MS = 10 * 60 * 1000, PHONE_CODE_MAX_ATTEMPTS = 5;
+export const NEUTRAL_PHONE_CODE = 'If that number has orders with us, we’ve texted it a 6-digit code.';
+export async function startPhoneLookup(env, { phone }) {
+  const ph = normalizePhone(phone); if (!ph) return false;
+  const plans = (await queryWhere(env, 'installment_plans', [{ field: 'buyerPhone', value: ph }])).filter(p => ['active', 'completed'].includes(p.fields.status));
+  if (!plans.length) return false;
+  const code = sixDigits();
+  await setDoc(env, 'phone_sessions', ph, { phone: ph, codeHash: await sha256Hex(`${ph}:${code}`), attempts: 0, expiresAt: new Date(Date.now() + PHONE_CODE_TTL_MS).toISOString(), createdAt: now() });
+  return sendSms(env, ph, `MEMORIES\nYour code: ${code}\nEnter it on the site to see your orders. It expires in 10 minutes.`);
+}
+export async function verifyPhoneLookup(env, { phone, code }) {
+  const ph = normalizePhone(phone), c = String(code || '').trim();
+  if (!ph || !/^\d{6}$/.test(c)) return { error: 'Enter the 6-digit code from the text.' };
+  const s = await getDoc(env, 'phone_sessions', ph);
+  if (!s || new Date(s.fields.expiresAt).getTime() < Date.now()) { if (s) await deleteDoc(env, 'phone_sessions', ph).catch(() => {}); return { error: 'That code has expired. Send a new one.' }; }
+  if ((await sha256Hex(`${ph}:${c}`)) !== s.fields.codeHash) {
+    const attempts = Number(s.fields.attempts || 0) + 1;
+    if (attempts >= PHONE_CODE_MAX_ATTEMPTS) { await deleteDoc(env, 'phone_sessions', ph).catch(() => {}); return { error: 'Too many wrong tries. Send a new code.' }; }
+    await setDoc(env, 'phone_sessions', ph, { ...s.fields, attempts });
+    return { error: 'That code didn’t match. Check the text and try again.' };
+  }
+  await deleteDoc(env, 'phone_sessions', ph).catch(() => {});
+  const plans = (await queryWhere(env, 'installment_plans', [{ field: 'buyerPhone', value: ph }])).filter(p => ['active', 'completed'].includes(p.fields.status));
+  return { plans: plans.map(planSummary).sort((a, b) => new Date(a.eventDate || 0) - new Date(b.eventDate || 0)) };
+}
+
 export const NEUTRAL_CODES = 'If that number has orders with us, we’ve texted the order codes to it.';
 export const NEUTRAL_LINK = 'If this order is yours and paid in full, we’ve texted the ticket link to the number on it.';
-export const NEUTRAL_TICKETS = 'If that number has tickets with us, we’ve texted the links to it.';
 
-// "Lost my code": text every open or paid order code to the phone that made them.
 export async function textOrderCodes(env, { phone }) {
   const ph = normalizePhone(phone); if (!ph) return false;
   const plans = (await queryWhere(env, 'installment_plans', [{ field: 'buyerPhone', value: ph }]))
@@ -373,18 +381,23 @@ export async function textOrderCodes(env, { phone }) {
   return sendSms(env, ph, `MEMORIES\nYour orders:\n${lines.join('\n')}\nPay or check: ${siteUrl(env, '/installment.html')}`);
 }
 
-// "Lost my ticket link": text every ticket link on every completed plan for that phone.
+// "Lost your ticket?" for anyone: every ticket bought (or comped) on this phone for a night that
+// hasn't happened yet is texted to that same phone. The reply on the page never changes, so this
+// can't be used to learn whether a number has tickets.
+export const NEUTRAL_TICKETS = 'If that number has tickets for an upcoming night, we’ve texted the links to it.';
 export async function textTicketLinks(env, { phone }) {
   const ph = normalizePhone(phone); if (!ph) return false;
-  const plans = (await queryWhere(env, 'installment_plans', [{ field: 'buyerPhone', value: ph }]))
-    .filter(p => p.fields.status === 'completed' && (p.fields.ticketIds || []).length).slice(0, 5);
-  if (!plans.length) return false;
-  const lines = plans.flatMap(p => (p.fields.ticketIds || []).map(t => `${p.fields.eventName || 'Your night'}: ${siteUrl(env, `/ticket.html?token=${t}`)}`));
-  return sendSms(env, ph, `MEMORIES\nYour ticket${lines.length > 1 ? 's' : ''}:\n${lines.join('\n')}`);
+  const orders = (await queryWhere(env, 'orders', [{ field: 'buyerPhone', value: ph }]))
+    .filter(o => o.fields.status === 'confirmed' && ['ticket', 'comp'].includes(o.fields.kind) && (o.fields.ticketIds || []).length);
+  const nights = new Map();
+  for (const id of new Set(orders.map(o => o.fields.eventId))) { const ev = await getDoc(env, 'events', id); if (ev && !isOver(ev.fields)) nights.set(id, ev.fields); }
+  const upcoming = orders.filter(o => nights.has(o.fields.eventId))
+    .sort((a, b) => new Date(nights.get(a.fields.eventId).date) - new Date(nights.get(b.fields.eventId).date)).slice(0, 3);
+  if (!upcoming.length) return false;
+  const lines = upcoming.map(o => `${nights.get(o.fields.eventId).name || o.fields.eventName || 'Your night'}: ${o.fields.ticketIds.map(t => siteUrl(env, `/ticket.html?token=${t}`)).join(' ')}`);
+  return sendSms(env, ph, `MEMORIES\nYour tickets:\n${lines.join('\n')}`);
 }
 
-// "Text me the link" on a paid order: only to the phone on the order, and only if the guest
-// gave that same number.
 export async function resendTicketLink(env, { planId, phone }) {
   const c = normalizePlanCode(planId), ph = normalizePhone(phone);
   if (!c || !ph) return false;
@@ -394,64 +407,6 @@ export async function resendTicketLink(env, { planId, phone }) {
   return sendSms(env, ph, `MEMORIES\n${p.fields.eventName || 'Your night'}.\nYour ticket${links.length > 1 ? 's' : ''}: ${links.join(' ')}`);
 }
 
-// ── Phone + OTP lookup ──
-// The phone number is the credential. A 6-digit code sent to that number proves possession.
-// Sessions are keyed by phone, expire in 10 minutes, and die after 5 wrong tries. Codes are
-// hashed so a Firestore leak doesn't expose them.
-const PHONE_CODE_TTL_MS = 10 * 60 * 1000;
-const PHONE_CODE_MAX_ATTEMPTS = 5;
-
-async function hashCode(code) {
-  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(String(code)));
-  return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
-}
-
-export async function startPhoneLookup(env, { phone }) {
-  const ph = normalizePhone(phone);
-  if (!ph) return { error: 'Use a Ghana number, e.g. 024 123 4567.' };
-  const plans = await queryWhere(env, 'installment_plans', [{ field: 'buyerPhone', value: ph }]);
-  const active = plans.filter(p => ['active', 'completed'].includes(p.fields.status));
-  // Same reply whether or not there are orders — never confirm/deny a number.
-  if (!active.length) return { sent: true };
-  const code = String(100000 + Math.floor(Math.random() * 900000));
-  await setDoc(env, 'phone_sessions', ph, {
-    phone: ph, codeHash: await hashCode(code), attempts: 0,
-    expiresAt: new Date(Date.now() + PHONE_CODE_TTL_MS).toISOString(),
-    createdAt: now(),
-  });
-  await sendSms(env, ph, `MEMORIES\nYour code: ${code}\nEnter it on the site to see your orders. Expires in 10 minutes.`);
-  return { sent: true };
-}
-
-export async function verifyPhoneLookup(env, { phone, code }) {
-  const ph = normalizePhone(phone);
-  const c = String(code || '').trim();
-  if (!ph || !/^\d{6}$/.test(c)) return { error: 'Enter the 6-digit code.' };
-  const s = await getDoc(env, 'phone_sessions', ph);
-  if (!s) return { error: 'That code has expired. Send a new one.' };
-  if (new Date(s.fields.expiresAt).getTime() < Date.now()) {
-    await deleteDoc(env, 'phone_sessions', ph).catch(() => {});
-    return { error: 'That code has expired. Send a new one.' };
-  }
-  if (Number(s.fields.attempts || 0) >= PHONE_CODE_MAX_ATTEMPTS) {
-    await deleteDoc(env, 'phone_sessions', ph).catch(() => {});
-    return { error: 'Too many wrong tries. Send a new code.' };
-  }
-  const match = (await hashCode(c)) === s.fields.codeHash;
-  if (!match) {
-    await setDoc(env, 'phone_sessions', ph, { ...s.fields, attempts: Number(s.fields.attempts || 0) + 1 });
-    return { error: 'That code didn’t match. Check the text and try again.' };
-  }
-  await deleteDoc(env, 'phone_sessions', ph).catch(() => {});
-  const plans = await queryWhere(env, 'installment_plans', [{ field: 'buyerPhone', value: ph }]);
-  const list = plans
-    .filter(p => ['active', 'completed'].includes(p.fields.status))
-    .map(planSummary)
-    .sort((a, b) => new Date(b.eventDate || 0) - new Date(a.eventDate || 0));
-  return { plans: list };
-}
-
-// ── Fulfilment: installments ──
 export async function fulfillInstallment(env, reference) {
   const pending = await getDoc(env, 'pending_checkouts', reference);
   if (!pending) return { status: 'failed', error: 'Checkout not found.' };
@@ -525,15 +480,46 @@ export async function fulfillInstallment(env, reference) {
       await sendSms(env, P.buyerPhone, `MEMORIES\nPaid in full. Order ${planId}.\nYou're in for ${P.eventName}: ${link}`);
       await sendEmail(env, P.buyerEmail, 'Your Memories ticket', [`Paid in full. Order ${planId}.`, `You're in for ${P.eventName}.`, `Your ticket: ${link}`]);
     } else {
-      await sendSms(env, P.buyerPhone, balanceMessage(env, planId, result.received, P.totalPesewas - result.paidPesewas));
+      const balance = P.totalPesewas - result.paidPesewas;
+      await sendSms(env, P.buyerPhone, balanceMessage(env, planId, result.received, balance, P));
+      await sendEmail(env, P.buyerEmail, `Memories: ${money(balance)} left to pay`, balanceEmailLines(env, planId, result.received, balance, P));
     }
   }
   delete result.already; delete result.plan; delete result.received; delete result.paidPesewas;
   return result;
 }
+// "Fri 03 Oct" and "Fri 03 Oct, 10PM" in Ghana time, for texts and emails.
+const smsDay = d => formatAccra(d, { weekday: 'short', day: '2-digit', month: 'short' }).replace(/,/g, '');
+const smsWhen = d => { const day = smsDay(d); const t = formatAccra(d, { hour: 'numeric', minute: '2-digit', hour12: true }).replace(':00', '').replace(/\s/g, '').toUpperCase(); return day && t ? `${day}, ${t}` : day; };
 
-export const balanceMessage = (env, planId, received, balance) =>
-  `MEMORIES\n${received ? `${money(received)} received. ` : ''}Balance: ${money(balance)}.\nOrder ${planId}.\nPay the rest: ${siteUrl(env, `/installment.html?code=${planId}`)}`;
+// The text after a part payment: enough to keep paying without opening anything else. Plain ASCII
+// so it stays a normal SMS (curly quotes would switch the whole message to 70-character parts).
+// P is the plan's fields; without it (older callers) the text is the short form.
+export const balanceMessage = (env, planId, received, balance, P = null) => {
+  const link = siteUrl(env, `/installment.html?code=${planId}`);
+  if (!P) return `MEMORIES\n${received ? `${money(received)} received. ` : ''}Balance: ${money(balance)}.\nOrder ${planId}.\nPay the rest: ${link}`;
+  const name = String(P.eventName || '').slice(0, 30), day = smsDay(P.eventDate), by = smsWhen(P.eventDate);
+  return [
+    'MEMORIES',
+    `${received ? `${money(received)} received` : 'Your order'}${name ? ` for ${name}${day ? `, ${day}` : ''}` : ''}.`,
+    `Paid ${money(Number(P.totalPesewas) - balance)} of ${money(P.totalPesewas)}. Left: ${money(balance)}.`,
+    by ? `Pay the rest before ${by} or the order is forfeited.` : 'Pay the rest before the night starts or the order is forfeited.',
+    `Order ${planId}`,
+    `Pay: ${link}`,
+  ].join('\n');
+};
+// The same, for the email receipt (one line per paragraph).
+export const balanceEmailLines = (env, planId, received, balance, P) => {
+  const by = smsWhen(P.eventDate);
+  return [
+    `${money(received)} received for ${P.eventName || 'your Memories night'}${P.eventDate ? ` (${smsDay(P.eventDate)})` : ''}.`,
+    `${P.quantity || 1} × ${P.ticketTypeName || 'Ticket'}. Paid ${money(Number(P.totalPesewas) - balance)} of ${money(P.totalPesewas)}. Left to pay: ${money(balance)}.`,
+    `Pay the rest before ${by || 'the night starts'}. If it isn't fully paid by then, the order is forfeited and what you've paid isn't refunded.`,
+    `Your order code: ${planId}. Anyone can pay with it.`,
+    `Pay the rest: ${siteUrl(env, `/installment.html?code=${planId}`)}`,
+    'Your ticket comes by text the moment it is fully paid.',
+  ];
+};
 
 export async function forfeitStalePlans(env) {
   const active = await queryWhere(env, 'installment_plans', [{ field: 'status', value: 'active' }]);
@@ -550,29 +536,37 @@ export async function fulfill(env, reference) {
   return { kind: 'ticket', ...(await fulfillTicket(env, reference)) };
 }
 
-// What the payment-return page polls. The claim header is accepted so the caller can later be
-// required to prove it's the same browser that started checkout; today it's not enforced.
-export async function checkoutStatus(env, reference, claim = '') {
+// Ticket links go only to the browser that started the order (it holds the claim). The Paystack
+// reference alone is not enough: it sits on staff screens, receipts and every ticket of the order.
+// For pay in bits the claim is the plan's, so a helper who pays the last part (anyone can pay)
+// is never shown the ticket; it goes by text to the phone on the order, like every ticket does.
+export async function claimedTokens(f, claim, claimHash = f.claimHash) {
+  if (!claimHash || !claim || typeof claim !== 'string') return [];
+  return (await sha256Hex(claim)) === claimHash ? (f.ticketIds || []) : [];
+}
+
+export async function checkoutStatus(env, reference, claim) {
   const d = await getDoc(env, 'pending_checkouts', reference);
   if (!d) return null;
   const f = d.fields;
+  const plan = f.kind === 'installment_topup' && f.planId ? await getDoc(env, 'installment_plans', f.planId) : null;
+  const tokens = f.status === 'issued' ? await claimedTokens(f, claim, f.kind === 'installment_topup' ? plan?.fields?.claimHash : f.claimHash) : [];
   const out = {
-    status: f.status, kind: f.kind || 'ticket', eventId: f.eventId || '', eventName: f.eventName || '',
-    packageName: f.packageName || '', amountPesewas: f.amountPesewas, bottles: f.bottles || [],
-    tickets: (f.ticketIds || []).map(token => ({ token })),
-    ticketCount: (f.ticketIds || []).length,
-    error: f.status === 'failed' ? f.error : undefined,
+    status: f.status, kind: f.kind || 'ticket', eventId: f.eventId || '', eventName: f.eventName || '', packageName: f.packageName || '', amountPesewas: f.amountPesewas, bottles: f.bottles || [],
+    tableCode: f.kind === 'table' && f.status === 'issued' && f.orderId ? tableCode(f.orderId) : undefined,
+    tickets: tokens.map(token => ({ token })), ticketCount: (f.ticketIds || []).length, phoneHint: maskPhone(f.buyerPhone), error: f.status === 'failed' ? f.error : undefined,
   };
-  if (f.buyerPhone) out.phoneHint = `${String(f.buyerPhone).slice(0, 3)}***${String(f.buyerPhone).slice(-3)}`;
   if (f.kind === 'installment_topup' && f.planId) {
-    const plan = await getDoc(env, 'installment_plans', f.planId);
-    if (plan) Object.assign(out, {
-      eventId: plan.fields.eventId, planId: f.planId, planStatus: plan.fields.status,
-      paidPesewas: plan.fields.paidPesewas, totalPesewas: plan.fields.totalPesewas,
-      eventName: plan.fields.eventName, eventDate: plan.fields.eventDate,
-      ticketTypeName: plan.fields.ticketTypeName, quantity: plan.fields.quantity,
-      planComplete: f.planComplete === true || plan.fields.status === 'completed',
-    });
+    if (plan) {
+      const P = plan.fields;
+      Object.assign(out, {
+        eventId: P.eventId, planId: f.planId, planStatus: P.status, paidPesewas: P.paidPesewas, totalPesewas: P.totalPesewas, eventName: P.eventName,
+        planComplete: f.planComplete === true || P.status === 'completed',
+        // What the receipt page needs to tell the guest how to keep paying. Never the full phone.
+        eventDate: P.eventDate || '', deadline: P.eventDate || '', ticketTypeName: P.ticketTypeName || '', quantity: Number(P.quantity || 1),
+        firstName: P.firstName || firstName(P.buyerName), phoneHint: maskPhone(P.buyerPhone), reference,
+      });
+    }
   }
   return out;
 }

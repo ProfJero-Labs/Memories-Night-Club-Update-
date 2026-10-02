@@ -5,8 +5,8 @@ import { logError } from './lib/log.js';
 import { verifyStaff, requireRole, MONEY, DOOR } from './lib/auth.js';
 import { smsRequest } from './lib/notify.js';
 import { getSettings, publicEvents, eventBundle, calendar, createPrivateRequest, publicTicket } from './public.js';
-import { initiateTicket, initiateTable, startInstallment, topupInstallment, lookupInstallments, textOrderCodes, textTicketLinks, resendTicketLink, NEUTRAL_CODES, NEUTRAL_LINK, NEUTRAL_TICKETS, fulfill, checkoutStatus, forfeitStalePlans } from './checkout.js';
-import { normalizePhone, normalizeOrderCode } from './lib/util.js';
+import { initiateTicket, initiateTable, startInstallment, topupInstallment, lookupInstallments, textOrderCodes, textTicketLinks, resendTicketLink, startPhoneLookup, verifyPhoneLookup, NEUTRAL_PHONE_CODE, NEUTRAL_CODES, NEUTRAL_LINK, NEUTRAL_TICKETS, fulfill, checkoutStatus, forfeitStalePlans } from './checkout.js';
+import { normalizePhone, normalizePlanCode } from './lib/util.js';
 import { upsertRaffle, drawRaffle } from './raffle.js';
 import { checkin, verifyTicket, doorSummary, doorSearch, seatTable, undoCheckin } from './door.js';
 import * as admin from './admin.js';
@@ -47,9 +47,21 @@ async function route(req, env, ctx) {
   if (m === 'GET' && p === '/api/installments/lookup') {
     const code = u.searchParams.get('code') || '';
     const phone = u.searchParams.get('phone') || '';
-    if (await throttled(req, env, 'lookup', 'strict') || await throttled(req, env, 'lookup-phone', 'strict', phone)) return tooMany(req, env);
-    if (!phone) return ok(req, env, { plans: [] });
+    // Code + the phone on the order. (Phone alone goes through a texted code: /phone-code.)
+    if (await throttled(req, env, 'lookup', 'strict') || await throttled(req, env, 'lookup-code', 'strict', normalizePlanCode(code) || 'none') || await throttled(req, env, 'lookup-phone', 'strict', normalizePhone(phone) || 'none')) return tooMany(req, env);
     return ok(req, env, { plans: await lookupInstallments(env, { code, phone }) });
+  }
+  if (m === 'POST' && p === '/api/installments/phone-code') {
+    const b = await body(req), ph = normalizePhone(b.phone);
+    if (!ph) return fail(req, env, 'Use a Ghana number, e.g. 024 123 4567.');
+    if (await throttled(req, env, 'phone-code', 'strict') || await throttled(req, env, 'phone-code-phone', 'strict', ph)) return tooMany(req, env);
+    await later(ctx, startPhoneLookup(env, { phone: ph }));
+    return ok(req, env, { message: NEUTRAL_PHONE_CODE });
+  }
+  if (m === 'POST' && p === '/api/installments/phone-verify') {
+    const b = await body(req), ph = normalizePhone(b.phone);
+    if (await throttled(req, env, 'phone-verify', 'strict') || await throttled(req, env, 'phone-verify-phone', 'strict', ph || 'none')) return tooMany(req, env);
+    return reply(req, env, await verifyPhoneLookup(env, b));
   }
   if (m === 'POST' && p === '/api/installments/find') {
     const b = await body(req), ph = normalizePhone(b.phone);
@@ -66,7 +78,7 @@ async function route(req, env, ctx) {
     return ok(req, env, { message: NEUTRAL_TICKETS });
   }
   if (m === 'POST' && p === '/api/installments/resend-link') {
-    const b = await body(req), ph = normalizePhone(b.phone), code = normalizeOrderCode(b.planId);
+    const b = await body(req), ph = normalizePhone(b.phone), code = normalizePlanCode(b.planId);
     if (!ph || !code) return fail(req, env, 'Enter your order code and the phone number you used.');
     if (await throttled(req, env, 'resend', 'strict') || await throttled(req, env, 'resend-phone', 'strict', ph) || await throttled(req, env, 'resend-plan', 'strict', code)) return tooMany(req, env);
     await later(ctx, resendTicketLink(env, { planId: code, phone: ph }));

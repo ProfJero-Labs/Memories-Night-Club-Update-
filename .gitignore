@@ -27,3 +27,5 @@ Thumbs.db
 # Misc
 .cache/
 coverage/
+# Wrangler build output and local account cache
+.wrangler/

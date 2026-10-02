@@ -47,10 +47,10 @@ export const firstName = full => String(full || '').trim().split(/\s+/)[0] || ''
 // Calendar dates are Africa/Accra dates (shared helper; see public/lib/shared.js).
 export const dateKey = accraDayKey;
 
-// Staff invite passwords: two short words + three digits, e.g. "SunDog482".
-// 9 characters, easy to read over the phone, easy to type on a phone keyboard.
-// Not high entropy, but combined with the login rate limit it's more than enough for a
-// first-time password staff are expected to change after signing in.
+// Staff invite passwords: three short words + three digits, e.g. "SunDogMoon482". Easy to read
+// over the phone and type on a phone keyboard; three words (not two) because these accounts can
+// run the whole club: about 57.6 million combinations, on top of Firebase's sign-in throttling.
+// Staff are told to change it after their first sign-in.
 const PASSWORD_WORDS = [
   'Sun', 'Sky', 'Sea', 'Bay', 'Ash', 'Ivy', 'Oak', 'Fir', 'Elm', 'Bee',
   'Cat', 'Dog', 'Fox', 'Owl', 'Ant', 'Bat', 'Emu', 'Ram', 'Cod', 'Jay',
@@ -58,28 +58,27 @@ const PASSWORD_WORDS = [
   'Moon', 'Star', 'Cloud', 'Leaf', 'Tree', 'Rock', 'Wave', 'Tide', 'Fern', 'Reed',
 ];
 export function generatePassword() {
-  const b = crypto.getRandomValues(new Uint32Array(3));
-  const w1 = PASSWORD_WORDS[b[0] % PASSWORD_WORDS.length];
-  const w2 = PASSWORD_WORDS[b[1] % PASSWORD_WORDS.length];
-  const digits = String(100 + (b[2] % 900));  // 100-999
-  return `${w1}${w2}${digits}`;
+  const b = crypto.getRandomValues(new Uint32Array(4));
+  const words = [0, 1, 2].map(i => PASSWORD_WORDS[b[i] % PASSWORD_WORDS.length]).join('');
+  return `${words}${100 + (b[3] % 900)}`;
 }
 
-// "NO SAD DAYS" → "NOSADDAYS". Falls back to "MEM" if the name has no usable characters.
+// ── Pay-in-bits order codes ──
+// New orders get a readable code from the night's name, e.g. NOSADDAYS-001. Being readable means
+// it is not a secret: looking an order up always needs the phone number on it too (or a code
+// texted to that phone). Older orders keep their MEM-XXXXX-XXXXX / MEM-AB1234 codes.
 export function eventSlug(name) {
   const s = String(name || '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 10);
   return s || 'MEM';
 }
-
-// Next free SLUG-NNN for an event. Called before creating a plan doc; the create itself fails
-// on collision (ALREADY_EXISTS) so a race just moves the caller on to the next attempt.
-export async function nextPlanCode(env, eventId, eventName, queryWhere) {
-  const slug = eventSlug(eventName);
-  const existing = await queryWhere(env, 'installment_plans', [{ field: 'eventId', value: eventId }]);
-  const used = new Set(existing.map(p => p.id));
-  for (let n = 1; n <= 999; n++) {
-    const code = `${slug}-${String(n).padStart(3, '0')}`;
-    if (!used.has(code)) return code;
-  }
-  return `${slug}-${1000 + Math.floor(Math.random() * 9000)}`;
+// What a guest types → the stored code, or null. Forgives case, spaces and a missing zero pad
+// ("nosaddays 1" → NOSADDAYS-001); legacy MEM- codes go through normalizeOrderCode.
+export function normalizePlanCode(raw) {
+  const s = String(raw ?? '').toUpperCase().trim();
+  if (/^MEM\b|^MEM-/.test(s)) { const legacy = normalizeOrderCode(s); if (legacy) return legacy; }
+  const m = /^([A-Z0-9]{1,10})[\s_-]*-?(\d{1,4})$/.exec(s.replace(/\s+/g, '-'));
+  if (!m) return null;
+  return `${m[1]}-${m[2].padStart(3, '0')}`;
 }
+// A 6-digit code for SMS confirmation, from the CSPRNG (never Math.random).
+export const sixDigits = () => String(crypto.getRandomValues(new Uint32Array(1))[0] % 1000000).padStart(6, '0');
