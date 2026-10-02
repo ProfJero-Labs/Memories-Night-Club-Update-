@@ -1,4 +1,5 @@
-// Scan to order: a guest scans the QR at a bar (/b/{stationToken}), picks drinks, pays by MoMo or
+// Scan to order: a guest scans the QR at a bar (counter.html?s={stationToken}, optionally &t={table}),
+// picks drinks, pays by MoMo or
 // card on Paystack, and gets a pickup code only once Paystack confirms the payment. The bar sees
 // paid orders in a queue (public/bar.html) and hands them over against the code. Cash guests just
 // order at the bar as usual.
@@ -33,6 +34,10 @@ async function stationByToken(env, token) {
   return (await queryWhere(env, 'bar_stations', [{ field: 'token', value: String(token) }], { limit: 1 }))[0] || null;
 }
 const publicItem = x => ({ id: x.id, name: x.fields.name, category: x.fields.category || 'Drinks', pricePesewas: Number(x.fields.pricePesewas || 0), available: x.fields.available !== false, sortOrder: x.fields.sortOrder ?? 0 });
+// The QR link for a bar, optionally for one table or spot. Relative to the site, so it works wherever
+// the site is hosted (and the old /b/{token} links still redirect here).
+export const stationUrl = (env, token, spot) => siteUrl(env, `/counter.html?s=${token}${spot ? `&t=${encodeURIComponent(spot)}` : ''}`);
+const cleanSpot = v => clean(v, 24).replace(/[^\p{L}\p{N} #\-.]/gu, '').trim();
 const sortMenu = (a, b) => a.category.localeCompare(b.category) || a.sortOrder - b.sortOrder || a.name.localeCompare(b.name);
 
 // ── Guest ──
@@ -69,7 +74,8 @@ export async function counterCheckout(env, b) {
   }
   const totalPesewas = lines.reduce((n, l) => n + l.qty * l.unitPesewas, 0);
   const orderId = id(), reference = paymentRef();
-  const order = { stationId: st.id, stationName: st.fields.name, lines, totalPesewas, phone, clientId, reference, status: 'pending_payment', receiptCode: id(), createdAt: now() };
+  const spot = cleanSpot(b?.spot);
+  const order = { stationId: st.id, stationName: st.fields.name, ...(spot ? { spot } : {}), lines, totalPesewas, phone, clientId, reference, status: 'pending_payment', receiptCode: id(), createdAt: now() };
   await setDoc(env, 'counter_orders', orderId, order);
   await setDoc(env, 'pending_checkouts', reference, { reference, kind: 'counter', orderId, eventName: st.fields.name, amountPesewas: totalPesewas, buyerPhone: phone, status: 'pending', createdAt: now() });
   try {
@@ -125,7 +131,7 @@ export async function guestOrder(env, orderId, fulfillRef) {
     o = await getDoc(env, 'counter_orders', orderId);
   }
   const f = o.fields, paid = ['paid', 'delivered'].includes(f.status);
-  return { status: declined ? 'payment_failed' : f.status, stationName: f.stationName, lines: f.lines.map(l => ({ name: l.name, qty: l.qty })), totalPesewas: f.totalPesewas, pickupCode: paid ? f.pickupCode : undefined, receiptCode: paid || f.status === 'refund_due' ? f.receiptCode : undefined };
+  return { status: declined ? 'payment_failed' : f.status, stationName: f.stationName, spot: f.spot || null, lines: f.lines.map(l => ({ name: l.name, qty: l.qty })), totalPesewas: f.totalPesewas, pickupCode: paid ? f.pickupCode : undefined, receiptCode: paid || f.status === 'refund_due' ? f.receiptCode : undefined };
 }
 
 export async function receipt(env, code) {
@@ -139,11 +145,12 @@ export async function receipt(env, code) {
 // ── The bar ──
 export async function barQueue(env, user, stationId) {
   if (!requireRole(user, BAR)) return FORBIDDEN;
-  const stations = (await listDocs(env, 'bar_stations')).map(s => ({ id: s.id, name: s.fields.name, open: s.fields.open !== false })).sort((a, b) => a.name.localeCompare(b.name));
+  // Bar staff get each bar's QR link too, so they can print a table card themselves.
+  const stations = (await listDocs(env, 'bar_stations')).map(s => ({ id: s.id, name: s.fields.name, open: s.fields.open !== false, url: stationUrl(env, s.fields.token) })).sort((a, b) => a.name.localeCompare(b.name));
   const st = stations.find(s => s.id === stationId) || stations[0];
   if (!st) return { stations, orders: [], delivered: [] };
   const all = await queryWhere(env, 'counter_orders', [{ field: 'stationId', value: st.id }], { limit: 1000 });
-  const view = o => ({ id: o.id, pickupCode: o.fields.pickupCode, lines: o.fields.lines.map(l => ({ name: l.name, qty: l.qty })), totalPesewas: o.fields.totalPesewas, paidAt: o.fields.paidAt, deliveredAt: o.fields.deliveredAt || null, phoneLast4: String(o.fields.phone || '').slice(-4) });
+  const view = o => ({ id: o.id, pickupCode: o.fields.pickupCode, lines: o.fields.lines.map(l => ({ name: l.name, qty: l.qty })), totalPesewas: o.fields.totalPesewas, spot: o.fields.spot || null, paidAt: o.fields.paidAt, deliveredAt: o.fields.deliveredAt || null, phoneLast4: String(o.fields.phone || '').slice(-4) });
   const since = Date.now() - 12 * 3600e3;
   return {
     stations, stationId: st.id, open: st.open,
@@ -175,7 +182,7 @@ export async function barSetup(env, user) {
   if (!requireRole(user, CMS)) return FORBIDDEN;
   const [stations, items] = await Promise.all([listDocs(env, 'bar_stations'), listDocs(env, 'menu_items')]);
   return {
-    stations: stations.map(s => ({ id: s.id, name: s.fields.name, open: s.fields.open !== false, url: siteUrl(env, `/b/${s.fields.token}`) })).sort((a, b) => a.name.localeCompare(b.name)),
+    stations: stations.map(s => ({ id: s.id, name: s.fields.name, open: s.fields.open !== false, url: stationUrl(env, s.fields.token) })).sort((a, b) => a.name.localeCompare(b.name)),
     items: items.map(publicItem).sort(sortMenu),
   };
 }
@@ -189,7 +196,7 @@ export async function upsertStation(env, b, user) {
   const token = !existing || b.newQr === true ? id() : existing.fields.token;
   await setDoc(env, 'bar_stations', sid, { ...(existing?.fields || {}), name, token, open: b.open !== false, updatedAt: now(), createdAt: existing?.fields?.createdAt || now() });
   await audit(env, user, existing ? (b.newQr ? 'BAR_QR_ROTATED' : 'BAR_STATION_UPDATED') : 'BAR_STATION_ADDED', { stationId: sid, open: b.open !== false });
-  return { id: sid, url: siteUrl(env, `/b/${token}`) };
+  return { id: sid, url: stationUrl(env, token) };
 }
 export async function setStationOpen(env, user, b) {
   if (!requireRole(user, BAR)) return FORBIDDEN;

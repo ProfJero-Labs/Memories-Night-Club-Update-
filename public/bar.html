@@ -6,6 +6,11 @@
 <title>Bar · Memories</title>
 <meta name="robots" content="noindex">
 <meta name="theme-color" content="#0d0a09">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="assets/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Memories">
 <link rel="icon" href="assets/icon.svg" type="image/svg+xml">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -13,27 +18,50 @@
 <link rel="stylesheet" href="styles.css">
 <link rel="stylesheet" href="admin.css">
 <style>
-  .barq { max-width: 900px; margin: 0 auto; padding: 16px var(--gutter) 40px; display: grid; gap: 14px; }
-  .orders { display: grid; gap: 12px; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); }
-  .ord { border: 2px solid var(--line-2); padding: 14px; display: grid; gap: 10px; background: var(--ink-2); }
-  .ord .code { font: 400 56px/1 var(--display); letter-spacing: .08em; }
-  .ord .waited { color: var(--muted); font-size: 14px; }
-  .ord .waited.late { color: var(--mustard); font-weight: 700; }
-  .ord ul { margin: 0; padding-left: 18px; font-size: 18px; }
-  .ord .act { display: flex; gap: 8px; flex-wrap: wrap; } .ord .act .sbtn { min-height: 52px; flex: 1; }
-  .ord.hit { border-color: var(--crimson); }
+  .barq { max-width: 1100px; margin: 0 auto; padding: 14px var(--gutter) 48px; display: grid; gap: 16px; }
+  .bar-top { display: grid; gap: 10px; grid-template-columns: minmax(0, 1fr) auto; align-items: end; }
+  .bar-top .sfield { margin: 0; }
+  .bar-ctl { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .bar-ctl select { min-height: 48px; background: var(--ink-2); border: 1px solid var(--line-2); padding: 0 12px; color: var(--paper); font: 700 15px var(--sans); }
+  .bar-state { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  .bar-find input { font: 400 40px/1 var(--display); letter-spacing: .14em; text-transform: uppercase; min-height: 64px; text-align: center; }
+  .bar-stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+  .bar-stats div { border: 1px solid var(--line-2); padding: 10px 12px; background: var(--ink-2); }
+  .bar-stats b { display: block; font: 400 34px/1 var(--display); }
+  .bar-stats span { font: 700 11px var(--sans); letter-spacing: .12em; text-transform: uppercase; color: var(--muted); }
+  .bar-stats .hot b { color: var(--mustard); }
+  .orders { display: grid; gap: 12px; grid-template-columns: repeat(auto-fill, minmax(270px, 1fr)); }
+  .ord { border: 2px solid var(--line-2); border-top: 6px solid var(--crimson); padding: 14px; display: grid; gap: 10px; background: var(--ink-2); align-content: start; animation: pop .25s ease-out; }
+  @keyframes pop { from { transform: scale(.97); opacity: 0; } }
+  @media (prefers-reduced-motion: reduce) { .ord { animation: none; } }
+  .ord .head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+  .ord .code { font: 400 60px/1 var(--display); letter-spacing: .1em; }
+  .ord .spot { justify-self: start; background: var(--mustard); color: var(--ink); font: 700 13px/1 var(--sans); letter-spacing: .1em; text-transform: uppercase; padding: 6px 8px; }
+  .ord .waited { color: var(--muted); font-size: 14px; white-space: nowrap; }
+  .ord.late { border-top-color: var(--mustard); } .ord.late .waited { color: var(--mustard); font-weight: 700; }
+  .ord ul { margin: 0; padding: 0; list-style: none; font-size: 19px; display: grid; gap: 4px; }
+  .ord ul li { display: flex; gap: 10px; } .ord ul b { min-width: 34px; color: var(--crimson-text); }
+  .ord .act { display: grid; grid-template-columns: 2fr 1fr; gap: 8px; } .ord .act .sbtn { min-height: 56px; justify-content: center; }
+  .ord.hit { border-color: var(--paper); box-shadow: 0 0 0 3px var(--crimson); }
+  .bar-empty { border: 1px dashed var(--line-2); padding: 28px 16px; text-align: center; color: var(--muted); }
+  .bar-empty b { display: block; font: 400 30px/1 var(--display); text-transform: uppercase; color: var(--paper); margin-bottom: 6px; }
+  .done-wrap summary { cursor: pointer; font: 400 22px var(--display); text-transform: uppercase; padding: 6px 0; }
+  @media (max-width: 560px) { .bar-top { grid-template-columns: 1fr; } .ord .code { font-size: 52px; } }
 </style>
 <script src="config.js"></script>
 </head>
 <body class="staff">
 <main class="barq">
-  <div class="toolbar" style="margin:0"><select id="st" aria-label="Which bar"></select><button class="sbtn" id="open" type="button"></button><span id="state" role="status"></span></div>
-  <div class="sfield"><label for="find">Pickup code</label><input id="find" autocomplete="off" autocapitalize="characters" maxlength="4" placeholder="e.g. K7Q2"></div>
+  <div class="bar-top">
+    <div class="bar-ctl"><select id="st" aria-label="Which bar"></select><span class="bar-state" id="state" role="status"></span></div>
+    <div class="bar-ctl"><button class="sbtn" id="open" type="button"></button><button class="sbtn ghost" id="qr" type="button">QR codes</button><button class="sbtn ghost" id="sound" type="button" aria-pressed="false">Sound off</button></div>
+  </div>
+  <div class="sfield bar-find"><label for="find">Type the guest’s pickup code</label><input id="find" autocomplete="off" autocapitalize="characters" maxlength="4" placeholder="K7Q2" spellcheck="false"></div>
+  <div class="bar-stats" aria-live="polite"><div id="sWait"><b>0</b><span>Waiting</span></div><div id="sLate"><b>0</b><span>Over 10 min</span></div><div><b id="sDone">0</b><span>Handed over</span></div></div>
   <div id="msg"></div>
-  <h2 style="margin:0">Waiting <span id="n" class="kicker"></span></h2>
   <div class="orders" id="orders"></div>
-  <h2 style="margin:6px 0 0">Handed over</h2>
-  <div class="tbl-wrap"><table class="tbl"><thead><tr><th>Code</th><th>Drinks</th><th>When</th></tr></thead><tbody id="done"></tbody></table></div>
+  <details class="done-wrap"><summary>Handed over tonight</summary>
+  <div class="tbl-wrap"><table class="tbl"><thead><tr><th>Code</th><th>Table</th><th>Drinks</th><th>When</th></tr></thead><tbody id="done"></tbody></table></div></details>
 </main>
 <script type="module" src="pages/bar.js"></script>
 </body>

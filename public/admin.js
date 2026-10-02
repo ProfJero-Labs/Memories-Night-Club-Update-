@@ -3,6 +3,7 @@
 import { esc, money, $, $$, shortDate } from './app.js';
 import { requireStaff, staffHeader, sapi, compressImage, paletteFrom, ghs, pes, when, ROLE_LABEL } from './staff.js';
 import { ticketHTML, designFor, qrSvg } from './ticket-art.js';
+import { openQrMaker, ensureQrCss } from './lib/qrcard.js';
 import { uploadImage } from './firebase.js';
 
 const CMS = ['superAdmin', 'manager', 'eventManager'], MONEY = ['superAdmin', 'manager'];
@@ -27,7 +28,8 @@ const labelTables = () => $$('table.tbl', panel).forEach(t => {
 new MutationObserver(labelTables).observe(panel, { childList: true, subtree: true });
 const flash = (el, text, bad = false) => { el.innerHTML = `<div class="msg ${bad ? 'err' : ''}" role="status">${esc(text)}</div>`; if (!bad) setTimeout(() => { el.innerHTML = ''; }, 4000); };
 const pill = (text, c) => `<span class="pill ${c}">${esc(text)}</span>`;
-const fail = e => { panel.innerHTML = `<div class="msg err">${esc(e.message)}</div>`; };
+// A 404 on a control-room route means the Worker online is older than this page: say so plainly.
+const fail = e => { panel.innerHTML = e.status === 404 && /^not found\.?$/i.test(e.message || '') ? '<div class="msg err">This section needs the latest Worker. Deploy it (cd worker && npm run deploy), or preview everything locally with npm run dev.</div>' : `<div class="msg err">${esc(e.message)}</div>`; };
 const val = id => $(id).value.trim();
 // A video upload field (MP4/WebM/MOV up to 60 MB, the Storage rule's limit): preview, remove.
 const VIDEO_MAX_MB = 60;
@@ -80,7 +82,11 @@ let rendering = Promise.resolve();
 // ── Overview ──
 async function overview() {
   const d = await sapi('/api/admin/overview');
+  const sys = can(MONEY) ? await sapi('/api/admin/system').catch(() => null) : null;
+  const quick = [['counter', 'Bar orders', 'Menu, bars and table QR codes'], ['members', 'People', 'Staff & members: passes, no tickets'], ['attendance', 'Attendance', 'Who came in, by night'], ['system', 'System health', sys ? health(sys).label : 'Payment checks and alerts']]
+    .filter(([t]) => TABS.some(x => x[0] === t));
   panel.innerHTML = `<h1>Tonight & next</h1>
+  ${quick.length ? `<div class="quick">${quick.map(([t, l, sub]) => `<button type="button" class="quick-btn ${t === 'system' && sys ? health(sys).tone : ''}" data-quick="${t}"><b>${l}</b><span>${esc(sub)}</span></button>`).join('')}<a class="quick-btn" href="checkin.html"><b>Door</b><span>Scan tickets and passes</span></a><a class="quick-btn" href="bar.html"><b>Bar screen</b><span>Paid orders to hand over</span></a></div>` : ''}
   <div class="kpis">
       <div><span>Revenue (confirmed only)</span><b>${money(d.revenuePesewas)}</b></div>
       <div><span>Memories’ share</span><b>${money(d.memoriesSharePesewas)}</b></div>
@@ -94,6 +100,43 @@ async function overview() {
       <td class="actions"><button class="sbtn" data-open="${esc(n.id)}">Open</button><a class="sbtn ghost" href="checkin.html?event=${encodeURIComponent(n.id)}">Door</a></td></tr>`).join('') || '<tr><td colspan="8" class="empty-row">No upcoming nights. Create one under Nights.</td></tr>'}
     </tbody></table></div>`;
   $$('[data-open]').forEach(b => b.onclick = () => show('nights', b.dataset.open));
+  $$('[data-quick]').forEach(b => b.onclick = () => show(b.dataset.quick));
+}
+
+// How the system is doing, in one line (used by Overview, the System tab and the alert banner).
+function health(d) {
+  const r = d.reconcile, recent = (d.alerts || []).filter(a => Date.now() - new Date(a.at).getTime() < 24 * 3600e3);
+  if (!r) return { tone: 'warn', label: 'Payment check not running yet', bad: false };
+  if (r.stale) return { tone: 'bad', label: 'Payment check has stopped', bad: true };
+  if (!r.ok) return { tone: 'bad', label: 'Payment check is failing', bad: true };
+  if (recent.length) return { tone: 'warn', label: `${recent.length} alert${recent.length > 1 ? 's' : ''} in the last 24 hours`, bad: false };
+  return { tone: 'good', label: 'All good: payments watched', bad: false };
+}
+
+// Real-time monitoring in the control room: every minute, ask the Worker for its state. A new alert,
+// or the payment check stopping, shows a banner here (and a phone/desktop notification if allowed).
+// The same alerts are also texted to the alert phones by the Worker itself.
+function watchSystem() {
+  if (!can(MONEY)) return;
+  const bar = document.createElement('div'); bar.className = 'sys-banner'; bar.hidden = true; bar.setAttribute('role', 'alert');
+  subtabs.after(bar);
+  let seen = Number(localStorage.getItem('sys-seen') || 0);
+  const check = async () => {
+    if (document.visibilityState !== 'visible') return;
+    let d; try { d = await sapi('/api/admin/system'); } catch { return; }
+    const h = health(d), fresh = (d.alerts || []).filter(a => new Date(a.at).getTime() > seen);
+    if (!h.bad && !fresh.length) { bar.hidden = true; return; }
+    const top = fresh[0];
+    bar.innerHTML = `<strong>${h.bad ? esc(h.label) : `New alert: ${esc(top.kind)}`}</strong><span>${esc(top ? top.text : 'Open System for details.')}</span>
+      <button type="button" class="sbtn" data-sys-open>Open System</button>${'Notification' in window && Notification.permission === 'default' ? '<button type="button" class="sbtn ghost" data-sys-notify>Notify me</button>' : ''}<button type="button" class="sbtn ghost" data-sys-ok>Dismiss</button>`;
+    bar.hidden = false;
+    if (fresh.length && 'Notification' in window && Notification.permission === 'granted') { try { new Notification('Memories: ' + top.kind, { body: top.text, icon: 'assets/icon-192.png', tag: 'memories-alert' }); } catch { /* not allowed here */ } }
+    $('[data-sys-open]', bar).onclick = () => show('system');
+    $('[data-sys-ok]', bar).onclick = () => { seen = Date.now(); localStorage.setItem('sys-seen', String(seen)); bar.hidden = true; };
+    const n = $('[data-sys-notify]', bar); if (n) n.onclick = () => Notification.requestPermission().then(() => check());
+  };
+  check(); setInterval(check, 60_000);
+  document.addEventListener('visibilitychange', check);
 }
 
 // ── System: is the money being watched? ──
@@ -103,7 +146,9 @@ async function system() {
   const r = d.reconcile, c = d.configured;
   const state = !r ? pill('never run', 'red') : r.stale ? pill('stopped', 'red') : r.ok ? pill('watching', 'green') : pill('failing', 'red');
   const setup = [['Alert phones', c.alertPhones], ['Sentry', c.sentry], ['Heartbeat', c.heartbeat], ['Health key', c.healthKey]];
+  const h = health(d);
   panel.innerHTML = `<h1>System</h1>
+    <div class="health ${h.tone}"><b>${esc(h.label)}</b><span>Checked every minute while this page is open. Alerts also go to the alert phones.</span>${'Notification' in window && Notification.permission !== 'granted' ? '<button type="button" class="sbtn" id="sysNotify">Notify me on this device</button>' : ''}</div>
     <div class="card"><div class="toolbar" style="margin:0"><strong>Payment check</strong> ${state}</div>
       ${r ? `<p style="margin:0">Last run ${esc(when(r.at))}: ${r.checked} checked, ${r.recovered} fixed automatically, ${r.alerts} alerts, ${r.errors} errors.</p>` : '<p style="margin:0">No run recorded yet. It starts within 10 minutes of the Worker being deployed.</p>'}
       ${r?.stale ? '<p class="msg err" style="margin:0">The check hasn’t run for over 30 minutes. Check the Worker’s cron in Cloudflare.</p>' : ''}
@@ -113,54 +158,94 @@ async function system() {
     <h2>Alerts, last 7 days</h2>
     <div class="tbl-wrap"><table class="tbl"><thead><tr><th>When</th><th>What</th><th>Message</th></tr></thead><tbody>
     ${d.alerts.map(a => `<tr><td>${esc(when(a.at))}</td><td>${esc(a.kind)}</td><td>${esc(a.text)}</td></tr>`).join('') || '<tr><td colspan="3" class="empty-row">No alerts. Quiet is good.</td></tr>'}</tbody></table></div>`;
+  $('#sysNotify') && ($('#sysNotify').onclick = async () => { const p = await Notification.requestPermission(); $('#sysNotify').textContent = p === 'granted' ? 'Notifications on' : 'Blocked in browser settings'; });
 }
 
 // ── People: members and staff who get in without a ticket (HR) ──
+// Nobody is texted a verification code. Staff open their pass from "My pass" on their dashboard;
+// other members get it from a one-time activation QR (shown here) that they scan with their phone.
 async function members(arg, notice) {
-  const { members: list } = await sapi('/api/admin/members');
+  const { members: list, unlinkedStaff = [] } = await sapi('/api/admin/members');
   const one = id => list.find(x => x.id === id);
   panel.innerHTML = `<h1>Members</h1>
-    <p class="muted" style="margin-top:-6px">Staff and members get in without a ticket, after the door checks their Memories Pass or a code texted to their phone.</p>
+    <p class="muted" style="margin-top:-6px">Staff and members get in without a ticket. At the gate the door scans their Memories Pass, or types their number and they read out the code that appears on their app. Every staff account is a member automatically.</p>
     <div class="toolbar"><button class="sbtn red" id="mAdd">Add someone</button><input id="mFind" type="search" placeholder="Search name, department, phone" style="flex:1;min-width:180px"></div>
+    ${unlinkedStaff.length ? `<div class="card" id="mUnlinked"><strong>Staff accounts without a membership (${unlinkedStaff.length})</strong><p class="hint" style="margin:0;color:var(--muted)">Add their phone number to make them members, so they never need a ticket.</p>
+      ${unlinkedStaff.map(u => `<div class="toolbar" style="margin:0"><span>${esc(u.name || u.email)} · ${esc(ROLE_LABEL[u.role] || u.role)}</span><button class="sbtn" data-mlink="${esc(u.uid)}">Make member</button></div>`).join('')}</div>` : ''}
     <div id="mFormBox"></div><div id="mMsg"></div>
     <div class="tbl-wrap"><table class="tbl"><thead><tr><th>Name</th><th>Type</th><th>Department</th><th>Position</th><th>Phone</th><th>Status</th><th></th></tr></thead><tbody id="mRows"></tbody></table></div>`;
-  const rows = q => { const s = q.toLowerCase(); return list.filter(m => !s || [m.name, m.department, m.position, m.phone, m.staffNo].join(' ').toLowerCase().includes(s)); };
+  const rows = q => { const s = q.toLowerCase(); return list.filter(m => !s || [m.name, m.department, m.position, m.phone, m.staffNo, m.staffEmail].join(' ').toLowerCase().includes(s)); };
   const draw = (q = '') => {
-    $('#mRows').innerHTML = rows(q).map(m => `<tr><td><strong>${esc(m.name)}</strong>${m.staffNo ? `<br><small class="muted">${esc(m.staffNo)}</small>` : ''}</td><td>${m.type === 'staff' ? pill('staff', 'amber') : pill('member', 'grey')}</td><td>${esc(m.department)}</td><td>${esc(m.position)}</td><td>${esc(m.phone)}</td>
+    $('#mRows').innerHTML = rows(q).map(m => `<tr><td><strong>${esc(m.name)}</strong>${m.staffNo ? `<br><small class="muted">${esc(m.staffNo)}</small>` : ''}${m.staffEmail ? `<br><small class="muted">Signs in as ${esc(m.staffEmail)}</small>` : ''}</td><td>${m.type === 'staff' ? pill('staff', 'amber') : pill('member', 'grey')}</td><td>${esc(m.department)}</td><td>${esc(m.position)}</td><td>${esc(m.phone) || pill('add phone', 'amber')}</td>
       <td>${m.status !== 'active' ? pill('suspended', 'red') : m.validUntil && m.validUntil < new Date().toISOString().slice(0, 10) ? pill('ended', 'red') : pill(m.validUntil ? `until ${m.validUntil}` : 'active', 'green')}</td>
-      <td class="actions"><button class="sbtn" data-medit="${esc(m.id)}">Edit</button></td></tr>`).join('') || '<tr><td colspan="7" class="empty-row">Nobody yet. Add your staff first: they’ll be texted a link to their pass.</td></tr>';
+      <td class="actions">${m.status === 'active' ? `<button class="sbtn red" data-mqr="${esc(m.id)}" title="Show a QR they scan to put the pass on their phone">Pass QR</button>` : ''}<button class="sbtn" data-medit="${esc(m.id)}">Edit</button></td></tr>`).join('') || '<tr><td colspan="7" class="empty-row">Nobody yet. Staff appear here when you add them under Staff; add other members here.</td></tr>';
     $$('[data-medit]').forEach(b => b.onclick = () => form(one(b.dataset.medit)));
+    $$('[data-mqr]').forEach(b => b.onclick = () => activationQr(one(b.dataset.mqr)));
   };
-  const form = (m = null) => {
-    $('#mFormBox').innerHTML = `<form class="card" id="mForm" novalidate><h2 style="margin:0">${m ? `Edit ${esc(m.name)}` : 'Add someone'}</h2>
+  const form = (m = null, link = null) => {
+    const staffOpts = [...unlinkedStaff, ...(m?.staffUid ? [{ uid: m.staffUid, email: m.staffEmail || m.staffUid, role: '' }] : [])];
+    const linkUid = link?.uid || m?.staffUid || '';
+    $('#mFormBox').innerHTML = `<form class="card" id="mForm" novalidate><h2 style="margin:0">${m ? `Edit ${esc(m.name)}` : link ? `Make ${esc(link.name || link.email)} a member` : 'Add someone'}</h2>
       <div class="grid2">
-        <div class="sfield"><label for="fName">Full name</label><input id="fName" maxlength="80" value="${esc(m?.name || '')}"></div>
-        <div class="sfield"><label for="fPhone">Phone (how they’re checked at the gate)</label><input id="fPhone" type="tel" value="${esc(m?.phone || '')}"></div>
-        <div class="sfield"><label for="fType">Type</label><select id="fType"><option value="staff" ${m?.type === 'staff' ? 'selected' : ''}>Staff (works at the club)</option><option value="member" ${m && m.type !== 'staff' ? 'selected' : ''}>Member</option></select></div>
+        <div class="sfield"><label for="fName">Full name</label><input id="fName" maxlength="80" value="${esc(m?.name || link?.name || '')}"></div>
+        <div class="sfield"><label for="fPhone">Phone (the door can find them by it)</label><input id="fPhone" type="tel" value="${esc(m?.phone || '')}" placeholder="024 123 4567"></div>
+        <div class="sfield"><label for="fType">Type</label><select id="fType"><option value="staff" ${m?.type === 'staff' || link || !m ? 'selected' : ''}>Staff (works at the club)</option><option value="member" ${m && m.type !== 'staff' ? 'selected' : ''}>Member</option></select></div>
         <div class="sfield"><label for="fStatus">Status</label><select id="fStatus"><option value="active">Active</option><option value="suspended" ${m?.status === 'suspended' ? 'selected' : ''}>Suspended (refused at the gate)</option></select></div>
         <div class="sfield"><label for="fDept">Department</label><input id="fDept" maxlength="60" value="${esc(m?.department || '')}" placeholder="Bar, Security, Kitchen…"></div>
         <div class="sfield"><label for="fPos">Position</label><input id="fPos" maxlength="60" value="${esc(m?.position || '')}"></div>
         <div class="sfield"><label for="fNo">Staff / member number</label><input id="fNo" maxlength="30" value="${esc(m?.staffNo || '')}"></div>
         <div class="sfield"><label for="fUntil">Valid until (blank = no end)</label><input id="fUntil" type="date" value="${esc(m?.validUntil || '')}"></div>
+        <div class="sfield"><label for="fStaff">Staff sign-in (their pass is on their dashboard)</label><select id="fStaff"><option value="">None: they use a pass QR</option>${staffOpts.map(u => `<option value="${esc(u.uid)}" ${u.uid === linkUid ? 'selected' : ''}>${esc(u.email)}${u.role ? ` · ${esc(ROLE_LABEL[u.role] || u.role)}` : ''}</option>`).join('')}</select></div>
       </div>
       <div class="sfield"><label for="fNotes">Notes (staff only)</label><input id="fNotes" maxlength="300" value="${esc(m?.notes || '')}"></div>
-      ${m ? '<label class="check"><input type="checkbox" id="fResend"> Text them the pass link again</label>' : '<p class="hint" style="margin:0;color:var(--muted)">They’ll get a text with a link to their Memories Pass.</p>'}
-      <div class="toolbar" style="margin:0"><button class="sbtn red" type="submit">${m ? 'Save' : 'Add and text them'}</button><button class="sbtn ghost" type="button" id="fClose">Cancel</button></div><div id="fMsg"></div></form>`;
+      ${m ? '' : '<p class="hint" style="margin:0;color:var(--muted)">Next you’ll get a QR they scan with their phone to get their pass. Nothing is texted.</p>'}
+      <div class="toolbar" style="margin:0"><button class="sbtn red" type="submit">${m ? 'Save' : 'Add'}</button><button class="sbtn ghost" type="button" id="fClose">Cancel</button></div><div id="fMsg"></div></form>`;
     $('#fClose').onclick = () => { $('#mFormBox').innerHTML = ''; };
     $('#fName').focus();
     $('#mForm').onsubmit = async ev => {
       ev.preventDefault();
       if (m && $('#fStatus').value === 'suspended' && m.status !== 'suspended' && !confirm(`Suspend ${m.name}? Their pass stops working at once.`)) return;
       try {
-        const r = await sapi('/api/admin/members', { method: 'POST', body: { id: m?.id, name: val('#fName'), phone: val('#fPhone'), type: val('#fType'), status: val('#fStatus'), department: val('#fDept'), position: val('#fPos'), staffNo: val('#fNo'), validUntil: val('#fUntil'), notes: val('#fNotes'), resendInvite: $('#fResend')?.checked === true } });
-        members(null, { text: `${m ? 'Saved' : 'Added'} ${val('#fName')}${r.texted ? ' and texted them the pass link' : ''}.` });
+        const r = await sapi('/api/admin/members', { method: 'POST', body: { id: m?.id, name: val('#fName'), phone: val('#fPhone'), type: val('#fType'), status: val('#fStatus'), department: val('#fDept'), position: val('#fPos'), staffNo: val('#fNo'), validUntil: val('#fUntil'), notes: val('#fNotes'), staffUid: val('#fStaff') } });
+        const name = val('#fName'), needsQr = !m && !val('#fStaff') && val('#fStatus') === 'active';
+        await members(null, { text: `${m ? 'Saved' : 'Added'} ${name}.` });
+        if (needsQr) activationQr({ id: r.id, name });
       } catch (err) { flash($('#fMsg'), err.message, true); }
     };
   };
   $('#mAdd').onclick = () => form();
+  $$('[data-mlink]').forEach(b => b.onclick = () => form(null, unlinkedStaff.find(u => u.uid === b.dataset.mlink)));
   $('#mFind').oninput = e => draw(e.target.value);
   draw();
   if (notice) flash($('#mMsg'), notice.text);
+}
+
+// The one-time activation QR: the member scans it with their phone camera and the pass is on their
+// phone. Works once, for 48 hours. Texting the link is optional (an invitation, not a code).
+async function activationQr(m) {
+  ensureQrCss();
+  const box = document.createElement('div'); box.className = 'qrm';
+  box.setAttribute('role', 'dialog'); box.setAttribute('aria-modal', 'true'); box.setAttribute('aria-label', `Pass QR for ${m.name}`);
+  box.innerHTML = '<div class="qrm-box"><div class="loading">Making their QR…</div></div>';
+  document.body.append(box);
+  const close = () => { box.remove(); removeEventListener('keydown', onKey); };
+  const onKey = e => { if (e.key === 'Escape') close(); };
+  addEventListener('keydown', onKey); box.onclick = e => { if (e.target === box) close(); };
+  const render = async (text = false) => {
+    try {
+      const a = await sapi('/api/admin/members/activation', { method: 'POST', body: { id: m.id, text } });
+      box.firstElementChild.innerHTML = `<h2>${esc(m.name)}’s pass</h2>
+        <p class="muted" style="margin:0">Ask them to point their phone camera at this QR. Their Memories Pass opens and stays on that phone. Then tap “Install app” on it.</p>
+        <div style="background:#fff;padding:14px;max-width:260px;justify-self:center;width:100%">${await qrSvg(a.link)}</div>
+        <p style="margin:0;text-align:center">Or on member.html, type <strong style="font:400 26px var(--display);letter-spacing:.1em">${esc(a.code)}</strong></p>
+        <p class="hint" style="margin:0;color:var(--muted);text-align:center">Works once, until ${esc(when(a.expiresAt))}.${a.texted ? ' Link texted to them.' : ''}</p>
+        <div class="toolbar" style="margin:0;justify-content:center"><button class="sbtn" id="aCopy">Copy link</button>${a.texted ? '' : '<button class="sbtn ghost" id="aText">Text them the link instead</button>'}<button class="sbtn red" id="aDone">Done</button></div>`;
+      $('#aDone', box).onclick = close; $('#aDone', box).focus();
+      $('#aCopy', box).onclick = async () => { try { await navigator.clipboard.writeText(a.link); $('#aCopy', box).textContent = 'Copied'; } catch { prompt('Copy this link:', a.link); } };
+      $('#aText', box) && ($('#aText', box).onclick = () => render(true));
+    } catch (e) { box.firstElementChild.innerHTML = `<div class="msg err">${esc(e.message)}</div><button class="sbtn" id="aDone">Close</button>`; $('#aDone', box).onclick = close; }
+  };
+  render();
 }
 
 async function attendance() {
@@ -172,7 +257,7 @@ async function attendance() {
     $('#aBody').innerHTML = `<h2>By person</h2><div class="tbl-wrap"><table class="tbl"><thead><tr><th>Name</th><th>Type</th><th>Department</th><th class="num">Nights in</th><th>Last in</th></tr></thead><tbody>
       ${d.people.map(p => `<tr><td><strong>${esc(p.name)}</strong></td><td>${esc(p.type)}</td><td>${esc(p.department)}</td><td class="num">${p.nights}</td><td>${esc(when(p.last))}</td></tr>`).join('') || '<tr><td colspan="5" class="empty-row">No check-ins in this period.</td></tr>'}</tbody></table></div>
       <h2>Every check-in</h2><div class="tbl-wrap"><table class="tbl"><thead><tr><th>When</th><th>Name</th><th>Department</th><th>How</th><th>Checked by</th></tr></thead><tbody>
-      ${d.entries.map(e => `<tr><td>${esc(when(e.at))}</td><td>${esc(e.name)}</td><td>${esc(e.department)}</td><td>${e.method === 'pass' ? 'Pass' : 'Texted code'}</td><td>${esc(e.byEmail)}</td></tr>`).join('') || '<tr><td colspan="5" class="empty-row">Nothing yet.</td></tr>'}</tbody></table></div>`;
+      ${d.entries.map(e => `<tr><td>${esc(when(e.at))}</td><td>${esc(e.name)}</td><td>${esc(e.department)}</td><td>${e.method === 'pass' ? 'Pass QR' : 'Gate code'}</td><td>${esc(e.byEmail)}</td></tr>`).join('') || '<tr><td colspan="5" class="empty-row">Nothing yet.</td></tr>'}</tbody></table></div>`;
   };
   $('#aDays').onchange = () => load().catch(fail);
   $('#aCsv').onclick = () => {
@@ -191,12 +276,12 @@ async function counter(arg, notice) {
   const qrs = await Promise.all(d.stations.map(s => qrSvg(s.url).catch(() => '')));
   panel.innerHTML = `<h1>Bar orders</h1>
     <p class="muted" style="margin-top:-6px">Guests scan a bar’s QR, pay by MoMo or card, and show a pickup code. The bar works from the <a href="bar.html">bar screen</a>.</p>
-    <h2>Bars</h2><div id="sMsg"></div>
+    <h2>Bars</h2>${d.stations.length ? '<div class="toolbar"><button class="sbtn red" id="qrAll" type="button">Make table QR codes</button><span class="muted" style="font-size:14px">One card per table (e.g. 1-12): the bar sees the table on each order.</span></div>' : ''}<div id="sMsg"></div>
     <div class="orders-qr" style="display:grid;gap:12px;grid-template-columns:repeat(auto-fill,minmax(240px,1fr))">${d.stations.map((s, i) => `<div class="card" data-station="${esc(s.id)}">
       <div class="sfield"><label>Name</label><input data-k="name" maxlength="40" value="${esc(s.name)}"></div>
       <label class="check"><input type="checkbox" data-k="open" ${s.open ? 'checked' : ''}> Taking app orders</label>
       <div style="background:#fff;padding:10px;max-width:220px">${qrs[i]}</div><small class="muted" style="overflow-wrap:anywhere">${esc(s.url)}</small>
-      <div class="toolbar" style="margin:0"><button class="sbtn red" data-ssave>Save</button><button class="sbtn ghost" data-snew>New QR</button><button class="sbtn ghost" data-sprint>Print</button></div></div>`).join('')}
+      <div class="toolbar" style="margin:0"><button class="sbtn red" data-ssave>Save</button><button class="sbtn ghost" data-snew>New QR</button><button class="sbtn ghost" data-sprint>QR codes</button></div></div>`).join('')}
       <form class="card" id="newSt" novalidate><div class="sfield"><label for="nsName">Add a bar</label><input id="nsName" maxlength="40" placeholder="Main bar, VIP bar…"></div><button class="sbtn" type="submit">Add bar</button></form></div>
     <h2>Drinks menu</h2><p class="hint" style="color:var(--muted);margin-top:-6px">Untick “On” when something runs out: guests see “out tonight”.</p>
     <div class="tbl-wrap"><table class="tbl"><thead><tr><th>Category</th><th>Name</th><th>Price (GHS)</th><th>Order</th><th></th><th></th></tr></thead><tbody>
@@ -209,12 +294,8 @@ async function counter(arg, notice) {
   };
   $$('[data-ssave]').forEach(b => b.onclick = () => saveStation(b.closest('[data-station]')));
   $$('[data-snew]').forEach(b => b.onclick = () => { if (confirm('Make a new QR for this bar? The printed one stops working.')) saveStation(b.closest('[data-station]'), true); });
-  $$('[data-sprint]').forEach(b => b.onclick = () => {
-    const card = b.closest('[data-station]'), w = open('', '_blank');
-    if (!w) return flash($('#sMsg'), 'Allow pop-ups to print the QR.', true);
-    w.document.write(`<title>QR</title><body style="font-family:Arial,sans-serif;text-align:center;padding:30px"><h1 style="font-size:40px;margin:0">Order &amp; pay here</h1><p style="font-size:22px">${esc($('[data-k=name]', card).value)} · scan with your phone camera</p><div style="width:420px;margin:20px auto">${card.querySelector('svg').outerHTML}</div><p style="font-size:18px">Pay by MoMo or card. Show your pickup code at the bar.</p></body>`);
-    w.document.close(); w.print();
-  });
+  $$('[data-sprint]').forEach(b => b.onclick = () => openQrMaker(d.stations, b.closest('[data-station]').dataset.station));
+  $('#qrAll') && ($('#qrAll').onclick = () => openQrMaker(d.stations, d.stations[0]?.id));
   $('#newSt').onsubmit = async ev => { ev.preventDefault(); try { await sapi('/api/admin/bar-stations', { method: 'POST', body: { name: val('#nsName'), open: true } }); counter(null, { at: '#sMsg', text: 'Bar added. Print its QR and put it on the counter.' }); } catch (e) { flash($('#sMsg'), e.message, true); } };
   $$('[data-isave]').forEach(b => b.onclick = async () => {
     const tr = b.closest('tr'), get = k => $(`[data-k="${k}"]`, tr);
@@ -654,3 +735,4 @@ function fromHash() {
 }
 window.addEventListener('hashchange', fromHash);
 fromHash();
+watchSystem();

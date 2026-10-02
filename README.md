@@ -20,7 +20,9 @@ cd worker && npm install && cd ..
 npm run dev            # http://localhost:8787
 ```
 
-This runs the real Worker code against an in-memory Firestore, a fake Paystack checkout (a Pay / Decline page) and dev staff logins. The password is `memories-dev` for all of them: `admin@dev`, `manager@dev`, `door@dev`, `bar@dev`, `orga@dev`, `orgb@dev`, and `guest@dev` (no role). The dev bar's order page is `/b/0123456789abcdef0123456789abcdef`; the member pass is `/member.html` (add a member under People first; the texted code is in `/dev/state`). Seed nights, lines and prices are dev placeholders from `dev/seed.mjs`; none of it is production data.
+This runs the real Worker code against an in-memory Firestore, a fake Paystack checkout (a Pay / Decline page) and dev staff logins. The password is `memories-dev` for all of them: `admin@dev`, `manager@dev`, `door@dev`, `bar@dev`, `orga@dev`, `orgb@dev`, and `guest@dev` (no role). The dev bar's order page is `/counter.html?s=0123456789abcdef0123456789abcdef&t=4` (table 4); the member pass is `/member.html` (add a member under People → Members and scan the pass QR it shows, or sign in as `orga@dev` and tap **My pass**).
+
+**Previewing with VS Code Live Server (port 5500)?** The pages work there, but they call the API at `apiBase` in `public/config.js`, which is the production Worker. A feature the deployed Worker doesn't have yet (People, Bar orders, System…) says *"needs the latest Worker"*. Deploy the Worker (`cd worker && npm ci && npm run deploy`) or use `npm run dev` above, which serves the site and the current Worker together. Seed nights, lines and prices are dev placeholders from `dev/seed.mjs`; none of it is production data.
 
 ## Tests
 

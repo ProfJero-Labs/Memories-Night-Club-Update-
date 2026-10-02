@@ -34,6 +34,8 @@ export function seed(store, origin) {
   const staff = [['admin@dev', 'uid-admin', { role: 'superAdmin', admin: true }], ['manager@dev', 'uid-mgr', { role: 'manager', admin: false }], ['door@dev', 'uid-door', { role: 'doorStaff', admin: false }], ['bar@dev', 'uid-bar', { role: 'barStaff', admin: false }], ['orga@dev', 'uid-org-a', { role: 'organiser', admin: false }], ['orgb@dev', 'uid-org-b', { role: 'organiser', admin: false }], ['guest@dev', 'uid-guest', {}]];
   store.claims = {};
   for (const [email, uid, claims] of staff) { store.authUsers.push({ email, localId: uid }); store.claims[uid] = claims; if (claims.role) store.seed('users', uid, { email, role: claims.role }); }
+  // Every staff account is a member (no ticket at the gate). Organiser A's, linked to their sign-in:
+  store.seed('members', 'dev-mem-orga', { name: 'Ama Organiser', phone: '0245552020', type: 'staff', status: 'active', validUntil: '', staffUid: 'uid-org-a', department: 'Events', position: 'Organiser', staffNo: '', notes: '', createdAt: new Date().toISOString() });
   // Scan to order: one bar (QR → /b/0123…cdef) and a short drinks menu. Dev placeholders.
   store.seed('bar_stations', 'dev-main-bar', { name: 'Main bar', token: '0123456789abcdef0123456789abcdef', open: true });
   for (const [id, name, category, pricePesewas, available] of [['dev-m-beer', 'Club beer', 'Beer', 2500, true], ['dev-m-stout', 'Stout', 'Beer', 3000, true], ['dev-m-shot', 'Tequila shot', 'Shots', 3000, true], ['dev-m-cock', 'House cocktail', 'Cocktails', 6000, true], ['dev-m-water', 'Water', 'Soft', 1000, true], ['dev-m-flute', 'Champagne flute', 'Wine', 9000, false]]) store.seed('menu_items', id, { name, category, pricePesewas, available, sortOrder: 0 });

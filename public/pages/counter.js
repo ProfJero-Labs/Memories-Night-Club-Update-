@@ -1,4 +1,5 @@
-// Scan to order: /b/{stationToken} (counter.html; Paystack sends the guest back to /counter.html).
+// Scan to order: counter.html?s={stationToken}[&t={table}] (old /b/{token} links redirect here;
+// Paystack sends the guest back to counter.html). Every link is relative, so it works wherever it's served.
 // Pick drinks → pay by MoMo or card → the pickup code appears only once Paystack confirms the
 // payment → show it at the bar. Paying cash? Order at the bar as usual.
 import { api, esc, money, normalizePhone, $, $$ } from '../app.js';
@@ -9,8 +10,13 @@ const store = {
   set: (k, v) => { try { v === null ? localStorage.removeItem(k) : localStorage.setItem(k, JSON.stringify(v)); } catch { /* private mode */ } },
 };
 const uuid = () => crypto.randomUUID();
-const fromPath = location.pathname.match(/^\/b\/([0-9a-f]{32})$/)?.[1];
-const station = fromPath || new URLSearchParams(location.search).get('s') || store.get('mem-bar-station') || '';
+const qs = new URLSearchParams(location.search);
+const fromPath = location.pathname.match(/\/b\/([0-9a-f]{32})$/)?.[1];
+const fromQr = fromPath || (/^[0-9a-f]{32}$/.test(qs.get('s') || '') ? qs.get('s') : null);
+const station = fromQr || store.get('mem-bar-station') || '';
+// A table card's QR carries the table, so the bar knows where to bring it (or who's asking).
+const spot = fromQr ? (qs.get('t') || '').slice(0, 24) : (store.get('mem-bar-spot') || '');
+const again = () => `counter.html?s=${encodeURIComponent(station)}${spot ? `&t=${encodeURIComponent(spot)}` : ''}`;
 const cart = store.get('mem-bar-cart') || {};
 let clientId = store.get('mem-bar-draft') || uuid(), timer = null;
 const msg = (t, k = '') => `<div class="notice ${k}" role="status">${esc(t)}</div>`;
@@ -32,15 +38,15 @@ function showOrder(orderId) {
     if (o.status === 'pending_payment') { app.innerHTML = `${msg('Approve the MoMo prompt on your phone. We’re waiting for it to confirm…')}<p class="foot-small">Don’t close this page. Your pickup code shows here the moment it’s paid.</p>`; timer = setTimeout(poll, 4000); return; }
     if (o.status === 'paid') {
       app.innerHTML = `<p class="kicker red" style="text-align:center">Show this at the bar</p><div class="pickup" aria-label="Pickup code">${esc(o.pickupCode)}</div>${lines}
-        <p class="foot-small">We’ve also texted you the code. <a href="/receipt.html?code=${esc(o.receiptCode)}">Receipt</a></p>`;
+        <p class="foot-small">We’ve also texted you the code. <a href="receipt.html?code=${esc(o.receiptCode)}">Receipt</a></p>`;
       navigator.wakeLock?.request('screen').catch(() => {});
       timer = setTimeout(poll, 8000); return;
     }
     store.set('mem-bar-order', null);
-    if (o.status === 'delivered') { app.innerHTML = `${msg('Collected. Enjoy!', 'ok')}<div class="row-actions"><a class="btn red" href="/b/${esc(station)}">Order again</a><a class="btn" href="/receipt.html?code=${esc(o.receiptCode)}">Receipt</a></div>`; return; }
-    if (o.status === 'payment_failed') { app.innerHTML = `${msg('Payment didn’t go through. Nothing was taken.', 'bad')}<div class="row-actions"><a class="btn red" href="/b/${esc(station)}">Try again</a></div>`; return; }
-    if (o.status === 'refund_due' || o.status === 'refunded') { app.innerHTML = `${msg(o.status === 'refunded' ? 'You’ve been refunded for this order.' : 'The bar couldn’t make your order. You’re owed a refund: staff will sort it. Keep this page, or the receipt.', 'bad')}${o.receiptCode ? `<a class="btn" href="/receipt.html?code=${esc(o.receiptCode)}">Receipt</a>` : ''}`; return; }
-    app.innerHTML = `${msg('This order was cancelled. Nothing was taken.')}<a class="btn red" href="/b/${esc(station)}">Start again</a>`;
+    if (o.status === 'delivered') { app.innerHTML = `${msg('Collected. Enjoy!', 'ok')}<div class="row-actions"><a class="btn red" href="${esc(again())}">Order again</a><a class="btn" href="receipt.html?code=${esc(o.receiptCode)}">Receipt</a></div>`; return; }
+    if (o.status === 'payment_failed') { app.innerHTML = `${msg('Payment didn’t go through. Nothing was taken.', 'bad')}<div class="row-actions"><a class="btn red" href="${esc(again())}">Try again</a></div>`; return; }
+    if (o.status === 'refund_due' || o.status === 'refunded') { app.innerHTML = `${msg(o.status === 'refunded' ? 'You’ve been refunded for this order.' : 'The bar couldn’t make your order. You’re owed a refund: staff will sort it. Keep this page, or the receipt.', 'bad')}${o.receiptCode ? `<a class="btn" href="receipt.html?code=${esc(o.receiptCode)}">Receipt</a>` : ''}`; return; }
+    app.innerHTML = `${msg('This order was cancelled. Nothing was taken.')}<a class="btn red" href="${esc(again())}">Start again</a>`;
   };
   poll();
 }
@@ -49,13 +55,14 @@ function showOrder(orderId) {
 async function start() {
   clearTimeout(timer);
   const open = store.get('mem-bar-order');
-  if (open && (!fromPath || new URLSearchParams(location.search).get('reference'))) return showOrder(open);
+  if (open && (!fromQr || qs.get('reference'))) return showOrder(open);
   if (!station) { app.innerHTML = msg('Scan the QR code at the bar to order.'); return; }
-  store.set('mem-bar-station', station);
+  store.set('mem-bar-station', station); store.set('mem-bar-spot', spot || null);
   let r;
   try { r = await api(`/api/guest/menu?station=${encodeURIComponent(station)}`); }
   catch (e) { app.innerHTML = msg(e.message, 'bad'); return; }
   $('#label').textContent = r.station?.name || 'Bar order';
+  $('#spot').textContent = spot ? `Table ${spot.replace(/^table\s*/i, '')}` : ''; $('#spot').hidden = !spot;
   if (!r.open) { app.innerHTML = msg('The bar isn’t taking app orders right now. Order at the bar.'); return; }
   const price = id => r.items.find(i => i.id === id)?.pricePesewas || 0;
   for (const id of Object.keys(cart)) if (!r.items.some(i => i.id === id && i.available)) delete cart[id];
@@ -79,7 +86,7 @@ async function start() {
       if (!normalizePhone(phone)) { $('#err').innerHTML = msg('Enter your MoMo number, e.g. 024 123 4567.', 'bad'); return $('#ph').focus(); }
       btn.disabled = true; btn.textContent = 'Opening payment…';
       try {
-        const o = await api('/api/guest/counter/checkout', { method: 'POST', body: { station, items: Object.entries(cart).map(([itemId, qty]) => ({ itemId, qty })), phone, clientId } });
+        const o = await api('/api/guest/counter/checkout', { method: 'POST', body: { station, spot, items: Object.entries(cart).map(([itemId, qty]) => ({ itemId, qty })), phone, clientId } });
         store.set('mem-bar-momo', phone); store.set('mem-bar-order', o.orderId); store.set('mem-bar-cart', null); store.set('mem-bar-draft', null);
         location.href = o.authorizationUrl;
       } catch (e) { $('#err').innerHTML = msg(e.message, 'bad'); btn.disabled = false; btn.textContent = 'Try again'; }

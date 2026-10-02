@@ -103,3 +103,30 @@ details.more > summary { cursor: pointer; font-weight: 700; padding: 8px 0; }
 .sec[hidden], #evForm[hidden] { display: none !important; }
 .result .undo { justify-self: start; margin-top: 4px; }
 .funnel { margin: 0 0 18px; color: var(--muted); font-size: 15px; } .funnel strong { color: var(--paper); }
+.staff-head #myPass { background: none; border: 1px solid var(--line-2); color: var(--paper); min-height: 40px; padding: 0 12px; font: 700 12px var(--sans); letter-spacing: .1em; text-transform: uppercase; cursor: pointer; white-space: nowrap; }
+.staff-head .wrap > strong { margin-right: auto; }
+.staff-head [data-install] { color: var(--paper); cursor: pointer; white-space: nowrap; }
+@media (max-width: 420px) {
+  .staff-head .who { display: none; }
+  .staff-head .wrap { gap: 6px; }
+  .staff-head .wrap > strong { font-size: 16px !important; line-height: 1.05; }
+  .staff-head button, .staff-head #myPass { padding: 0 8px; min-height: 40px; letter-spacing: .04em; font-size: 11px; }
+}
+.gate-banner { background: var(--mustard); color: var(--ink); display: flex; align-items: center; justify-content: center; gap: 14px; padding: 10px var(--gutter); flex-wrap: wrap; }
+.gate-banner span { font: 700 13px var(--sans); letter-spacing: .1em; text-transform: uppercase; }
+.gate-banner b { font: 400 40px/1 var(--display); letter-spacing: .08em; }
+.gate-banner[hidden] { display: none; }
+
+/* Overview quick links */
+.quick { display: grid; gap: 10px; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); margin: 0 0 18px; }
+.quick-btn { display: grid; gap: 4px; text-align: left; padding: 14px; min-height: 76px; background: var(--ink-2); border: 1px solid var(--line-2); border-left: 4px solid var(--crimson); color: var(--paper); text-decoration: none; cursor: pointer; font: inherit; }
+.quick-btn b { font: 400 20px/1 var(--display); text-transform: uppercase; letter-spacing: .03em; }
+.quick-btn span { font-size: 13px; color: var(--muted); }
+.quick-btn:hover { border-color: var(--paper); }
+.quick-btn.good { border-left-color: #6fcfae; } .quick-btn.warn { border-left-color: var(--mustard); } .quick-btn.bad { border-left-color: #ff7a9c; background: rgba(224, 36, 94, .12); }
+/* System health and the live alert banner */
+.health { display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center; padding: 14px; border: 1px solid var(--line-2); border-left: 6px solid var(--muted); margin-bottom: 16px; }
+.health b { font: 400 22px/1.1 var(--display); text-transform: uppercase; } .health span { color: var(--muted); font-size: 14px; flex: 1 1 220px; }
+.health.good { border-left-color: #6fcfae; } .health.warn { border-left-color: var(--mustard); } .health.bad { border-left-color: #ff7a9c; background: rgba(224, 36, 94, .12); }
+.sys-banner { max-width: 1400px; margin: 12px auto 0; padding: 12px var(--gutter); display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; background: var(--crimson-deep); border: 1px solid var(--crimson); }
+.sys-banner span { flex: 1 1 240px; } .sys-banner[hidden] { display: none; }

@@ -31,6 +31,19 @@ async function payFor(store, env) {
   return { orderId: r.data.orderId, ref };
 }
 
+test('QR links open the order page by query string (works on any host); a table on the card reaches the bar screen', async () => {
+  const { store, env } = setup();
+  const boss = { role: 'manager' };
+  const setupRes = await call(env, 'GET', '/api/admin/bar-setup', { claims: boss });
+  assert.equal(setupRes.data.stations[0].url, `https://memoriesnightclub.test/counter.html?s=${TOKEN}`);
+  const q0 = await call(env, 'GET', '/api/bar/queue', { claims: BAR });
+  assert.equal(q0.data.stations[0].url, `https://memoriesnightclub.test/counter.html?s=${TOKEN}`, 'bar staff can make table cards too');
+  const r = await call(env, 'POST', '/api/guest/counter/checkout', { body: basket({ spot: 'VIP 3<script>' }) });
+  store.setPaystack(store.list('pending_checkouts')[0].id, { status: 'success', currency: 'GHS', amount: 8000 });
+  assert.equal((await call(env, 'GET', `/api/guest/counter/${r.data.orderId}`)).data.spot, 'VIP 3script');
+  assert.equal((await call(env, 'GET', '/api/bar/queue', { claims: BAR })).data.orders[0].spot, 'VIP 3script');
+});
+
 test('the menu: by station QR, unavailable drinks marked, unknown or retired QR refused', async () => {
   const { env } = setup();
   const m = await call(env, 'GET', `/api/guest/menu?station=${TOKEN}`);

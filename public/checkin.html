@@ -6,6 +6,11 @@
 <title>Door · Memories</title>
 <meta name="robots" content="noindex">
 <meta name="theme-color" content="#0d0a09">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="assets/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Memories">
 <link rel="icon" href="assets/icon.svg" type="image/svg+xml">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -46,12 +51,12 @@
   <form id="manual" class="toolbar" style="margin:0" novalidate><input id="code" placeholder="Or paste the ticket link" style="flex:1;min-width:0" autocomplete="off" autocapitalize="off" spellcheck="false"><button class="sbtn" type="submit">Check</button></form>
   <details class="fold member-gate" id="memberGate"><summary>Staff or member at the gate?</summary>
     <form id="mPhone" class="step" novalidate style="margin-top:10px;gap:12px">
-      <p class="foot-small" style="margin:0">Scan their Memories Pass above, or take their number: we text them a code, they say it to you.</p>
+      <p class="foot-small" style="margin:0">Scan their Memories Pass above. Can’t scan? Type their number: a code appears on their Memories app (or their staff dashboard), and they read it to you.</p>
       <div class="sfield"><label for="mNum">Their phone</label><input id="mNum" type="tel" inputmode="tel" autocomplete="off" placeholder="024 123 4567"></div>
-      <button class="sbtn red" type="submit">Text them a code</button>
+      <button class="sbtn red" type="submit">Send a code to their app</button>
     </form>
     <form id="mCode" class="step" novalidate hidden style="margin-top:10px;gap:12px">
-      <div class="sfield"><label for="mCodeIn">The code they say</label><input id="mCodeIn" inputmode="numeric" autocomplete="off" maxlength="6" pattern="[0-9]*"></div>
+      <div class="sfield"><label for="mCodeIn">The code they read out</label><input id="mCodeIn" inputmode="numeric" autocomplete="off" maxlength="6" pattern="[0-9]*"></div>
       <div class="toolbar" style="margin:0"><button class="sbtn red" type="submit">Verify</button><button class="sbtn ghost" type="button" id="mCancel">Start over</button></div>
     </form>
   </details>

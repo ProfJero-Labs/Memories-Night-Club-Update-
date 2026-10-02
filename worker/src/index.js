@@ -120,24 +120,16 @@ async function route(req, env, ctx) {
     const r = await bar.receipt(env, last(p)); return r ? ok(req, env, { receipt: r }) : fail(req, env, 'Receipt not found.', 404);
   }
   // ── Member pass (the member's own phone) ──
-  if (m === 'POST' && p === '/api/members/pass-code') {
-    const b = await body(req), ph = normalizePhone(b.phone);
-    if (!ph) return fail(req, env, 'Use a Ghana number, e.g. 024 123 4567.');
-    if (await throttled(req, env, 'pass-code', 'strict') || await throttled(req, env, 'pass-code-phone', 'strict', ph)) return tooMany(req, env);
-    await later(ctx, members.startPassSignIn(env, { phone: ph }));
-    return ok(req, env, { message: members.NEUTRAL_PASS_CODE });
-  }
-  if (m === 'POST' && p === '/api/members/pass') {
-    const b = await body(req);
-    if (await throttled(req, env, 'pass-signin', 'strict') || await throttled(req, env, 'pass-signin-phone', 'strict', normalizePhone(b.phone) || 'none')) return tooMany(req, env);
-    return reply(req, env, await members.finishPassSignIn(env, b, req.headers.get('CF-Connecting-IP')));
+  if (m === 'POST' && p === '/api/members/activate') {
+    if (await throttled(req, env, 'pass-activate', 'strict')) return tooMany(req, env);
+    return reply(req, env, await members.activatePass(env, await body(req), req.headers.get('CF-Connecting-IP')));
   }
   if (m === 'POST' && p === '/api/members/pass-status') { if (await throttled(req, env, 'pass-status', 'standard')) return tooMany(req, env); return ok(req, env, await members.passStatus(env, (await body(req)).qr)); }
   if (m === 'GET' && p === '/api/health') return health(req, env);
   if (m === 'POST' && p === '/api/client-error') { if (await throttled(req, env, 'client-error', 'strict')) return tooMany(req, env); return reply(req, env, await clientError(req, env, allowedOrigin)); }
 
   // ── Staff (Firebase ID token with a role claim) ──
-  if (!p.startsWith('/api/admin/') && !p.startsWith('/api/members/door/') && !p.startsWith('/api/bar/') && !['/api/checkin', '/api/checkin/undo', '/api/door/events', '/api/door/summary', '/api/door/search', '/api/send-sms', '/api/balance'].includes(p)) return fail(req, env, 'Not found.', 404);
+  if (!p.startsWith('/api/admin/') && !p.startsWith('/api/members/door/') && !p.startsWith('/api/bar/') && !['/api/members/my-pass', '/api/members/my-gate'].includes(p) && !['/api/checkin', '/api/checkin/undo', '/api/door/events', '/api/door/summary', '/api/door/search', '/api/send-sms', '/api/balance'].includes(p)) return fail(req, env, 'Not found.', 404);
   const user = await verifyStaff(req, env);
   if (!user) return fail(req, env, 'Sign in again.', 401);
 
@@ -158,12 +150,15 @@ async function route(req, env, ctx) {
   if (m === 'GET' && p === '/api/bar/queue') return reply(req, env, await bar.barQueue(env, user, u.searchParams.get('stationId')));
   if (m === 'POST' && p === '/api/bar/order') return reply(req, env, await bar.barUpdate(env, user, await body(req)));
   if (m === 'POST' && p === '/api/bar/station-open') return reply(req, env, await bar.setStationOpen(env, user, await body(req)));
+  // ── A staff member's own pass and gate code (their sign-in is the proof) ──
+  if (m === 'POST' && p === '/api/members/my-pass') return reply(req, env, await members.staffPass(env, user, await body(req)));
+  if (m === 'GET' && p === '/api/members/my-gate') return reply(req, env, await members.myGate(env, user));
   // ── Members at the gate ──
   if (m === 'POST' && p.startsWith('/api/members/door/')) {
     if (await throttled(req, env, 'member-door', 'standard')) return tooMany(req, env);
     const b = await body(req), ip = req.headers.get('CF-Connecting-IP');
     if (p === '/api/members/door/pass') return reply(req, env, await members.doorVerifyPass(env, user, b.qr, ip));
-    if (p === '/api/members/door/send-code') return reply(req, env, await members.doorSendCode(env, user, b.phone));
+    if (p === '/api/members/door/request-code' || p === '/api/members/door/send-code') return reply(req, env, await members.doorRequestCode(env, user, b.phone));
     if (p === '/api/members/door/confirm') return reply(req, env, await members.doorConfirmCode(env, user, b, ip));
   }
   if (m === 'GET' && p === '/api/door/summary') { if (!requireRole(user, DOOR)) return fail(req, env, 'Forbidden.', 403); return reply(req, env, await doorSummary(env, user, u.searchParams.get('eventId'))); }
@@ -223,6 +218,7 @@ async function route(req, env, ctx) {
   if (m === 'POST' && p === '/api/admin/menu-items') return reply(req, env, await bar.upsertMenuItem(env, await body(req), user));
   if (m === 'GET' && p === '/api/admin/members') return reply(req, env, await members.listMembers(env, user));
   if (m === 'POST' && p === '/api/admin/members') return reply(req, env, await members.upsertMember(env, await body(req), user));
+  if (m === 'POST' && p === '/api/admin/members/activation') return reply(req, env, await members.createActivation(env, await body(req), user));
   if (m === 'GET' && p === '/api/admin/attendance') return reply(req, env, await members.attendance(env, { days: u.searchParams.get('days'), memberId: u.searchParams.get('memberId') }, user));
   if (m === 'GET' && p === '/api/admin/system') return reply(req, env, await admin.systemStatus(env, user));
   if (m === 'GET' && p === '/api/admin/payments') return reply(req, env, await admin.listPendingCheckouts(env, { sinceMs: Number(u.searchParams.get('sinceMs')) || 0 }, user));

@@ -29,9 +29,39 @@ export function staffHeader(user, title) {
   h.className = 'staff-head';
   h.innerHTML = `<div class="wrap"><a class="logo" href="index.html" title="Public site"><img src="assets/logo-sm.webp" alt="Memories" height="18"></a>
     <strong style="font:400 20px var(--display);text-transform:uppercase;letter-spacing:.04em">${esc(title)}</strong>
-    <span class="who">${esc(user.email || '')}<br>${esc(ROLE_LABEL[user.role] || user.role)}</span><button type="button" id="signout">Sign out</button></div>`;
+    <span class="who">${esc(user.email || '')}<br>${esc(ROLE_LABEL[user.role] || user.role)}</span><button type="button" data-install hidden title="Install the Memories app on this device">App</button><button type="button" id="myPass" title="Your member pass for the gate">My pass</button><button type="button" id="signout">Sign out</button></div>
+    <div class="gate-banner" id="gateBanner" hidden role="alert"></div>`;
   document.body.prepend(h);
   h.querySelector('#signout').onclick = () => signOutUser().then(() => location.replace('login.html'));
+  // Staff are members: "My pass" puts this person's pass on this phone (their sign-in is the proof).
+  h.querySelector('#myPass').onclick = async ev => {
+    const b = ev.currentTarget; b.disabled = true; b.textContent = 'Opening…';
+    try {
+      const d = await sapi('/api/members/my-pass', { method: 'POST', body: { device: navigator.userAgent.slice(0, 60) } });
+      localStorage.setItem('mem-pass', JSON.stringify({ passId: d.passId, secret: d.secret, stepSeconds: d.stepSeconds, member: d.member, savedAt: Date.now(), skewMs: d.serverTime - Date.now() }));
+      location.href = 'member.html';
+    } catch (e) { alert(e.status === 404 && /^not found\.?$/i.test(e.message) ? 'Your pass needs the latest Worker deployed. Ask the admin.' : e.message); b.disabled = false; b.textContent = 'My pass'; }
+  };
+  watchGate(h.querySelector('#gateBanner'));
+}
+
+// The phone-number route at the gate: when the door asks for this staff member's code, it shows
+// here, on their own dashboard (never by SMS). Checked every 6 seconds while the page is on screen.
+function watchGate(el) {
+  let gone = false;
+  const check = async () => {
+    if (gone || document.visibilityState !== 'visible') return;
+    try {
+      const d = await sapi('/api/members/my-gate');
+      if (!d.gate) { el.hidden = true; return; }
+      const secs = Math.max(0, Math.round((new Date(d.gate.expiresAt).getTime() - Date.now()) / 1000));
+      if (el.hidden) navigator.vibrate?.([120, 60, 120]);
+      el.hidden = false;
+      el.innerHTML = `<span>Gate code: say it to the door</span><b>${esc(d.gate.code.replace(/(\d{3})(\d{3})/, '$1 $2'))}</b><small>${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')}</small>`;
+    } catch (e) { if (e.status === 404 || e.status === 401 || e.status === 403) gone = true; }
+  };
+  check(); setInterval(check, 6000);
+  document.addEventListener('visibilitychange', check);
 }
 
 // Flyers: resized in the browser (max 1600px, WebP/JPEG) before upload, so the public site

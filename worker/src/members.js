@@ -1,19 +1,29 @@
 // Membership: staff and other members get in without a ticket, but only after the door verifies
-// them. Two ways at the gate:
-//   1. The member pass (public/member.html, installable): a QR that changes every 30 seconds,
-//      signed with a secret only that phone and this Worker hold, so a screenshot dies in a minute.
-//   2. Phone + texted code: the door types the member's phone, we text the member a 6-digit code,
-//      the member says it, the door enters it.
+// them. Nothing here is sent by SMS: everything a member needs shows inside the app.
+//
+//   Getting a pass. A manager adds the person (People → Members) and shows them an activation QR
+//   (or sends the link however they like). Opening it on their phone puts their pass in the
+//   Memories app (member.html, installable). Staff with a sign-in open "My pass" from their own
+//   dashboard (organiser, door, bar, control room): their staff account is the proof. Every staff
+//   account is a member automatically, so staff never buy tickets to get in.
+//
+//   At the gate, two ways:
+//   1. Scan the pass: a QR that changes every 30 seconds, signed on the phone with a secret only
+//      that phone and this Worker hold, so it works offline and a screenshot dies in a minute.
+//   2. By phone number: the door types the member's number; a 6-digit gate code appears in that
+//      member's app (and on a staff member's dashboard); they say it; the door enters it.
+//
 // Every verified entry is recorded (member_entries): that is the HR attendance log.
 //
 // Collections (server only; Firestore rules deny browsers):
-//   members/{id}          name, phone, type staff|member, department, position, staffNo, status, validUntil
+//   members/{id}          name, phone, type staff|member, department, position, staffNo, status,
+//                         validUntil, staffUid (the linked staff account, if any)
 //   member_passes/{id}    memberId, secret (HMAC key for the rotating QR), createdAt, revokedAt
-//   member_codes/{key}    hashed 6-digit codes: pass sign-in (pass_{phone}) and gate (door_{phone})
+//   member_codes/{key}    act_{code}: one-time activation (48 h); gate_{memberId}: the gate code
 //   member_entries/{id}   memberId, name, type, department, at, by, method pass|code, night
 import { getDoc, setDoc, createDoc, deleteDoc, listDocs, queryWhere, queryRecent } from './lib/firestore.js';
 import { now, id, clean, normalizePhone, maskPhone, firstName, sixDigits, sha256Hex, nightKey } from './lib/util.js';
-import { requireRole, MONEY, uidOf } from './lib/auth.js';
+import { requireRole, MONEY, STAFF_ROLES, uidOf } from './lib/auth.js';
 import { sendSms, siteUrl } from './lib/notify.js';
 import { securitySignal } from './lib/monitor.js';
 
@@ -23,8 +33,10 @@ export const MEMBER_DOOR = ['superAdmin', 'manager', 'eventManager', 'doorStaff'
 export const MEMBER_TYPES = ['staff', 'member'];
 const STEP_S = 30;                  // the pass QR changes every 30 seconds
 const STEPS_ACCEPTED = 2;           // and is accepted for the current and the 2 previous steps (60–90 s)
-const CODE_TTL_MS = 5 * 60_000, CODE_TRIES = 5, PASS_CODE_TTL_MS = 10 * 60_000;
-const MAX_PASSES = 3;               // phones per member; signing in on a 4th retires the oldest
+const GATE_TTL_MS = 5 * 60_000, GATE_TRIES = 5;
+const ACTIVATE_TTL_MS = 48 * 3600_000;
+const MAX_PASSES = 3;               // phones per member; a 4th retires the oldest
+const ROLE_DEPT = { superAdmin: 'Management', manager: 'Management', eventManager: 'Events', doorStaff: 'Door', barStaff: 'Bar', organiser: 'Organiser' };
 const audit = (env, user, action, data) => setDoc(env, 'audit_logs', id(), { action, actorUid: uidOf(user), ...data, timestamp: now() });
 
 // ── Validity ──
@@ -44,12 +56,21 @@ async function memberByPhone(env, phone) {
   const hit = (await queryWhere(env, 'members', [{ field: 'phone', value: phone }], { limit: 1 }))[0];
   return hit ? { id: hit.id, m: hit.fields } : null;
 }
+async function memberByStaff(env, uid) {
+  const hit = (await queryWhere(env, 'members', [{ field: 'staffUid', value: uid }], { limit: 1 }))[0];
+  return hit ? { id: hit.id, m: hit.fields } : null;
+}
 
 // ── Control room: People ──
 export async function listMembers(env, user) {
   if (!requireRole(user, MONEY)) return FORBIDDEN;
-  const docs = await listDocs(env, 'members');
-  return { members: docs.map(d => ({ ...memberCard(d.id, d.fields), phone: d.fields.phone, notes: d.fields.notes || '', createdAt: d.fields.createdAt || '' })).sort((a, b) => a.name.localeCompare(b.name)) };
+  const [docs, staff] = await Promise.all([listDocs(env, 'members'), listDocs(env, 'users')]);
+  const emails = new Map(staff.map(s => [s.id, s.fields.email]));
+  return {
+    members: docs.map(d => ({ ...memberCard(d.id, d.fields), phone: d.fields.phone, notes: d.fields.notes || '', staffUid: d.fields.staffUid || '', staffEmail: emails.get(d.fields.staffUid) || '', createdAt: d.fields.createdAt || '' })).sort((a, b) => a.name.localeCompare(b.name)),
+    // Staff accounts with no member record yet: every staff account should be one.
+    unlinkedStaff: staff.filter(s => s.fields.role && !docs.some(d => d.fields.staffUid === s.id)).map(s => ({ uid: s.id, email: s.fields.email, role: s.fields.role, name: s.fields.name || '' })),
+  };
 }
 
 export async function upsertMember(env, b, user) {
@@ -59,27 +80,55 @@ export async function upsertMember(env, b, user) {
   const status = b?.status === 'suspended' ? 'suspended' : 'active';
   const validUntil = b?.validUntil ? (/^\d{4}-\d{2}-\d{2}$/.test(b.validUntil) ? b.validUntil : null) : '';
   if (!name) return { error: 'Add their name.' };
-  if (!phone) return { error: 'Add a Ghana phone number, e.g. 024 123 4567. It’s how they’re checked at the gate.' };
+  if (!phone) return { error: 'Add a Ghana phone number, e.g. 024 123 4567. The door can find them by it.' };
   if (validUntil === null) return { error: 'Pick a valid end date, or leave it blank.' };
   const existing = b.id ? await getDoc(env, 'members', String(b.id)) : null;
   if (b.id && !existing) return { error: 'Member not found.', status: 404 };
   const clash = await memberByPhone(env, phone);
   if (clash && clash.id !== existing?.id) return { error: `${clash.m.name} already has that number.` };
+  // Linking a staff account: it must be a real one, and not already linked to someone else.
+  let staffUid = existing?.fields?.staffUid || '';
+  if (b.staffUid !== undefined) {
+    staffUid = clean(b.staffUid, 128);
+    if (staffUid) {
+      const acct = await getDoc(env, 'users', staffUid);
+      if (!acct?.fields?.role) return { error: 'Pick a staff account from the list.' };
+      const other = await memberByStaff(env, staffUid);
+      if (other && other.id !== existing?.id) return { error: `That staff account is already ${other.m.name}’s.` };
+    }
+  }
   const mid = existing?.id || id();
-  const data = {
-    ...(existing?.fields || {}), name, phone, type, status, validUntil,
+  await setDoc(env, 'members', mid, {
+    ...(existing?.fields || {}), name, phone, type, status, validUntil, staffUid,
     department: clean(b.department, 60), position: clean(b.position, 60), staffNo: clean(b.staffNo, 30), notes: clean(b.notes, 300),
     updatedAt: now(), updatedBy: uidOf(user), createdAt: existing?.fields?.createdAt || now(), createdBy: existing?.fields?.createdBy || uidOf(user),
-  };
-  await setDoc(env, 'members', mid, data);
+  });
   // Suspending, or changing the phone, retires every pass already on a phone.
   if (existing && (status !== 'active' || existing.fields.phone !== phone)) await revokePasses(env, mid);
   await audit(env, user, existing ? 'MEMBER_UPDATED' : 'MEMBER_ADDED', { memberId: mid, type, status, from: existing?.fields?.status || null });
-  let texted = false;
-  if (!existing || b.resendInvite === true) {
-    texted = await sendSms(env, phone, `MEMORIES\n${firstName(name)}, you're on the Memories ${type === 'staff' ? 'staff' : 'members'} list. Get your gate pass: ${siteUrl(env, '/member.html')}\nAt the gate, show the pass or give this number.`);
+  return { id: mid };
+}
+
+// Every staff account is a member (called when a staff member is invited or given a role).
+// Returns the member id. Creates the record, or links an existing one with the same phone.
+export async function ensureStaffMember(env, { uid, name, phone, role }, user) {
+  const linked = await memberByStaff(env, uid);
+  if (linked) {
+    if (linked.m.status !== 'active') await setDoc(env, 'members', linked.id, { ...linked.m, status: 'active', updatedAt: now() });
+    return linked.id;
   }
-  return { id: mid, texted };
+  const ph = normalizePhone(phone);
+  const byPhone = ph ? await memberByPhone(env, ph) : null;
+  if (byPhone) { await setDoc(env, 'members', byPhone.id, { ...byPhone.m, staffUid: uid, type: 'staff', status: 'active', updatedAt: now() }); return byPhone.id; }
+  const mid = id();
+  await setDoc(env, 'members', mid, { name: clean(name, 80) || 'Staff', phone: ph || '', type: 'staff', status: 'active', validUntil: '', staffUid: uid, department: ROLE_DEPT[role] || 'Staff', position: '', staffNo: '', notes: '', createdAt: now(), createdBy: uidOf(user), updatedAt: now() });
+  await audit(env, user, 'MEMBER_ADDED', { memberId: mid, type: 'staff', staffUid: uid, auto: true });
+  return mid;
+}
+// Losing staff access suspends the staff membership too (and retires its passes).
+export async function suspendStaffMember(env, uid) {
+  const linked = await memberByStaff(env, uid);
+  if (linked && linked.m.type === 'staff') { await setDoc(env, 'members', linked.id, { ...linked.m, status: 'suspended', updatedAt: now() }); await revokePasses(env, linked.id); }
 }
 
 async function revokePasses(env, memberId) {
@@ -107,46 +156,56 @@ export async function attendance(env, { days = 30, memberId } = {}, user) {
   };
 }
 
-// ── The member's own pass (public, phone-proven) ──
-export const NEUTRAL_PASS_CODE = 'If that number is on our list, we’ve texted it a 6-digit code.';
-export async function startPassSignIn(env, { phone }) {
-  const ph = normalizePhone(phone); if (!ph) return false;
-  const hit = await memberByPhone(env, ph);
-  if (!hit || !standing(hit.m).ok) return false;
-  const code = sixDigits();
-  await setDoc(env, 'member_codes', `pass_${ph}`, { codeHash: await sha256Hex(`pass:${ph}:${code}`), memberId: hit.id, attempts: 0, expiresAt: new Date(Date.now() + PASS_CODE_TTL_MS).toISOString() });
-  return sendSms(env, ph, `MEMORIES\nYour pass code: ${code}\nEnter it in the Memories pass to sign in. It expires in 10 minutes. Never share it.`);
+// ── Getting the pass onto a phone ──
+// The manager's activation QR/link: one-time, 48 hours. 10 Crockford characters (50 bits).
+const CROCK = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';
+const activationCode = () => Array.from(crypto.getRandomValues(new Uint8Array(10)), x => CROCK[x & 31]).join('');
+export async function createActivation(env, b, user) {
+  if (!requireRole(user, MONEY)) return FORBIDDEN;
+  const m = await getDoc(env, 'members', String(b?.id || ''));
+  if (!m) return { error: 'Member not found.', status: 404 };
+  const st = standing(m.fields); if (!st.ok) return { error: 'Reactivate this membership first.' };
+  const code = activationCode(), expiresAt = new Date(Date.now() + ACTIVATE_TTL_MS).toISOString();
+  await setDoc(env, 'member_codes', `act_${code}`, { memberId: m.id, expiresAt, createdBy: uidOf(user), createdAt: now() });
+  const link = siteUrl(env, `/member.html?activate=${code}`);
+  // Optional, if the manager asks: text the link (it's an invitation, not a verification code).
+  const texted = b.text === true && m.fields.phone ? await sendSms(env, m.fields.phone, `MEMORIES\n${firstName(m.fields.name)}, open this on your phone to get your Memories pass: ${link}\nIt works once, for 48 hours.`) : false;
+  await audit(env, user, 'MEMBER_ACTIVATION_CREATED', { memberId: m.id, texted });
+  return { code, link, expiresAt, texted };
 }
 
-async function checkCode(env, key, salt, code, ip) {
-  const c = String(code || '').trim();
-  if (!/^\d{6}$/.test(c)) return { error: 'Enter the 6-digit code.' };
-  const s = await getDoc(env, 'member_codes', key);
-  if (!s || new Date(s.fields.expiresAt).getTime() < Date.now()) { if (s) await deleteDoc(env, 'member_codes', key).catch(() => {}); return { error: 'That code has expired. Send a new one.', code: 'expired_code' }; }
-  if ((await sha256Hex(`${salt}:${c}`)) !== s.fields.codeHash) {
-    await securitySignal(env, 'member_code_guessing', ip || 'unknown');
-    const attempts = Number(s.fields.attempts || 0) + 1;
-    if (attempts >= CODE_TRIES) { await deleteDoc(env, 'member_codes', key).catch(() => {}); return { error: 'Too many wrong codes. Send a new one.', code: 'wrong_code' }; }
-    await setDoc(env, 'member_codes', key, { ...s.fields, attempts });
-    return { error: 'That code is wrong. Check the text and try again.', code: 'wrong_code' };
-  }
-  await deleteDoc(env, 'member_codes', key).catch(() => {});
-  return { memberId: s.fields.memberId };
-}
-
-export async function finishPassSignIn(env, { phone, code, device }, ip) {
-  const ph = normalizePhone(phone); if (!ph) return { error: 'Use a Ghana number, e.g. 024 123 4567.' };
-  const r = await checkCode(env, `pass_${ph}`, `pass:${ph}`, code, ip); if (r.error) return r;
-  const m = await getDoc(env, 'members', r.memberId);
-  const st = standing(m?.fields); if (!st.ok) return { error: 'This membership isn’t active. Talk to the manager.' };
-  // One pass per phone; keep the newest few.
-  const live = (await queryWhere(env, 'member_passes', [{ field: 'memberId', value: m.id }])).filter(p => !p.fields.revokedAt)
+async function issuePass(env, memberDoc, device) {
+  const live = (await queryWhere(env, 'member_passes', [{ field: 'memberId', value: memberDoc.id }])).filter(p => !p.fields.revokedAt)
     .sort((a, b) => new Date(a.fields.createdAt) - new Date(b.fields.createdAt));
   for (const old of live.slice(0, Math.max(0, live.length - (MAX_PASSES - 1)))) await setDoc(env, 'member_passes', old.id, { ...old.fields, revokedAt: now() });
   const passId = id(), secret = id() + id();
-  await createDoc(env, 'member_passes', passId, { memberId: m.id, secret, device: clean(device, 60), createdAt: now() });
+  await createDoc(env, 'member_passes', passId, { memberId: memberDoc.id, secret, device: clean(device, 60), createdAt: now() });
   // serverTime lets the pass correct a phone whose clock is off (common), so its codes line up.
-  return { passId, secret, stepSeconds: STEP_S, serverTime: Date.now(), member: memberCard(m.id, m.fields) };
+  return { passId, secret, stepSeconds: STEP_S, serverTime: Date.now(), member: memberCard(memberDoc.id, memberDoc.fields) };
+}
+
+export async function activatePass(env, { code, device }, ip) {
+  const c = String(code || '').toUpperCase().replace(/[^0-9A-Z]/g, '').replace(/O/g, '0').replace(/[IL]/g, '1');
+  if (!/^[0-9A-HJKMNP-TV-Z]{10}$/.test(c)) return { error: 'That activation code doesn’t look right. Ask the manager for a new QR.' };
+  const a = await getDoc(env, 'member_codes', `act_${c}`);
+  if (!a || new Date(a.fields.expiresAt).getTime() < Date.now()) {
+    await securitySignal(env, 'member_code_guessing', ip || 'unknown');
+    if (a) await deleteDoc(env, 'member_codes', `act_${c}`).catch(() => {});
+    return { error: 'This activation has expired or was already used. Ask the manager for a new QR.' };
+  }
+  await deleteDoc(env, 'member_codes', `act_${c}`).catch(() => {});
+  const m = await getDoc(env, 'members', a.fields.memberId);
+  if (!standing(m?.fields).ok) return { error: 'This membership isn’t active. Talk to the manager.' };
+  return issuePass(env, m, device);
+}
+
+// Staff open their pass from their own dashboard: the signed-in staff account is the proof.
+export async function staffPass(env, user, { device } = {}) {
+  if (!requireRole(user, STAFF_ROLES)) return FORBIDDEN;
+  const linked = await memberByStaff(env, uidOf(user));
+  if (!linked) return { error: 'Your staff account isn’t set up as a member yet. Ask a manager (People → Members).', status: 404 };
+  if (!standing(linked.m).ok) return { error: 'Your staff membership isn’t active. Talk to the manager.' };
+  return issuePass(env, { id: linked.id, fields: linked.m }, device);
 }
 
 // ── The rotating QR ──
@@ -170,17 +229,33 @@ async function readPass(env, payload) {
   return { pass: p };
 }
 
-// The pass checking itself when online (is it still valid? last gate check?). Auth = a fresh QR.
+// The gate code waiting for this member, if the door asked for one in the last 5 minutes.
+async function pendingGate(env, memberId) {
+  const g = await getDoc(env, 'member_codes', `gate_${memberId}`);
+  if (!g || new Date(g.fields.expiresAt).getTime() < Date.now()) return null;
+  return { code: g.fields.code, expiresAt: g.fields.expiresAt };
+}
+
+// What the pass asks while it's open: still valid? a gate code waiting? last gate check?
+// Authenticated by a fresh pass QR, so only the phone holding the pass can ask.
 export async function passStatus(env, payload) {
   const r = await readPass(env, payload);
   // A code from a skewed clock isn't a bad pass: send the time so the phone can correct itself.
   if (r.error === 'stale') return { valid: true, reason: 'clock', serverTime: Date.now() };
   if (r.error) return { valid: false, reason: r.error, serverTime: Date.now() };
-  const m = await getDoc(env, 'members', r.pass.fields.memberId);
+  const mid = r.pass.fields.memberId;
+  const m = await getDoc(env, 'members', mid);
   const st = standing(m?.fields);
-  const lastEntry = (await queryWhere(env, 'member_entries', [{ field: 'memberId', value: r.pass.fields.memberId }], { limit: 200 }))
-    .map(e => e.fields.at).sort().pop() || null;
-  return { valid: st.ok, reason: st.ok ? '' : st.code, member: m ? memberCard(m.id, m.fields) : null, lastEntry, serverTime: Date.now() };
+  const lastEntry = (await queryWhere(env, 'member_entries', [{ field: 'memberId', value: mid }], { limit: 200 })).map(e => e.fields.at).sort().pop() || null;
+  return { valid: st.ok, reason: st.ok ? '' : st.code, member: m ? memberCard(m.id, m.fields) : null, lastEntry, gate: st.ok ? await pendingGate(env, mid) : null, serverTime: Date.now() };
+}
+
+// A staff member's dashboard asks the same: a gate code waiting for me? (Their sign-in is the proof.)
+export async function myGate(env, user) {
+  if (!requireRole(user, STAFF_ROLES)) return FORBIDDEN;
+  const linked = await memberByStaff(env, uidOf(user));
+  if (!linked) return { member: false, gate: null };
+  return { member: true, active: standing(linked.m).ok, gate: standing(linked.m).ok ? await pendingGate(env, linked.id) : null };
 }
 
 async function logEntry(env, user, mid, m, method) {
@@ -203,26 +278,37 @@ export async function doorVerifyPass(env, user, payload, ip) {
   return result(st, m);
 }
 
-export async function doorSendCode(env, user, phone) {
+// The door types a member's phone: a gate code appears in that member's app / staff dashboard.
+// Nothing is texted. Door staff are signed in, so they may be told plainly that a number isn't a member.
+export async function doorRequestCode(env, user, phone) {
   if (!requireRole(user, MEMBER_DOOR)) return FORBIDDEN;
   const ph = normalizePhone(phone); if (!ph) return { error: 'Use a Ghana number, e.g. 024 123 4567.' };
   const hit = await memberByPhone(env, ph);
-  // Door staff are signed in, so the door may be told plainly that a number isn't on the list.
   if (!hit) return { sent: false, code: 'not_member', message: 'NOT A MEMBER', hint: 'That number isn’t on the members list. They need a ticket.' };
   const st = standing(hit.m);
   if (!st.ok) return { sent: false, ...result(st, { id: hit.id, fields: hit.m }) };
   const code = sixDigits();
-  await setDoc(env, 'member_codes', `door_${ph}`, { codeHash: await sha256Hex(`door:${ph}:${code}`), memberId: hit.id, attempts: 0, expiresAt: new Date(Date.now() + CODE_TTL_MS).toISOString(), requestedBy: uidOf(user) });
-  const sent = await sendSms(env, ph, `MEMORIES GATE\nYour code: ${code}\nSay it to the door to come in. Expires in 5 minutes. If you're not at the gate, ignore this.`);
-  return { sent, firstName: firstName(hit.m.name), phoneHint: maskPhone(ph), message: sent ? 'CODE SENT' : 'TEXT DIDN’T SEND' };
+  await setDoc(env, 'member_codes', `gate_${hit.id}`, { code, codeHash: await sha256Hex(`gate:${hit.id}:${code}`), memberId: hit.id, attempts: 0, expiresAt: new Date(Date.now() + GATE_TTL_MS).toISOString(), requestedBy: uidOf(user) });
+  return { sent: true, firstName: firstName(hit.m.name), phoneHint: maskPhone(ph), staff: !!hit.m.staffUid, message: 'CODE IS ON THEIR APP' };
 }
 
 export async function doorConfirmCode(env, user, { phone, code }, ip) {
   if (!requireRole(user, MEMBER_DOOR)) return FORBIDDEN;
   const ph = normalizePhone(phone); if (!ph) return { error: 'Use a Ghana number, e.g. 024 123 4567.' };
-  const r = await checkCode(env, `door_${ph}`, `door:${ph}`, code, ip);
-  if (r.error) return { valid: false, code: r.code || 'wrong_code', message: r.code === 'expired_code' ? 'CODE EXPIRED' : 'WRONG CODE', hint: r.error };
-  const m = await getDoc(env, 'members', r.memberId);
+  const c = String(code || '').trim();
+  const hit = await memberByPhone(env, ph);
+  const key = hit ? `gate_${hit.id}` : null;
+  const g = key ? await getDoc(env, 'member_codes', key) : null;
+  if (!g || new Date(g.fields.expiresAt).getTime() < Date.now()) return { valid: false, code: 'expired_code', message: 'CODE EXPIRED', hint: 'Ask for a new code.' };
+  if (!/^\d{6}$/.test(c) || (await sha256Hex(`gate:${hit.id}:${c}`)) !== g.fields.codeHash) {
+    await securitySignal(env, 'member_code_guessing', ip || 'unknown');
+    const attempts = Number(g.fields.attempts || 0) + 1;
+    if (attempts >= GATE_TRIES) { await deleteDoc(env, 'member_codes', key).catch(() => {}); return { valid: false, code: 'expired_code', message: 'TOO MANY WRONG CODES', hint: 'Ask for a new code.' }; }
+    await setDoc(env, 'member_codes', key, { ...g.fields, attempts });
+    return { valid: false, code: 'wrong_code', message: 'WRONG CODE', hint: 'Check the code on their app and try again.' };
+  }
+  await deleteDoc(env, 'member_codes', key).catch(() => {});
+  const m = await getDoc(env, 'members', hit.id);
   const st = standing(m?.fields);
   if (st.ok) await logEntry(env, user, m.id, m.fields, 'code');
   return result(st, m);

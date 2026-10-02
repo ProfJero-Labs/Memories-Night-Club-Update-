@@ -154,7 +154,7 @@ test('accessibility: axe finds no WCAG 2 A/AA or best-practice violations on the
   const { readFileSync } = await import('node:fs');
   const axe = readFileSync(new URL('../worker/node_modules/axe-core/axe.min.js', import.meta.url), 'utf8');
   const found = [];
-  for (const u of ['index.html', 'nights.html', 'event.html?id=dev-afro', 'tickets.html?event=dev-afro', 'checkout.html?event=dev-afro&type=dev-afro-reg&qty=1', 'tables.html?event=dev-afro', 'private.html', 'installment.html', 'find.html', 'member.html', 'b/0123456789abcdef0123456789abcdef', 'visit.html', 'login.html']) {
+  for (const u of ['index.html', 'nights.html', 'event.html?id=dev-afro', 'tickets.html?event=dev-afro', 'checkout.html?event=dev-afro&type=dev-afro-reg&qty=1', 'tables.html?event=dev-afro', 'private.html', 'installment.html', 'find.html', 'member.html', 'counter.html?s=0123456789abcdef0123456789abcdef&t=4', 'visit.html', 'login.html']) {
     const page = await phone();
     await page.goto(`${base}/${u}`, { waitUntil: 'networkidle' });
     await page.evaluate(axe);
@@ -484,42 +484,50 @@ test('the ticket’s QR opens full screen on white for the door', async () => {
   await page.click('.qr-full'); assert.equal(await page.locator('.qr-full[open]').count(), 0, 'tap closes it');
 });
 
-test('membership: a manager adds staff; they sign in to their pass; the door verifies the live QR and the texted code; it shows in attendance; the pass opens offline', async () => {
+test('membership: a manager adds someone and shows a pass QR (nothing texted); it opens their pass; the door verifies the live QR and the gate code shown in their app; attendance; offline', async () => {
   const { passSig } = await import('../worker/src/members.js');
-  const lastCode = () => /(\d{6})/.exec(store.sms.at(-1).message)[1];
+  const smsBefore = store.sms.length;
   const admin = await phone(390);
   await admin.goto(`${base}/login.html`); await admin.fill('#email', 'admin@dev'); await admin.fill('#pw', 'memories-dev'); await admin.click('#go');
   await admin.waitForURL(/admin\.html/); await openTab(admin, 'members');
-  await admin.click('#mAdd'); await admin.fill('#fName', 'Kojo Gatekeeper'); await admin.fill('#fPhone', '0245551010'); await admin.selectOption('#fType', 'staff'); await admin.fill('#fDept', 'Security');
-  await admin.click('#mForm button[type=submit]'); await admin.getByText(/texted them the pass link/).waitFor();
-  assert.match(store.sms.at(-1).message, /member\.html/);
+  await admin.getByText(/Staff accounts without a membership/).waitFor();
+  await admin.click('#mAdd'); await admin.fill('#fName', 'Kojo Gatekeeper'); await admin.fill('#fPhone', '0245551010'); await admin.selectOption('#fType', 'member'); await admin.fill('#fDept', 'VIP');
+  await admin.click('#mForm button[type=submit]');
+  await admin.locator('.qrm svg').waitFor();
+  const code = (await admin.locator('.qrm strong').textContent()).trim();
+  assert.match(code, /^[0-9A-Z]{10}$/);
+  assert.equal(store.sms.length, smsBefore, 'nothing texted');
+  await admin.click('#aDone');
 
   const ctx = await browser.newContext({ viewport: { width: 360, height: 740 }, hasTouch: true });
   await ctx.route(/fonts\.(googleapis|gstatic)\.com/, r => r.abort());
   const mem = await ctx.newPage(); mem.errors = []; mem.on('pageerror', e => mem.errors.push(e.message));
-  await mem.goto(`${base}/member.html`, { waitUntil: 'networkidle' });
+  await mem.goto(`${base}/member.html?activate=${code}`, { waitUntil: 'networkidle' });
   assert.ok(await mem.locator('link[rel=manifest]').count(), 'installable: has a manifest');
-  await mem.fill('#phone', '024 555 1010'); await mem.click('#ph button');
-  await mem.waitForSelector('#code'); await mem.fill('#code', lastCode()); await mem.click('#cd button[type=submit]');
   await mem.waitForSelector('#qr svg');
   assert.match(await mem.textContent('.who'), /Kojo Gatekeeper/);
+  assert.ok(!mem.url().includes('activate='), 'the used code is taken out of the address bar');
   const pass = await mem.evaluate(() => JSON.parse(localStorage.getItem('mem-pass')));
   assert.ok(await mem.evaluate(async () => !!(await navigator.serviceWorker.ready).active), 'service worker running');
   await ctx.setOffline(true); await mem.reload();
   await mem.waitForSelector('#qr svg', { timeout: 10000 });
-  await ctx.setOffline(false);
+  await ctx.setOffline(false); await mem.reload(); await mem.waitForSelector('#qr svg');
 
   const door = await phone(390);
   await door.goto(`${base}/login.html`); await door.fill('#email', 'door@dev'); await door.fill('#pw', 'memories-dev'); await door.click('#go');
   await door.waitForURL(/checkin\.html/); await door.waitForLoadState('networkidle');
   const step = Math.floor((Date.now() + (pass.skewMs || 0)) / 30000);
   await door.fill('#code', `MP1.${pass.passId}.${step}.${await passSig(pass.secret, pass.passId, step)}`); await door.click('#manual button');
-  await door.locator('#out').getByText(/staff verified/i).waitFor();
+  await door.locator('#out').getByText(/member verified/i).waitFor();
   await door.click('#memberGate summary'); await door.fill('#mNum', '0245551010'); await door.click('#mPhone button');
-  await door.locator('#out').getByText(/code sent/i).waitFor();
-  await door.fill('#mCodeIn', lastCode()); await door.click('#mCode button[type=submit]');
-  await door.locator('#out').getByText(/staff verified/i).waitFor();
+  await door.locator('#out').getByText(/code on their app/i).waitFor();
+  // The code appears on the member's pass (polled while it's open), never by SMS.
+  await mem.locator('.gate-code b').waitFor({ timeout: 10000 });
+  const gate = (await mem.textContent('.gate-code b')).replace(/\D/g, '');
+  await door.fill('#mCodeIn', gate); await door.click('#mCode button[type=submit]');
+  await door.locator('#out').getByText(/member verified/i).waitFor();
   assert.equal(docs('member_entries').filter(e => e.name === 'Kojo Gatekeeper').length, 2);
+  assert.equal(store.sms.length, smsBefore, 'still nothing texted');
 
   await openTab(admin, 'attendance');
   await admin.getByText('Kojo Gatekeeper').first().waitFor();
@@ -528,9 +536,30 @@ test('membership: a manager adds staff; they sign in to their pass; the door ver
   await ctx.close();
 });
 
+test('staff are members: the organiser sees their gate code on their own dashboard and opens their pass from it', async () => {
+  const smsBefore = store.sms.length;
+  const org = await phone(390);
+  await org.goto(`${base}/login.html`); await org.fill('#email', 'orga@dev'); await org.fill('#pw', 'memories-dev'); await org.click('#go');
+  await org.waitForURL(/organiser\.html/); await org.waitForLoadState('networkidle');
+  const door = await phone(390);
+  await door.goto(`${base}/login.html`); await door.fill('#email', 'door@dev'); await door.fill('#pw', 'memories-dev'); await door.click('#go');
+  await door.waitForURL(/checkin\.html/); await door.waitForLoadState('networkidle');
+  await door.click('#memberGate summary'); await door.fill('#mNum', '024 555 2020'); await door.click('#mPhone button');
+  await door.locator('#out').getByText(/staff dashboard/i).waitFor();
+  await org.locator('#gateBanner b').waitFor({ timeout: 12000 });
+  const gate = (await org.textContent('#gateBanner b')).replace(/\D/g, '');
+  await door.fill('#mCodeIn', gate); await door.click('#mCode button[type=submit]');
+  await door.locator('#out').getByText(/staff verified/i).waitFor();
+  assert.equal(store.sms.length, smsBefore, 'no SMS');
+  await org.click('#myPass'); await org.waitForURL(/member\.html/); await org.waitForSelector('#qr svg');
+  assert.match(await org.textContent('.who'), /Ama Organiser/);
+  assert.deepEqual([...org.errors, ...door.errors], []);
+});
+
 test('scan to order: the bar QR opens the menu; pay; the pickup code shows only once paid; the bar hands over; the guest sees it', async () => {
   const g = await phone(360);
-  await g.goto(`${base}/b/0123456789abcdef0123456789abcdef`, { waitUntil: 'networkidle' });
+  await g.goto(`${base}/b/0123456789abcdef0123456789abcdef`, { waitUntil: 'networkidle' }); // an old printed QR: redirects
+  assert.match(g.url(), /counter\.html\?s=0123/);
   assert.match(await g.textContent('#label'), /main bar/i);
   assert.equal(await g.locator('[data-p="dev-m-flute"]').count(), 0, 'sold-out drink can’t be added');
   await g.click('[data-p="dev-m-beer"]'); await g.click('[data-p="dev-m-beer"]'); await g.click('[data-p="dev-m-water"]');
@@ -545,6 +574,11 @@ test('scan to order: the bar QR opens the menu; pay; the pickup code shows only 
   const bar = await phone(390);
   await bar.goto(`${base}/login.html`); await bar.fill('#email', 'bar@dev'); await bar.fill('#pw', 'memories-dev'); await bar.click('#go');
   await bar.waitForURL(/bar\.html/); await bar.waitForSelector('.ord');
+  // Bar staff make table QR cards themselves: "1-3" is three cards, each opening that table's menu.
+  await bar.click('#qr'); await bar.fill('#qrmT', '1-3');
+  await bar.waitForFunction(() => document.querySelectorAll('.qrm .qr-card svg').length === 3);
+  assert.match(await bar.textContent('#qrmLink'), /counter\.html\?s=[0-9a-f]{32}&t=1$/);
+  await bar.click('#qrmClose');
   await bar.fill('#find', code); await bar.locator('.ord.hit [data-go]').click();
   await bar.getByText('Handed over.').waitFor();
   await g.getByText(/collected/i).waitFor({ timeout: 15000 });
@@ -582,7 +616,7 @@ test('XSS payloads in admin-entered and guest-entered text render as text on pub
 });
 
 test('every public page renders at 320px with no sideways scroll and no script errors', async () => {
-  for (const p of ['/', '/nights.html', '/event.html?id=dev-afro', '/checkout.html?event=dev-afro&type=dev-afro-reg&qty=2', '/tables.html?event=dev-afro', '/private.html', '/installment.html', '/find.html', '/member.html', '/b/0123456789abcdef0123456789abcdef', '/visit.html', '/login.html']) {
+  for (const p of ['/', '/nights.html', '/event.html?id=dev-afro', '/checkout.html?event=dev-afro&type=dev-afro-reg&qty=2', '/tables.html?event=dev-afro', '/private.html', '/installment.html', '/find.html', '/member.html', '/counter.html?s=0123456789abcdef0123456789abcdef', '/offline.html', '/visit.html', '/login.html']) {
     const page = await phone(320);
     await page.goto(base + p, { waitUntil: 'networkidle' });
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth), 0, `overflow on ${p}`);

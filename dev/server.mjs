@@ -95,8 +95,9 @@ http.createServer(async (req, res) => {
     // Static site. config.js and firebase.js are swapped for local versions.
     let p = decodeURIComponent(u.pathname);
     if (p === '/') p = '/index.html';
-    // Cloudflare Pages rewrite (public/_redirects): the bar QR /b/{token} serves the order page.
-    if (/^\/b\/[0-9a-f]{32}$/.test(p)) return send(res, 200, await readFile(path.join(pub, 'counter.html')));
+    // Cloudflare Pages redirect (public/_redirects): old bar QRs /b/{token} → counter.html?s={token}.
+    const oldQr = p.match(/^\/b\/([0-9a-f]{32})$/);
+    if (oldQr) { res.writeHead(301, { Location: `/counter.html?s=${oldQr[1]}` }); return res.end(); }
     if (p === '/config.js') return send(res, 200, `window.MEMORIES_CONFIG={apiBase:'',firebase:{projectId:'${env.FIREBASE_PROJECT_ID}'}};`, 'text/javascript');
     if (p === '/firebase.js') return send(res, 200, await readFile(path.join(root, 'firebase-dev.js')), 'text/javascript');
     const file = path.join(pub, path.normalize(p).replace(/^(\.\.[/\\])+/, ''));

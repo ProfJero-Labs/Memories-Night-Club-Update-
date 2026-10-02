@@ -8,6 +8,7 @@ import { getSettings, DEFAULT_SETTINGS, SETTINGS_FIELDS, isOver, autoStyleFor } 
 import { openRaffleForEvent, raffleSpotWrites } from './raffle.js';
 import { balanceMessage } from './checkout.js';
 import { counterRefunds } from './bar.js';
+import { ensureStaffMember, suspendStaffMember } from './members.js';
 
 
 const FORBIDDEN = { error: 'Forbidden.', status: 403 };
@@ -426,8 +427,13 @@ export async function setRole(env, b, user) {
   if (account.localId === uidOf(user) && role !== 'superAdmin') return { error: 'You can’t remove your own super admin role.' };
   const claims = role === 'none' ? {} : { role, admin: role === 'superAdmin' };
   await identity(env, 'accounts:update', { localId: account.localId, customAttributes: JSON.stringify(claims) });
-  if (role === 'none') await deleteDoc(env, 'users', account.localId).catch(() => {});
-  else await setDoc(env, 'users', account.localId, { email, role, admin: claims.admin, updatedAt: now() });
+  const prev = (await getDoc(env, 'users', account.localId).catch(() => null))?.fields || {};
+  if (role === 'none') { await deleteDoc(env, 'users', account.localId).catch(() => {}); await suspendStaffMember(env, account.localId); }
+  else {
+    await setDoc(env, 'users', account.localId, { ...prev, email, role, admin: claims.admin, updatedAt: now() });
+    // Every staff account is a member, so staff never need a ticket to get in.
+    await ensureStaffMember(env, { uid: account.localId, name: prev.name || account.displayName || email.split('@')[0], phone: prev.phone, role }, user);
+  }
   await audit(env, user, 'ROLE_SET', { targetUid: account.localId, targetEmail: email, role });
   return { uid: account.localId, email, role };
 }
@@ -470,6 +476,8 @@ export async function inviteStaff(env, b, user) {
   await setDoc(env, 'users', account.localId, {
     email, name, phone, role, admin: claims.admin === true, updatedAt: now(),
   });
+  // Staff get in without a ticket: their membership is created with the account.
+  await ensureStaffMember(env, { uid: account.localId, name, phone, role }, user);
   await audit(env, user, 'STAFF_INVITED', { targetUid: account.localId, targetEmail: email, role, name });
 
   const link = siteUrl(env, '/login.html?invite=1');

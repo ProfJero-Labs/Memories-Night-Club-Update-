@@ -208,16 +208,16 @@ $('#start').onclick = async () => {
   resume();
 };
 
-// ── Staff or member at the gate, by phone: we text them a code; they say it; the door enters it ──
+// ── Staff or member at the gate, by phone: a code appears on their app; they read it; the door enters it ──
 let mPhone = '';
 $('#mPhone').onsubmit = async ev => {
   ev.preventDefault();
   const btn = $('#mPhone button'); btn.disabled = true;
   try {
-    const r = await sapi('/api/members/door/send-code', { method: 'POST', body: { phone: $('#mNum').value } });
+    const r = await sapi('/api/members/door/request-code', { method: 'POST', body: { phone: $('#mNum').value } });
     if (!r.sent) { showMember({ valid: false, ...r }); btn.disabled = false; return; }
     mPhone = $('#mNum').value;
-    $('#out').innerHTML = `<div class="result warn" role="status"><h1 class="display">Code sent</h1><p style="margin:0">Ask ${esc(r.firstName)} (${esc(r.phoneHint)}) for the 6-digit code we just texted.</p></div>`;
+    $('#out').innerHTML = `<div class="result warn" role="status"><h1 class="display">Code on their app</h1><p style="margin:0">Ask ${esc(r.firstName)} (${esc(r.phoneHint)}) to open ${r.staff ? 'their staff dashboard or ' : ''}their Memories Pass and read you the 6-digit gate code.</p></div>`;
     $('#mPhone').hidden = true; $('#mCode').hidden = false; $('#mCodeIn').value = ''; $('#mCodeIn').focus();
   } catch (e) { e.status === 0 ? offline() : showMember({ valid: false, message: 'Try again', hint: e.message }); }
   btn.disabled = false;

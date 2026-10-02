@@ -91,7 +91,8 @@ test('set-role: a manager cannot grant roles; a superAdmin cannot demote themsel
   assert.equal(store.claimUpdates, undefined, 'no claim written for the refused changes');
   assert.equal((await post(boss, { email: 'door@x.com', role: 'doorStaff' })).status, 200);
   assert.deepEqual(store.claims.door1, { role: 'doorStaff', admin: false }, 'admin:true only comes with superAdmin');
-  const logs = store.list('audit_logs').map(d => d.fields);
+  // (Giving someone a role also makes them a member: that's audited separately, as MEMBER_ADDED.)
+  const logs = store.list('audit_logs').map(d => d.fields).filter(l => l.action === 'ROLE_SET');
   assert.equal(logs.length, 1); assert.equal(logs[0].action, 'ROLE_SET'); assert.equal(logs[0].actorUid, 'boss'); assert.equal(logs[0].targetUid, 'door1');
 });
 

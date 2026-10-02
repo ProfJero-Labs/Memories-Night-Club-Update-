@@ -602,3 +602,18 @@ h1, h2, h3 { margin: 0; }
 .qr-big svg { width: 100%; height: 100%; display: block; }
 .qr-code { margin: 0; font: 400 32px/1 var(--display); letter-spacing: .06em; }
 .qr-hint { margin: 0; font: 600 14px var(--sans); color: #444; }
+
+/* "Get the Memories app": install sheet (public/lib/install.js), above any sticky buy bar. */
+.install-sheet { position: fixed; left: 12px; right: 12px; bottom: calc(12px + var(--bar-h, 0px) + env(safe-area-inset-bottom)); z-index: 70; max-width: 520px; margin: 0 auto;
+  background: var(--paper); color: var(--ink); padding: 14px; display: grid; grid-template-columns: 48px 1fr; gap: 12px; align-items: start; box-shadow: 0 12px 40px rgba(0, 0, 0, .55); }
+.install-sheet img { border-radius: 10px; }
+.install-sheet .txt { display: grid; gap: 4px; font-size: 15px; } .install-sheet .txt strong { font-size: 17px; }
+.install-sheet .ios-steps { margin: 6px 0 0; padding-left: 20px; display: grid; gap: 4px; }
+.install-sheet .acts { grid-column: 1 / -1; display: flex; gap: 12px; align-items: center; justify-content: flex-end; }
+.install-sheet .acts .btn { min-height: 48px; } .install-sheet .acts .link { color: var(--ink); min-height: 44px; }
+
+/* "App": install the Memories app (shown only where it isn't installed yet) */
+[data-install][hidden] { display: none !important; }
+.nav .nav-app { border: 1px solid var(--line-2); padding: 10px 10px; }
+.nav .nav-app:hover { border-color: var(--paper); }
+@media (max-width: 420px) { .nav .nav-visit { display: none; } }

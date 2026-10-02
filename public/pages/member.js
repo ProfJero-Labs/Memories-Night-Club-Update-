@@ -1,19 +1,16 @@
-// member.html: the Memories Pass. Staff and members sign in once with their phone (a texted code),
-// then this phone shows a pass with a QR that changes every 30 seconds. The QR is signed on the
-// phone with a secret only this phone and the Worker hold, so it works with no signal, and a
-// screenshot stops working within a minute. A live clock and moving sheen make a screenshot obvious.
-import { api, esc, normalizePhone, $ } from '../app.js';
+// member.html: the Memories Pass. A member gets it by opening the activation QR or link the manager
+// gives them (no SMS); staff open it from "My pass" on their own dashboard. The phone then shows a
+// pass with a QR that changes every 30 seconds, signed on the phone with a secret only this phone
+// and the Worker hold: it works with no signal, and a screenshot stops working within a minute.
+// While it's open it also shows any gate code the door has asked for (the phone-number route).
+import { api, esc, params, $ } from '../app.js';
 import { qrSvg } from '../ticket-art.js';
 
 const root = $('#root');
 const KEY = 'mem-pass';
 const load = () => { try { return JSON.parse(localStorage.getItem(KEY) || 'null'); } catch { return null; } };
 const save = v => { try { v ? localStorage.setItem(KEY, JSON.stringify(v)) : localStorage.removeItem(KEY); } catch { /* private mode: pass lasts this visit */ } };
-let pass = load(), timer = null, installEvent = null;
-
-// The installable app: register the service worker (the pass then opens offline).
-if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
-addEventListener('beforeinstallprompt', e => { e.preventDefault(); installEvent = e; const b = $('#install'); if (b) b.hidden = false; });
+let pass = load(), timer = null, poll = null, lastGate = null;
 
 // ── The rotating code, computed on this phone ──
 const b64url = buf => btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
@@ -29,55 +26,39 @@ const skewFrom = serverTime => (Number.isFinite(serverTime) ? serverTime - Date.
 const hhmmss = () => new Date().toLocaleTimeString('en-GB', { timeZone: 'Africa/Accra', hour12: false });
 const when = d => new Date(d).toLocaleString('en-GB', { timeZone: 'Africa/Accra', weekday: 'short', day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
 
-// ── Sign in: phone → texted code → pass ──
+// ── Getting the pass: the manager's activation QR / link, or a code typed in ──
 function signIn(msg = '') {
-  clearInterval(timer);
-  root.innerHTML = `<div class="pass-top"><img src="assets/logo-sm.webp" alt="Memories" width="110" height="26"></div>
+  clearInterval(timer); clearInterval(poll);
+  root.innerHTML = `<div class="pass-top"><img src="assets/logo-sm.webp" alt="Memories" width="110" height="26"><button type="button" class="btn red" data-install hidden style="min-height:44px;padding:0 14px">Install app</button></div>
     <h1 class="display" style="font-size:clamp(48px,14vw,72px);margin:0">Your pass</h1>
-    <p class="muted" style="margin:0">For Memories staff and members. Use the phone number the club has for you.</p>
+    <p class="muted" style="margin:0">For Memories members and staff. Scan the activation QR the manager shows you, or type its code here.</p>
     ${msg ? `<div class="notice" role="alert">${esc(msg)}</div>` : ''}
-    <form id="ph" class="step" novalidate>
-      <div class="field"><label for="phone">Your phone</label><input id="phone" type="tel" inputmode="tel" autocomplete="tel" placeholder="024 123 4567"></div>
-      <button class="btn red block" type="submit">Text me a code <span class="arrow">→</span></button>
+    <form id="act" class="step" novalidate>
+      <div class="field"><label for="code">Activation code</label><input id="code" autocapitalize="characters" autocomplete="off" spellcheck="false" maxlength="14" placeholder="e.g. 7K3QX9WP2M"></div>
+      <button class="btn red block" type="submit">Get my pass <span class="arrow">→</span></button>
     </form>
-    <p class="foot-small" style="margin:0">No data at the gate? Just give the door your number: they’ll text you a code to say.</p>`;
-  $('#ph').onsubmit = async ev => {
-    ev.preventDefault();
-    const phone = $('#phone').value;
-    if (!normalizePhone(phone)) return signIn('Use a Ghana number, e.g. 024 123 4567.');
-    const btn = $('#ph button'); btn.disabled = true; btn.textContent = 'Sending…';
-    try { const d = await api('/api/members/pass-code', { method: 'POST', body: { phone } }); askCode(phone, d.message); }
-    catch (e) { signIn(e.message); }
-  };
+    <p class="foot-small" style="margin:0"><strong>Staff:</strong> sign in to your dashboard and tap <a href="login.html">My pass</a>. No need for a code.</p>`;
+  $('#act').onsubmit = ev => { ev.preventDefault(); activate($('#code').value); };
 }
-function askCode(phone, message, err = '') {
-  root.innerHTML = `<h1 class="display" style="font-size:clamp(44px,12vw,64px);margin:0">Enter the code</h1>
-    <div class="notice ok" role="status">${esc(message)}</div>${err ? `<div class="notice" role="alert">${esc(err)}</div>` : ''}
-    <form id="cd" class="step" novalidate>
-      <div class="field"><label for="code">6-digit code</label><input id="code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" pattern="[0-9]*"></div>
-      <button class="btn red block" type="submit">Open my pass <span class="arrow">→</span></button>
-      <button class="link" type="button" id="again" style="justify-self:start">Use a different number</button>
-    </form>`;
-  $('#code').focus();
-  $('#again').onclick = () => signIn();
-  $('#cd').onsubmit = async ev => {
-    ev.preventDefault();
-    const btn = $('#cd button[type=submit]'); btn.disabled = true; btn.textContent = 'Checking…';
-    try {
-      const d = await api('/api/members/pass', { method: 'POST', body: { phone, code: $('#code').value, device: navigator.userAgent.slice(0, 60) } });
-      pass = { passId: d.passId, secret: d.secret, stepSeconds: d.stepSeconds, member: d.member, savedAt: Date.now(), skewMs: skewFrom(d.serverTime) }; save(pass); show();
-    } catch (e) { askCode(phone, message, e.message); }
-  };
+async function activate(code) {
+  root.innerHTML = '<div class="loading" role="status">OPENING YOUR PASS…</div>';
+  try {
+    const d = await api('/api/members/activate', { method: 'POST', body: { code, device: navigator.userAgent.slice(0, 60) } });
+    pass = { passId: d.passId, secret: d.secret, stepSeconds: d.stepSeconds, member: d.member, savedAt: Date.now(), skewMs: skewFrom(d.serverTime) }; save(pass);
+    history.replaceState(null, '', location.pathname); // the code is used: keep it out of the address bar
+    show(); refresh();
+  } catch (e) { signIn(e.message); }
 }
 
 // ── The pass ──
 function show(state = { online: null, valid: true }) {
   clearInterval(timer);
   const m = pass.member;
-  root.innerHTML = `<div class="pass-top"><img src="assets/logo-sm.webp" alt="Memories" width="110" height="26"><button type="button" class="btn red" id="install" hidden style="min-height:44px;padding:0 14px">Install app</button></div>
+  root.innerHTML = `<div class="pass-top"><img src="assets/logo-sm.webp" alt="Memories" width="110" height="26"><button type="button" class="btn red" data-install hidden style="min-height:44px;padding:0 14px">Install app</button></div>
     <section class="pass ${state.valid ? '' : 'bad'}" aria-label="Your Memories pass">
       <div class="role"><span class="badge ${m.type === 'staff' ? '' : 'member'}">${m.type === 'staff' ? 'Staff' : 'Member'}</span>${m.department ? `<span>${esc(m.department)}</span>` : ''}</div>
       <h1 class="who">${esc(m.name)}</h1>
+      <div id="gate" aria-live="assertive"></div>
       ${state.valid ? '' : `<div class="notice" role="alert"><strong>Not valid.</strong> ${esc(state.reason === 'suspended' ? 'This membership is suspended.' : state.reason === 'expired' ? 'This membership has ended.' : 'This pass was signed out. Sign in again.')} Talk to the manager.</div>`}
       <div class="qr-live" aria-label="Gate QR code, changes every 30 seconds"><div id="qr"></div><span class="tick" id="tick">Live code</span></div>
       <div class="bar" aria-hidden="true"><i id="bar"></i></div>
@@ -91,14 +72,8 @@ function show(state = { online: null, valid: true }) {
       </div>
     </section>
     <p class="foot-small" style="margin:0" id="net">${state.online === false ? 'Offline: your pass still works. The door checks it live.' : state.online ? 'Checked with Memories just now.' : 'Show this screen at the gate. Turn your brightness up.'}</p>
-    <p class="foot-small" style="margin:0" id="iosHint" hidden>To install: tap Share, then “Add to Home Screen”.</p>
     <button class="link" type="button" id="out" style="justify-self:start">Sign out of this phone</button>`;
   $('#out').onclick = () => { if (confirm('Sign this phone out of your pass?')) { pass = null; save(null); signIn(); } };
-  const ib = $('#install');
-  if (installEvent) ib.hidden = false;
-  ib.onclick = async () => { if (!installEvent) return; installEvent.prompt(); await installEvent.userChoice.catch(() => {}); installEvent = null; ib.hidden = true; };
-  const standalone = matchMedia('(display-mode: standalone)').matches || navigator.standalone;
-  if (!standalone && /iphone|ipad|ipod/i.test(navigator.userAgent)) $('#iosHint').hidden = false;
   if (!state.valid) return;
   navigator.wakeLock?.request('screen').catch(() => {});
   let shown = -1;
@@ -112,7 +87,19 @@ function show(state = { online: null, valid: true }) {
   tick(); timer = setInterval(tick, 1000);
 }
 
-// When online, ask the club whether the pass is still good (and when it was last used at the gate).
+// A gate code the door asked for (they typed this member's number): big, with a countdown.
+function drawGate(g) {
+  const el = $('#gate'); if (!el) return;
+  if (!g) { el.innerHTML = ''; lastGate = null; return; }
+  if (lastGate !== g.code) navigator.vibrate?.([120, 60, 120]);
+  lastGate = g.code;
+  const secs = Math.max(0, Math.round((new Date(g.expiresAt).getTime() - clockNow()) / 1000));
+  el.innerHTML = `<div class="gate-code"><span>Gate code: say it to the door</span><b>${esc(g.code.replace(/(\d{3})(\d{3})/, '$1 $2'))}</b><small>Expires in ${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')}</small></div>`;
+}
+
+// While the pass is open: is it still good, is a gate code waiting, when was it last used at the gate?
+// Only the first answer redraws the whole pass; after that just the parts that change.
+let state = null;
 async function refresh(again = true) {
   try {
     const d = await api('/api/members/pass-status', { method: 'POST', body: { qr: await payload(pass, stepNow(pass)) } });
@@ -120,9 +107,23 @@ async function refresh(again = true) {
     if (d.reason === 'clock') { save(pass); if (again) return refresh(false); }
     if (d.member) pass.member = d.member;
     pass.lastEntry = d.lastEntry || pass.lastEntry || null; save(pass);
-    show({ online: true, valid: d.valid, reason: d.reason });
-  } catch { show({ online: navigator.onLine ? null : false, valid: true }); }
+    const next = { online: true, valid: d.valid, reason: d.reason };
+    if (!state || state.valid !== next.valid || state.online !== true) show(next);
+    state = next;
+    drawGate(d.gate);
+    $('#lastIn') && ($('#lastIn').innerHTML = pass.lastEntry ? `<span>Last checked in</span> · ${esc(when(pass.lastEntry))}` : '');
+    $('#net') && ($('#net').textContent = 'Checked with Memories just now.');
+  } catch {
+    if (!state || state.online === true) { state = { online: navigator.onLine ? null : false, valid: true }; show(state); }
+  }
 }
+// Look for a gate code every 5 seconds while the pass is on screen (not when it's in the background).
+const startPolling = () => { clearInterval(poll); poll = setInterval(() => { if (pass && document.visibilityState === 'visible') refresh(); }, 5000); };
 
-if (pass?.passId) { show({ online: navigator.onLine ? null : false, valid: true }); refresh(); } else signIn();
+const act = params.get('activate');
+if (act) activate(act);
+else if (pass?.passId) { show({ online: navigator.onLine ? null : false, valid: true }); refresh(); }
+else signIn();
+startPolling();
 addEventListener('online', () => pass && refresh());
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && pass) refresh(); });

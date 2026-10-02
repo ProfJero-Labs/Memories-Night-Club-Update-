@@ -1,17 +1,24 @@
 {
-  "name": "Memories Pass",
+  "name": "Memories Night Club",
   "short_name": "Memories",
-  "description": "Your Memories staff or member pass for the gate.",
-  "id": "/member.html",
-  "start_url": "/member.html",
-  "scope": "/",
+  "description": "Tickets, your member pass and bar orders for Memories, Cape Coast.",
+  "id": "./",
+  "start_url": "./",
+  "scope": "./",
   "display": "standalone",
   "orientation": "portrait",
   "background_color": "#0d0a09",
   "theme_color": "#0d0a09",
+  "categories": ["entertainment", "lifestyle"],
   "icons": [
-    { "src": "/assets/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
-    { "src": "/assets/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
-    { "src": "/assets/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+    { "src": "assets/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "assets/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "assets/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "shortcuts": [
+    { "name": "Tickets", "url": "nights.html", "icons": [{ "src": "assets/icon-192.png", "sizes": "192x192" }] },
+    { "name": "My pass", "url": "member.html", "icons": [{ "src": "assets/icon-192.png", "sizes": "192x192" }] },
+    { "name": "Find my ticket", "url": "find.html", "icons": [{ "src": "assets/icon-192.png", "sizes": "192x192" }] },
+    { "name": "Staff sign-in", "url": "login.html", "icons": [{ "src": "assets/icon-192.png", "sizes": "192x192" }] }
   ]
 }

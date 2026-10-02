@@ -6,11 +6,16 @@
 <title>Bar order · Memories</title>
 <meta name="robots" content="noindex">
 <meta name="theme-color" content="#0d0a09">
-<link rel="icon" href="/assets/icon.svg" type="image/svg+xml">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="assets/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Memories">
+<link rel="icon" href="assets/icon.svg" type="image/svg+xml">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Anton&family=Archivo:wght@400;600;700&family=Instrument+Serif:ital@0;1&display=swap">
-<link rel="stylesheet" href="/styles.css">
+<link rel="stylesheet" href="styles.css">
 <style>
   .bar-wrap { max-width: 560px; margin: 0 auto; padding: 14px var(--gutter) calc(110px + env(safe-area-inset-bottom)); display: grid; gap: 14px; }
   .bar-head { display: flex; align-items: center; gap: 12px; padding-top: 4px; }
@@ -22,16 +27,17 @@
   .stepper button { width: 44px; height: 44px; background: none; border: 0; color: var(--paper); font-size: 22px; }
   .stepper span { min-width: 28px; text-align: center; font-weight: 700; }
   .pickup { font: 400 clamp(72px, 26vw, 120px)/1 var(--display); letter-spacing: .08em; text-align: center; background: var(--paper); color: var(--ink); padding: 18px 10px; }
+  .bar-head .spot { display: inline-block; margin-top: 4px; font: 700 12px/1 var(--sans); letter-spacing: .12em; text-transform: uppercase; color: var(--ink); background: var(--mustard); padding: 4px 7px; }
   .cat { font: 400 22px var(--display); text-transform: uppercase; color: var(--mustard); margin: 10px 0 0; }
 </style>
-<script src="/config.js"></script>
+<script src="config.js"></script>
 </head>
 <body>
 <main class="bar-wrap">
-  <header class="bar-head"><img src="/assets/logo-sm.webp" alt="Memories" width="93" height="22"><h1 id="label">Bar order</h1></header>
+  <header class="bar-head"><img src="assets/logo-sm.webp" alt="Memories" width="93" height="22"><div><h1 id="label">Bar order</h1><span class="spot" id="spot" hidden></span></div></header>
   <div id="app"><div class="loading" role="status">PULLING UP THE MENU…</div></div>
 </main>
 <aside class="buybar" id="dock" aria-label="Pay for your order"><div class="sum" id="dockSum"></div><button class="btn red" id="dockBtn" type="button" hidden>Pay</button></aside>
-<script type="module" src="/pages/counter.js"></script>
+<script type="module" src="pages/counter.js"></script>
 </body>
 </html>
