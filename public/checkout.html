@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Your details · Memories</title>
+<meta name="robots" content="noindex">
+<meta name="theme-color" content="#0d0a09">
+<link rel="icon" href="assets/icon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Anton&family=Archivo:wght@400;600;700&family=Instrument+Serif:ital@0;1&display=swap">
+<link rel="stylesheet" href="styles.css">
+<style>
+  .aside { display: none; }
+  @media (min-width: 960px) { .aside { display: block; } }
+  .for { display: flex; justify-content: space-between; gap: 12px; align-items: baseline; flex-wrap: wrap; }
+  #co .section-title h2 { font-size: clamp(30px, 6vw, 44px); }
+  #co .summary b { white-space: nowrap; }
+</style>
+<script src="config.js"></script>
+</head>
+<body>
+<main class="wrap"><div id="root"><div class="loading" role="status">GETTING YOUR TICKET READY…</div></div></main>
+<script type="module" src="pages/checkout.js"></script>
+</body>
+</html>

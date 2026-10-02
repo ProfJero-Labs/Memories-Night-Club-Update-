@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Nights · Memories</title>
+<link rel="canonical" href="https://memoriesnightclub.com/nights">
+<meta property="og:site_name" content="Memories">
+<meta property="og:type" content="website">
+<meta property="og:title" content="Nights · Memories">
+<meta property="og:description" content="What’s on at Memories, SamRit Hotel, Cape Coast: upcoming nights and the calendar.">
+<meta property="og:image" content="https://memoriesnightclub.com/assets/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="description" content="Every night coming up at Memories, Cape Coast.">
+<meta name="theme-color" content="#0d0a09">
+<link rel="icon" href="assets/icon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Anton&family=Archivo:wght@400;600;700&family=Instrument+Serif:ital@0;1&display=swap">
+<link rel="stylesheet" href="styles.css">
+<script src="config.js"></script>
+</head>
+<body>
+<main class="wrap">
+  <header class="page-head"><h1 class="display">Nights</h1></header>
+  <h2 class="sr">Upcoming nights</h2>
+  <div class="wall" id="wall"><div class="loading" role="status">PULLING UP THE NIGHTS…</div></div>
+  <section id="calendar" aria-labelledby="calTitle" style="margin-top:clamp(60px,10vw,110px)">
+    <div class="section-title"><h2 id="calTitle">The calendar</h2><span class="kicker">Fridays + Saturdays</span></div>
+    <ol class="cal" id="cal"><li><span class="loading">LOADING…</span></li></ol>
+  </section>
+</main>
+<script type="module" src="pages/nights.js"></script>
+</body>
+</html>

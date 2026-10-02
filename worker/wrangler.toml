@@ -1,0 +1,38 @@
+# Deploys over the existing Paystack worker, so the site's apiBase (public/config.js) and the
+# Paystack dashboard keep pointing at the same host.
+name = "memories-paystack-verify"
+main = "src/index.js"
+compatibility_date = "2026-09-23"
+workers_dev = true
+
+[vars]
+FIREBASE_PROJECT_ID = "memoriesnightclub-2717f"
+ALLOWED_ORIGINS = "https://memoriesnightclub.com,https://www.memoriesnightclub.com,https://memoriesnightclub.pages.dev,http://localhost:5500,http://127.0.0.1:5500"
+PUBLIC_SITE_URL = "https://memoriesnightclub.com"
+SMS_SENDER = "MEMORIES"
+# SMS over the public URL, authenticated with SMS_WORKER_KEY (set as a secret on both workers).
+SMS_WORKER_URL = "https://memories-sms.diamondj04102026.workers.dev"
+
+# Worker-to-worker SMS over Cloudflare's internal network. The paystack worker calls
+# memories-sms directly, no public URL involved.
+[[services]]
+binding = "SMS"
+service = "memories-sms"
+
+# Fallback EvolveIT share % used when an event has no evolveitSharePct of its own.
+EVOLVEIT_SHARE_PCT = "10"
+
+# Edge rate limits (Workers Rate Limiting API). Keys are "<route>:<client IP>".
+[[ratelimits]]
+name = "RL_STRICT"
+namespace_id = "1001"
+simple = { limit = 10, period = 60 }
+
+[[ratelimits]]
+name = "RL_STANDARD"
+namespace_id = "1002"
+simple = { limit = 60, period = 60 }
+
+# Daily sweep that forfeits unfinished pay-in-bits orders once their night has passed.
+[triggers]
+crons = ["0 3 * * *"]
