@@ -44,6 +44,17 @@
     <button class="sbtn ghost torch" id="torch" type="button" hidden aria-pressed="false">Torch</button>
     <div class="off" id="camOff"><div style="display:grid;gap:12px;justify-items:center"><button class="btn red" id="start" type="button">Scan QR</button><span class="foot-small">Uses the camera on this device.</span></div></div></div>
   <form id="manual" class="toolbar" style="margin:0" novalidate><input id="code" placeholder="Or paste the ticket link" style="flex:1;min-width:0" autocomplete="off" autocapitalize="off" spellcheck="false"><button class="sbtn" type="submit">Check</button></form>
+  <details class="fold member-gate" id="memberGate"><summary>Staff or member at the gate?</summary>
+    <form id="mPhone" class="step" novalidate style="margin-top:10px;gap:12px">
+      <p class="foot-small" style="margin:0">Scan their Memories Pass above, or take their number: we text them a code, they say it to you.</p>
+      <div class="sfield"><label for="mNum">Their phone</label><input id="mNum" type="tel" inputmode="tel" autocomplete="off" placeholder="024 123 4567"></div>
+      <button class="sbtn red" type="submit">Text them a code</button>
+    </form>
+    <form id="mCode" class="step" novalidate hidden style="margin-top:10px;gap:12px">
+      <div class="sfield"><label for="mCodeIn">The code they say</label><input id="mCodeIn" inputmode="numeric" autocomplete="off" maxlength="6" pattern="[0-9]*"></div>
+      <div class="toolbar" style="margin:0"><button class="sbtn red" type="submit">Verify</button><button class="sbtn ghost" type="button" id="mCancel">Start over</button></div>
+    </form>
+  </details>
   <div class="sfield"><label for="search">Find a guest or table</label><input id="search" type="search" placeholder="Name, code or last 4 of phone" autocomplete="off"></div>
   <ul class="hits" id="hits"></ul>
   <div class="count"><span id="counted">This phone: 0</span><a href="admin.html" id="adminLink" hidden>Control room</a></div>

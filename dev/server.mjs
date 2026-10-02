@@ -39,7 +39,7 @@ globalThis.fetch = store.fetch = async (url, options = {}) => {
 
 if (process.env.SEED !== 'empty') seed(store, ORIGIN);
 
-const types = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css', '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.svg': 'image/svg+xml', '.webp': 'image/webp', '.json': 'application/json', '.ico': 'image/x-icon' };
+const types = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css', '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.svg': 'image/svg+xml', '.webp': 'image/webp', '.json': 'application/json', '.ico': 'image/x-icon', '.webmanifest': 'application/manifest+json' };
 // Apply production's Content-Security-Policy (public/_headers) to pages, so tests catch violations.
 const csp = (await readFile(path.join(pub, '_headers'), 'utf8')).match(/Content-Security-Policy: (.+)/)[1].replace("connect-src 'self'", "connect-src 'self' http://localhost:*");
 const send = (res, status, body, type = 'text/html; charset=utf-8') => { res.writeHead(status, { 'Content-Type': type, 'Cache-Control': 'no-store', ...(type.startsWith('text/html') ? { 'Content-Security-Policy': csp } : {}) }); res.end(body); };

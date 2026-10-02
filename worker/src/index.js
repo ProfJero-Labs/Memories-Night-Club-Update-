@@ -10,6 +10,7 @@ import { normalizePhone, normalizePlanCode } from './lib/util.js';
 import { upsertRaffle, drawRaffle } from './raffle.js';
 import { checkin, verifyTicket, doorSummary, doorSearch, seatTable, undoCheckin } from './door.js';
 import * as admin from './admin.js';
+import * as members from './members.js';
 import { reconcilePayments, health } from './reconcile.js';
 import * as Sentry from '@sentry/cloudflare';
 import { sentryOptions, reportError, routeGroup, isCritical, clientError, securitySignal } from './lib/monitor.js';
@@ -106,11 +107,25 @@ async function route(req, env, ctx) {
   if (m === 'GET' && p.startsWith('/api/verify/')) { if (await throttled(req, env, 'ticket', 'standard')) return tooMany(req, env); return ok(req, env, await verifyTicket(env, last(p))); }
   if (m === 'POST' && p === '/api/private-requests') { if (await throttled(req, env, 'private', 'strict')) return tooMany(req, env); return reply(req, env, await createPrivateRequest(env, await body(req))); }
   if (m === 'POST' && p === '/api/paystack/webhook') return paystackWebhook(req, env, ctx);
+  // ── Member pass (the member's own phone) ──
+  if (m === 'POST' && p === '/api/members/pass-code') {
+    const b = await body(req), ph = normalizePhone(b.phone);
+    if (!ph) return fail(req, env, 'Use a Ghana number, e.g. 024 123 4567.');
+    if (await throttled(req, env, 'pass-code', 'strict') || await throttled(req, env, 'pass-code-phone', 'strict', ph)) return tooMany(req, env);
+    await later(ctx, members.startPassSignIn(env, { phone: ph }));
+    return ok(req, env, { message: members.NEUTRAL_PASS_CODE });
+  }
+  if (m === 'POST' && p === '/api/members/pass') {
+    const b = await body(req);
+    if (await throttled(req, env, 'pass-signin', 'strict') || await throttled(req, env, 'pass-signin-phone', 'strict', normalizePhone(b.phone) || 'none')) return tooMany(req, env);
+    return reply(req, env, await members.finishPassSignIn(env, b, req.headers.get('CF-Connecting-IP')));
+  }
+  if (m === 'POST' && p === '/api/members/pass-status') { if (await throttled(req, env, 'pass-status', 'standard')) return tooMany(req, env); return ok(req, env, await members.passStatus(env, (await body(req)).qr)); }
   if (m === 'GET' && p === '/api/health') return health(req, env);
   if (m === 'POST' && p === '/api/client-error') { if (await throttled(req, env, 'client-error', 'strict')) return tooMany(req, env); return reply(req, env, await clientError(req, env, allowedOrigin)); }
 
   // ── Staff (Firebase ID token with a role claim) ──
-  if (!p.startsWith('/api/admin/') && !['/api/checkin', '/api/checkin/undo', '/api/door/events', '/api/door/summary', '/api/door/search', '/api/send-sms', '/api/balance'].includes(p)) return fail(req, env, 'Not found.', 404);
+  if (!p.startsWith('/api/admin/') && !p.startsWith('/api/members/door/') && !['/api/checkin', '/api/checkin/undo', '/api/door/events', '/api/door/summary', '/api/door/search', '/api/send-sms', '/api/balance'].includes(p)) return fail(req, env, 'Not found.', 404);
   const user = await verifyStaff(req, env);
   if (!user) return fail(req, env, 'Sign in again.', 401);
 
@@ -126,6 +141,14 @@ async function route(req, env, ctx) {
     if (!requireRole(user, DOOR)) return fail(req, env, 'Forbidden.', 403);
     if (await throttled(req, env, 'checkin', 'standard')) return tooMany(req, env);
     return reply(req, env, await undoCheckin(env, user, (await body(req)).checkinId));
+  }
+  // ── Members at the gate ──
+  if (m === 'POST' && p.startsWith('/api/members/door/')) {
+    if (await throttled(req, env, 'member-door', 'standard')) return tooMany(req, env);
+    const b = await body(req), ip = req.headers.get('CF-Connecting-IP');
+    if (p === '/api/members/door/pass') return reply(req, env, await members.doorVerifyPass(env, user, b.qr, ip));
+    if (p === '/api/members/door/send-code') return reply(req, env, await members.doorSendCode(env, user, b.phone));
+    if (p === '/api/members/door/confirm') return reply(req, env, await members.doorConfirmCode(env, user, b, ip));
   }
   if (m === 'GET' && p === '/api/door/summary') { if (!requireRole(user, DOOR)) return fail(req, env, 'Forbidden.', 403); return reply(req, env, await doorSummary(env, user, u.searchParams.get('eventId'))); }
   if (m === 'GET' && p === '/api/door/search') {
@@ -179,6 +202,9 @@ async function route(req, env, ctx) {
   }
   if (m === 'GET' && p === '/api/admin/organiser/overview') return reply(req, env, await admin.organiserOverview(env, user));
 
+  if (m === 'GET' && p === '/api/admin/members') return reply(req, env, await members.listMembers(env, user));
+  if (m === 'POST' && p === '/api/admin/members') return reply(req, env, await members.upsertMember(env, await body(req), user));
+  if (m === 'GET' && p === '/api/admin/attendance') return reply(req, env, await members.attendance(env, { days: u.searchParams.get('days'), memberId: u.searchParams.get('memberId') }, user));
   if (m === 'GET' && p === '/api/admin/system') return reply(req, env, await admin.systemStatus(env, user));
   if (m === 'GET' && p === '/api/admin/payments') return reply(req, env, await admin.listPendingCheckouts(env, { sinceMs: Number(u.searchParams.get('sinceMs')) || 0 }, user));
 

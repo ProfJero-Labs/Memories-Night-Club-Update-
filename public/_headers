@@ -23,6 +23,12 @@
 /login.html
   Referrer-Policy: no-referrer
   X-Robots-Tag: noindex
+/member.html
+  X-Robots-Tag: noindex
+/sw.js
+  Cache-Control: no-cache
+/manifest.webmanifest
+  Content-Type: application/manifest+json
 /assets/*
   Cache-Control: public, max-age=604800
 /vendor/*

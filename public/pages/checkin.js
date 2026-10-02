@@ -87,6 +87,26 @@ function show(r) {
     };
   }
 }
+// A member or staff result: who they are, never a ticket. Verified entries don't change the
+// ticket headcount; they're the HR attendance log.
+function showMember(r) {
+  const m = r.member || {};
+  const cls = r.valid ? 'ok' : r.code === 'stale_pass' ? 'warn' : 'no';
+  $('#out').innerHTML = `<div class="result ${cls}" role="alert">
+    <h1 class="display">${esc(r.message || 'Not valid')}</h1>
+    ${m.name ? `<p style="margin:0;font-size:24px"><strong>${esc(m.name)}</strong></p><p class="foot-small" style="margin:0">${esc([m.type === 'staff' ? 'Staff' : 'Member', m.department, m.position, m.staffNo].filter(Boolean).join(' · '))}</p>` : ''}
+    ${r.hint ? `<p style="margin:0">${esc(r.hint)}</p>` : ''}</div>`;
+  tone(!!r.valid);
+}
+async function memberPass(qr) {
+  if (busy) return; busy = true;
+  $('#out').innerHTML = '<div class="loading" style="padding:10px 0">Checking pass…</div>';
+  try { showMember(await sapi('/api/members/door/pass', { method: 'POST', body: { qr } })); }
+  catch (e) { if (e.status === 0) offline(); else showMember({ valid: false, message: 'Try again', hint: e.message }); }
+  busy = false;
+}
+const isMemberPass = raw => /^MP1\./.test(String(raw || '').trim());
+
 const offline = () => { $('#out').innerHTML = '<div class="result offline" role="alert"><h1 class="display">No connection</h1><p style="margin:0">Not checked. Try again when you have signal, or find the guest by name.</p></div>'; navigator.vibrate?.([30, 30, 30]); };
 
 async function admit(body) {
@@ -107,6 +127,7 @@ async function admit(body) {
 
 $('#manual').onsubmit = ev2 => {
   ev2.preventDefault();
+  if (isMemberPass($('#code').value)) { const v = $('#code').value.trim(); $('#code').value = ''; return memberPass(v); }
   const t = parseTicket($('#code').value);
   if (!t) { $('#out').innerHTML = '<div class="result no" role="alert"><h1 class="display">That is not a ticket code.</h1></div>'; tone(false); return; }
   $('#code').value = '';
@@ -158,6 +179,7 @@ async function loop() {
     const v = await detect();
     if (v) {
       scanning = false; $('#frame').hidden = true;
+      if (isMemberPass(v)) { await memberPass(v); return; }
       const t = parseTicket(v);
       if (t) await admit({ token: t }); else { $('#out').innerHTML = '<div class="result no" role="alert"><h1 class="display">That is not a ticket code.</h1></div>'; tone(false); }
       $('#next').hidden = false; $('#next').focus();
@@ -185,3 +207,30 @@ $('#start').onclick = async () => {
   detect ||= await setupDetector(video);
   resume();
 };
+
+// ── Staff or member at the gate, by phone: we text them a code; they say it; the door enters it ──
+let mPhone = '';
+$('#mPhone').onsubmit = async ev => {
+  ev.preventDefault();
+  const btn = $('#mPhone button'); btn.disabled = true;
+  try {
+    const r = await sapi('/api/members/door/send-code', { method: 'POST', body: { phone: $('#mNum').value } });
+    if (!r.sent) { showMember({ valid: false, ...r }); btn.disabled = false; return; }
+    mPhone = $('#mNum').value;
+    $('#out').innerHTML = `<div class="result warn" role="status"><h1 class="display">Code sent</h1><p style="margin:0">Ask ${esc(r.firstName)} (${esc(r.phoneHint)}) for the 6-digit code we just texted.</p></div>`;
+    $('#mPhone').hidden = true; $('#mCode').hidden = false; $('#mCodeIn').value = ''; $('#mCodeIn').focus();
+  } catch (e) { e.status === 0 ? offline() : showMember({ valid: false, message: 'Try again', hint: e.message }); }
+  btn.disabled = false;
+};
+$('#mCode').onsubmit = async ev => {
+  ev.preventDefault();
+  try {
+    const r = await sapi('/api/members/door/confirm', { method: 'POST', body: { phone: mPhone, code: $('#mCodeIn').value } });
+    showMember(r);
+    if (r.valid || r.code !== 'wrong_code') { $('#mCode').hidden = true; $('#mPhone').hidden = false; $('#mNum').value = ''; }
+    else { $('#mCodeIn').value = ''; $('#mCodeIn').focus(); }
+  } catch (e) { e.status === 0 ? offline() : showMember({ valid: false, message: 'Try again', hint: e.message }); }
+};
+$('#mCancel').onclick = () => { $('#mCode').hidden = true; $('#mPhone').hidden = false; $('#mNum').focus(); };
+// Organisers run their own nights' doors, not the club's staff list.
+if (user.role === 'organiser') $('#memberGate').hidden = true;

@@ -55,7 +55,7 @@ test('nobody writes business data from a browser — not the public, not a new s
 
 test('guest contact details are never readable from a browser', async () => {
   for (const db of [anon(), as('new-user', {}), as('org-a', { role: 'organiser' })]) {
-    for (const p of ['orders/o1', 'installment_plans/MEM-AB1234', 'private_event_requests/r1', 'raffle_entries/e', 'audit_logs/a', 'checkins/x', 'pending_checkouts/x']) {
+    for (const p of ['orders/o1', 'installment_plans/MEM-AB1234', 'private_event_requests/r1', 'raffle_entries/e', 'audit_logs/a', 'checkins/x', 'pending_checkouts/x', 'members/x', 'member_passes/x', 'member_codes/x', 'member_entries/x', 'phone_sessions/x', 'recon_alerts/x', 'system/reconcile']) {
       await assertFails(getDoc(doc(db, p)));
     }
   }

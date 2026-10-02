@@ -11,10 +11,10 @@ staffHeader(user, 'Control room');
 const can = roles => roles.includes(user.role);
 const TABS = [
   ['overview', 'Overview', CMS], ['nights', 'Nights', CMS], ['payments', 'Payments', CMS], ['bookings', 'Orders', CMS], ['requests', 'Event requests', CMS],
-  ['system', 'System', MONEY], ['bits', 'Pay in bits', MONEY], ['refunds', 'Refunds', MONEY], ['bar', 'Bar menu', CMS], ['settings', 'Site settings', MONEY], ['staff', 'Staff', ['superAdmin']],
+  ['system', 'System', MONEY], ['members', 'Members', MONEY], ['attendance', 'Attendance', MONEY], ['bits', 'Pay in bits', MONEY], ['refunds', 'Refunds', MONEY], ['bar', 'Bar menu', CMS], ['settings', 'Site settings', MONEY], ['staff', 'Staff', ['superAdmin']],
 ].filter(t => can(t[2]));
 // Five places, not ten: related tabs sit together behind one button, with their own row underneath.
-const GROUPS = [['tonight', 'Tonight', ['overview', 'system']], ['nights', 'Nights', ['nights']], ['money', 'Money', ['payments', 'bookings', 'bits', 'refunds']], ['requests', 'Requests', ['requests']], ['setup', 'Setup', ['settings', 'bar', 'staff']]]
+const GROUPS = [['tonight', 'Tonight', ['overview', 'system']], ['nights', 'Nights', ['nights', 'requests']], ['money', 'Money', ['payments', 'bookings', 'bits', 'refunds']], ['people', 'People', ['members', 'attendance', 'staff']], ['setup', 'Setup', ['settings', 'bar']]]
   .map(([k, l, tabs]) => [k, l, tabs.filter(t => TABS.some(x => x[0] === t))]).filter(([, , tabs]) => tabs.length);
 const groupOf = tab => GROUPS.find(g => g[2].includes(tab)) || GROUPS[0];
 const panel = $('#panel');
@@ -70,8 +70,12 @@ function show(tab, arg, notice) {
   if (location.hash.slice(1) !== current) location.hash = current;
   drawSubtabs(tab);
   panel.innerHTML = '<div class="loading">Loading…</div>';
-  ({ overview, system, nights, night, payments, bookings, requests, bits, refunds, bar, settings, staff })[tab](arg, notice).catch(fail);
+  // Renders run one after another, so a slow tab that was left (e.g. Overview still loading when
+  // a link opens Members) can't finish last and paint over the tab that was asked for.
+  const run = () => ({ overview, system, members, attendance, nights, night, payments, bookings, requests, bits, refunds, bar, settings, staff })[tab](arg, notice).catch(fail);
+  rendering = rendering.then(run, run);
 }
+let rendering = Promise.resolve();
 
 // ── Overview ──
 async function overview() {
@@ -109,6 +113,76 @@ async function system() {
     <h2>Alerts, last 7 days</h2>
     <div class="tbl-wrap"><table class="tbl"><thead><tr><th>When</th><th>What</th><th>Message</th></tr></thead><tbody>
     ${d.alerts.map(a => `<tr><td>${esc(when(a.at))}</td><td>${esc(a.kind)}</td><td>${esc(a.text)}</td></tr>`).join('') || '<tr><td colspan="3" class="empty-row">No alerts. Quiet is good.</td></tr>'}</tbody></table></div>`;
+}
+
+// ── People: members and staff who get in without a ticket (HR) ──
+async function members(arg, notice) {
+  const { members: list } = await sapi('/api/admin/members');
+  const one = id => list.find(x => x.id === id);
+  panel.innerHTML = `<h1>Members</h1>
+    <p class="muted" style="margin-top:-6px">Staff and members get in without a ticket, after the door checks their Memories Pass or a code texted to their phone.</p>
+    <div class="toolbar"><button class="sbtn red" id="mAdd">Add someone</button><input id="mFind" type="search" placeholder="Search name, department, phone" style="flex:1;min-width:180px"></div>
+    <div id="mFormBox"></div><div id="mMsg"></div>
+    <div class="tbl-wrap"><table class="tbl"><thead><tr><th>Name</th><th>Type</th><th>Department</th><th>Position</th><th>Phone</th><th>Status</th><th></th></tr></thead><tbody id="mRows"></tbody></table></div>`;
+  const rows = q => { const s = q.toLowerCase(); return list.filter(m => !s || [m.name, m.department, m.position, m.phone, m.staffNo].join(' ').toLowerCase().includes(s)); };
+  const draw = (q = '') => {
+    $('#mRows').innerHTML = rows(q).map(m => `<tr><td><strong>${esc(m.name)}</strong>${m.staffNo ? `<br><small class="muted">${esc(m.staffNo)}</small>` : ''}</td><td>${m.type === 'staff' ? pill('staff', 'amber') : pill('member', 'grey')}</td><td>${esc(m.department)}</td><td>${esc(m.position)}</td><td>${esc(m.phone)}</td>
+      <td>${m.status !== 'active' ? pill('suspended', 'red') : m.validUntil && m.validUntil < new Date().toISOString().slice(0, 10) ? pill('ended', 'red') : pill(m.validUntil ? `until ${m.validUntil}` : 'active', 'green')}</td>
+      <td class="actions"><button class="sbtn" data-medit="${esc(m.id)}">Edit</button></td></tr>`).join('') || '<tr><td colspan="7" class="empty-row">Nobody yet. Add your staff first: they’ll be texted a link to their pass.</td></tr>';
+    $$('[data-medit]').forEach(b => b.onclick = () => form(one(b.dataset.medit)));
+  };
+  const form = (m = null) => {
+    $('#mFormBox').innerHTML = `<form class="card" id="mForm" novalidate><h2 style="margin:0">${m ? `Edit ${esc(m.name)}` : 'Add someone'}</h2>
+      <div class="grid2">
+        <div class="sfield"><label for="fName">Full name</label><input id="fName" maxlength="80" value="${esc(m?.name || '')}"></div>
+        <div class="sfield"><label for="fPhone">Phone (how they’re checked at the gate)</label><input id="fPhone" type="tel" value="${esc(m?.phone || '')}"></div>
+        <div class="sfield"><label for="fType">Type</label><select id="fType"><option value="staff" ${m?.type === 'staff' ? 'selected' : ''}>Staff (works at the club)</option><option value="member" ${m && m.type !== 'staff' ? 'selected' : ''}>Member</option></select></div>
+        <div class="sfield"><label for="fStatus">Status</label><select id="fStatus"><option value="active">Active</option><option value="suspended" ${m?.status === 'suspended' ? 'selected' : ''}>Suspended (refused at the gate)</option></select></div>
+        <div class="sfield"><label for="fDept">Department</label><input id="fDept" maxlength="60" value="${esc(m?.department || '')}" placeholder="Bar, Security, Kitchen…"></div>
+        <div class="sfield"><label for="fPos">Position</label><input id="fPos" maxlength="60" value="${esc(m?.position || '')}"></div>
+        <div class="sfield"><label for="fNo">Staff / member number</label><input id="fNo" maxlength="30" value="${esc(m?.staffNo || '')}"></div>
+        <div class="sfield"><label for="fUntil">Valid until (blank = no end)</label><input id="fUntil" type="date" value="${esc(m?.validUntil || '')}"></div>
+      </div>
+      <div class="sfield"><label for="fNotes">Notes (staff only)</label><input id="fNotes" maxlength="300" value="${esc(m?.notes || '')}"></div>
+      ${m ? '<label class="check"><input type="checkbox" id="fResend"> Text them the pass link again</label>' : '<p class="hint" style="margin:0;color:var(--muted)">They’ll get a text with a link to their Memories Pass.</p>'}
+      <div class="toolbar" style="margin:0"><button class="sbtn red" type="submit">${m ? 'Save' : 'Add and text them'}</button><button class="sbtn ghost" type="button" id="fClose">Cancel</button></div><div id="fMsg"></div></form>`;
+    $('#fClose').onclick = () => { $('#mFormBox').innerHTML = ''; };
+    $('#fName').focus();
+    $('#mForm').onsubmit = async ev => {
+      ev.preventDefault();
+      if (m && $('#fStatus').value === 'suspended' && m.status !== 'suspended' && !confirm(`Suspend ${m.name}? Their pass stops working at once.`)) return;
+      try {
+        const r = await sapi('/api/admin/members', { method: 'POST', body: { id: m?.id, name: val('#fName'), phone: val('#fPhone'), type: val('#fType'), status: val('#fStatus'), department: val('#fDept'), position: val('#fPos'), staffNo: val('#fNo'), validUntil: val('#fUntil'), notes: val('#fNotes'), resendInvite: $('#fResend')?.checked === true } });
+        members(null, { text: `${m ? 'Saved' : 'Added'} ${val('#fName')}${r.texted ? ' and texted them the pass link' : ''}.` });
+      } catch (err) { flash($('#fMsg'), err.message, true); }
+    };
+  };
+  $('#mAdd').onclick = () => form();
+  $('#mFind').oninput = e => draw(e.target.value);
+  draw();
+  if (notice) flash($('#mMsg'), notice.text);
+}
+
+async function attendance() {
+  panel.innerHTML = `<h1>Attendance</h1><p class="muted" style="margin-top:-6px">Every staff and member check-in at the gate. A night runs until 04:00.</p>
+    <div class="toolbar"><select id="aDays"><option value="7">Last 7 days</option><option value="30" selected>Last 30 days</option><option value="90">Last 90 days</option></select><button class="sbtn" id="aCsv">Download CSV</button></div><div id="aBody"><div class="loading">Loading…</div></div>`;
+  let d;
+  const load = async () => {
+    d = await sapi(`/api/admin/attendance?days=${val('#aDays')}`);
+    $('#aBody').innerHTML = `<h2>By person</h2><div class="tbl-wrap"><table class="tbl"><thead><tr><th>Name</th><th>Type</th><th>Department</th><th class="num">Nights in</th><th>Last in</th></tr></thead><tbody>
+      ${d.people.map(p => `<tr><td><strong>${esc(p.name)}</strong></td><td>${esc(p.type)}</td><td>${esc(p.department)}</td><td class="num">${p.nights}</td><td>${esc(when(p.last))}</td></tr>`).join('') || '<tr><td colspan="5" class="empty-row">No check-ins in this period.</td></tr>'}</tbody></table></div>
+      <h2>Every check-in</h2><div class="tbl-wrap"><table class="tbl"><thead><tr><th>When</th><th>Name</th><th>Department</th><th>How</th><th>Checked by</th></tr></thead><tbody>
+      ${d.entries.map(e => `<tr><td>${esc(when(e.at))}</td><td>${esc(e.name)}</td><td>${esc(e.department)}</td><td>${e.method === 'pass' ? 'Pass' : 'Texted code'}</td><td>${esc(e.byEmail)}</td></tr>`).join('') || '<tr><td colspan="5" class="empty-row">Nothing yet.</td></tr>'}</tbody></table></div>`;
+  };
+  $('#aDays').onchange = () => load().catch(fail);
+  $('#aCsv').onclick = () => {
+    if (!d) return;
+    const cell = v => `"${String(v ?? '').replace(/"/g, '""')}"`;
+    const csv = [['When (Accra)', 'Night', 'Name', 'Type', 'Department', 'How', 'Checked by'], ...d.entries.map(e => [new Date(e.at).toLocaleString('en-GB', { timeZone: 'Africa/Accra' }), e.night, e.name, e.type, e.department, e.method, e.byEmail])].map(r => r.map(cell).join(',')).join('\n');
+    const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(new Blob([csv], { type: 'text/csv' })), download: `memories-attendance-${new Date().toISOString().slice(0, 10)}.csv` });
+    document.body.append(a); a.click(); a.remove();
+  };
+  await load();
 }
 
 // ── Nights ──
