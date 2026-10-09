@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="1000" viewBox="0 0 800 1000">
+<defs><radialGradient id="g" cx=".3" cy=".25" r=".9"><stop offset="0" stop-color="#ff5a36"/><stop offset=".55" stop-color="#8f1238"/><stop offset="1" stop-color="#1b0710"/></radialGradient></defs>
+<rect width="800" height="1000" fill="url(#g)"/>
+<g fill="none" stroke="#ffd166" stroke-opacity=".35" stroke-width="3"><circle cx="560" cy="330" r="220"/><circle cx="560" cy="330" r="160"/><circle cx="560" cy="330" r="100"/></g>
+<text x="50" y="560" font-family="Impact,Anton,sans-serif" font-size="170" fill="#fff4dc" letter-spacing="-4">AFRO</text>
+<text x="50" y="720" font-family="Impact,Anton,sans-serif" font-size="170" fill="#ffd166" letter-spacing="-4">BEATS</text>
+<text x="54" y="800" font-family="Georgia,serif" font-style="italic" font-size="46" fill="#fff4dc">friday edition</text>
+<text x="54" y="930" font-family="Arial,sans-serif" font-weight="700" font-size="26" fill="#fff4dc" letter-spacing="6">DEV FIXTURE · NOT A REAL EVENT</text>
+</svg>
