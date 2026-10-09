@@ -1,2 +1,0 @@
-# Scan-to-order QR codes printed before the order page moved to counter.html?s={token}.
-/b/:token  /counter.html?s=:token  301
