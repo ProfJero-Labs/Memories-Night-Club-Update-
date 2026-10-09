@@ -1,10 +1,8 @@
-// member.html: the Memories Pass. A member gets it by opening the activation QR or link the manager
-// gives them (no SMS); staff open it from "My pass" on their own dashboard. The phone then shows a
-// pass with a QR that changes every 30 seconds, signed on the phone with a secret only this phone
-// and the Worker hold: it works with no signal, and a screenshot stops working within a minute.
-// While it's open it also shows any gate code the door has asked for (the phone-number route).
+// member.html: the Memories Pass. A member gets it with the activation code or link the manager gives
+// them (no SMS); staff open it from "My pass" on their own dashboard. There's no QR to show: at the
+// gate they say their phone number, the door asks for a code, and it appears here; they read it out.
+// The page proves itself to the Worker with a code signed by a secret only this phone holds.
 import { api, esc, params, $ } from '../app.js';
-import { qrSvg } from '../ticket-art.js';
 
 const root = $('#root');
 const KEY = 'mem-pass';
@@ -31,7 +29,7 @@ function signIn(msg = '') {
   clearInterval(timer); clearInterval(poll);
   root.innerHTML = `<div class="pass-top"><img src="assets/logo-sm.webp" alt="Memories" width="110" height="26"><button type="button" class="btn red" data-install hidden style="min-height:44px;padding:0 14px">Install app</button></div>
     <h1 class="display" style="font-size:clamp(48px,14vw,72px);margin:0">Your pass</h1>
-    <p class="muted" style="margin:0">For Memories members and staff. Scan the activation QR the manager shows you, or type its code here.</p>
+    <p class="muted" style="margin:0">For Memories members and staff. Type the activation code the manager gave you, or open the link they sent.</p>
     ${msg ? `<div class="notice" role="alert">${esc(msg)}</div>` : ''}
     <form id="act" class="step" novalidate>
       <div class="field"><label for="code">Activation code</label><input id="code" autocapitalize="characters" autocomplete="off" spellcheck="false" maxlength="14" placeholder="e.g. 7K3QX9WP2M"></div>
@@ -51,6 +49,7 @@ async function activate(code) {
 }
 
 // ── The pass ──
+// No QR to show: at the gate the member says their phone number, and the door's code appears here.
 function show(state = { online: null, valid: true }) {
   clearInterval(timer);
   const m = pass.member;
@@ -58,10 +57,9 @@ function show(state = { online: null, valid: true }) {
     <section class="pass ${state.valid ? '' : 'bad'}" aria-label="Your Memories pass">
       <div class="role"><span class="badge ${m.type === 'staff' ? '' : 'member'}">${m.type === 'staff' ? 'Staff' : 'Member'}</span>${m.department ? `<span>${esc(m.department)}</span>` : ''}</div>
       <h1 class="who">${esc(m.name)}</h1>
-      <div id="gate" aria-live="assertive"></div>
       ${state.valid ? '' : `<div class="notice" role="alert"><strong>Not valid.</strong> ${esc(state.reason === 'suspended' ? 'This membership is suspended.' : state.reason === 'expired' ? 'This membership has ended.' : 'This pass was signed out. Sign in again.')} Talk to the manager.</div>`}
-      <div class="qr-live" aria-label="Gate QR code, changes every 30 seconds"><div id="qr"></div><span class="tick" id="tick">Live code</span></div>
-      <div class="bar" aria-hidden="true"><i id="bar"></i></div>
+      <div id="gate" aria-live="assertive"></div>
+      ${state.valid ? `<div class="gate-wait" id="wait"><b>At the gate</b><p>Tell the door your phone number (${esc(m.phoneHint)}). A code appears here: read it to them. No ticket, no QR.</p><span class="live ${state.online === false ? 'off' : ''}" id="live">${state.online === false ? 'Offline: connect to get your code' : 'Ready'}</span></div>` : ''}
       <div class="clock" id="clock" aria-live="off">${hhmmss()}</div>
       <div class="meta-rows">
         ${m.position ? `<div><span>Position</span> · ${esc(m.position)}</div>` : ''}
@@ -71,27 +69,19 @@ function show(state = { online: null, valid: true }) {
         <div id="lastIn">${pass.lastEntry ? `<span>Last checked in</span> · ${esc(when(pass.lastEntry))}` : ''}</div>
       </div>
     </section>
-    <p class="foot-small" style="margin:0" id="net">${state.online === false ? 'Offline: your pass still works. The door checks it live.' : state.online ? 'Checked with Memories just now.' : 'Show this screen at the gate. Turn your brightness up.'}</p>
+    <p class="foot-small" style="margin:0" id="net">${state.online === false ? 'Offline. You need signal for the gate code.' : state.online ? 'Checked with Memories just now.' : 'Keep this open at the gate.'}</p>
     <button class="link" type="button" id="out" style="justify-self:start">Sign out of this phone</button>`;
   $('#out').onclick = () => { if (confirm('Sign this phone out of your pass?')) { pass = null; save(null); signIn(); } };
   if (!state.valid) return;
-  navigator.wakeLock?.request('screen').catch(() => {});
-  let shown = -1;
-  const tick = async () => {
-    $('#clock').textContent = hhmmss();
-    const sec = pass.stepSeconds || 30, s = stepNow(pass), left = sec - (Math.floor(clockNow() / 1000) % sec);
-    $('#bar').style.width = `${(left / sec) * 100}%`;
-    $('#tick').textContent = `New code in ${left}s`;
-    if (s !== shown) { shown = s; $('#qr').innerHTML = await qrSvg(await payload(pass, s)).catch(() => '<p>QR unavailable</p>'); }
-  };
-  tick(); timer = setInterval(tick, 1000);
+  timer = setInterval(() => { $('#clock') && ($('#clock').textContent = hhmmss()); }, 1000);
 }
 
 // A gate code the door asked for (they typed this member's number): big, with a countdown.
 function drawGate(g) {
   const el = $('#gate'); if (!el) return;
+  $('#wait') && ($('#wait').hidden = !!g);
   if (!g) { el.innerHTML = ''; lastGate = null; return; }
-  if (lastGate !== g.code) navigator.vibrate?.([120, 60, 120]);
+  if (lastGate !== g.code) { navigator.vibrate?.([120, 60, 120]); navigator.wakeLock?.request('screen').catch(() => {}); }
   lastGate = g.code;
   const secs = Math.max(0, Math.round((new Date(g.expiresAt).getTime() - clockNow()) / 1000));
   el.innerHTML = `<div class="gate-code"><span>Gate code: say it to the door</span><b>${esc(g.code.replace(/(\d{3})(\d{3})/, '$1 $2'))}</b><small>Expires in ${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')}</small></div>`;

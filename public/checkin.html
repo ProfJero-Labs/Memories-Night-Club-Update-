@@ -6,11 +6,11 @@
 <title>Door · Memories</title>
 <meta name="robots" content="noindex">
 <meta name="theme-color" content="#0d0a09">
-<link rel="manifest" href="manifest.webmanifest">
-<link rel="apple-touch-icon" href="assets/apple-touch-icon.png">
+<link rel="manifest" href="staff.webmanifest">
+<link rel="apple-touch-icon" href="assets/apple-touch-icon-staff.png">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-title" content="Memories">
+<meta name="apple-mobile-web-app-title" content="Memories Staff">
 <link rel="icon" href="assets/icon.svg" type="image/svg+xml">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -49,9 +49,9 @@
     <button class="sbtn ghost torch" id="torch" type="button" hidden aria-pressed="false">Torch</button>
     <div class="off" id="camOff"><div style="display:grid;gap:12px;justify-items:center"><button class="btn red" id="start" type="button">Scan QR</button><span class="foot-small">Uses the camera on this device.</span></div></div></div>
   <form id="manual" class="toolbar" style="margin:0" novalidate><input id="code" placeholder="Or paste the ticket link" style="flex:1;min-width:0" autocomplete="off" autocapitalize="off" spellcheck="false"><button class="sbtn" type="submit">Check</button></form>
-  <details class="fold member-gate" id="memberGate"><summary>Staff or member at the gate?</summary>
+  <details class="fold member-gate" id="memberGate"><summary>Staff or member? Verify with their app</summary>
     <form id="mPhone" class="step" novalidate style="margin-top:10px;gap:12px">
-      <p class="foot-small" style="margin:0">Scan their Memories Pass above. Can’t scan? Type their number: a code appears on their Memories app (or their staff dashboard), and they read it to you.</p>
+      <p class="foot-small" style="margin:0">No ticket, no QR: type their number. A 6-digit code appears in their Memories app (staff: on their dashboard), and they read it to you.</p>
       <div class="sfield"><label for="mNum">Their phone</label><input id="mNum" type="tel" inputmode="tel" autocomplete="off" placeholder="024 123 4567"></div>
       <button class="sbtn red" type="submit">Send a code to their app</button>
     </form>

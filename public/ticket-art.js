@@ -28,7 +28,8 @@ export function designFor(t) {
 }
 const vars = d => `--t-accent:${d.colors.accent};--t-dark:${d.colors.dark};--t-light:${d.colors.light};--t-on-accent:${d.onAccent}`;
 
-// t: { line, firstName, eventName, eventId, date, doors, venue, artwork, ticketStyle, ticketColors, code, status, inDraw, type, admits }
+// t: { line, firstName, eventName, eventId, date, doors, venue, artwork, ticketStyle, ticketColors, code, status, inDraw, type, admits,
+//      ticketNo, groupSize } (a group bought together: each person's own ticket, "2 OF 3")
 export function ticketHTML(t, { preview = false, qr = '' } = {}) {
   const d = designFor(t);
   const big = t.line || t.eventName || 'MEMORIES';
@@ -44,7 +45,7 @@ export function ticketHTML(t, { preview = false, qr = '' } = {}) {
       <div class="t-vert" aria-hidden="true">${esc(t.eventName || 'Memories')}</div>
       ${day ? `<div class="t-day" aria-hidden="true">${esc(day)}</div>` : ''}
       <div class="t-body">
-        <div class="t-top"><span class="brandmark">MEMORIES</span><span style="text-align:right">${esc(t.type || 'Ticket')}${t.admits > 1 ? `<br>ADMITS ${t.admits}` : '<br>ADMIT ONE'}</span></div>
+        <div class="t-top"><span class="brandmark">MEMORIES</span><span style="text-align:right">${esc(t.type || 'Ticket')}${t.groupSize > 1 ? ` · <b class="t-of">${t.ticketNo} OF ${t.groupSize}</b>` : ''}${t.admits > 1 ? `<br>ADMITS ${t.admits}` : '<br>ADMIT ONE'}</span></div>
         <p class="t-line ${long ? 'long' : ''} ${t.line ? '' : 'event'}" data-line>${esc(big)}</p>
         <div class="t-name" data-name>${esc(t.firstName || (preview ? 'Your name' : ''))}</div>
         <div class="t-meta">${t.line ? `<span>${esc(t.eventName)}</span>` : ''}<b>${t.date ? esc(shortDate(t.date)) : ''}</b><span>${t.date ? esc(doors(t)) : ''}</span><span>${esc(t.venue || '')}</span></div>
@@ -55,7 +56,8 @@ export function ticketHTML(t, { preview = false, qr = '' } = {}) {
       ${qr ? `<div class="t-qr" aria-label="Entry QR code">${qr}</div>` : `<div class="t-qr blank">QR APPEARS<br>ONCE PAID</div>`}
       <div><div class="t-code">${esc(t.code || 'MEM-······')}</div>
         <div class="t-status">${status}${t.inDraw ? '<span class="t-stamp draw">IN THE DRAW</span>' : ''}</div>
-        <div class="t-small">Show at the door · strictly 18+</div></div>
+        <div class="t-small">${t.groupSize > 1 ? `Ticket ${t.ticketNo} of ${t.groupSize} · ` : ''}Show at the door · strictly 18+</div>
+        <div class="t-credit">Ticketing by EvolveIT</div></div>
     </div>
   </article>`;
 }

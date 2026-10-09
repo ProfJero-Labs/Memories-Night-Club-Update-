@@ -70,6 +70,46 @@ test('homepage "Get tickets" opens a real night and a guest can pay, get a ticke
   assert.deepEqual(page.errors, []);
 });
 
+test('three tickets bought together: three tickets, each “n OF 3”; the buyer’s ticket lists and sends the others; a friend’s shows only its own', async () => {
+  const page = await phone();
+  await page.goto(`${base}/tickets.html?event=dev-afro`, { waitUntil: 'networkidle' });
+  await page.click('.type:not([disabled])'); await page.click('#plus'); await page.click('#plus');
+  await page.click('#barGo'); await page.waitForURL(/checkout\.html/); await page.waitForSelector('#co');
+  await page.fill('#name', 'Group Buyer'); await page.fill('#phone', '024 555 7777'); await page.click('#pay');
+  await page.waitForURL(/dev\/paystack/); await page.getByRole('button', { name: 'Pay' }).click();
+  await page.waitForURL(/payment-return/); await page.getByText(/All 3 of you/).waitFor({ timeout: 20000 });
+  assert.match(store.sms.at(-1).message, /3 tickets, one QR each/);
+  await page.locator('.info-rows a').first().click(); await page.waitForURL(/ticket\.html/); await page.waitForSelector('.ticket');
+  assert.match(await page.textContent('.ticket'), /1 OF 3/);
+  assert.match(await page.textContent('.ticket'), /Ticket 1 of 3/);
+  assert.match(await page.textContent('.ticket'), /EvolveIT/, 'the ticket credits EvolveIT');
+  assert.equal(await page.locator('.group-row').count(), 2);
+  const friendHref = await page.locator('.group-row a').last().getAttribute('href');
+  const friend = await phone();
+  await friend.goto(`${base}/ticket.html${friendHref}`, { waitUntil: 'networkidle' }); await friend.waitForSelector('.ticket');
+  assert.match(await friend.textContent('.ticket'), /3 OF 3/);
+  assert.equal(await friend.locator('.group-row').count(), 0, 'a friend’s ticket doesn’t list the group');
+  assert.deepEqual([...page.errors, ...friend.errors], []);
+});
+
+test('two apps: guest pages install “Memories”; staff pages install “Memories Staff”, which opens at sign-in and goes straight to the dashboard; EvolveIT credited', async () => {
+  const page = await phone();
+  await page.goto(`${base}/`, { waitUntil: 'networkidle' });
+  assert.equal(await page.locator('link[rel=manifest]').getAttribute('href'), 'manifest.webmanifest');
+  assert.match(await page.textContent('footer'), /EvolveIT/);
+  const [pub, staff] = await page.evaluate(() => Promise.all(['manifest.webmanifest', 'staff.webmanifest'].map(u => fetch(u).then(r => r.json()))));
+  assert.notEqual(pub.id, staff.id, 'two separate apps');
+  assert.match(staff.start_url, /^login\.html/);
+  await page.goto(`${base}/login.html`); assert.equal(await page.locator('link[rel=manifest]').getAttribute('href'), 'staff.webmanifest');
+  await page.fill('#email', 'manager@dev'); await page.fill('#pw', 'memories-dev'); await page.click('#go');
+  await page.waitForURL(/admin\.html/);
+  assert.equal(await page.locator('link[rel=manifest]').getAttribute('href'), 'staff.webmanifest');
+  await page.locator('.staff-credit').getByText(/EvolveIT/).waitFor();
+  // Opening the installed staff app (its start page) while signed in: straight to the dashboard.
+  await page.goto(`${base}/${staff.start_url}`); await page.waitForURL(/admin\.html/);
+  assert.deepEqual(page.errors, []);
+});
+
 test('a declined payment never shows as paid: the guest sees "not paid" and a way back', async () => {
   const page = await phone();
   const before = docs('tickets').length;
@@ -484,7 +524,7 @@ test('the ticket’s QR opens full screen on white for the door', async () => {
   await page.click('.qr-full'); assert.equal(await page.locator('.qr-full[open]').count(), 0, 'tap closes it');
 });
 
-test('membership: a manager adds someone and shows a pass QR (nothing texted); it opens their pass; the door verifies the live QR and the gate code shown in their app; attendance; offline', async () => {
+test('membership: a manager adds someone and gets a one-time code (nothing texted); it sets up their app; at the gate only the code in their app works (no QR); attendance; offline; delete', async () => {
   const { passSig } = await import('../worker/src/members.js');
   const smsBefore = store.sms.length;
   const admin = await phone(390);
@@ -493,8 +533,8 @@ test('membership: a manager adds someone and shows a pass QR (nothing texted); i
   await admin.getByText(/Staff accounts without a membership/).waitFor();
   await admin.click('#mAdd'); await admin.fill('#fName', 'Kojo Gatekeeper'); await admin.fill('#fPhone', '0245551010'); await admin.selectOption('#fType', 'member'); await admin.fill('#fDept', 'VIP');
   await admin.click('#mForm button[type=submit]');
-  await admin.locator('.qrm svg').waitFor();
-  const code = (await admin.locator('.qrm strong').textContent()).trim();
+  await admin.locator('.qrm .act-code').waitFor();
+  const code = (await admin.locator('.qrm .act-code').textContent()).trim();
   assert.match(code, /^[0-9A-Z]{10}$/);
   assert.equal(store.sms.length, smsBefore, 'nothing texted');
   await admin.click('#aDone');
@@ -504,34 +544,45 @@ test('membership: a manager adds someone and shows a pass QR (nothing texted); i
   const mem = await ctx.newPage(); mem.errors = []; mem.on('pageerror', e => mem.errors.push(e.message));
   await mem.goto(`${base}/member.html?activate=${code}`, { waitUntil: 'networkidle' });
   assert.ok(await mem.locator('link[rel=manifest]').count(), 'installable: has a manifest');
-  await mem.waitForSelector('#qr svg');
+  await mem.waitForSelector('#wait');
   assert.match(await mem.textContent('.who'), /Kojo Gatekeeper/);
   assert.ok(!mem.url().includes('activate='), 'the used code is taken out of the address bar');
   const pass = await mem.evaluate(() => JSON.parse(localStorage.getItem('mem-pass')));
   assert.ok(await mem.evaluate(async () => !!(await navigator.serviceWorker.ready).active), 'service worker running');
   await ctx.setOffline(true); await mem.reload();
-  await mem.waitForSelector('#qr svg', { timeout: 10000 });
-  await ctx.setOffline(false); await mem.reload(); await mem.waitForSelector('#qr svg');
+  await mem.waitForSelector('.pass .who', { timeout: 10000 });
+  await ctx.setOffline(false); await mem.reload(); await mem.waitForSelector('#wait');
 
   const door = await phone(390);
   await door.goto(`${base}/login.html`); await door.fill('#email', 'door@dev'); await door.fill('#pw', 'memories-dev'); await door.click('#go');
   await door.waitForURL(/checkin\.html/); await door.waitForLoadState('networkidle');
+  // No QR for members: an old pass QR scanned by habit points the door to the number route.
+  assert.equal(await mem.locator('#qr').count(), 0, 'the pass shows no QR');
   const step = Math.floor((Date.now() + (pass.skewMs || 0)) / 30000);
   await door.fill('#code', `MP1.${pass.passId}.${step}.${await passSig(pass.secret, pass.passId, step)}`); await door.click('#manual button');
-  await door.locator('#out').getByText(/member verified/i).waitFor();
-  await door.click('#memberGate summary'); await door.fill('#mNum', '0245551010'); await door.click('#mPhone button');
+  await door.locator('#out').getByText(/use their number/i).waitFor();
+  assert.equal(await door.evaluate(() => document.querySelector('#memberGate').open), true);
+  await door.fill('#mNum', '0245551010'); await door.click('#mPhone button');
   await door.locator('#out').getByText(/code on their app/i).waitFor();
   // The code appears on the member's pass (polled while it's open), never by SMS.
   await mem.locator('.gate-code b').waitFor({ timeout: 10000 });
   const gate = (await mem.textContent('.gate-code b')).replace(/\D/g, '');
   await door.fill('#mCodeIn', gate); await door.click('#mCode button[type=submit]');
   await door.locator('#out').getByText(/member verified/i).waitFor();
-  assert.equal(docs('member_entries').filter(e => e.name === 'Kojo Gatekeeper').length, 2);
+  assert.equal(docs('member_entries').filter(e => e.name === 'Kojo Gatekeeper').length, 1);
   assert.equal(store.sms.length, smsBefore, 'still nothing texted');
 
   await openTab(admin, 'attendance');
   await admin.getByText('Kojo Gatekeeper').first().waitFor();
   assert.ok((await admin.textContent('#aBody')).includes('door@dev'), 'who checked them in');
+  // Delete: gone from the list, the door is told they're not a member; history stays.
+  await openTab(admin, 'members');
+  admin.once('dialog', d => d.accept());
+  await admin.locator('tr', { hasText: 'Kojo Gatekeeper' }).locator('[data-mdel]').click();
+  await admin.getByText('Deleted Kojo Gatekeeper.').waitFor();
+  await door.fill('#mNum', '0245551010'); await door.click('#mPhone button');
+  await door.locator('#out').getByText(/not a member/i).waitFor();
+  assert.equal(docs('member_entries').filter(e => e.name === 'Kojo Gatekeeper').length, 1, 'history kept');
   assert.deepEqual([...admin.errors, ...door.errors, ...mem.errors], []);
   await ctx.close();
 });
@@ -551,7 +602,7 @@ test('staff are members: the organiser sees their gate code on their own dashboa
   await door.fill('#mCodeIn', gate); await door.click('#mCode button[type=submit]');
   await door.locator('#out').getByText(/staff verified/i).waitFor();
   assert.equal(store.sms.length, smsBefore, 'no SMS');
-  await org.click('#myPass'); await org.waitForURL(/member\.html/); await org.waitForSelector('#qr svg');
+  await org.click('#myPass'); await org.waitForURL(/member\.html/); await org.waitForSelector('#wait');
   assert.match(await org.textContent('.who'), /Ama Organiser/);
   assert.deepEqual([...org.errors, ...door.errors], []);
 });

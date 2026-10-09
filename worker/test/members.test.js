@@ -1,5 +1,5 @@
-// Membership: staff and members get in without a ticket after the door verifies them, by the
-// rotating pass QR or by a gate code that appears in their app. No SMS anywhere in verification.
+// Membership: staff and members get in without a ticket or QR: the door types their number and a
+// gate code appears in their app; they read it out. No SMS anywhere in verification.
 // Every staff account is a member. Every entry is the HR attendance log.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -19,6 +19,13 @@ const step = () => Math.floor(Date.now() / 1000 / 30);
 const qr = async (pass, s = step()) => `MP1.${pass.passId}.${s}.${await passSig(pass.secret, pass.passId, s)}`;
 async function addKofi(env) {
   return call(env, 'POST', '/api/admin/members', { claims: MANAGER, body: { name: 'Kofi Mensah', phone: '024 555 0001', type: 'member', department: 'VIP', staffNo: 'M-014' } });
+}
+// At the gate: the door types the number, the code shows in the member's app, the door enters it.
+async function viaApp(env, pass, phone, claims = DOOR) {
+  const req = await call(env, 'POST', '/api/members/door/request-code', { claims, body: { phone } });
+  if (!req.data.sent) return req.data;
+  const code = (await call(env, 'POST', '/api/members/pass-status', { body: { qr: await qr(pass) } })).data.gate.code;
+  return (await call(env, 'POST', '/api/members/door/confirm', { claims, body: { phone, code } })).data;
 }
 async function activate(env, mid) {
   const a = await call(env, 'POST', '/api/admin/members/activation', { claims: MANAGER, body: { id: mid } });
@@ -62,20 +69,21 @@ test('every staff account is a member: inviting staff creates the membership; th
   assert.equal((await call(env, 'POST', '/api/members/my-pass', { claims: { role: 'barStaff' }, uid: 'not-linked', body: {} })).status, 404);
   await call(env, 'POST', '/api/admin/set-role', { claims: boss, body: { email: 'ama@club.test', role: 'none' } });
   assert.equal(store.get('members', m.id).fields.status, 'suspended');
-  assert.equal((await call(env, 'POST', '/api/members/door/pass', { claims: DOOR, body: { qr: await qr(pass.data) } })).data.code, 'invalid_pass', 'their pass stopped');
+  assert.equal((await call(env, 'POST', '/api/members/pass-status', { body: { qr: await qr(pass.data) } })).data.valid, false, 'their pass stopped');
+  assert.equal((await call(env, 'POST', '/api/members/door/request-code', { claims: DOOR, body: { phone: '0245550002' } })).data.code, 'suspended');
 });
 
-test('at the gate, the live pass QR verifies the member and logs the entry; a screenshot goes stale; a forged QR fails', async () => {
+test('at the gate there is no QR route: members are verified only through the app; organisers can’t verify club staff', async () => {
   const { store, env } = createMockEnv();
   const { data: { id: mid } } = await addKofi(env);
   const pass = await activate(env, mid);
-  const r = await call(env, 'POST', '/api/members/door/pass', { claims: DOOR, uid: 'door-1', body: { qr: await qr(pass) } });
-  assert.equal(r.data.valid, true); assert.equal(r.data.message, 'MEMBER VERIFIED');
-  assert.equal(store.list('member_entries')[0].fields.method, 'pass');
-  assert.equal((await call(env, 'POST', '/api/members/door/pass', { claims: DOOR, body: { qr: await qr(pass, step() - 5) } })).data.code, 'stale_pass');
-  assert.equal((await call(env, 'POST', '/api/members/door/pass', { claims: DOOR, body: { qr: `MP1.${pass.passId}.${step()}.${'A'.repeat(16)}` } })).data.code, 'invalid_pass');
-  assert.equal((await call(env, 'POST', '/api/members/door/pass', { claims: { role: 'organiser' }, body: { qr: await qr(pass) } })).status, 403, 'organisers don’t verify club staff');
-  assert.equal(store.list('member_entries').length, 1);
+  assert.equal((await call(env, 'POST', '/api/members/door/pass', { claims: DOOR, body: { qr: await qr(pass) } })).status, 404, 'no pass-QR verification');
+  assert.equal((await call(env, 'POST', '/api/members/door/request-code', { claims: { role: 'organiser' }, body: { phone: '0245550001' } })).status, 403);
+  const ok = await viaApp(env, pass, '0245550001');
+  assert.equal(ok.valid, true); assert.equal(ok.message, 'MEMBER VERIFIED');
+  assert.equal(store.list('member_entries')[0].fields.method, 'code');
+  const old = (await call(env, 'POST', '/api/members/pass-status', { body: { qr: await qr(pass, step() - 5) } })).data;
+  assert.equal(old.reason, 'clock'); assert.equal(old.gate, undefined, 'an old signature only gets the time, never a code'); assert.equal(old.member, undefined);
 });
 
 test('at the gate by phone: the code appears in the member’s app (never by SMS); they say it; the door enters it', async () => {
@@ -116,7 +124,7 @@ test('suspending a member stops the pass and the phone route at once; an expired
   const { data: { id: mid } } = await addKofi(env);
   const pass = await activate(env, mid);
   await call(env, 'POST', '/api/admin/members', { claims: MANAGER, body: { id: mid, name: 'Kofi Mensah', phone: '0245550001', status: 'suspended' } });
-  assert.equal((await call(env, 'POST', '/api/members/door/pass', { claims: DOOR, body: { qr: await qr(pass) } })).data.code, 'invalid_pass');
+  assert.equal((await call(env, 'POST', '/api/members/pass-status', { body: { qr: await qr(pass) } })).data.valid, false);
   assert.equal((await call(env, 'POST', '/api/members/door/request-code', { claims: DOOR, body: { phone: '0245550001' } })).data.code, 'suspended');
   await call(env, 'POST', '/api/admin/members', { claims: MANAGER, body: { id: mid, name: 'Kofi Mensah', phone: '0245550001', status: 'active', validUntil: '2020-01-31' } });
   assert.equal((await call(env, 'POST', '/api/members/door/request-code', { claims: DOOR, body: { phone: '0245550001' } })).data.code, 'expired');
@@ -127,7 +135,7 @@ test('HR attendance: entries per person and nights present, managers only', asyn
   const { store, env } = createMockEnv();
   const { data: { id: mid } } = await addKofi(env);
   const pass = await activate(env, mid);
-  await call(env, 'POST', '/api/members/door/pass', { claims: DOOR, body: { qr: await qr(pass) } });
+  await viaApp(env, pass, '0245550001');
   assert.equal((await call(env, 'GET', '/api/admin/attendance', { claims: DOOR })).status, 403);
   const a = await call(env, 'GET', '/api/admin/attendance?days=30', { claims: MANAGER });
   assert.equal(a.data.entries.length, 1); assert.deepEqual(a.data.people.map(p => [p.name, p.nights]), [['Kofi Mensah', 1]]);
@@ -135,4 +143,35 @@ test('HR attendance: entries per person and nights present, managers only', asyn
   const list = await call(env, 'GET', '/api/admin/members', { claims: MANAGER });
   assert.ok(Array.isArray(list.data.unlinkedStaff), 'staff accounts without a membership are listed for linking');
   assert.equal(store.sms.length, 0);
+});
+
+test('a manager can delete a member: the pass stops, the door says not a member, attendance history stays; door staff can’t delete', async () => {
+  const { store, env } = createMockEnv();
+  const { data: { id: mid } } = await addKofi(env);
+  const pass = await activate(env, mid);
+  await viaApp(env, pass, '0245550001');
+  assert.equal((await call(env, 'POST', '/api/admin/members/delete', { claims: DOOR, body: { id: mid } })).status, 403);
+  const del = await call(env, 'POST', '/api/admin/members/delete', { claims: MANAGER, body: { id: mid } });
+  assert.equal(del.status, 200, del.data.error); assert.equal(del.data.deleted, true);
+  assert.ok(!store.get('members', mid), 'record gone');
+  assert.equal((await call(env, 'POST', '/api/members/pass-status', { body: { qr: await qr(pass) } })).data.valid, false);
+  assert.equal((await call(env, 'POST', '/api/members/door/request-code', { claims: DOOR, body: { phone: '0245550001' } })).data.code, 'not_member');
+  assert.equal(store.list('member_entries').length, 1, 'history kept');
+  assert.ok(store.list('audit_logs').some(a => a.fields.action === 'MEMBER_DELETED'));
+  assert.equal((await call(env, 'POST', '/api/admin/members/delete', { claims: MANAGER, body: { id: mid } })).status, 404);
+});
+
+test('new roles: a director runs People like a manager; a waitress works the bar screen; both are members automatically', async () => {
+  const { store, env } = createMockEnv();
+  const boss = { role: 'superAdmin', admin: true };
+  for (const [email, role, dept] of [['dir@club.test', 'director', 'Directors'], ['wait@club.test', 'waitStaff', 'Floor (waitstaff)']]) {
+    const inv = await call(env, 'POST', '/api/admin/staff/invite', { claims: boss, body: { email, name: `Test ${role}`, phone: role === 'director' ? '0245550011' : '0245550012', role } });
+    assert.equal(inv.status, 200, inv.data.error);
+    const m = store.list('members').find(x => x.fields.staffUid === inv.data.uid);
+    assert.equal(m.fields.type, 'staff'); assert.equal(m.fields.department, dept);
+  }
+  assert.equal((await call(env, 'GET', '/api/admin/members', { claims: { role: 'director' } })).status, 200);
+  assert.equal((await call(env, 'GET', '/api/admin/members', { claims: { role: 'waitStaff' } })).status, 403);
+  assert.equal((await call(env, 'GET', '/api/bar/queue', { claims: { role: 'waitStaff' } })).status, 200);
+  assert.equal((await call(env, 'POST', '/api/admin/staff/invite', { claims: { role: 'director' }, body: { email: 'x@club.test', name: 'X', phone: '0245550013', role: 'manager' } })).status, 403, 'only a super admin manages staff');
 });

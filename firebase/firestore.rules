@@ -5,7 +5,7 @@ service cloud.firestore {
   match /databases/{database}/documents {
     function signedIn() { return request.auth != null; }
     function superAdmin() { return signedIn() && request.auth.token.admin == true; }
-    function staff() { return superAdmin() || (signedIn() && request.auth.token.role in ['manager', 'eventManager']); }
+    function staff() { return superAdmin() || (signedIn() && request.auth.token.role in ['director', 'manager', 'eventManager']); }
     function organiserOf(data) { return signedIn() && request.auth.token.role == 'organiser' && data.organiserId == request.auth.uid; }
 
     match /events/{id} {

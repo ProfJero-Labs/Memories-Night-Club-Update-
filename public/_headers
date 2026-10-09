@@ -29,6 +29,11 @@
   Cache-Control: no-cache
 /manifest.webmanifest
   Content-Type: application/manifest+json
+/staff.webmanifest
+  Content-Type: application/manifest+json
+/bar.html
+  Referrer-Policy: no-referrer
+  X-Robots-Tag: noindex
 /assets/*
   Cache-Control: public, max-age=604800
 /vendor/*

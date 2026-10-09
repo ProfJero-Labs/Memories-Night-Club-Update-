@@ -1,4 +1,4 @@
-import { getDoc, listDocs, queryWhere, setDoc } from './lib/firestore.js';
+import { getDoc, listDocs, queryWhere, setDoc, batchGet, foundFields } from './lib/firestore.js';
 import { now, id, clean, dateKey, normalizePhone, validEmail, firstName, cleanTicketColors, monthStyles } from './lib/util.js';
 import { sendEmail } from './lib/notify.js';
 
@@ -149,14 +149,33 @@ export async function createPrivateRequest(env, b) {
 }
 
 // ── Tickets as their holder sees them (the token is the credential) ──
+// Several tickets bought together: each person has their own ticket and QR ("Ticket 2 of 3").
+// Only the buyer's own ticket (number 1, the one texted to them) lists the others so they can send
+// them on; a friend's ticket shows its number but never the rest of the group's links.
+async function ticketGroup(env, token, t) {
+  const order = t.reference ? (await queryWhere(env, 'orders', [{ field: 'reference', value: t.reference }], { limit: 1 }))[0] : null;
+  const ids = order?.fields?.ticketIds || [];
+  const no = ids.indexOf(token) + 1;
+  if (!no || ids.length < 2) return { no: 1, size: 1 };
+  if (no !== 1) return { no, size: ids.length };
+  const got = await batchGet(env, ids.slice(1).map(x => `tickets/${x}`));
+  const others = ids.slice(1).map((x, i) => {
+    const f = foundFields(got, `/tickets/${x}`)?.fields || {};
+    return { token: x, no: i + 2, status: f.revoked || f.cancelled ? 'cancelled' : f.status || 'valid' };
+  });
+  return { no, size: ids.length, others };
+}
+
 export async function publicTicket(env, token) {
   const d = await getDoc(env, 'tickets', token);
   if (!d) return null;
   const t = d.fields;
   const [ev, raffles, autoStyle] = await Promise.all([getDoc(env, 'events', t.eventId), queryWhere(env, 'raffles', [{ field: 'eventId', value: t.eventId }]), autoStyleFor(env, t.eventId)]);
   const raffle = raffles.find(x => x.fields.enabled === true && x.fields.public === true);
+  const group = await ticketGroup(env, token, t);
   return {
     token, firstName: firstName(t.customerName), type: t.type, admits: Number(t.admitCount || 1),
+    ticketNo: group.no, groupSize: group.size, ...(group.others ? { others: group.others } : {}),
     eventId: t.eventId, eventName: ev?.fields?.name || t.eventName || '', eventDate: ev?.fields?.date || t.eventDate || '',
     doors: ev?.fields?.doors || '', venue: ev?.fields?.venue || '', artwork: ev?.fields?.artwork || '',
     ticketStyle: ev?.fields?.ticketStyle || 'auto', ticketColors: cleanTicketColors(ev?.fields?.ticketColors), autoStyle,

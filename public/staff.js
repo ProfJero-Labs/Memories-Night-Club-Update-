@@ -1,11 +1,11 @@
 // Shared by the staff pages (admin, organiser, door). Auth is Firebase; every action is a Worker
 // call carrying the Firebase ID token, and the Worker checks the role on every request.
 import { onUser, idToken, signOutUser } from './firebase.js';
-import { api, esc } from './app.js';
+import { api, esc, CREDIT } from './app.js';
 
 export const roleOf = claims => (claims?.admin === true ? 'superAdmin' : claims?.role || '');
-export const ROLE_LABEL = { superAdmin: 'Super admin', manager: 'Manager', eventManager: 'Event manager', doorStaff: 'Door', barStaff: 'Bar', organiser: 'Organiser' };
-export const home = role => (role === 'organiser' ? 'organiser.html' : role === 'doorStaff' ? 'checkin.html' : role === 'barStaff' ? 'bar.html' : 'admin.html');
+export const ROLE_LABEL = { superAdmin: 'Super admin', director: 'Director', manager: 'Manager', eventManager: 'Event manager', doorStaff: 'Door', barStaff: 'Bar', waitStaff: 'Waitress / waiter', organiser: 'Organiser' };
+export const home = role => (role === 'organiser' ? 'organiser.html' : role === 'doorStaff' ? 'checkin.html' : ['barStaff', 'waitStaff'].includes(role) ? 'bar.html' : 'admin.html');
 
 // Resolves with the signed-in staff user, or sends them to the right place.
 export function requireStaff(allowed) {
@@ -32,6 +32,8 @@ export function staffHeader(user, title) {
     <span class="who">${esc(user.email || '')}<br>${esc(ROLE_LABEL[user.role] || user.role)}</span><button type="button" data-install hidden title="Install the Memories app on this device">App</button><button type="button" id="myPass" title="Your member pass for the gate">My pass</button><button type="button" id="signout">Sign out</button></div>
     <div class="gate-banner" id="gateBanner" hidden role="alert"></div>`;
   document.body.prepend(h);
+  const credit = document.createElement('footer'); credit.className = 'staff-credit'; credit.textContent = `Memories platform · ${CREDIT}`;
+  document.body.append(credit);
   h.querySelector('#signout').onclick = () => signOutUser().then(() => location.replace('login.html'));
   // Staff are members: "My pass" puts this person's pass on this phone (their sign-in is the proof).
   h.querySelector('#myPass').onclick = async ev => {

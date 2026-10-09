@@ -23,7 +23,7 @@ export async function checkin(env, rawToken, user, { eventId, code } = {}) {
   if (!/^[0-9A-Za-z_-]{1,100}$/.test(token)) return { valid: false, code: 'invalid', message: 'TICKET NOT VALID' };
   // Organisers may only check in tickets for their own nights.
   let organiserEvents = null;
-  if (!requireRole(user, ['superAdmin', 'manager', 'eventManager', 'doorStaff'])) {
+  if (!requireRole(user, ['superAdmin', 'director', 'manager', 'eventManager', 'doorStaff'])) {
     if (user?.role !== 'organiser') return { valid: false, code: 'forbidden', message: 'NOT ALLOWED' };
     organiserEvents = true;
   }
@@ -59,7 +59,7 @@ export async function undoCheckin(env, user, checkinId) {
     if (!c) return { error: 'Nothing to undo.', status: 404 };
     const ci = parseFields(c.fields);
     if (ci.undoneAt) return { error: 'Already undone.', status: 400 };
-    const boss = requireRole(user, ['superAdmin', 'manager']);
+    const boss = requireRole(user, ['superAdmin', 'director', 'manager']);
     if (!boss && ci.checkedInBy !== uidOf(user)) return { error: 'Only the person who admitted them (or a manager) can undo it.', status: 403 };
     if (!boss && Date.now() - new Date(ci.checkedInAt).getTime() > UNDO_MINUTES * 60e3) return { error: `Undo is only open for ${UNDO_MINUTES} minutes. Ask a manager.`, status: 403 };
     const f = (await batchGet(env, [`tickets/${ci.ticketId}`], tx)).find(x => x.found)?.found;
@@ -90,7 +90,7 @@ export async function verifyTicket(env, rawToken) {
 async function doorNight(env, user, eventId) {
   const ev = eventId ? await getDoc(env, 'events', String(eventId)) : null;
   if (!ev) return null;
-  if (!requireRole(user, ['superAdmin', 'manager', 'eventManager', 'doorStaff']) && ev.fields.organiserId !== uidOf(user)) return null;
+  if (!requireRole(user, ['superAdmin', 'director', 'manager', 'eventManager', 'doorStaff']) && ev.fields.organiserId !== uidOf(user)) return null;
   return ev;
 }
 

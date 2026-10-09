@@ -142,9 +142,10 @@ export async function fulfillTicket(env, reference) {
     return { status: 'issued', ticketIds: tokens, orderId };
   });
   if (result.status === 'issued' && !result.already) {
-    const link = siteUrl(env, `/ticket.html?token=${result.ticketIds[0]}`);
-    await sendSms(env, P.buyerPhone, `MEMORIES\nYou're in for ${P.eventName}.\nYour ticket: ${link}`);
-    await sendEmail(env, P.buyerEmail, 'Your Memories ticket', [`You're in for ${P.eventName}.`, `Your ticket: ${link}`, `Reference: ${reference}`]);
+    const link = siteUrl(env, `/ticket.html?token=${result.ticketIds[0]}`), n = result.ticketIds.length;
+    const what = n > 1 ? `${n} tickets, one QR each. Open yours to send the other ${n - 1}:` : 'Your ticket:';
+    await sendSms(env, P.buyerPhone, `MEMORIES\nYou're in for ${P.eventName}.\n${what} ${link}`);
+    await sendEmail(env, P.buyerEmail, n > 1 ? `Your ${n} Memories tickets` : 'Your Memories ticket', [`You're in for ${P.eventName}.`, `${what} ${link}`, `Reference: ${reference}`]);
   }
   delete result.already;
   return result;
@@ -477,8 +478,8 @@ export async function fulfillInstallment(env, reference) {
   if (result.status === 'issued' && !result.already && result.plan) {
     const P = result.plan;
     if (result.planComplete) {
-      const link = siteUrl(env, `/ticket.html?token=${result.ticketIds[0]}`);
-      await sendSms(env, P.buyerPhone, `MEMORIES\nPaid in full. Order ${planId}.\nYou're in for ${P.eventName}: ${link}`);
+      const link = siteUrl(env, `/ticket.html?token=${result.ticketIds[0]}`), n = result.ticketIds.length;
+      await sendSms(env, P.buyerPhone, `MEMORIES\nPaid in full. Order ${planId}.\nYou're in for ${P.eventName}${n > 1 ? `. ${n} tickets, one QR each. Open yours to send the other ${n - 1}` : ''}: ${link}`);
       await sendEmail(env, P.buyerEmail, 'Your Memories ticket', [`Paid in full. Order ${planId}.`, `You're in for ${P.eventName}.`, `Your ticket: ${link}`]);
     } else {
       const balance = P.totalPesewas - result.paidPesewas;

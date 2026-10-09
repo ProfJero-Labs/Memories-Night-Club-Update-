@@ -27,12 +27,16 @@
   .pass .role { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
   .badge { font: 700 13px var(--sans); letter-spacing: .14em; text-transform: uppercase; padding: 6px 10px; background: var(--crimson-btn); color: #fff; }
   .badge.member { background: var(--paper); color: var(--ink); }
-  .qr-live { background: #fff; padding: 14px; display: grid; justify-items: center; gap: 8px; color: #000; }
-  .qr-live svg { width: min(72vw, 300px); height: auto; display: block; }
-  .qr-live .tick { font: 700 15px var(--sans); letter-spacing: .06em; }
+  .gate-wait { border: 2px dashed var(--line-2); padding: 18px 14px; display: grid; gap: 8px; text-align: center; }
+  .gate-wait b { font: 400 24px/1.05 var(--display); text-transform: uppercase; }
+  .gate-wait p { margin: 0; color: var(--muted); }
+  .live { display: inline-flex; align-items: center; gap: 8px; justify-self: center; font: 700 12px var(--sans); letter-spacing: .12em; text-transform: uppercase; }
+  .live::before { content: ''; width: 9px; height: 9px; border-radius: 50%; background: #6fcfae; animation: blink 1.6s ease-in-out infinite; }
+  .live.off::before { background: var(--mustard); animation: none; }
+  @keyframes blink { 50% { opacity: .25; } }
+  @media (prefers-reduced-motion: reduce) { .live::before { animation: none; } }
   .clock { font: 400 44px/1 var(--display); letter-spacing: .04em; text-align: center; }
-  .bar { height: 4px; background: var(--line); } .bar i { display: block; height: 100%; background: var(--crimson); transition: width 1s linear; }
-  .pass.bad { border-color: var(--crimson); } .pass.bad .qr-live { opacity: .15; }
+  .pass.bad { border-color: var(--crimson); }
   .meta-rows { display: grid; gap: 6px; font-size: 15px; } .meta-rows span { color: var(--muted); }
   .gate-code { background: var(--mustard); color: var(--ink); padding: 14px; display: grid; gap: 4px; text-align: center; }
   .gate-code span { font: 700 13px var(--sans); letter-spacing: .12em; text-transform: uppercase; }

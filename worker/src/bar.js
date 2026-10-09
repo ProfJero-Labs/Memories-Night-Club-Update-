@@ -17,7 +17,7 @@ import { requireRole, CMS, uidOf } from './lib/auth.js';
 import { sendSms, siteUrl } from './lib/notify.js';
 
 const FORBIDDEN = { error: 'Forbidden.', status: 403 };
-export const BAR = ['superAdmin', 'manager', 'eventManager', 'barStaff'];
+export const BAR = ['superAdmin', 'director', 'manager', 'eventManager', 'barStaff', 'waitStaff'];
 const MAX_LINES = 20, MAX_QTY = 20;
 const PICKUP = '23456789ABCDEFGHJKMNPQRSTUVWXYZ'; // no 0/O, 1/I/L: read across a loud bar
 const pickupCode = () => Array.from(crypto.getRandomValues(new Uint8Array(4)), b => PICKUP[b % PICKUP.length]).join('');

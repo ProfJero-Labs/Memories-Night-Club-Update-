@@ -134,3 +134,34 @@ test('the draw winner’s ticket code stays off public pages; only the winner’
   const winner = await publicTicket(env, 'w'.repeat(64));
   assert.equal(winner.raffle.youWon, true);
 });
+
+test('three tickets bought together: one QR each, each says "n of 3"; only the buyer’s ticket lists the others; the text says how many', async () => {
+  const ctx = setup();
+  const { reference } = await buyGroup(ctx);
+  await ctx.call('POST', '/api/checkout/verify', { body: { reference } });
+  const tokens = ctx.store.get('pending_checkouts', reference).fields.ticketIds;
+  assert.equal(new Set(tokens).size, 3, 'three different tickets');
+  const sms = ctx.store.sms.at(-1).message;
+  assert.match(sms, /3 tickets, one QR each/); assert.ok(sms.includes(tokens[0]) && !sms.includes(tokens[1]), 'the buyer’s link; they send the others');
+
+  const lead = await ctx.call('GET', `/api/tickets/${tokens[0]}`);
+  assert.equal(lead.data.ticket.ticketNo, 1); assert.equal(lead.data.ticket.groupSize, 3);
+  assert.deepEqual(lead.data.ticket.others.map(o => [o.token, o.no, o.status]), [[tokens[1], 2, 'valid'], [tokens[2], 3, 'valid']]);
+
+  const friend = await ctx.call('GET', `/api/tickets/${tokens[2]}`);
+  assert.equal(friend.data.ticket.ticketNo, 3); assert.equal(friend.data.ticket.groupSize, 3);
+  assert.equal(friend.data.ticket.others, undefined);
+  for (const t of [tokens[0], tokens[1]]) assert.ok(!friend.text.includes(t), 'a friend’s ticket never reveals the group');
+  assert.ok(!friend.text.includes(reference) && !lead.text.includes(reference), 'and never the payment reference');
+});
+
+test('a single ticket is "1 of 1" with no group list', async () => {
+  const ctx = setup();
+  const init = await ctx.call('POST', '/api/checkout/initiate', { body: { eventId: 'n1', ticketTypeId: 't1', quantity: 1, buyerName: 'Kofi', buyerPhone: '0241234568' } });
+  ctx.store.setPaystack(init.data.reference, { status: 'success', currency: 'GHS', amount: 10000 });
+  await ctx.call('POST', '/api/checkout/verify', { body: { reference: init.data.reference } });
+  const [token] = ctx.store.get('pending_checkouts', init.data.reference).fields.ticketIds;
+  const t = (await ctx.call('GET', `/api/tickets/${token}`)).data.ticket;
+  assert.equal(t.groupSize, 1); assert.equal(t.others, undefined);
+  assert.match(ctx.store.sms.at(-1).message, /Your ticket:/);
+});

@@ -20,23 +20,31 @@ if ('serviceWorker' in navigator) navigator.serviceWorker.register(new URL('../s
 export const canInstall = () => !standalone();
 const android = () => /android/i.test(navigator.userAgent);
 
+// Two apps: guests get "Memories" (tickets, pass, bar orders); staff pages offer "Memories Staff",
+// which opens straight to their own dashboard (control room, door, bar or organiser).
+const staffApp = () => /staff\.webmanifest/.test(document.querySelector('link[rel=manifest]')?.getAttribute('href') || '');
+
 function close() { sheet?.remove(); sheet = null; }
-function show(force = false) {
-  if (sheet || standalone() || (!force && recentlyDismissed())) return false;
-  sheet = document.createElement('aside');
-  sheet.className = 'install-sheet'; sheet.setAttribute('aria-label', 'Install the Memories app');
-  // No prompt from the browser: the steps for this phone (or computer).
+function draw() {
+  if (!sheet) return;
+  const staff = staffApp();
   const how = deferred ? '' : ios()
     ? '<ol class="ios-steps"><li>Tap <b>Share</b> <span aria-hidden="true">⬆︎</span> at the bottom of Safari</li><li>Tap <b>Add to Home Screen</b></li></ol>'
     : android()
       ? '<ol class="ios-steps"><li>Tap the browser menu <b>⋮</b> (top right)</li><li>Tap <b>Install app</b> or <b>Add to Home screen</b></li></ol>'
-      : '<ol class="ios-steps"><li>In Chrome or Edge, click the install icon <b>⊕</b> in the address bar</li><li>Or open the browser menu and choose <b>Install Memories</b></li></ol>';
-  sheet.innerHTML = `<img src="${new URL('../assets/icon-192.png', import.meta.url)}" alt="" width="48" height="48">
-    <div class="txt"><strong>Get the Memories app</strong><span>Tickets, your pass and bar orders on your home screen. Works with weak signal.</span>${how}</div>
+      : '<ol class="ios-steps"><li>Click the install icon <b>⊕</b> at the right of the address bar</li><li>Or open the browser menu (<b>⋮</b>) → <b>Cast, save and share</b> → <b>Install</b></li></ol><p class="sheet-note">Already installed? Open it from your apps. Your browser offers the button above when it’s ready: give it a few seconds.</p>';
+  const icon = new URL(staff ? '../assets/icon-staff-192.png' : '../assets/icon-192.png', import.meta.url);
+  sheet.innerHTML = `<img src="${icon}" alt="" width="48" height="48">
+    <div class="txt"><strong>${staff ? 'Get the Memories Staff app' : 'Get the Memories app'}</strong><span>${staff ? 'Opens straight to your dashboard. Your pass and gate codes in one tap.' : 'Tickets, your pass and bar orders on your home screen. Works with weak signal.'}</span>${how}</div>
     <div class="acts">${deferred ? '<button type="button" class="btn red" data-go>Install</button>' : ''}<button type="button" class="link" data-later>${deferred ? 'Not now' : 'Got it'}</button></div>`;
-  document.body.append(sheet);
   sheet.querySelector('[data-later]').onclick = () => { dismiss(); close(); };
   sheet.querySelector('[data-go]')?.addEventListener('click', install);
+}
+function show(force = false) {
+  if (sheet || standalone() || (!force && recentlyDismissed())) return false;
+  sheet = document.createElement('aside');
+  sheet.className = 'install-sheet'; sheet.setAttribute('aria-label', 'Install the app');
+  document.body.append(sheet); draw();
   return true;
 }
 
@@ -52,7 +60,8 @@ export async function install() {
 addEventListener('beforeinstallprompt', e => {
   e.preventDefault(); deferred = e;
   document.querySelectorAll('[data-install]').forEach(b => { b.hidden = false; });
-  setTimeout(() => show(), 2500);
+  if (sheet) draw(); // the steps were showing: now it's one tap
+  else setTimeout(() => show(), 2500);
 });
 addEventListener('appinstalled', () => { deferred = null; close(); document.querySelectorAll('[data-install]').forEach(b => { b.hidden = true; }); });
 

@@ -5,6 +5,8 @@ const CFG = window.MEMORIES_CONFIG || {};
 export const params = new URLSearchParams(location.search);
 export const $ = (s, el = document) => el.querySelector(s);
 export const $$ = (s, el = document) => [...el.querySelectorAll(s)];
+// Who built the platform: shown in the site footer, on every staff screen and on every ticket.
+export const CREDIT = 'Platform designed & built by EvolveIT';
 import { esc } from './lib/shared.js';
 export { esc, normalizePhone, pes, formatAccra, accraDayKey, nightKey, BITS_ACK_TEXT } from './lib/shared.js';
 export const money = p => `GHS ${(Number(p || 0) / 100).toLocaleString('en-GH', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
@@ -114,7 +116,8 @@ export async function chrome(active = '') {
     <ul class="foot-list">${items}</ul>
     <ul class="foot-list"><li><a href="nights.html">Nights</a></li><li><a href="nights.html#calendar">Calendar</a></li><li><a href="tables.html">Tables</a></li><li><a href="private.html">Book an event</a></li><li><a href="#" data-install hidden>Get the Memories app</a></li><li><a href="member.html">My member pass</a></li><li><a href="find.html">Lost your ticket?</a></li><li><a href="installment.html">Pay the rest (pay in bits)</a></li></ul>
     <div><span class="age" title="Strictly 18 and over">18+</span><p class="foot-small" style="margin-top:10px">Strictly 18+.</p></div>
-  </div>`;
+  </div>
+  <div class="wrap foot-credit">© ${new Date().getFullYear()} Memories Night Club · ${CREDIT}</div>`;
   return s;
 }
 

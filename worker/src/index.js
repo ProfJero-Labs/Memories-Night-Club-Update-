@@ -157,7 +157,6 @@ async function route(req, env, ctx) {
   if (m === 'POST' && p.startsWith('/api/members/door/')) {
     if (await throttled(req, env, 'member-door', 'standard')) return tooMany(req, env);
     const b = await body(req), ip = req.headers.get('CF-Connecting-IP');
-    if (p === '/api/members/door/pass') return reply(req, env, await members.doorVerifyPass(env, user, b.qr, ip));
     if (p === '/api/members/door/request-code' || p === '/api/members/door/send-code') return reply(req, env, await members.doorRequestCode(env, user, b.phone));
     if (p === '/api/members/door/confirm') return reply(req, env, await members.doorConfirmCode(env, user, b, ip));
   }
@@ -218,6 +217,7 @@ async function route(req, env, ctx) {
   if (m === 'POST' && p === '/api/admin/menu-items') return reply(req, env, await bar.upsertMenuItem(env, await body(req), user));
   if (m === 'GET' && p === '/api/admin/members') return reply(req, env, await members.listMembers(env, user));
   if (m === 'POST' && p === '/api/admin/members') return reply(req, env, await members.upsertMember(env, await body(req), user));
+  if (m === 'POST' && p === '/api/admin/members/delete') return reply(req, env, await members.deleteMember(env, await body(req), user));
   if (m === 'POST' && p === '/api/admin/members/activation') return reply(req, env, await members.createActivation(env, await body(req), user));
   if (m === 'GET' && p === '/api/admin/attendance') return reply(req, env, await members.attendance(env, { days: u.searchParams.get('days'), memberId: u.searchParams.get('memberId') }, user));
   if (m === 'GET' && p === '/api/admin/system') return reply(req, env, await admin.systemStatus(env, user));

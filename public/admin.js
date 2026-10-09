@@ -6,7 +6,7 @@ import { ticketHTML, designFor, qrSvg } from './ticket-art.js';
 import { openQrMaker, ensureQrCss } from './lib/qrcard.js';
 import { uploadImage } from './firebase.js';
 
-const CMS = ['superAdmin', 'manager', 'eventManager'], MONEY = ['superAdmin', 'manager'];
+const CMS = ['superAdmin', 'director', 'manager', 'eventManager'], MONEY = ['superAdmin', 'director', 'manager'];
 const user = await requireStaff(CMS);
 staffHeader(user, 'Control room');
 const can = roles => roles.includes(user.role);
@@ -168,7 +168,7 @@ async function members(arg, notice) {
   const { members: list, unlinkedStaff = [] } = await sapi('/api/admin/members');
   const one = id => list.find(x => x.id === id);
   panel.innerHTML = `<h1>Members</h1>
-    <p class="muted" style="margin-top:-6px">Staff and members get in without a ticket. At the gate the door scans their Memories Pass, or types their number and they read out the code that appears on their app. Every staff account is a member automatically.</p>
+    <p class="muted" style="margin-top:-6px">Staff and members get in without a ticket or QR: at the gate the door types their number and they read out the code that appears in their Memories app. Every staff account is a member automatically; you can delete anyone here.</p>
     <div class="toolbar"><button class="sbtn red" id="mAdd">Add someone</button><input id="mFind" type="search" placeholder="Search name, department, phone" style="flex:1;min-width:180px"></div>
     ${unlinkedStaff.length ? `<div class="card" id="mUnlinked"><strong>Staff accounts without a membership (${unlinkedStaff.length})</strong><p class="hint" style="margin:0;color:var(--muted)">Add their phone number to make them members, so they never need a ticket.</p>
       ${unlinkedStaff.map(u => `<div class="toolbar" style="margin:0"><span>${esc(u.name || u.email)} · ${esc(ROLE_LABEL[u.role] || u.role)}</span><button class="sbtn" data-mlink="${esc(u.uid)}">Make member</button></div>`).join('')}</div>` : ''}
@@ -178,9 +178,15 @@ async function members(arg, notice) {
   const draw = (q = '') => {
     $('#mRows').innerHTML = rows(q).map(m => `<tr><td><strong>${esc(m.name)}</strong>${m.staffNo ? `<br><small class="muted">${esc(m.staffNo)}</small>` : ''}${m.staffEmail ? `<br><small class="muted">Signs in as ${esc(m.staffEmail)}</small>` : ''}</td><td>${m.type === 'staff' ? pill('staff', 'amber') : pill('member', 'grey')}</td><td>${esc(m.department)}</td><td>${esc(m.position)}</td><td>${esc(m.phone) || pill('add phone', 'amber')}</td>
       <td>${m.status !== 'active' ? pill('suspended', 'red') : m.validUntil && m.validUntil < new Date().toISOString().slice(0, 10) ? pill('ended', 'red') : pill(m.validUntil ? `until ${m.validUntil}` : 'active', 'green')}</td>
-      <td class="actions">${m.status === 'active' ? `<button class="sbtn red" data-mqr="${esc(m.id)}" title="Show a QR they scan to put the pass on their phone">Pass QR</button>` : ''}<button class="sbtn" data-medit="${esc(m.id)}">Edit</button></td></tr>`).join('') || '<tr><td colspan="7" class="empty-row">Nobody yet. Staff appear here when you add them under Staff; add other members here.</td></tr>';
+      <td class="actions">${m.status === 'active' ? `<button class="sbtn red" data-mqr="${esc(m.id)}" title="Give them a one-time code that puts their pass in the Memories app">Set up app</button>` : ''}<button class="sbtn" data-medit="${esc(m.id)}">Edit</button><button class="sbtn ghost" data-mdel="${esc(m.id)}">Delete</button></td></tr>`).join('') || '<tr><td colspan="7" class="empty-row">Nobody yet. Staff appear here when you add them under Staff; add other members here.</td></tr>';
     $$('[data-medit]').forEach(b => b.onclick = () => form(one(b.dataset.medit)));
     $$('[data-mqr]').forEach(b => b.onclick = () => activationQr(one(b.dataset.mqr)));
+    $$('[data-mdel]').forEach(b => b.onclick = async () => {
+      const m = one(b.dataset.mdel);
+      if (!confirm(`Delete ${m.name}? Their pass stops working at once and they’ll need a ticket to get in. Their attendance history is kept.${m.staffEmail ? `\n\nTheir staff sign-in (${m.staffEmail}) is not removed: change it under Staff.` : ''}`)) return;
+      try { await sapi('/api/admin/members/delete', { method: 'POST', body: { id: m.id } }); members(null, { text: `Deleted ${m.name}.` }); }
+      catch (e) { flash($('#mMsg'), e.message, true); }
+    });
   };
   const form = (m = null, link = null) => {
     const staffOpts = [...unlinkedStaff, ...(m?.staffUid ? [{ uid: m.staffUid, email: m.staffEmail || m.staffUid, role: '' }] : [])];
@@ -195,10 +201,10 @@ async function members(arg, notice) {
         <div class="sfield"><label for="fPos">Position</label><input id="fPos" maxlength="60" value="${esc(m?.position || '')}"></div>
         <div class="sfield"><label for="fNo">Staff / member number</label><input id="fNo" maxlength="30" value="${esc(m?.staffNo || '')}"></div>
         <div class="sfield"><label for="fUntil">Valid until (blank = no end)</label><input id="fUntil" type="date" value="${esc(m?.validUntil || '')}"></div>
-        <div class="sfield"><label for="fStaff">Staff sign-in (their pass is on their dashboard)</label><select id="fStaff"><option value="">None: they use a pass QR</option>${staffOpts.map(u => `<option value="${esc(u.uid)}" ${u.uid === linkUid ? 'selected' : ''}>${esc(u.email)}${u.role ? ` · ${esc(ROLE_LABEL[u.role] || u.role)}` : ''}</option>`).join('')}</select></div>
+        <div class="sfield"><label for="fStaff">Staff sign-in (their pass is on their dashboard)</label><select id="fStaff"><option value="">None: they set up the app with a code</option>${staffOpts.map(u => `<option value="${esc(u.uid)}" ${u.uid === linkUid ? 'selected' : ''}>${esc(u.email)}${u.role ? ` · ${esc(ROLE_LABEL[u.role] || u.role)}` : ''}</option>`).join('')}</select></div>
       </div>
       <div class="sfield"><label for="fNotes">Notes (staff only)</label><input id="fNotes" maxlength="300" value="${esc(m?.notes || '')}"></div>
-      ${m ? '' : '<p class="hint" style="margin:0;color:var(--muted)">Next you’ll get a QR they scan with their phone to get their pass. Nothing is texted.</p>'}
+      ${m ? '' : '<p class="hint" style="margin:0;color:var(--muted)">Next you’ll get a one-time code that puts their pass in the Memories app. Nothing is texted unless you choose to.</p>'}
       <div class="toolbar" style="margin:0"><button class="sbtn red" type="submit">${m ? 'Save' : 'Add'}</button><button class="sbtn ghost" type="button" id="fClose">Cancel</button></div><div id="fMsg"></div></form>`;
     $('#fClose').onclick = () => { $('#mFormBox').innerHTML = ''; };
     $('#fName').focus();
@@ -220,8 +226,8 @@ async function members(arg, notice) {
   if (notice) flash($('#mMsg'), notice.text);
 }
 
-// The one-time activation QR: the member scans it with their phone camera and the pass is on their
-// phone. Works once, for 48 hours. Texting the link is optional (an invitation, not a code).
+// Setting up a member's app: a one-time code / link (48 hours) that puts their pass on their phone.
+// Sent however the manager likes (share sheet, copy, optional text); a QR only if they're together.
 async function activationQr(m) {
   ensureQrCss();
   const box = document.createElement('div'); box.className = 'qrm';
@@ -234,12 +240,13 @@ async function activationQr(m) {
   const render = async (text = false) => {
     try {
       const a = await sapi('/api/admin/members/activation', { method: 'POST', body: { id: m.id, text } });
-      box.firstElementChild.innerHTML = `<h2>${esc(m.name)}’s pass</h2>
-        <p class="muted" style="margin:0">Ask them to point their phone camera at this QR. Their Memories Pass opens and stays on that phone. Then tap “Install app” on it.</p>
-        <div style="background:#fff;padding:14px;max-width:260px;justify-self:center;width:100%">${await qrSvg(a.link)}</div>
-        <p style="margin:0;text-align:center">Or on member.html, type <strong style="font:400 26px var(--display);letter-spacing:.1em">${esc(a.code)}</strong></p>
+      box.firstElementChild.innerHTML = `<h2>Set up ${esc(m.name)}’s app</h2>
+        <p class="muted" style="margin:0">On their phone they open the link, or go to <strong>member.html</strong> and type this code. Their Memories Pass then lives in the app: at the gate they give their number and read out the code it shows.</p>
+        <p style="margin:0;text-align:center"><strong class="act-code" style="font:400 clamp(34px,10vw,46px)/1 var(--display);letter-spacing:.12em">${esc(a.code)}</strong></p>
         <p class="hint" style="margin:0;color:var(--muted);text-align:center">Works once, until ${esc(when(a.expiresAt))}.${a.texted ? ' Link texted to them.' : ''}</p>
-        <div class="toolbar" style="margin:0;justify-content:center"><button class="sbtn" id="aCopy">Copy link</button>${a.texted ? '' : '<button class="sbtn ghost" id="aText">Text them the link instead</button>'}<button class="sbtn red" id="aDone">Done</button></div>`;
+        <div class="toolbar" style="margin:0;justify-content:center"><button class="sbtn red" id="aShare">Send the link</button><button class="sbtn" id="aCopy">Copy link</button>${a.texted ? '' : '<button class="sbtn ghost" id="aText">Text it to them</button>'}<button class="sbtn ghost" id="aDone">Done</button></div>
+        <details><summary class="muted" style="cursor:pointer">Standing next to them? Show a QR instead</summary><div style="background:#fff;padding:12px;max-width:220px;margin:10px auto 0">${await qrSvg(a.link)}</div></details>`;
+      $('#aShare', box).onclick = async () => { if (navigator.share) { try { await navigator.share({ title: 'Your Memories pass', text: `${m.name}, open this on your phone to set up your Memories pass (works once):`, url: a.link }); } catch { /* closed */ } } else $('#aCopy', box).click(); };
       $('#aDone', box).onclick = close; $('#aDone', box).focus();
       $('#aCopy', box).onclick = async () => { try { await navigator.clipboard.writeText(a.link); $('#aCopy', box).textContent = 'Copied'; } catch { prompt('Copy this link:', a.link); } };
       $('#aText', box) && ($('#aText', box).onclick = () => render(true));
@@ -692,6 +699,7 @@ async function staff() {
         <div class="sfield"><label for="iPhone">Phone (gets the sign-in text)</label><input id="iPhone" type="tel" placeholder="024 123 4567" required></div>
         <div class="sfield"><label for="iRole">Role</label><select id="iRole">${Object.entries(ROLE_LABEL).map(([k, l]) => `<option value="${k}">${l}</option>`).join('')}</select></div>
       </div>
+      <p class="hint" style="margin:0;color:var(--muted)"><strong>Director</strong> and <strong>Manager</strong>: the whole control room except Staff. <strong>Event manager</strong>: nights, orders, bar setup. <strong>Door</strong>: the door. <strong>Bar</strong> and <strong>Waitress / waiter</strong>: the bar screen (app orders, table QR codes). <strong>Organiser</strong>: their own nights. Everyone is also a member: they get in with the app, never a ticket.</p>
       <div><button class="sbtn red" type="submit" id="iBtn">Send invite</button></div><div id="inviteMsg"></div>
     </form>
 

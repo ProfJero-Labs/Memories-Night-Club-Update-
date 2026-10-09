@@ -531,7 +531,7 @@ export async function doorEvents(env, user) {
 const SETTLEMENT_METHODS = ['bank_transfer', 'momo', 'cash', 'other'];
 
 export async function recordSettlement(env, b, user) {
-  if (!requireRole(user, ['superAdmin', 'manager'])) return FORBIDDEN;
+  if (!requireRole(user, ['superAdmin', 'director', 'manager'])) return FORBIDDEN;
   const organizerId = clean(b?.organizerId, 128);
   const amount = Number(b?.amountPesewas);
   const method = SETTLEMENT_METHODS.includes(b?.method) ? b.method : 'bank_transfer';
@@ -553,7 +553,7 @@ export async function recordSettlement(env, b, user) {
 }
 
 export async function listSettlements(env, q, user) {
-  if (!requireRole(user, ['superAdmin', 'manager', 'eventManager'])) return FORBIDDEN;
+  if (!requireRole(user, ['superAdmin', 'director', 'manager', 'eventManager'])) return FORBIDDEN;
   const filters = [];
   if (q?.organizerId) filters.push({ field: 'organizerId', value: q.organizerId });
   if (q?.eventId) filters.push({ field: 'eventId', value: q.eventId });

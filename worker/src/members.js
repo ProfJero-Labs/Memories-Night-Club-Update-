@@ -29,14 +29,14 @@ import { securitySignal } from './lib/monitor.js';
 
 const FORBIDDEN = { error: 'Forbidden.', status: 403 };
 // Who may verify members at the gate. Organisers run their own nights' doors only, not the club's staff.
-export const MEMBER_DOOR = ['superAdmin', 'manager', 'eventManager', 'doorStaff'];
+export const MEMBER_DOOR = ['superAdmin', 'director', 'manager', 'eventManager', 'doorStaff'];
 export const MEMBER_TYPES = ['staff', 'member'];
 const STEP_S = 30;                  // the pass QR changes every 30 seconds
 const STEPS_ACCEPTED = 2;           // and is accepted for the current and the 2 previous steps (60–90 s)
 const GATE_TTL_MS = 5 * 60_000, GATE_TRIES = 5;
 const ACTIVATE_TTL_MS = 48 * 3600_000;
 const MAX_PASSES = 3;               // phones per member; a 4th retires the oldest
-const ROLE_DEPT = { superAdmin: 'Management', manager: 'Management', eventManager: 'Events', doorStaff: 'Door', barStaff: 'Bar', organiser: 'Organiser' };
+const ROLE_DEPT = { superAdmin: 'Management', director: 'Directors', manager: 'Management', eventManager: 'Events', doorStaff: 'Door', barStaff: 'Bar', waitStaff: 'Floor (waitstaff)', organiser: 'Organiser' };
 const audit = (env, user, action, data) => setDoc(env, 'audit_logs', id(), { action, actorUid: uidOf(user), ...data, timestamp: now() });
 
 // ── Validity ──
@@ -131,6 +131,20 @@ export async function suspendStaffMember(env, uid) {
   if (linked && linked.m.type === 'staff') { await setDoc(env, 'members', linked.id, { ...linked.m, status: 'suspended', updatedAt: now() }); await revokePasses(env, linked.id); }
 }
 
+// Deleting someone: their record goes, every pass on a phone stops at once, any gate code is void.
+// Their attendance history stays (it's the club's HR record). A staff account stays a staff account:
+// it shows again under "Staff accounts without a membership" until its role is removed.
+export async function deleteMember(env, b, user) {
+  if (!requireRole(user, MONEY)) return FORBIDDEN;
+  const m = await getDoc(env, 'members', String(b?.id || ''));
+  if (!m) return { error: 'Member not found.', status: 404 };
+  await revokePasses(env, m.id);
+  await deleteDoc(env, 'member_codes', `gate_${m.id}`).catch(() => {});
+  await deleteDoc(env, 'members', m.id);
+  await audit(env, user, 'MEMBER_DELETED', { memberId: m.id, name: m.fields.name, type: m.fields.type, staffUid: m.fields.staffUid || null });
+  return { deleted: true, staffAccount: !!m.fields.staffUid };
+}
+
 async function revokePasses(env, memberId) {
   for (const p of await queryWhere(env, 'member_passes', [{ field: 'memberId', value: memberId }])) {
     if (!p.fields.revokedAt) await setDoc(env, 'member_passes', p.id, { ...p.fields, revokedAt: now() });
@@ -186,12 +200,12 @@ async function issuePass(env, memberDoc, device) {
 
 export async function activatePass(env, { code, device }, ip) {
   const c = String(code || '').toUpperCase().replace(/[^0-9A-Z]/g, '').replace(/O/g, '0').replace(/[IL]/g, '1');
-  if (!/^[0-9A-HJKMNP-TV-Z]{10}$/.test(c)) return { error: 'That activation code doesn’t look right. Ask the manager for a new QR.' };
+  if (!/^[0-9A-HJKMNP-TV-Z]{10}$/.test(c)) return { error: 'That activation code doesn’t look right. Ask the manager for a new code.' };
   const a = await getDoc(env, 'member_codes', `act_${c}`);
   if (!a || new Date(a.fields.expiresAt).getTime() < Date.now()) {
     await securitySignal(env, 'member_code_guessing', ip || 'unknown');
     if (a) await deleteDoc(env, 'member_codes', `act_${c}`).catch(() => {});
-    return { error: 'This activation has expired or was already used. Ask the manager for a new QR.' };
+    return { error: 'This activation has expired or was already used. Ask the manager for a new code.' };
   }
   await deleteDoc(env, 'member_codes', `act_${c}`).catch(() => {});
   const m = await getDoc(env, 'members', a.fields.memberId);
@@ -266,18 +280,7 @@ async function logEntry(env, user, mid, m, method) {
 }
 const result = (st, m, extra = {}) => ({ valid: st.ok, code: st.ok ? 'member_ok' : st.code, message: st.ok ? (m.fields.type === 'staff' ? 'STAFF VERIFIED' : 'MEMBER VERIFIED') : st.message, member: m ? memberCard(m.id, m.fields) : null, ...extra });
 
-// ── At the gate ──
-export async function doorVerifyPass(env, user, payload, ip) {
-  if (!requireRole(user, MEMBER_DOOR)) return FORBIDDEN;
-  const r = await readPass(env, payload);
-  if (r.error === 'stale') return { valid: false, code: 'stale_pass', message: 'OLD PASS CODE', hint: 'Ask them to open the pass live (not a screenshot) and scan again.' };
-  if (r.error) { if (r.error === 'bad_sig') await securitySignal(env, 'member_code_guessing', ip || 'unknown'); return { valid: false, code: 'invalid_pass', message: 'PASS NOT VALID' }; }
-  const m = await getDoc(env, 'members', r.pass.fields.memberId);
-  const st = standing(m?.fields);
-  if (st.ok) { await logEntry(env, user, m.id, m.fields, 'pass'); await setDoc(env, 'member_passes', r.pass.id, { ...r.pass.fields, lastSeenAt: now() }); }
-  return result(st, m);
-}
-
+// ── At the gate: by the app only. The door types their phone; a code appears in their app. ──
 // The door types a member's phone: a gate code appears in that member's app / staff dashboard.
 // Nothing is texted. Door staff are signed in, so they may be told plainly that a number isn't a member.
 export async function doorRequestCode(env, user, phone) {

@@ -2,9 +2,9 @@
 // Built for a dark room, one hand, hundreds of scans: big results, tones, no paragraphs.
 import { $, esc, params, shortDate, nightKey } from '../app.js';
 import { requireStaff, staffHeader, sapi } from '../staff.js';
-const user = await requireStaff(['superAdmin', 'manager', 'eventManager', 'doorStaff', 'organiser']);
+const user = await requireStaff(['superAdmin', 'director', 'manager', 'eventManager', 'doorStaff', 'organiser']);
 staffHeader(user, 'Door');
-if (['superAdmin', 'manager', 'eventManager'].includes(user.role)) $('#adminLink').hidden = false;
+if (['superAdmin', 'director', 'manager', 'eventManager'].includes(user.role)) $('#adminLink').hidden = false;
 if (user.role === 'organiser') { $('#adminLink').hidden = false; $('#adminLink').href = 'organiser.html'; $('#adminLink').textContent = 'My nights'; }
 
 // ── The night ──
@@ -98,12 +98,11 @@ function showMember(r) {
     ${r.hint ? `<p style="margin:0">${esc(r.hint)}</p>` : ''}</div>`;
   tone(!!r.valid);
 }
-async function memberPass(qr) {
-  if (busy) return; busy = true;
-  $('#out').innerHTML = '<div class="loading" style="padding:10px 0">Checking pass…</div>';
-  try { showMember(await sapi('/api/members/door/pass', { method: 'POST', body: { qr } })); }
-  catch (e) { if (e.status === 0) offline(); else showMember({ valid: false, message: 'Try again', hint: e.message }); }
-  busy = false;
+// Staff and members don't show a QR: they're verified through their app (their number, then the
+// code on their phone). An old pass QR scanned by habit points the door there.
+function memberPass() {
+  showMember({ valid: false, message: 'Use their number', hint: 'Staff and members are checked with the app: type their phone number below and ask for the code on their screen.' });
+  $('#memberGate').open = true; $('#mNum').focus();
 }
 const isMemberPass = raw => /^MP1\./.test(String(raw || '').trim());
 
@@ -127,7 +126,7 @@ async function admit(body) {
 
 $('#manual').onsubmit = ev2 => {
   ev2.preventDefault();
-  if (isMemberPass($('#code').value)) { const v = $('#code').value.trim(); $('#code').value = ''; return memberPass(v); }
+  if (isMemberPass($('#code').value)) { $('#code').value = ''; return memberPass(); }
   const t = parseTicket($('#code').value);
   if (!t) { $('#out').innerHTML = '<div class="result no" role="alert"><h1 class="display">That is not a ticket code.</h1></div>'; tone(false); return; }
   $('#code').value = '';
@@ -179,7 +178,7 @@ async function loop() {
     const v = await detect();
     if (v) {
       scanning = false; $('#frame').hidden = true;
-      if (isMemberPass(v)) { await memberPass(v); return; }
+      if (isMemberPass(v)) { memberPass(); return; }
       const t = parseTicket(v);
       if (t) await admit({ token: t }); else { $('#out').innerHTML = '<div class="result no" role="alert"><h1 class="display">That is not a ticket code.</h1></div>'; tone(false); }
       $('#next').hidden = false; $('#next').focus();

@@ -2,10 +2,12 @@ import { createRemoteJWKSet, jwtVerify } from 'jose';
 
 // Roles live in Firebase Auth custom claims, set only by /api/admin/set-role (superAdmin).
 // superAdmin also carries admin:true, which is what Firestore/Storage rules key on.
-export const STAFF_ROLES = ['superAdmin', 'manager', 'eventManager', 'doorStaff', 'organiser', 'barStaff'];
-export const CMS = ['superAdmin', 'manager', 'eventManager'];     // run the site
-export const MONEY = ['superAdmin', 'manager'];                   // settings, SMS, installments
-export const DOOR = ['superAdmin', 'manager', 'eventManager', 'doorStaff', 'organiser'];
+// director: the club's directors, with a manager's access. waitStaff: waitresses and waiters, who
+// work from the bar screen (serving app orders to tables).
+export const STAFF_ROLES = ['superAdmin', 'director', 'manager', 'eventManager', 'doorStaff', 'organiser', 'barStaff', 'waitStaff'];
+export const CMS = ['superAdmin', 'director', 'manager', 'eventManager'];     // run the site
+export const MONEY = ['superAdmin', 'director', 'manager'];                    // settings, SMS, installments, people
+export const DOOR = ['superAdmin', 'director', 'manager', 'eventManager', 'doorStaff', 'organiser'];
 
 let jwks;
 export async function verifyStaff(req, env) {

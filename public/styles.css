@@ -617,3 +617,14 @@ h1, h2, h3 { margin: 0; }
 .nav .nav-app { border: 1px solid var(--line-2); padding: 10px 10px; }
 .nav .nav-app:hover { border-color: var(--paper); }
 @media (max-width: 420px) { .nav .nav-visit { display: none; } }
+
+/* A group's tickets: "2 OF 3" on the ticket; the buyer's list of the others */
+.t-of { font-weight: 700; white-space: nowrap; }
+.t-credit { font: 600 9px/1.3 var(--sans); letter-spacing: .12em; text-transform: uppercase; opacity: .55; margin-top: 4px; }
+.group-box { display: grid; gap: 8px; }
+.group-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 12px 0; border-bottom: 1px solid var(--line); }
+.group-row small { display: block; color: var(--muted); font-size: 13px; }
+.group-acts { display: flex; gap: 8px; } .group-acts .btn { min-height: 44px; padding: 0 14px; }
+.foot-credit { padding-top: 18px; margin-top: 18px; border-top: 1px solid var(--line); font: 600 11px/1.4 var(--sans); letter-spacing: .12em; text-transform: uppercase; color: var(--muted); }
+.staff-credit { max-width: 1400px; margin: 32px auto 0; padding: 16px var(--gutter) calc(16px + env(safe-area-inset-bottom)); border-top: 1px solid var(--line); font: 600 11px/1.4 var(--sans); letter-spacing: .12em; text-transform: uppercase; color: var(--muted); }
+.install-sheet .sheet-note { margin: 6px 0 0; font-size: 13px; color: var(--muted); }

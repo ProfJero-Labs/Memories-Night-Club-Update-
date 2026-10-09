@@ -4,7 +4,7 @@
 import { $, $$, esc, money } from '../app.js';
 import { requireStaff, staffHeader, sapi } from '../staff.js';
 import { openQrMaker } from '../lib/qrcard.js';
-const user = await requireStaff(['superAdmin', 'manager', 'eventManager', 'barStaff']);
+const user = await requireStaff(['superAdmin', 'director', 'manager', 'eventManager', 'barStaff', 'waitStaff']);
 staffHeader(user, 'Bar');
 let station = sessionStorage.getItem('bar-station') || '', open = true, timer = null, data = null, seen = null;
 let sound = localStorage.getItem('bar-sound') === '1';

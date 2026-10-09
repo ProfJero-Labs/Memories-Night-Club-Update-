@@ -4,8 +4,8 @@ One row per staff route. ✅ = allowed, — = 403. Every route also returns 401 
 
 | Route | superAdmin | manager | eventManager | doorStaff | organiser |
 |---|---|---|---|---|---|
-| `POST /api/members/door/pass`, `/request-code`, `/confirm` (verify staff and members at the gate; the code appears in the member's app) | ✅ | ✅ | ✅ | ✅ | — |
-| `GET /api/admin/members`, `POST /api/admin/members`, `POST /api/admin/members/activation`, `GET /api/admin/attendance` | ✅ | ✅ | — | — | — |
+| `POST /api/members/door/request-code`, `/confirm` (verify staff and members at the gate: the code appears in their app; there is no QR route) | ✅ | ✅ | ✅ | ✅ | — |
+| `GET /api/admin/members`, `POST /api/admin/members`, `POST /api/admin/members/activation`, `POST /api/admin/members/delete`, `GET /api/admin/attendance` | ✅ | ✅ | — | — | — |
 | `POST /api/members/my-pass`, `GET /api/members/my-gate` (a staff member's own pass and gate code; 404 if their account has no membership) | ✅ | ✅ | ✅ | ✅ | ✅ |
 | `GET /api/admin/system` | ✅ | ✅ | — | — | — |
 | `GET /api/bar/queue`, `POST /api/bar/order`, `POST /api/bar/station-open` | ✅ | ✅ | ✅ | — (barStaff ✅) | — |
@@ -55,3 +55,5 @@ Scoping inside allowed routes: an organiser can check in only tickets for nights
 **barStaff** (role added with scan to order) can use the bar routes above and nothing else; they sign in straight to `bar.html`.
 
 Public (no sign-in, rate limited): `POST /api/members/activate` (a one-time activation code a manager showed the member; strict rate limit), `POST /api/members/pass-status` (authenticated by a fresh pass QR), `GET /api/guest/menu`, `POST /api/guest/counter/checkout`, `GET /api/guest/counter/:orderId` (the random order id is the guest's key), `GET /api/guest/receipt/:code`, `POST /api/installments/phone-code` and `/phone-verify`.
+
+**Director and waitress roles.** `director` has exactly the manager's access in every row above (it is in the Worker's `CMS`, `MONEY` and `DOOR` lists and in the Firestore/Storage `staff()` rule). `waitStaff` (waitresses and waiters) has only the bar routes, like `barStaff`. Neither can manage staff: that stays superAdmin only. `POST /api/admin/members/delete` is manager/director/superAdmin only.
