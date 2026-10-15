@@ -12,6 +12,7 @@ import { checkin, verifyTicket, doorSummary, doorSearch, seatTable, undoCheckin 
 import * as admin from './admin.js';
 import * as members from './members.js';
 import * as bar from './bar.js';
+import * as promos from './promos.js';
 import { reconcilePayments, health } from './reconcile.js';
 import * as Sentry from '@sentry/cloudflare';
 import { sentryOptions, reportError, routeGroup, isCritical, clientError, securitySignal } from './lib/monitor.js';
@@ -45,9 +46,12 @@ async function route(req, env, ctx) {
   if (m === 'GET' && p.startsWith('/api/events/')) { const d = await eventBundle(env, last(p)); return d ? ok(req, env, d) : fail(req, env, 'Event not found.', 404); }
   if (m === 'GET' && p === '/api/settings') { const s = await getSettings(env); delete s.closedDates; delete s.updatedAt; return ok(req, env, { settings: s }); }
   if (m === 'GET' && p === '/api/calendar') return ok(req, env, await calendar(env, Math.min(26, Math.max(1, Number(u.searchParams.get('weeks')) || 10))));
-  if (m === 'POST' && p === '/api/checkout/initiate') { if (await throttled(req, env, 'checkout', 'standard')) return tooMany(req, env); return reply(req, env, await initiateTicket(env, await body(req))); }
+  // A promo code typed in: a strict limit per phone/IP, so codes can't be found by guessing.
+  const codeThrottled = async b => !!b?.promoCode && await throttled(req, env, 'promo-code', 'strict');
+  if (m === 'POST' && p === '/api/checkout/quote') { const b = await body(req); if (await throttled(req, env, 'quote', 'standard') || await codeThrottled(b)) return tooMany(req, env); return reply(req, env, await promos.quote(env, { ...b, code: b.promoCode })); }
+  if (m === 'POST' && p === '/api/checkout/initiate') { const b = await body(req); if (await throttled(req, env, 'checkout', 'standard') || await codeThrottled(b)) return tooMany(req, env); return reply(req, env, await initiateTicket(env, b)); }
   if (m === 'POST' && p === '/api/table-checkout/initiate') { if (await throttled(req, env, 'checkout', 'standard')) return tooMany(req, env); return reply(req, env, await initiateTable(env, await body(req))); }
-  if (m === 'POST' && p === '/api/installments/start') { if (await throttled(req, env, 'checkout', 'standard')) return tooMany(req, env); return reply(req, env, await startInstallment(env, await body(req))); }
+  if (m === 'POST' && p === '/api/installments/start') { const b = await body(req); if (await throttled(req, env, 'checkout', 'standard') || await codeThrottled(b)) return tooMany(req, env); return reply(req, env, await startInstallment(env, b)); }
   if (m === 'POST' && p === '/api/installments/topup') { if (await throttled(req, env, 'checkout', 'standard')) return tooMany(req, env); return reply(req, env, await topupInstallment(env, await body(req))); }
   if (m === 'GET' && p === '/api/installments/lookup') {
     const code = u.searchParams.get('code') || '';
@@ -217,6 +221,8 @@ async function route(req, env, ctx) {
   if (m === 'POST' && p === '/api/admin/menu-items') return reply(req, env, await bar.upsertMenuItem(env, await body(req), user));
   if (m === 'GET' && p === '/api/admin/members') return reply(req, env, await members.listMembers(env, user));
   if (m === 'POST' && p === '/api/admin/members') return reply(req, env, await members.upsertMember(env, await body(req), user));
+  if (m === 'GET' && p === '/api/admin/promos') return reply(req, env, await promos.listPromos(env, user, new URL(req.url).searchParams.get('eventId')));
+  if (m === 'POST' && p === '/api/admin/promos') return reply(req, env, await promos.upsertPromo(env, await body(req), user));
   if (m === 'POST' && p === '/api/admin/members/delete') return reply(req, env, await members.deleteMember(env, await body(req), user));
   if (m === 'POST' && p === '/api/admin/members/activation') return reply(req, env, await members.createActivation(env, await body(req), user));
   if (m === 'GET' && p === '/api/admin/attendance') return reply(req, env, await members.attendance(env, { days: u.searchParams.get('days'), memberId: u.searchParams.get('memberId') }, user));

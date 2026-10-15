@@ -1,26 +1,30 @@
 // checkout.html: one page, one job. Details, an optional line, how to pay, pay.
-//   checkout.html?event={id}&type={typeId}&qty={n}   (the ticket was chosen on tickets.html)
-import { chrome, normalizePhone, api, esc, params, money, $, $$, errorState, remember, claims, shortDate, time, forgetButton, bindForget, BITS_ACK_TEXT } from '../app.js';
+//   checkout.html?event={id}&type={typeId}&qty={n}[&promo={code}]   (the ticket was chosen on tickets.html)
+// Promos: automatic ones are already in the price; a code (typed, or from a ?promo= link an
+// influencer shared) is checked by the Worker, which always sets the price that's charged.
+import { chrome, normalizePhone, api, esc, params, money, $, $$, errorState, remember, claims, shortDate, time, forgetButton, bindForget, BITS_ACK_TEXT, pickPromo } from '../app.js';
 import { ticketHTML } from '../ticket-art.js';
 chrome();
 
 const root = $('#root');
 const eventId = params.get('event') || '';
 const qty = Math.min(6, Math.max(1, Math.floor(Number(params.get('qty'))) || 1));
-const S = { name: '', phone: '', email: '', line: '', mode: 'full', deposit: '', ack: false };
+const S = { name: '', phone: '', email: '', line: '', mode: 'full', deposit: '', ack: false, code: '' };
+// The price: the Worker's quote (full price, what's charged, the promo in it).
+let Q = { full: 0, total: 0, promo: null };
 Object.assign(S, (({ name = '', phone = '', email = '' }) => ({ name, phone, email }))(remember.get()));
 let B, T;
 
 // The line and how they chose to pay survive "Change" → back to tickets → "Continue" (this tab only).
 const draftKey = () => `mem-checkout-${eventId}`;
 const loadDraft = () => { try { return JSON.parse(sessionStorage.getItem(draftKey()) || '{}'); } catch { return {}; } };
-const saveDraft = () => { try { sessionStorage.setItem(draftKey(), JSON.stringify({ line: S.line, mode: S.mode, deposit: S.deposit })); } catch { /* private mode */ } };
+const saveDraft = () => { try { sessionStorage.setItem(draftKey(), JSON.stringify({ line: S.line, mode: S.mode, deposit: S.deposit, code: S.code })); } catch { /* private mode */ } };
 
 const phoneOk = p => normalizePhone(p) !== null;
 const first = n => n.trim().split(/\s+/)[0] || '';
-const total = () => T.pricePesewas * qty;
+const total = () => Q.total;
 const hasLines = () => B.lines.length > 0;
-const ticketsUrl = () => `tickets.html?event=${encodeURIComponent(B.event.id)}&type=${encodeURIComponent(T.id)}&qty=${qty}`;
+const ticketsUrl = () => `tickets.html?event=${encodeURIComponent(B.event.id)}&type=${encodeURIComponent(T.id)}&qty=${qty}${S.code ? `&promo=${encodeURIComponent(S.code)}` : ''}`;
 // Pay in bits closes when the night starts (that's when an unpaid order is forfeited).
 const bitsOpen = () => new Date(B.event.date).getTime() > Date.now();
 const deadline = () => `${shortDate(B.event.date)}, ${time(B.event.date)}`;
@@ -49,7 +53,9 @@ function shell() {
     <form id="co" class="step" novalidate>
       <div class="for"><a class="link" href="${ticketsUrl()}">← Change ticket</a><span class="kicker">${esc(shortDate(B.event.date))}</span></div>
       <h1 class="display">Your details</h1>
-      <div class="summary"><div class="r"><span>${qty} × ${esc(T.name)} · ${esc(B.event.name)}</span><b>${money(total())}</b></div></div>
+      <div class="summary" id="sum" aria-live="polite"></div>
+      ${B.promo?.hasCodes || S.code ? `<details class="fold" id="codeBox" ${S.code ? 'open' : ''}><summary>Have a promo code?</summary>
+        <div class="field" id="fCode" style="margin-top:10px"><label for="code" class="sr">Promo code</label><div class="code-row"><input id="code" autocomplete="off" autocapitalize="characters" spellcheck="false" maxlength="20" placeholder="e.g. KOFI20" value="${esc(S.code)}"><button type="button" class="btn" id="applyCode">Apply</button></div></div></details>` : ''}
 
       <div class="field" id="fPhone"><label for="phone">Phone</label><input id="phone" name="phone" type="tel" inputmode="tel" autocomplete="tel" placeholder="024 123 4567" required value="${esc(S.phone)}"><span class="hint">Your ticket comes here by text.</span></div>
       <div class="field" id="fName"><label for="name">Your name <span class="muted" style="font-weight:400">(optional)</span></label><input id="name" name="name" autocomplete="name" autocapitalize="words" maxlength="80" value="${esc(S.name)}"><span class="hint">First name goes big on the ticket.</span></div>
@@ -81,6 +87,24 @@ function shell() {
     <aside class="aside" aria-label="Your ticket, live"><p class="kicker" style="margin-bottom:14px">Your ticket · live preview</p><div data-preview></div></aside>
   </div>`;
   bind(); refreshPreview();
+}
+
+function drawSum() {
+  $('#sum').innerHTML = `<div class="r"><span>${qty} × ${esc(T.name)} · ${esc(B.event.name)}</span>${Q.promo ? `<s class="muted">${money(Q.full)}</s>` : `<b>${money(Q.full)}</b>`}</div>
+    ${Q.promo ? `<div class="r promo-line"><span><span class="promo-tag">${esc(Q.promo.name)}</span> ${esc(Q.promo.label)}</span><span>−${money(Q.full - Q.total)}</span></div><div class="r t"><span>You pay</span><span>${money(Q.total)}</span></div>` : ''}`;
+  const dep = $('#dep'); if (dep) dep.max = String(total() / 100);
+}
+// Ask the Worker for the exact price (with the code, if one is applied). Quietly keeps the page's
+// own estimate if the Worker can't be reached; the Worker prices the payment either way.
+async function requote(code = S.code) {
+  try {
+    const q = await api('/api/checkout/quote', { method: 'POST', body: { eventId: B.event.id, ticketTypeId: T.id, quantity: qty, promoCode: code || undefined } });
+    if (q.codeError) return q.codeError;
+    Q = { full: q.fullPesewas, total: q.totalPesewas, promo: q.promo };
+    S.code = q.promo?.code ? code : ''; saveDraft();
+  } catch (e) { if (code) return e.message; }
+  drawSum(); syncPay();
+  return '';
 }
 
 const payAmount = () => (S.mode === 'bits' ? Math.round(Number(S.deposit || 0) * 100) : total());
@@ -118,7 +142,18 @@ function bind() {
   $('#dep').oninput = e => { S.deposit = e.target.value; setErr($('#fDep')); syncPay(); saveDraft(); };
   $('#ack').onchange = e => { S.ack = e.target.checked; };
   $('#co').onsubmit = pay;
-  syncPay();
+  const apply = async () => {
+    const c = $('#code').value.trim(); setErr($('#fCode'));
+    if (!c) { S.code = ''; return requote(''); }
+    $('#applyCode').disabled = true;
+    const e = await requote(c);
+    $('#applyCode').disabled = false;
+    setErr($('#fCode'), e);
+    if (!e) $('#applyCode').textContent = 'Applied';
+  };
+  if ($('#applyCode')) { $('#applyCode').onclick = apply; $('#code').onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); apply(); } }; $('#code').oninput = () => { $('#applyCode').textContent = 'Apply'; }; }
+  drawSum(); syncPay();
+  requote().then(e => { if (e) { setErr($('#fCode'), e); S.code = ''; requote(''); } });
 }
 
 async function pay(ev) {
@@ -135,7 +170,7 @@ async function pay(ev) {
     if (!$('#ack').checked) { err.hidden = false; err.textContent = 'Tick the box to confirm how pay in bits works.'; return $('#ack').focus(); }
   }
   const btn = $('#pay'); btn.disabled = true; btn.textContent = 'Opening payment…';
-  const body = { eventId: B.event.id, ticketTypeId: T.id, quantity: qty, buyerName: S.name.trim() || undefined, buyerPhone: S.phone.trim(), buyerEmail: S.email || undefined, identityLine: S.line.trim() };
+  const body = { eventId: B.event.id, ticketTypeId: T.id, quantity: qty, buyerName: S.name.trim() || undefined, buyerPhone: S.phone.trim(), buyerEmail: S.email || undefined, identityLine: S.line.trim(), promoCode: S.code || undefined };
   try {
     const d = S.mode === 'bits'
       ? await api('/api/installments/start', { method: 'POST', body: { ...body, depositPesewas: payAmount(), acknowledged: true } })
@@ -148,6 +183,8 @@ async function pay(ev) {
     err.hidden = false; err.textContent = e.message; btn.disabled = false; syncPay();
     // A server that still wants a line: open the line picker so the way forward is visible.
     if (/line/i.test(e.message)) { $('#lineBox').open = true; ($('.line-btn') || $('#ownLine')).focus(); }
+    // A promo that just ended or ran out: show the new price; they can pay it or go back.
+    if (/promo/i.test(e.message)) { S.code = ''; requote(''); }
   }
 }
 
@@ -167,6 +204,10 @@ async function load() {
     S.line = typeof d.line === 'string' && (B.lines.includes(d.line) || d.line.length <= 40) ? d.line : '';
     S.deposit = typeof d.deposit === 'string' ? d.deposit : '';
     S.mode = d.mode === 'bits' && bitsOpen() ? 'bits' : 'full';
+    S.code = (params.get('promo') || d.code || '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 20);
+    // Until the Worker's quote lands: the page's own estimate from the night's automatic promos.
+    const est = pickPromo(B.promo?.promos, T.id, T.pricePesewas, qty);
+    Q = { full: T.pricePesewas * qty, total: T.pricePesewas * qty - (est?.off || 0), promo: est ? { name: est.promo.name, label: est.promo.label } : null };
     shell();
   } catch (e) {
     if (e.status === 404) root.innerHTML = '<div class="state-msg"><h2 class="display">This night isn’t on.</h2><a class="btn red" href="nights.html">See what’s on</a></div>';

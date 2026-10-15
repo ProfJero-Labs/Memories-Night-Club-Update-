@@ -1,5 +1,5 @@
 // event.html: page script (kept out of the HTML so the CSP can forbid inline scripts).
-import { chrome, api, esc, img, params, dateStamp, doors, longDate, shortDate, $, errorState, shareUrl, setMeta, setJsonLd, videoOk, bgVideo, money, buyBar } from '../app.js';
+import { chrome, api, esc, img, params, dateStamp, doors, longDate, shortDate, time, $, errorState, shareUrl, setMeta, setJsonLd, videoOk, bgVideo, money, buyBar } from '../app.js';
 const id = params.get('id');
 // Buying moved to its own page. Old links (flyers, WhatsApp, "#tickets", "?type=") go straight there.
 const legacyType = params.get('type');
@@ -32,7 +32,8 @@ function render(b, s) {
   describe(b, s);
   const ticketsOpen = !e.soldOut && !e.over && b.ticketTypes.some(t => !t.soldOut);
   // The one way in, or an honest reason there isn't one.
-  const from = Math.min(...b.ticketTypes.filter(t => !t.soldOut).map(t => t.pricePesewas));
+  // "From": the cheapest ticket on sale, at its promo price if a promo is running.
+  const from = Math.min(...b.ticketTypes.filter(t => !t.soldOut).map(t => b.promo?.prices?.[t.id]?.pricePesewas ?? t.pricePesewas));
   const closed = e.over ? 'This night has passed' : !b.ticketTypes.length ? 'Tickets aren’t on sale yet' : 'Sold out';
   main.innerHTML = `${e.heroVideo && videoOk() ? `<div class="event-banner">${bgVideo(e.heroVideo, e.heroImage)}</div>` : e.heroImage ? `<div class="event-banner">${img(e.heroImage, '', '', true)}</div>` : ''}<div class="event-hero">
     <div class="event-art">${img(e.artwork, `${e.name} flyer`, '', true) || `<div style="aspect-ratio:4/5;display:grid;place-items:center">${dateStamp(e.date, 'red')}</div>`}</div>
@@ -41,6 +42,7 @@ function render(b, s) {
       <h1 class="display">${esc(e.name)}</h1>
       <div class="meta"><span>${esc(longDate(e.date))}</span><span class="muted">${esc(doors(e))}</span>${venue ? `<a class="muted" href="visit.html" style="color:inherit">${esc(venue)}</a>` : ''}</div>
       ${e.description ? `<p class="desc">${esc(e.description)}</p>` : ''}
+      ${ticketsOpen && b.promo?.promos?.length ? b.promo.promos.map(p => `<p class="ev-promo"><span class="promo-tag">${esc(p.name)}</span><b>${esc(p.label)}</b>${p.endsAt ? `<span class="muted">until ${esc(shortDate(p.endsAt))}, ${esc(time(p.endsAt))}</span>` : ''}${p.left !== null && p.left <= 30 ? `<span class="muted">${p.left} left at this price</span>` : ''}</p>`).join('') : ''}
       <div class="row-actions">
         ${ticketsOpen ? `<a class="btn red" href="tickets.html?event=${encodeURIComponent(e.id)}">Get tickets · from ${money(from)} <span class="arrow">→</span></a>` : `<span class="btn" aria-disabled="true">${closed}</span>`}
         ${b.tablePackages.length && !e.over ? `<a class="btn" href="tables.html?event=${encodeURIComponent(e.id)}">Book a table</a>` : ''}

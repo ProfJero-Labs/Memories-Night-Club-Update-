@@ -327,7 +327,7 @@ async function nights(id, notice) {
   $$('[data-edit]').forEach(b => b.onclick = () => show('nights', b.dataset.edit));
 }
 
-const NIGHT_SECS = [['details', 'Details'], ['look', 'Look'], ['tickets', 'Tickets'], ['tables', 'Tables'], ['draw', 'Draw'], ['comps', 'Comps']];
+const NIGHT_SECS = [['details', 'Details'], ['look', 'Look'], ['tickets', 'Tickets'], ['promos', 'Promos'], ['tables', 'Tables'], ['draw', 'Draw'], ['comps', 'Comps']];
 let nightSec = 'details', nightSecId = null;
 const localInput = iso => (iso ? new Date(iso).toISOString().slice(0, 16) : ''); // Ghana = UTC
 async function night(id, notice) {
@@ -385,9 +385,10 @@ async function night(id, notice) {
       <div id="evMsg"></div>
       <div class="toolbar savebar"><button class="sbtn red" type="submit" id="save">${isNew ? 'Create night' : 'Save night'}</button><span id="saveState" role="status"></span></div>
       ${!isNew && user.role === 'superAdmin' ? '<div><button class="sbtn ghost" type="button" id="del">Delete this night</button></div>' : ''}
-      ${isNew ? '' : '<p class="hint" style="margin:0;color:var(--muted)">“Save night” saves Details and Look together. Tickets, Tables, Draw and Comps each save with their own button.</p>'}
+      ${isNew ? '' : '<p class="hint" style="margin:0;color:var(--muted)">“Save night” saves Details and Look together. Tickets, Promos, Tables, Draw and Comps each save with their own button.</p>'}
     </form>
     ${isNew ? '' : `<section data-sec="tickets" class="sec"><h2>Tickets</h2>${catalogTable('ticket-types', d.ticketTypes, e.id)}</section>
+    <section data-sec="promos" class="sec"><h2>Promos</h2><div id="promoBox"><div class="loading">Loading…</div></div></section>
     <section data-sec="tables" class="sec"><h2>Tables</h2>${catalogTable('table-packages', d.tablePackages, e.id)}</section>
     <section data-sec="draw" class="sec"><h2>The draw</h2>${raffleCard(d.raffle, e.id)}</section>
     <section data-sec="comps" class="sec"><h2>Comps</h2>${compCard()}</section>`}`;
@@ -479,7 +480,7 @@ async function night(id, notice) {
     if (!confirm(`Delete ${e.name}? Only possible if nothing has been sold.`)) return;
     try { await sapi(`/api/admin/events/${encodeURIComponent(e.id)}`, { method: 'DELETE' }); show('nights'); } catch (err) { flash($('#evMsg'), err.message, true); }
   });
-  if (!isNew) { bindCatalog(reload); bindRaffle(d.raffle, e.id, reload); bindComp(e.id); }
+  if (!isNew) { bindCatalog(reload); bindRaffle(d.raffle, e.id, reload); bindComp(e.id); promosFor(e, d.ticketTypes); }
 }
 
 // Editable rows for ticket types / table packages / bottles.
@@ -533,6 +534,70 @@ function bindRaffle(r, eventId, reload) {
     try { await sapi('/api/admin/raffle/draw', { method: 'POST', body: { raffleId: r.id } }); reload(); }
     catch (err) { flash($('#rMsg'), err.message, true); }
   });
+}
+
+// ── Promos: run a deal on this night's tickets (worker/src/promos.js) ──
+// Automatic promos show to everyone with the promo price; a code promo only works for those who
+// type the code (or open its link), so each campaign's sales can be counted.
+async function promosFor(e, types) {
+  const box = $('#promoBox');
+  let list;
+  try { list = (await sapi(`/api/admin/promos?eventId=${encodeURIComponent(e.id)}`)).promos; }
+  catch (err) { box.innerHTML = `<div class="msg err">${esc(err.status === 404 && /^not found\.?$/i.test(err.message) ? 'Promos need the latest Worker deployed.' : err.message)}</div>`; return; }
+  const typeName = id => types.find(t => t.id === id)?.name || '?';
+  const at = iso => `${shortDate(iso)} ${localInput(iso).slice(11)}`;
+  const span = p => [p.startsAt ? `from ${at(p.startsAt)}` : '', p.endsAt ? `until ${at(p.endsAt)}` : ''].filter(Boolean).join(' ') || 'Until the night';
+  const state = p => (p.active === false ? pill('off', 'grey') : p.live ? pill('running', 'green') : p.left === 0 ? pill('used up', 'amber') : p.endsAt && new Date(p.endsAt) < new Date() ? pill('ended', 'grey') : pill('scheduled', 'amber'));
+  const link = p => `${location.origin}${location.pathname.replace(/[^/]*$/, '')}tickets.html?event=${encodeURIComponent(e.id)}${p.code ? `&promo=${encodeURIComponent(p.code)}` : ''}`;
+  box.innerHTML = `<p class="muted" style="margin-top:-6px">Run a deal: early bird, a percentage off, an amount off, or a group deal (buy 4, pay for 3). Leave the code empty and everyone gets it; add a code (e.g. for an influencer) and only people with the code or its link do. The best deal applies; deals don’t stack. Pay in bits keeps the price it started with.</p>
+    <div class="toolbar"><button class="sbtn red" type="button" id="prAdd">New promo</button></div>
+    <div id="prForm"></div><div id="prMsg"></div>
+    <div class="tbl-wrap"><table class="tbl"><thead><tr><th>Promo</th><th>Deal</th><th>When</th><th>Code</th><th class="num">Tickets sold</th><th class="num">Discount given</th><th>Status</th><th></th></tr></thead><tbody>
+    ${list.map(p => `<tr><td><strong>${esc(p.name)}</strong>${p.ticketTypeIds.length ? `<br><small class="muted">${esc(p.ticketTypeIds.map(typeName).join(', '))}</small>` : ''}</td><td>${esc(p.label)}</td><td>${esc(span(p))}</td><td>${p.code ? `<code>${esc(p.code)}</code>` : '<span class="muted">Everyone</span>'}</td>
+      <td class="num">${p.usedCount}${p.limit ? ` / ${p.limit}` : ''}</td><td class="num">${money(p.discountGivenPesewas)}</td><td>${state(p)}</td>
+      <td class="actions"><button class="sbtn" data-pr-edit="${esc(p.id)}">Edit</button><button class="sbtn ghost" data-pr-link="${esc(p.id)}">Copy link</button></td></tr>`).join('') || '<tr><td colspan="8" class="empty-row">No promos yet.</td></tr>'}</tbody></table></div>`;
+  const form = (p = null) => {
+    const kind = p?.kind || 'percent';
+    $('#prForm').innerHTML = `<form class="card" id="prF" novalidate><h3 style="margin:0">${p ? `Edit ${esc(p.name)}` : 'New promo'}</h3>
+      <div class="grid2">
+        <div class="sfield"><label for="prName">Name (guests see it)</label><input id="prName" maxlength="40" value="${esc(p?.name || '')}" placeholder="Early bird"></div>
+        <div class="sfield"><label for="prKind">Deal</label><select id="prKind"><option value="percent" ${kind === 'percent' ? 'selected' : ''}>Percentage off each ticket</option><option value="amount" ${kind === 'amount' ? 'selected' : ''}>Amount off each ticket</option><option value="bundle" ${kind === 'bundle' ? 'selected' : ''}>Group deal: buy some, pay for fewer</option></select></div>
+        <div class="sfield" data-k="percent"><label for="prPct">Percent off (1 to 90)</label><input id="prPct" inputmode="numeric" value="${kind === 'percent' ? esc(p?.value ?? '') : ''}" placeholder="20"></div>
+        <div class="sfield" data-k="amount"><label for="prAmt">GHS off each ticket</label><input id="prAmt" inputmode="decimal" value="${kind === 'amount' ? esc(ghs(p?.value || 0)) : ''}" placeholder="20"></div>
+        <div class="sfield" data-k="bundle"><label for="prBuy">Buy</label><input id="prBuy" inputmode="numeric" value="${esc(p?.buy || 4)}"></div>
+        <div class="sfield" data-k="bundle"><label for="prPay">Pay for</label><input id="prPay" inputmode="numeric" value="${esc(p?.pay || 3)}"></div>
+        <div class="sfield"><label for="prStart">Starts (blank = now)</label><input id="prStart" type="datetime-local" value="${esc(localInput(p?.startsAt))}"></div>
+        <div class="sfield"><label for="prEnd">Ends (blank = when the night starts)</label><input id="prEnd" type="datetime-local" value="${esc(localInput(p?.endsAt))}"></div>
+        <div class="sfield"><label for="prLimit">Only the first … tickets (blank = no limit)</label><input id="prLimit" inputmode="numeric" value="${esc(p?.limit || '')}" placeholder="50"></div>
+        <div class="sfield"><label for="prCode">Code (blank = everyone gets it)</label><input id="prCode" maxlength="20" autocapitalize="characters" value="${esc(p?.code || '')}" placeholder="e.g. KOFI20"></div>
+      </div>
+      <fieldset class="sfield" style="border:0;padding:0;margin:0"><legend>Tickets it covers (none ticked = all)</legend><div class="toolbar" style="margin:0">${types.map(t => `<label class="check"><input type="checkbox" data-pr-type value="${esc(t.id)}" ${(p?.ticketTypeIds || []).includes(t.id) ? 'checked' : ''}> ${esc(t.name)} (${money(t.pricePesewas)})</label>`).join('') || '<span class="muted">Add tickets first.</span>'}</div></fieldset>
+      <label class="check"><input type="checkbox" id="prOn" ${p?.active === false ? '' : 'checked'}> Switched on</label>
+      <div class="toolbar" style="margin:0"><button class="sbtn red" type="submit">${p ? 'Save promo' : 'Start promo'}</button><button class="sbtn ghost" type="button" id="prCancel">Cancel</button></div><div id="prFMsg"></div></form>`;
+    const showKind = () => $$('#prF [data-k]').forEach(f => { f.hidden = f.dataset.k !== $('#prKind').value; });
+    $('#prKind').onchange = showKind; showKind();
+    $('#prCancel').onclick = () => { $('#prForm').innerHTML = ''; };
+    $('#prName').focus();
+    $('#prF').onsubmit = async ev => {
+      ev.preventDefault();
+      const k = $('#prKind').value, name = val('#prName'), code = val('#prCode');
+      let value = 0;
+      try { value = k === 'percent' ? Number(val('#prPct')) : k === 'amount' ? pes(val('#prAmt')) : 0; } catch (err) { return flash($('#prFMsg'), err.message, true); }
+      const t = id => (val(id) ? `${val(id)}:00Z` : ''); // Ghana time is UTC
+      try {
+        await sapi('/api/admin/promos', { method: 'POST', body: { id: p?.id, eventId: e.id, name, kind: k, value, buy: Number(val('#prBuy')), pay: Number(val('#prPay')), startsAt: t('#prStart'), endsAt: t('#prEnd'), limit: val('#prLimit'), code, ticketTypeIds: $$('[data-pr-type]:checked').map(x => x.value), active: $('#prOn').checked } });
+        await promosFor(e, types);
+        flash($('#prMsg'), `${p ? 'Saved' : 'Started'} “${name}”.${code ? ' Use “Copy link” to share it with the code built in.' : ''}`);
+      } catch (err) { flash($('#prFMsg'), err.message, true); }
+    };
+  };
+  $('#prAdd').onclick = () => form();
+  $$('[data-pr-edit]').forEach(b => b.onclick = () => form(list.find(x => x.id === b.dataset.prEdit)));
+  $$('[data-pr-link]').forEach(b => b.onclick = async () => {
+    const url = link(list.find(x => x.id === b.dataset.prLink));
+    try { await navigator.clipboard.writeText(url); b.textContent = 'Copied'; } catch { prompt('Copy this link:', url); }
+  });
+  labelTables();
 }
 
 function compCard() {
@@ -590,7 +655,7 @@ async function bookings() {
     $('#list').innerHTML = `<div class="tbl-wrap"><table class="tbl"><thead><tr><th>When</th><th>Night</th><th>Who</th><th>Phone</th><th>What</th><th class="num">Paid</th><th></th></tr></thead><tbody>
       ${orders.map(o => `<tr><td>${esc(when(o.createdAt))}</td><td>${esc(o.eventName)}</td><td>${esc(o.buyerName)}</td><td>${o.buyerPhone ? `<a href="tel:${esc(o.buyerPhone)}">${esc(o.buyerPhone)}</a>` : ''}</td>
         <td>${o.kind === 'table' ? `<strong>${esc(o.packageName)}</strong>${(o.bottles || []).map(b => `<br><small>${b.quantity} × ${esc(b.name)}</small>`).join('')}` : o.kind === 'comp' ? `Comp · admits ${o.admits}${o.note ? `<br><small>${esc(o.note)}</small>` : ''}` : `${o.quantity} × ${esc(o.ticketTypeName)}${o.paidInInstallments ? ' <small>(in bits)</small>' : ''}`}</td>
-        <td class="num">${money(o.amountPesewas)}</td><td>${o.kind === 'table' ? pill('table', 'amber') : o.kind === 'comp' ? pill('comp', 'grey') : pill('ticket', 'green')} ${o.inDraw ? pill('draw', 'amber') : ''}</td></tr>`).join('') || '<tr><td colspan="7" class="empty-row">Nothing yet.</td></tr>'}</tbody></table></div>`;
+        <td class="num">${money(o.amountPesewas)}</td><td>${o.kind === 'table' ? pill('table', 'amber') : o.kind === 'comp' ? pill('comp', 'grey') : pill('ticket', 'green')} ${o.inDraw ? pill('draw', 'amber') : ''} ${o.promo ? `<span class="pill amber" title="${esc(`${o.promo.label}, saved ${money(o.promo.discountPesewas)} of ${money(o.promo.fullPesewas)}`)}">${esc(o.promo.code || o.promo.name)}</span>` : ''}</td></tr>`).join('') || '<tr><td colspan="7" class="empty-row">Nothing yet.</td></tr>'}</tbody></table></div>`;
   };
   $('#fEv').onchange = $('#fKind').onchange = () => load().catch(fail);
   await load();

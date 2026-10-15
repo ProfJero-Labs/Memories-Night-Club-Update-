@@ -8,7 +8,7 @@ export const $$ = (s, el = document) => [...el.querySelectorAll(s)];
 // Who built the platform: shown in the site footer, on every staff screen and on every ticket.
 export const CREDIT = 'Platform designed & built by EvolveIT';
 import { esc } from './lib/shared.js';
-export { esc, normalizePhone, pes, formatAccra, accraDayKey, nightKey, BITS_ACK_TEXT } from './lib/shared.js';
+export { esc, normalizePhone, pes, formatAccra, accraDayKey, nightKey, BITS_ACK_TEXT, promoDiscount, promoText, pickPromo } from './lib/shared.js';
 export const money = p => `GHS ${(Number(p || 0) / 100).toLocaleString('en-GH', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
 
 // ── Dates: Ghana is UTC+0, so every date is formatted in UTC ──

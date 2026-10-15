@@ -11,6 +11,7 @@ import { getSettings, resolveLines, isOver } from './public.js';
 import { openRaffleForEvent, raffleSpotWrites } from './raffle.js';
 import { computeShares } from './shares.js';
 import { issueCounter } from './bar.js';
+import { livePromos, bestPromo, promoRecord, promoCountFields } from './promos.js';
 
 // Smallest payment accepted anywhere: GHS 1.
 export const MIN_TOPUP_PESEWAS = 100;
@@ -59,7 +60,11 @@ async function ticketContext(env, b) {
   const identityLine = lines.includes(b.identityLine) ? b.identityLine : own;
   const unit = Number(tt.fields.pricePesewas || 0);
   if (!(unit > 0)) return { error: 'This ticket is no longer available.' };
-  return { ev, tt, qty, buyerName, buyerPhone, buyerEmail: clean(b.buyerEmail, 120), identityLine, totalPesewas: unit * qty };
+  // A promo running for this night (automatic, or the code the buyer typed): the Worker prices it.
+  const best = bestPromo(await livePromos(env, ev.id), { ticketTypeId: tt.id, unit, qty, code: b.promoCode });
+  if (best.codeError) return { error: best.codeError };
+  const full = unit * qty;
+  return { ev, tt, qty, buyerName, buyerPhone, buyerEmail: clean(b.buyerEmail, 120), identityLine, totalPesewas: full - best.discountPesewas, promo: promoRecord(best, full) };
 }
 
 // ── Pay in full ──
@@ -70,10 +75,10 @@ export async function initiateTicket(env, b) {
   await setDoc(env, 'pending_checkouts', reference, {
     reference, claimHash: await sha256Hex(claim), kind: 'ticket', eventId: c.ev.id, eventName: c.ev.fields.name || '', ticketTypeId: c.tt.id, ticketTypeName: c.tt.fields.name || 'Ticket',
     admits: Number(c.tt.fields.admits || 1), quantity: c.qty, amountPesewas: c.totalPesewas, buyerName: c.buyerName, buyerPhone: c.buyerPhone,
-    buyerEmail: c.buyerEmail, identityLine: c.identityLine, status: 'pending', createdAt: now(), shares,
+    buyerEmail: c.buyerEmail, identityLine: c.identityLine, status: 'pending', createdAt: now(), shares, promo: c.promo,
   });
   try {
-    const payload = { email: payEmail(env, c.buyerEmail, c.buyerPhone), amount: c.totalPesewas, currency: 'GHS', reference, callback_url: returnUrl(env), metadata: { kind: 'ticket', eventId: c.ev.id, ticketTypeId: c.tt.id, quantity: c.qty } };
+    const payload = { email: payEmail(env, c.buyerEmail, c.buyerPhone), amount: c.totalPesewas, currency: 'GHS', reference, callback_url: returnUrl(env), metadata: { kind: 'ticket', eventId: c.ev.id, ticketTypeId: c.tt.id, quantity: c.qty, promo: c.promo?.name || '' } };
     const p = await paystack(env, '/transaction/initialize', { method: 'POST', body: JSON.stringify(payload) });
     return { reference, authorizationUrl: p.authorization_url, claim };
   } catch (e) {
@@ -107,8 +112,9 @@ export async function fulfillTicket(env, reference) {
   const bad = await confirmCharge(env, pending, reference); if (bad) return bad;
   const P = pending.fields;
   const result = await withTransaction(env, async tx => {
-    const got = await batchGet(env, [`pending_checkouts/${reference}`, `ticket_types/${P.ticketTypeId}`], tx);
+    const got = await batchGet(env, [`pending_checkouts/${reference}`, `ticket_types/${P.ticketTypeId}`, ...(P.promo?.id ? [`promos/${P.promo.id}`] : [])], tx);
     const fresh = foundFields(got, `/pending_checkouts/${reference}`), tt = foundFields(got, `/ticket_types/${P.ticketTypeId}`);
+    const promoDoc = P.promo?.id ? foundFields(got, `/promos/${P.promo.id}`) : null;
     if (!fresh || !tt) throw new Error('Checkout data disappeared.');
     if (fresh.fields.status === 'issued') return { status: 'issued', ticketIds: fresh.fields.ticketIds || [], orderId: fresh.fields.orderId, already: true };
     const remaining = typeof tt.fields.remaining === 'number' ? tt.fields.remaining : null;
@@ -128,7 +134,7 @@ export async function fulfillTicket(env, reference) {
         orderId, kind: 'ticket', reference, eventId: P.eventId, eventName: P.eventName, ticketTypeId: P.ticketTypeId, ticketTypeName: P.ticketTypeName,
         quantity: P.quantity, amountPesewas: P.amountPesewas, buyerName: P.buyerName, buyerPhone: P.buyerPhone, buyerEmail: P.buyerEmail || '',
         status: 'confirmed', inDraw, ticketIds: tokens, createdAt: now(),
-        shares,
+        shares, promo: P.promo || null,
         // Flat fields the admin dashboard reads directly.
         evolveitSharePesewas: shares.evolveitSharePesewas || 0,
         memoriesSharePesewas: shares.memoriesSharePesewas || 0,
@@ -138,6 +144,7 @@ export async function fulfillTicket(env, reference) {
       updateWrite(env, 'pending_checkouts', reference, { ...fresh.fields, status: 'issued', ticketIds: tokens, orderId, issuedAt: now() }),
     ];
     if (remaining !== null) writes.push(updateWrite(env, 'ticket_types', P.ticketTypeId, { ...tt.fields, remaining: remaining - P.quantity }));
+    if (promoDoc) writes.push(updateWrite(env, 'promos', P.promo.id, promoCountFields(promoDoc.fields, P.quantity, Number(P.promo.discountPesewas || 0))));
     await commitTx(env, writes, tx);
     return { status: 'issued', ticketIds: tokens, orderId };
   });
@@ -254,7 +261,7 @@ export async function startInstallment(env, b) {
         admits: Number(c.tt.fields.admits || 1), quantity: c.qty, totalPesewas: c.totalPesewas, paidPesewas: 0,
         buyerName: c.buyerName, firstName: firstName(c.buyerName), buyerPhone: c.buyerPhone, buyerEmail: c.buyerEmail, identityLine: c.identityLine,
         status: 'active', payments: [], createdAt: now(), updatedAt: now(), policyVersion: BITS_POLICY_VERSION, acknowledgedAt: now(),
-        shares, claimHash,
+        shares, claimHash, promo: c.promo,
       });
       planId = code;
     } catch (e) { if (!String(e.message).includes('ALREADY_EXISTS')) throw e; }
@@ -439,7 +446,8 @@ export async function fulfillInstallment(env, reference) {
     const writes = [];
     let planComplete = false, tokens = [], orderId = null;
     if (paidPesewas >= P.totalPesewas) {
-      const tt = foundFields(await batchGet(env, [`ticket_types/${P.ticketTypeId}`], tx), `/ticket_types/${P.ticketTypeId}`);
+      const got = await batchGet(env, [`ticket_types/${P.ticketTypeId}`, ...(P.promo?.id ? [`promos/${P.promo.id}`] : [])], tx);
+      const tt = foundFields(got, `/ticket_types/${P.ticketTypeId}`), promoDoc = P.promo?.id ? foundFields(got, `/promos/${P.promo.id}`) : null;
       const remaining = tt && typeof tt.fields.remaining === 'number' ? tt.fields.remaining : null;
       if (remaining !== null && remaining < P.quantity) {
         await commitTx(env, [
@@ -459,7 +467,7 @@ export async function fulfillInstallment(env, reference) {
           orderId, kind: 'ticket', reference, eventId: P.eventId, eventName: P.eventName, ticketTypeId: P.ticketTypeId, ticketTypeName: P.ticketTypeName,
           quantity: P.quantity, amountPesewas: P.totalPesewas, buyerName: P.buyerName, buyerPhone: P.buyerPhone, buyerEmail: P.buyerEmail || '',
           status: 'confirmed', inDraw: !!raffle, paidInInstallments: true, planId, ticketIds: tokens, createdAt: now(),
-          shares: planShares,
+          shares: planShares, promo: P.promo || null,
           evolveitSharePesewas: planShares.evolveitSharePesewas || 0,
           memoriesSharePesewas: planShares.memoriesSharePesewas || 0,
           organizerSharePesewas: planShares.organizerSharePesewas || 0,
@@ -468,6 +476,8 @@ export async function fulfillInstallment(env, reference) {
         updateWrite(env, 'installment_plans', planId, { ...P, paidPesewas, payments, status: 'completed', ticketIds: tokens, orderId, completedAt: now(), updatedAt: now() }),
       );
       if (remaining !== null) writes.push(updateWrite(env, 'ticket_types', P.ticketTypeId, { ...tt.fields, remaining: remaining - P.quantity }));
+      // A plan keeps the promo price it started with; the promo counts the tickets once they're issued.
+      if (promoDoc) writes.push(updateWrite(env, 'promos', P.promo.id, promoCountFields(promoDoc.fields, P.quantity, Number(P.promo.discountPesewas || 0))));
     } else {
       writes.push(updateWrite(env, 'installment_plans', planId, { ...P, paidPesewas, payments, updatedAt: now() }));
     }

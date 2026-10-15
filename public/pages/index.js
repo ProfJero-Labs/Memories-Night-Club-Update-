@@ -46,6 +46,7 @@ async function load() {
       <p class="kicker red">${esc(whenLabel(hero.date))}</p>
       <h2 class="display">${esc(hero.name)}</h2>
       <div class="meta"><span>${esc(shortDate(hero.date))}</span><span class="muted">${esc(doors(hero))}</span></div>
+      ${hero.promo && !hero.soldOut ? `<p class="ev-promo"><span class="promo-tag">${esc(hero.promo.name)}</span><b>${esc(hero.promo.label)}</b>${hero.promo.endsAt ? `<span class="muted">until ${esc(shortDate(hero.promo.endsAt))}</span>` : ''}</p>` : ''}
       <div class="row-actions">
         ${hero.soldOut ? '<span class="btn" aria-disabled="true">Sold out</span>' : `<a class="btn red" href="tickets.html?event=${encodeURIComponent(hero.id)}">Get tickets${hero.fromPesewas ? ` · from ${money(hero.fromPesewas)}` : ''} <span class="arrow">→</span></a>`}
         <a class="btn" href="tables.html?event=${encodeURIComponent(hero.id)}">Book a table</a>
