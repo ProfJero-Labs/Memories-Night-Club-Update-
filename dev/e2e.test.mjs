@@ -666,6 +666,65 @@ test('XSS payloads in admin-entered and guest-entered text render as text on pub
   for (const h of ['requests', 'nights/dev-dnd', 'bookings']) { await page.goto(`${base}/admin.html#${h}`); await page.waitForLoadState('networkidle'); await page.waitForTimeout(400); if (h === 'requests') await page.locator('[data-open="xss"]').click(); assert.equal(await page.evaluate(() => window.__xss), undefined, `payload executed on admin ${h}`); }
 });
 
+test('promos: the control room starts an automatic promo and a code promo; guests see the promo price; the code (typed or from its link) lowers it; the order and the promo record it', async () => {
+  const admin = await phone(390);
+  await admin.goto(`${base}/login.html`); await admin.fill('#email', 'manager@dev'); await admin.fill('#pw', 'memories-dev'); await admin.click('#go');
+  await admin.waitForURL(/admin\.html/); await openTab(admin, 'nights');
+  await admin.evaluate(() => { location.hash = 'nights/dev-dnd'; });
+  await admin.click('[data-sec-go="promos"]'); await admin.locator('#prAdd').click();
+  await admin.fill('#prName', 'Early bird'); await admin.selectOption('#prKind', 'percent'); await admin.fill('#prPct', '20'); await admin.fill('#prLimit', '50');
+  await admin.click('#prF button[type=submit]'); await admin.getByText('Started “Early bird”.').waitFor();
+  await admin.locator('#prAdd').click();
+  await admin.fill('#prName', 'Kojo’s fans'); await admin.selectOption('#prKind', 'amount'); await admin.fill('#prAmt', '30'); await admin.fill('#prCode', 'kojo30');
+  await admin.click('#prF button[type=submit]'); await admin.getByText(/Started “Kojo’s fans”/).waitFor();
+  assert.equal(await admin.locator('#promoBox tbody tr').count(), 2);
+
+  const g = await phone(360);
+  await g.goto(`${base}/event.html?id=dev-dnd`, { waitUntil: 'networkidle' });
+  assert.match(await g.textContent('.event-info'), /Early bird/); assert.match(await g.textContent('.event-info'), /from GHS 80/);
+  assert.ok(!(await g.content()).includes('KOJO30'), 'a promo code never appears on a public page');
+  await g.goto(`${base}/tickets.html?event=dev-dnd`, { waitUntil: 'networkidle' });
+  assert.match(await g.textContent('.promo-banner'), /20% off/);
+  await g.click('[data-type="dev-dnd-reg"]');
+  assert.match(await g.textContent('#barSum'), /GHS 80/);
+  await g.click('#barGo'); await g.waitForURL(/checkout\.html/); await g.waitForSelector('#co');
+  await g.locator('#sum').getByText('You pay').waitFor();
+  assert.match(await g.textContent('#sum'), /GHS 80/);
+  await g.click('#codeBox summary'); await g.fill('#code', 'WRONG'); await g.click('#applyCode');
+  await g.locator('#fCode .err').getByText(/isn’t valid/).waitFor();
+  await g.fill('#code', 'kojo30'); await g.click('#applyCode');
+  await g.locator('#sum').getByText('Kojo’s fans').waitFor();
+  assert.match(await g.textContent('#sum'), /GHS 70/);
+  assert.match(await g.textContent('#pay'), /Pay GHS 70/);
+  await g.fill('#phone', '024 555 3030'); await g.click('#pay');
+  await g.waitForURL(/dev\/paystack/); await g.getByRole('button', { name: 'Pay' }).click();
+  await g.waitForURL(/ticket\.html/, { timeout: 20000 });
+  const order = docs('orders').find(o => o.buyerPhone === '0245553030');
+  assert.equal(order.amountPesewas, 7000); assert.equal(order.promo.code, 'KOJO30'); assert.equal(order.promo.discountPesewas, 3000);
+  assert.equal(docs('promos').find(p => p.code === 'KOJO30').usedCount, 1);
+
+  // An influencer's link carries the code all the way to checkout.
+  const f = await phone(360);
+  await f.goto(`${base}/tickets.html?event=dev-dnd&promo=kojo30`, { waitUntil: 'networkidle' });
+  await f.getByText(/Promo code KOJO30 is applied at checkout/).waitFor();
+  await f.click('[data-type="dev-dnd-reg"]'); await f.click('#barGo'); await f.waitForURL(/promo=KOJO30/);
+  await f.locator('#sum').getByText('Kojo’s fans').waitFor();
+
+  // The ticket picker with a promo is accessible and fits a small phone.
+  const { readFileSync } = await import('node:fs');
+  const small = await phone(320);
+  await small.goto(`${base}/tickets.html?event=dev-dnd`, { waitUntil: 'networkidle' });
+  assert.ok(await small.evaluate(() => document.documentElement.scrollWidth <= 320), 'no sideways scroll');
+  await small.evaluate(readFileSync(new URL('../worker/node_modules/axe-core/axe.min.js', import.meta.url), 'utf8'));
+  assert.deepEqual(await small.evaluate(async () => (await window.axe.run(document, { runOnly: ['wcag2a', 'wcag2aa'], preload: false })).violations.map(v => v.id)), []);
+
+  await openTab(admin, 'bookings');
+  await admin.locator('#list').getByText('KOJO30').first().waitFor(); // the order shows its promo
+  assert.deepEqual([...admin.errors, ...g.errors, ...f.errors, ...small.errors], []);
+  // Switch the test promos off so later journeys see normal prices.
+  for (const p of store.list('promos')) store.seed('promos', p.id, { ...p.fields, active: false });
+});
+
 test('every public page renders at 320px with no sideways scroll and no script errors', async () => {
   for (const p of ['/', '/nights.html', '/event.html?id=dev-afro', '/checkout.html?event=dev-afro&type=dev-afro-reg&qty=2', '/tables.html?event=dev-afro', '/private.html', '/installment.html', '/find.html', '/member.html', '/counter.html?s=0123456789abcdef0123456789abcdef', '/offline.html', '/visit.html', '/login.html']) {
     const page = await phone(320);

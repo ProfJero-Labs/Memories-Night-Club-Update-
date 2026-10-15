@@ -7,7 +7,7 @@ async function wall() {
   try {
     const { events } = await api('/api/events');
     el.innerHTML = events.length ? events.map((e, i) => `<a class="poster" href="event.html?id=${encodeURIComponent(e.id)}">
-        <div class="poster-art">${img(e.artwork, `${e.name} flyer`, '', i < 2)}${dateStamp(e.date)}${e.soldOut ? '<span class="flag">Sold out</span>' : ''}</div>
+        <div class="poster-art">${img(e.artwork, `${e.name} flyer`, '', i < 2)}${dateStamp(e.date)}${e.soldOut ? '<span class="flag">Sold out</span>' : e.promo ? `<span class="flag promo">${esc(e.promo.label)}</span>` : ''}</div>
         <h3>${esc(e.name)}</h3><span class="sub">${esc(doors(e))}</span></a>`).join('')
       : '<div class="state-msg" style="grid-column:1/-1"><h2 class="display">New nights drop soon.</h2><p>Check the calendar below, or book one of those Fridays for your event.</p><a class="btn red" href="private.html">Book an event</a></div>';
   } catch (e) { errorState(el, e.message, wall); }

@@ -98,3 +98,34 @@ export function ticketDesign({ id, ticketStyle, ticketColors, autoStyle } = {}) 
   const style = TICKET_STYLES.includes(ticketStyle) ? ticketStyle : TICKET_STYLES.includes(autoStyle) ? autoStyle : TICKET_STYLES[h % TICKET_STYLES.length];
   return { style, colors: cleanTicketColors(ticketColors) || FALLBACK_PALETTES[(h >>> 8) % FALLBACK_PALETTES.length] };
 }
+
+// ── Ticket promos (worker/src/promos.js): the same maths on the page and in the Worker ──
+// percent: value% off each ticket (1–90); amount: value pesewas off each ticket; bundle: buy N, pay for M.
+// Never more off than leaves GHS 1 to pay (Paystack's smallest charge; free tickets are comps).
+export const PROMO_MIN_ORDER_PESEWAS = 100;
+export function promoDiscount(p, unit, qty) {
+  let off = 0;
+  if (p.kind === 'percent') off = Math.round(unit * qty * Math.min(90, Math.max(0, Number(p.value) || 0)) / 100);
+  else if (p.kind === 'amount') off = Math.min(unit, Math.max(0, Number(p.value) || 0)) * qty;
+  else if (p.kind === 'bundle') {
+    const buy = Number(p.buy), pay = Number(p.pay);
+    if (buy >= 2 && pay >= 1 && pay < buy) off = Math.floor(qty / buy) * (buy - pay) * unit;
+  }
+  return Math.max(0, Math.min(off, unit * qty - PROMO_MIN_ORDER_PESEWAS));
+}
+export function promoText(p) {
+  if (p.kind === 'percent') return `${Number(p.value)}% off`;
+  if (p.kind === 'amount') return `GHS ${(Number(p.value) / 100).toLocaleString('en-GH', { maximumFractionDigits: 2 })} off each`;
+  return `Buy ${p.buy}, pay for ${p.pay}`;
+}
+// The best automatic promo for this pick (the page's view; the Worker decides at checkout).
+export function pickPromo(promos, ticketTypeId, unit, qty) {
+  let best = null;
+  for (const p of promos || []) {
+    if ((p.ticketTypeIds || []).length && !p.ticketTypeIds.includes(ticketTypeId)) continue;
+    if (p.left !== null && p.left !== undefined && p.left < qty) continue;
+    const off = promoDiscount(p, unit, qty);
+    if (off > 0 && (!best || off > best.off)) best = { promo: p, off };
+  }
+  return best;
+}

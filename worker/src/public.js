@@ -1,6 +1,7 @@
 import { getDoc, listDocs, queryWhere, setDoc, batchGet, foundFields } from './lib/firestore.js';
 import { now, id, clean, dateKey, normalizePhone, validEmail, firstName, cleanTicketColors, monthStyles } from './lib/util.js';
 import { sendEmail } from './lib/notify.js';
+import { livePromos, publicPromos, isLive as promoLive, bestPromo } from './promos.js';
 
 // ── Site settings: the one place contact details and venue copy live ──
 // Unknown production values (phone, email, map) default to empty and simply don't render until an
@@ -45,17 +46,25 @@ export const autoStylesFrom = docs => monthStyles(docs.filter(x => x.fields.acti
 export async function autoStyleFor(env, eventId) { return autoStylesFrom(await listDocs(env, 'events')).get(eventId) || null; }
 
 export async function publicEvents(env) {
-  const [docs, settings, onSale] = await Promise.all([listDocs(env, 'events'), getSettings(env), queryWhere(env, 'ticket_types', [{ field: 'active', value: true }])]);
+  const [docs, settings, onSale, promoDocs] = await Promise.all([listDocs(env, 'events'), getSettings(env), queryWhere(env, 'ticket_types', [{ field: 'active', value: true }]), queryWhere(env, 'promos', [{ field: 'active', value: true }])]);
   const auto = autoStylesFrom(docs);
-  // "From GHS 100" on the home page and the nights wall: the cheapest ticket still on sale per night.
+  // Automatic promos running now, by night (code promos stay off public pages).
+  const promosBy = new Map();
+  for (const d of promoDocs) { const p = { id: d.id, ...d.fields }; if (!p.code && promoLive(p)) promosBy.set(p.eventId, [...(promosBy.get(p.eventId) || []), p]); }
+  // "From GHS 100" on the home page and the nights wall: the cheapest ticket still on sale per night,
+  // at its promo price if one is running.
   const from = new Map();
   for (const t of onSale) {
-    const p = Number(t.fields.pricePesewas || 0), left = t.fields.remaining;
-    if (!(p > 0) || (typeof left === 'number' && left <= 0)) continue;
+    const full = Number(t.fields.pricePesewas || 0), left = t.fields.remaining;
+    if (!(full > 0) || (typeof left === 'number' && left <= 0)) continue;
+    const p = full - bestPromo(promosBy.get(t.fields.eventId) || [], { ticketTypeId: t.id, unit: full, qty: 1 }).discountPesewas;
     if (!from.has(t.fields.eventId) || p < from.get(t.fields.eventId)) from.set(t.fields.eventId, p);
   }
   return docs.filter(x => isLive(x.fields) && !isOver(x.fields))
-    .map(x => ({ ...publicEvent(x.id, x.fields, settings), autoStyle: auto.get(x.id) || null, fromPesewas: from.get(x.id) ?? null }))
+    .map(x => {
+      const ps = promosBy.get(x.id) || [];
+      return { ...publicEvent(x.id, x.fields, settings), autoStyle: auto.get(x.id) || null, fromPesewas: from.get(x.id) ?? null, promo: ps.length ? { name: ps[0].name, label: publicPromos([ps[0]], []).promos[0].label, endsAt: ps[0].endsAt || null } : null };
+    })
     .sort((a, b) => new Date(a.date) - new Date(b.date));
 }
 
@@ -71,13 +80,17 @@ export async function eventBundle(env, eventId) {
     getSettings(env),
     autoStyleFor(env, eventId),
   ]);
+  const promosNow = await livePromos(env, eventId);
   const stock = f => (typeof f.remaining === 'number' ? { soldOut: f.remaining <= 0, lastFew: f.remaining > 0 && f.remaining <= 10 } : { soldOut: false, lastFew: false });
   const bySort = (a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0) || a.pricePesewas - b.pricePesewas;
+  const ticketTypes = tickets.filter(x => x.fields.active === true).map(x => ({ id: x.id, name: x.fields.name, pricePesewas: Number(x.fields.pricePesewas || 0), admits: Number(x.fields.admits || 1), description: clean(x.fields.description, 140), sortOrder: x.fields.sortOrder ?? 0, ...stock(x.fields) })).sort(bySort);
   const raffle = raffles.find(x => x.fields.public === true && x.fields.enabled === true);
   return {
     event: { ...publicEvent(eventId, e.fields, settings), over: isOver(e.fields), autoStyle },
     lines: resolveLines(e.fields, settings),
-    ticketTypes: tickets.filter(x => x.fields.active === true).map(x => ({ id: x.id, name: x.fields.name, pricePesewas: Number(x.fields.pricePesewas || 0), admits: Number(x.fields.admits || 1), description: clean(x.fields.description, 140), sortOrder: x.fields.sortOrder ?? 0, ...stock(x.fields) })).sort(bySort),
+    ticketTypes,
+    // Promos running now: names and promo prices for the page; codes never leave the server.
+    promo: publicPromos(promosNow, ticketTypes),
     tablePackages: tables.filter(x => x.fields.active === true).map(x => ({ id: x.id, name: x.fields.name, pricePesewas: Number(x.fields.pricePesewas || 0), capacity: Number(x.fields.capacity || 0), includes: clean(x.fields.description, 200), sortOrder: x.fields.sortOrder ?? 0, ...stock(x.fields) })).sort(bySort),
     bottles: [...bottles, ...globalBottles].filter(x => x.fields.active === true).map(x => ({ id: x.id, name: x.fields.name, category: x.fields.category || '', pricePesewas: Number(x.fields.pricePesewas || 0), ...stock(x.fields) })).sort((a, b) => a.category.localeCompare(b.category) || a.pricePesewas - b.pricePesewas),
     // Whitelisted: a drawn raffle's raw ticket id is a bearer token and never leaves the server,
