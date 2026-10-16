@@ -65,7 +65,25 @@ In the control room → **Site settings**: the one public phone number, WhatsApp
 
 Before the first prize of real value, confirm the draw's framing with the club (BUILD_PLAN: Ghana lottery law).
 
-## 8. Smoke test on production
+## 8. Automatic deploys (after the first manual go-live)
+
+Once the steps above have been done by hand once, routine changes ship from GitHub. On every push to `main`, `.github/workflows/ci.yml` runs all the checks. If they pass, it deploys what changed:
+- `worker/**` changed → `wrangler deploy` (Worker secrets stay in Cloudflare and aren't touched)
+- `firebase.json` or `firebase/firestore.rules` / `firebase/storage.rules` changed → `firebase deploy --only firestore:rules,storage`
+- `public/**` is deployed by the Cloudflare Pages project itself, which is connected to this repo.
+
+Both deploy jobs use the GitHub environment **production** and wait there for an approval (Actions → the run → *Review deployments*). To deploy everything without a code change, go to Actions → CI → *Run workflow* on `main`.
+
+One-time setup (repo → Settings):
+1. **Environments → New environment `production`** → tick *Required reviewers* and add yourself → *Deployment branches*: `main` only. Do this **before** merging the workflow. A missing environment is created on first use with no approval gate.
+2. **Secrets and variables → Actions → Environment secrets for `production`:**
+   - `CLOUDFLARE_API_TOKEN`: Cloudflare → My Profile → API Tokens → template *Edit Cloudflare Workers*.
+   - `CLOUDFLARE_ACCOUNT_ID`: the account ID on the Cloudflare dashboard overview.
+   - `FIREBASE_SERVICE_ACCOUNT`: the full JSON key of a service account on `memoriesnightclub-2717f` with the roles *Firebase Rules Admin*, *Service Usage Consumer* and *Firebase Viewer*.
+
+To drop the approval step later, remove *Required reviewers* from the environment. The workflow doesn't change.
+
+## 9. Smoke test on production
 
 Buy one real low-price ticket end to end, then check:
 - the SMS arrives;
