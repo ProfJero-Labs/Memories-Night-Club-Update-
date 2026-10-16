@@ -103,15 +103,23 @@ details.more > summary { cursor: pointer; font-weight: 700; padding: 8px 0; }
 .sec[hidden], #evForm[hidden] { display: none !important; }
 .result .undo { justify-self: start; margin-top: 4px; }
 .funnel { margin: 0 0 18px; color: var(--muted); font-size: 15px; } .funnel strong { color: var(--paper); }
-.staff-head #myPass { background: none; border: 1px solid var(--line-2); color: var(--paper); min-height: 40px; padding: 0 12px; font: 700 12px var(--sans); letter-spacing: .1em; text-transform: uppercase; cursor: pointer; white-space: nowrap; }
-.staff-head .wrap > strong { margin-right: auto; }
-.staff-head [data-install] { color: var(--paper); cursor: pointer; white-space: nowrap; }
-@media (max-width: 420px) {
-  .staff-head .who { display: none; }
-  .staff-head .wrap { gap: 6px; }
-  .staff-head .wrap > strong { font-size: 16px !important; line-height: 1.05; }
-  .staff-head button, .staff-head #myPass { padding: 0 8px; min-height: 40px; letter-spacing: .04em; font-size: 11px; }
-}
+.staff-head .head-title { font: 400 20px/1.05 var(--display); text-transform: uppercase; letter-spacing: .04em; margin-right: auto; }
+/* The account menu: name ▾ → my pass, change PIN, install, sign out (one tap target, not three) */
+.acct { position: relative; }
+.acct > button { min-height: 44px; padding: 0 12px; color: var(--paper); font: 700 13px var(--sans); letter-spacing: .06em; text-transform: none; max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.acct-menu { position: absolute; right: 0; top: calc(100% + 6px); z-index: 50; min-width: 230px; background: var(--ink-2); border: 1px solid var(--line-2); display: grid; box-shadow: 0 12px 30px rgba(0,0,0,.5); }
+.acct-menu[hidden] { display: none; }
+.acct-menu .acct-who { margin: 0; padding: 12px 14px; border-bottom: 1px solid var(--line); display: grid; gap: 2px; }
+.acct-menu .acct-who span { color: var(--muted); font-size: 13px; }
+.staff-head .acct-menu button { border: 0; border-bottom: 1px solid var(--line); text-align: left; min-height: 48px; padding: 0 14px; font: 600 15px var(--sans); letter-spacing: 0; text-transform: none; color: var(--paper); cursor: pointer; }
+.staff-head .acct-menu button:hover { background: var(--ink-3); }
+.staff-head .acct-menu .danger { color: #ff7a9c; }
+@media (max-width: 420px) { .staff-head .wrap { gap: 8px; } .staff-head .head-title { font-size: 17px; } }
+/* A small sheet over the page (change PIN, quick forms) */
+.sheet-back { position: fixed; inset: 0; z-index: 70; background: rgba(0,0,0,.7); display: grid; place-items: end center; padding: 0; }
+.sheet { background: var(--ink-2); border-top: 3px solid var(--crimson); width: min(560px, 100%); max-height: 92dvh; overflow: auto; padding: 18px var(--gutter) calc(18px + env(safe-area-inset-bottom)); display: grid; gap: 12px; }
+.sheet h2 { margin: 0; font: 400 26px/1 var(--display); text-transform: uppercase; }
+@media (min-width: 700px) { .sheet-back { place-items: center; } .sheet { border: 1px solid var(--line-2); border-top: 3px solid var(--crimson); } }
 .gate-banner { background: var(--mustard); color: var(--ink); display: flex; align-items: center; justify-content: center; gap: 14px; padding: 10px var(--gutter); flex-wrap: wrap; }
 .gate-banner span { font: 700 13px var(--sans); letter-spacing: .1em; text-transform: uppercase; }
 .gate-banner b { font: 400 40px/1 var(--display); letter-spacing: .08em; }
@@ -130,3 +138,4 @@ details.more > summary { cursor: pointer; font-weight: 700; padding: 8px 0; }
 .health.good { border-left-color: #6fcfae; } .health.warn { border-left-color: var(--mustard); } .health.bad { border-left-color: #ff7a9c; background: rgba(224, 36, 94, .12); }
 .sys-banner { max-width: 1400px; margin: 12px auto 0; padding: 12px var(--gutter); display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; background: var(--crimson-deep); border: 1px solid var(--crimson); }
 .sys-banner span { flex: 1 1 240px; } .sys-banner[hidden] { display: none; }
+.role-key { display: grid; grid-template-columns: max-content 1fr; gap: 6px 14px; margin: 10px 0 0; } .role-key dt { font-weight: 700; } .role-key dd { margin: 0; color: var(--muted); }

@@ -84,6 +84,13 @@ http.createServer(async (req, res) => {
       const claims = store.claims?.[user.localId] || {};
       return send(res, 200, JSON.stringify({ uid: user.localId, email: user.email, claims, token: await idToken(claims, { projectId: env.FIREBASE_PROJECT_ID, uid: user.localId }) }), 'application/json');
     }
+    // Dev stand-in for Firebase's custom-token exchange (the Worker signed it after checking the PIN).
+    if (u.pathname === '/dev/custom-token' && req.method === 'POST') {
+      const { token } = JSON.parse((await readBody(req)).toString() || '{}');
+      let p; try { p = JSON.parse(Buffer.from(String(token).split('.')[1], 'base64url').toString()); } catch { return send(res, 400, JSON.stringify({ code: 'auth/invalid-custom-token' }), 'application/json'); }
+      const claims = p.claims || {};
+      return send(res, 200, JSON.stringify({ uid: p.uid, email: null, claims, token: await idToken(claims, { projectId: env.FIREBASE_PROJECT_ID, uid: p.uid }) }), 'application/json');
+    }
     if (u.pathname === '/dev/upload' && req.method === 'POST') {
       const key = `u${uploads.size + 1}`; uploads.set(key, { type: req.headers['content-type'], body: await readBody(req) });
       return send(res, 200, JSON.stringify({ url: `${ORIGIN}/dev/uploads/${key}` }), 'application/json');

@@ -13,6 +13,9 @@ import * as admin from './admin.js';
 import * as members from './members.js';
 import * as bar from './bar.js';
 import * as promos from './promos.js';
+import * as staffauth from './staffauth.js';
+import { opsRoute } from './ops/router.js';
+import { publicBill, startBillPayment } from './ops/tabs.js';
 import { reconcilePayments, health } from './reconcile.js';
 import * as Sentry from '@sentry/cloudflare';
 import { sentryOptions, reportError, routeGroup, isCritical, clientError, securitySignal } from './lib/monitor.js';
@@ -132,10 +135,35 @@ async function route(req, env, ctx) {
   if (m === 'GET' && p === '/api/health') return health(req, env);
   if (m === 'POST' && p === '/api/client-error') { if (await throttled(req, env, 'client-error', 'strict')) return tooMany(req, env); return reply(req, env, await clientError(req, env, allowedOrigin)); }
 
+  // ── A customer's bill (from their waiter): the link is the key; it can only read and pay ──
+  if (p.startsWith('/api/guest/bill/')) {
+    if (await throttled(req, env, 'bill', 'standard')) return tooMany(req, env);
+    const parts = p.split('/'), token = parts[4];
+    if (m === 'GET' && parts.length === 5) return reply(req, env, await publicBill(env, token));
+    if (m === 'POST' && parts[5] === 'pay') return reply(req, env, await startBillPayment(env, token, await body(req)));
+  }
+
+  // ── Staff sign-in with phone + PIN (public; strict limits per address and per phone) ──
+  if (m === 'POST' && p.startsWith('/api/staff-auth/')) {
+    const b = await body(req), ph = normalizePhone(b.phone) || 'none', ip = req.headers.get('CF-Connecting-IP');
+    if (await throttled(req, env, 'staff-auth', 'strict') || await throttled(req, env, 'staff-auth-phone', 'strict', ph)) return tooMany(req, env);
+    if (p === '/api/staff-auth/sign-in') return reply(req, env, await staffauth.signInWithPin(env, b, ip));
+    if (p === '/api/staff-auth/send-code') return reply(req, env, await staffauth.sendPinCode(env, b));
+    if (p === '/api/staff-auth/set-pin') return reply(req, env, await staffauth.setPinWithCode(env, b, ip));
+    return fail(req, env, 'Not found.', 404);
+  }
+
   // ── Staff (Firebase ID token with a role claim) ──
-  if (!p.startsWith('/api/admin/') && !p.startsWith('/api/members/door/') && !p.startsWith('/api/bar/') && !['/api/members/my-pass', '/api/members/my-gate'].includes(p) && !['/api/checkin', '/api/checkin/undo', '/api/door/events', '/api/door/summary', '/api/door/search', '/api/send-sms', '/api/balance'].includes(p)) return fail(req, env, 'Not found.', 404);
+  if (!p.startsWith('/api/admin/') && !p.startsWith('/api/ops/') && !p.startsWith('/api/members/door/') && !p.startsWith('/api/bar/') && !['/api/members/my-pass', '/api/members/my-gate'].includes(p) && !['/api/checkin', '/api/checkin/undo', '/api/door/events', '/api/door/summary', '/api/door/search', '/api/send-sms', '/api/balance'].includes(p)) return fail(req, env, 'Not found.', 404);
   const user = await verifyStaff(req, env);
   if (!user) return fail(req, env, 'Sign in again.', 401);
+  if (m === 'GET' && p === '/api/ops/me') return reply(req, env, await staffauth.whoAmI(env, user));
+  if (m === 'POST' && p === '/api/ops/change-pin') return reply(req, env, await staffauth.changeMyPin(env, user, await body(req)));
+  if (p.startsWith('/api/ops/')) {
+    const r = await opsRoute(m, p, new URL(req.url), m === 'POST' ? await body(req) : {}, env, user);
+    if (r !== undefined) return reply(req, env, r);
+    return fail(req, env, 'Not found.', 404);
+  }
 
   if (m === 'POST' && p === '/api/checkin') {
     if (!requireRole(user, DOOR)) return fail(req, env, 'Forbidden.', 403);
@@ -209,6 +237,11 @@ async function route(req, env, ctx) {
   if (m === 'POST' && p === '/api/admin/settings') return reply(req, env, await admin.updateSettings(env, await body(req), user));
   if (m === 'GET' && p === '/api/admin/organisers') return reply(req, env, await admin.listOrganisers(env, user));
   if (m === 'GET' && p === '/api/admin/staff') return reply(req, env, await admin.listStaff(env, user));
+  if (m === 'GET' && p === '/api/admin/people') return reply(req, env, await staffauth.listStaffPeople(env, user));
+  if (m === 'POST' && p === '/api/admin/people/add') return reply(req, env, await staffauth.addStaffPerson(env, await body(req), user));
+  if (m === 'POST' && p === '/api/admin/people/update') return reply(req, env, await staffauth.updateStaffPerson(env, await body(req), user));
+  if (m === 'POST' && p === '/api/admin/people/reset-pin') return reply(req, env, await staffauth.resetStaffPin(env, await body(req), user));
+  if (m === 'POST' && p === '/api/admin/people/remove') return reply(req, env, await staffauth.removeStaffPerson(env, await body(req), user));
   if (m === 'POST' && p === '/api/admin/set-role') return reply(req, env, await admin.setRole(env, await body(req), user));
   if (m === 'POST' && p === '/api/admin/staff/invite') {
     if (await throttled(req, env, 'invite', 'strict')) return tooMany(req, env);
@@ -236,7 +269,7 @@ async function route(req, env, ctx) {
   return fail(req, env, 'Not found.', 404);
 }
 
-const STAFF_PATH = /^\/api\/(admin|checkin|door|members\/door|bar)(\/|$)|^\/api\/(send-sms|balance)$/;
+const STAFF_PATH = /^\/api\/(admin|ops|checkin|door|members\/door|bar)(\/|$)|^\/api\/(send-sms|balance)$/;
 const handler = {
   async fetch(req, env, ctx) {
     if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers: cors(req, env) });

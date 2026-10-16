@@ -1,6 +1,6 @@
 // Staff pages only. The public site never loads Firebase: it talks to the Worker API.
 import { initializeApp, getApps } from 'https://www.gstatic.com/firebasejs/11.0.2/firebase-app.js';
-import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged, sendPasswordResetEmail } from 'https://www.gstatic.com/firebasejs/11.0.2/firebase-auth.js';
+import { getAuth, signInWithEmailAndPassword, signInWithCustomToken, signOut, onAuthStateChanged, sendPasswordResetEmail } from 'https://www.gstatic.com/firebasejs/11.0.2/firebase-auth.js';
 
 const cfg = window.MEMORIES_CONFIG?.firebase;
 const app = getApps()[0] || initializeApp(cfg);
@@ -8,6 +8,8 @@ const auth = getAuth(app);
 
 const wrap = async u => (u ? { uid: u.uid, email: u.email, claims: (await u.getIdTokenResult()).claims } : null);
 export const signIn = (email, password) => signInWithEmailAndPassword(auth, email, password).then(c => wrap(c.user));
+// Phone + PIN: the Worker checked the PIN and sent a custom token; this exchanges it for a session.
+export const signInWithToken = token => signInWithCustomToken(auth, token).then(c => wrap(c.user));
 export const signOutUser = () => signOut(auth);
 export const resetPassword = email => sendPasswordResetEmail(auth, email);
 export const onUser = cb => onAuthStateChanged(auth, async u => cb(await wrap(u)));

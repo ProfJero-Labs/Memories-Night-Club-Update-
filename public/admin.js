@@ -12,7 +12,7 @@ staffHeader(user, 'Control room');
 const can = roles => roles.includes(user.role);
 const TABS = [
   ['overview', 'Overview', CMS], ['nights', 'Nights', CMS], ['payments', 'Payments', CMS], ['bookings', 'Orders', CMS], ['requests', 'Event requests', CMS],
-  ['system', 'System', MONEY], ['members', 'Members', MONEY], ['attendance', 'Attendance', MONEY], ['bits', 'Pay in bits', MONEY], ['refunds', 'Refunds', MONEY], ['counter', 'Bar orders', CMS], ['bar', 'Table bottles', CMS], ['settings', 'Site settings', MONEY], ['staff', 'Staff', ['superAdmin']],
+  ['system', 'System', MONEY], ['members', 'Members', MONEY], ['attendance', 'Attendance', MONEY], ['bits', 'Pay in bits', MONEY], ['refunds', 'Refunds', MONEY], ['counter', 'Bar orders', CMS], ['bar', 'Table bottles', CMS], ['settings', 'Site settings', MONEY], ['staff', 'Staff', MONEY],
 ].filter(t => can(t[2]));
 // Five places, not ten: related tabs sit together behind one button, with their own row underneath.
 const GROUPS = [['tonight', 'Tonight', ['overview', 'system']], ['nights', 'Nights', ['nights', 'requests']], ['money', 'Money', ['payments', 'bookings', 'bits', 'refunds']], ['people', 'People', ['members', 'attendance', 'staff']], ['setup', 'Setup', ['counter', 'bar', 'settings']]]
@@ -752,53 +752,81 @@ async function settings() {
 }
 
 // ── Staff ──
-async function staff() {
-  const { staff: list } = await sapi('/api/admin/staff');
+async function staff(arg, notice) {
+  const { staff: list, roles } = await sapi('/api/admin/people');
+  const roleOpts = sel => `<option value="" ${sel ? '' : 'selected'} disabled>Pick their job</option>${roles.map(r => `<option value="${esc(r.id)}" ${r.id === sel ? 'selected' : ''}>${esc(r.name)}</option>`).join('')}`;
+  const may = r => roles.some(x => x.id === r);
+  const last = s => (s.lastSignInAt ? when(s.lastSignInAt) : s.hasPin ? 'Not yet' : 'Hasn’t chosen a PIN');
   panel.innerHTML = `<h1>Staff</h1>
-    <form class="card" id="inviteForm" novalidate>
-      <h2 style="margin-top:0">Invite a staff member</h2>
-      <p class="muted" style="margin:0">Creates their account and texts their sign-in details.</p>
+    <p class="muted" style="margin-top:-6px">Staff sign in with their phone number and their own PIN. Add someone and they get a text with a code to choose their PIN. Everyone here is also a member: they get in with the app, never a ticket.</p>
+    <form class="card" id="addForm" novalidate><h2 style="margin:0">Add a staff member</h2>
       <div class="grid2">
-        <div class="sfield"><label for="iName">Name</label><input id="iName" maxlength="80" required></div>
-        <div class="sfield"><label for="iEmail">Email</label><input id="iEmail" type="email" required></div>
-        <div class="sfield"><label for="iPhone">Phone (gets the sign-in text)</label><input id="iPhone" type="tel" placeholder="024 123 4567" required></div>
-        <div class="sfield"><label for="iRole">Role</label><select id="iRole">${Object.entries(ROLE_LABEL).map(([k, l]) => `<option value="${k}">${l}</option>`).join('')}</select></div>
+        <div class="sfield"><label for="aName">Full name</label><input id="aName" maxlength="80" autocomplete="off"></div>
+        <div class="sfield"><label for="aPhone">Phone number (they sign in with it)</label><input id="aPhone" type="tel" inputmode="tel" placeholder="024 123 4567"></div>
+        <div class="sfield"><label for="aRole">Job</label><select id="aRole">${roleOpts('')}</select></div>
+        <label class="check" style="align-self:end"><input type="checkbox" id="aCash"> Can collect cash from customers</label>
       </div>
-      <p class="hint" style="margin:0;color:var(--muted)"><strong>Director</strong> and <strong>Manager</strong>: the whole control room except Staff. <strong>Event manager</strong>: nights, orders, bar setup. <strong>Door</strong>: the door. <strong>Bar</strong> and <strong>Waitress / waiter</strong>: the bar screen (app orders, table QR codes). <strong>Organiser</strong>: their own nights. Everyone is also a member: they get in with the app, never a ticket.</p>
-      <div><button class="sbtn red" type="submit" id="iBtn">Send invite</button></div><div id="inviteMsg"></div>
+      <div><button class="sbtn red" type="submit" id="aBtn">Add and text them</button></div><div id="addMsg"></div>
     </form>
-
-    <form class="card" id="roleForm" novalidate>
-      <h2 style="margin-top:0">Change an existing role</h2>
-      <p class="muted" style="margin:0">For accounts that already exist.</p>
-      <div class="grid2"><div class="sfield"><label for="rEmail">Email</label><input id="rEmail" type="email"></div>
-        <div class="sfield"><label for="rRole">Role</label><select id="rRole">${Object.entries(ROLE_LABEL).map(([k, l]) => `<option value="${k}">${l}</option>`).join('')}<option value="none">Remove access</option></select></div></div>
-      <div><button class="sbtn red" type="submit">Save role</button></div><div id="roleMsg"></div>
-    </form>
-
-    <h2>Who has access</h2><div class="tbl-wrap"><table class="tbl"><thead><tr><th>Email</th><th>Role</th><th>UID (for organiser nights)</th></tr></thead><tbody>
-    ${list.map(x => `<tr><td>${esc(x.email)}</td><td>${esc(ROLE_LABEL[x.role] || x.role)}</td><td><code>${esc(x.uid)}</code></td></tr>`).join('') || '<tr><td colspan="3" class="empty-row">No staff recorded yet.</td></tr>'}</tbody></table></div>
-    <p class="hint" style="color:var(--muted)">Super admin: everything. Manager: everything but staff. Event manager: nights, bookings, event requests, comps, the draw. Door: check-in only. Organiser: their own nights' numbers and door.</p>`;
-
-  $('#inviteForm').onsubmit = async ev => {
+    <details class="fold"><summary>What each job can do</summary><dl class="role-key">
+      <dt>Director</dt><dd>Everything a manager can, and adds managers and finance officers.</dd>
+      <dt>Manager</dt><dd>Runs the night: today’s sales, staff reports, approvals, stock, prices, staff.</dd>
+      <dt>Finance officer</dt><dd>Prices, stock received, money, staff reports and the end-of-day report.</dd>
+      <dt>Events manager</dt><dd>Nights, tickets, tables, promos and bar setup.</dd>
+      <dt>Front office</dt><dd>Tickets at the entrance, table bookings and arrivals, customer issues.</dd>
+      <dt>Security</dt><dd>Checks tickets at the entrance and records incidents.</dd>
+      <dt>Bartender</dt><dd>Prepares orders, hands drinks to waiters, records breakages, counts stock.</dd>
+      <dt>Waiter / waitress</dt><dd>Opens tabs for tables, sends rounds to the bar, shares bills, “My report”.</dd>
+      <dt>Cashier</dt><dd>Takes cash payments and counts the cash at the end of the shift.</dd>
+      <dt>Organiser</dt><dd>An outside organiser: their own nights only.</dd>
+      <dt>System admin</dt><dd>Everything, including making other admins.</dd></dl></details>
+    <div id="sMsg"></div>
+    <div class="tbl-wrap"><table class="tbl"><thead><tr><th>Name</th><th>Job</th><th>Phone</th><th>Last signed in</th><th></th></tr></thead><tbody>
+    ${list.map(s => `<tr data-uid="${esc(s.uid)}"><td><strong>${esc(s.name || s.email)}</strong>${s.locked ? ` ${pill('PIN locked', 'red')}` : ''}${s.canCollectCash ? `<br><small class="muted">Collects cash</small>` : ''}</td><td>${esc(s.roleName)}</td><td>${s.phone ? esc(s.phone) : pill('add phone', 'amber')}</td><td>${esc(last(s))}</td>
+      <td class="actions">${may(s.role) && s.uid !== user.uid ? `<button class="sbtn" data-edit>Change</button><button class="sbtn ghost" data-pin>Reset PIN</button><button class="sbtn ghost" data-rm>Remove</button>` : ''}</td></tr>`).join('') || '<tr><td colspan="5" class="empty-row">No staff yet.</td></tr>'}</tbody></table></div>`;
+  const one = el => list.find(x => x.uid === el.closest('tr').dataset.uid);
+  $('#addForm').onsubmit = async ev => {
     ev.preventDefault();
-    const btn = $('#iBtn'); btn.disabled = true;
+    const role = $('#aRole').value;
+    if (!role) return flash($('#addMsg'), 'Pick their job.', true);
+    if (['superAdmin', 'director'].includes(role) && !confirm(`Give ${val('#aName') || 'this person'} the ${roles.find(r => r.id === role).name} job? They’ll be able to change almost everything.`)) return;
+    $('#aBtn').disabled = true;
     try {
-      const r = await sapi('/api/admin/staff/invite', { method: 'POST', body: {
-        name: val('#iName'), email: val('#iEmail'), phone: val('#iPhone'), role: val('#iRole'),
-      } });
-      flash($('#inviteMsg'), `Invite sent to ${r.email}${r.texted ? ' by text' : ' — but the SMS did not send, check the SMS balance'}.`);
-      $('#inviteForm').reset();
-      setTimeout(() => staff().catch(fail), 1200);
-    } catch (err) { flash($('#inviteMsg'), err.message, true); }
-    btn.disabled = false;
+      const r = await sapi('/api/admin/people/add', { method: 'POST', body: { name: val('#aName'), phone: val('#aPhone'), role, canCollectCash: $('#aCash').checked } });
+      staff(null, { text: r.texted ? `Added. We’ve texted ${r.phoneHint} a code to choose their PIN.` : `Added, but the text didn’t send. Tap “Reset PIN” on their row to try again.` });
+    } catch (e) { flash($('#addMsg'), e.message, true); $('#aBtn').disabled = false; }
   };
-
-  $('#roleForm').onsubmit = async ev => {
-    ev.preventDefault();
-    try { const r = await sapi('/api/admin/set-role', { method: 'POST', body: { email: val('#rEmail'), role: val('#rRole') } }); flash($('#roleMsg'), `${r.email} → ${ROLE_LABEL[r.role] || 'no access'}.`); setTimeout(() => staff().catch(fail), 900); }
-    catch (err) { flash($('#roleMsg'), err.message, true); }
-  };
+  $$('[data-edit]').forEach(b => b.onclick = () => {
+    const s = one(b);
+    const box = document.createElement('div'); box.className = 'sheet-back';
+    box.innerHTML = `<form class="sheet" novalidate><h2>Change ${esc(s.name)}</h2>
+      <div class="sfield"><label for="eName">Full name</label><input id="eName" maxlength="80" value="${esc(s.name)}"></div>
+      <div class="sfield"><label for="ePhone">Phone number</label><input id="ePhone" type="tel" value="${esc(s.phone)}"></div>
+      <div class="sfield"><label for="eRole">Job</label><select id="eRole">${roleOpts(s.role)}</select></div>
+      <label class="check"><input type="checkbox" id="eCash" ${s.canCollectCash ? 'checked' : ''}> Can collect cash from customers</label>
+      <div id="eMsg"></div><div class="toolbar" style="margin:0"><button class="sbtn red" type="submit">Save</button><button class="sbtn ghost" type="button" id="eClose">Cancel</button></div></form>`;
+    document.body.append(box);
+    box.querySelector('#eClose').onclick = () => box.remove();
+    box.querySelector('form').onsubmit = async ev => {
+      ev.preventDefault();
+      try { await sapi('/api/admin/people/update', { method: 'POST', body: { uid: s.uid, name: box.querySelector('#eName').value, phone: box.querySelector('#ePhone').value, role: box.querySelector('#eRole').value, canCollectCash: box.querySelector('#eCash').checked } }); box.remove(); staff(null, { text: `Saved. ${s.name}’s new job works on their next tap.` }); }
+      catch (e) { box.querySelector('#eMsg').innerHTML = `<div class="msg err">${esc(e.message)}</div>`; }
+    };
+  });
+  $$('[data-pin]').forEach(b => b.onclick = async () => {
+    const s = one(b);
+    if (!confirm(`Reset ${s.name}’s PIN? Their old PIN stops working and we text them a code to choose a new one.`)) return;
+    try { const r = await sapi('/api/admin/people/reset-pin', { method: 'POST', body: { uid: s.uid } }); flash($('#sMsg'), r.texted ? `Done. Code texted to ${r.phoneHint}.` : 'PIN reset, but the text didn’t send. Check their phone number.', !r.texted); }
+    catch (e) { flash($('#sMsg'), e.message, true); }
+  });
+  $$('[data-rm]').forEach(b => b.onclick = async () => {
+    const s = one(b);
+    if (!confirm(`Remove ${s.name}? They can’t sign in any more, from any phone, starting now. Their past work keeps their name.`)) return;
+    try { await sapi('/api/admin/people/remove', { method: 'POST', body: { uid: s.uid } }); staff(null, { text: `${s.name} removed.` }); }
+    catch (e) { flash($('#sMsg'), e.message, true); }
+  });
+  labelTables();
+  if (notice) flash($('#sMsg'), notice.text);
 }
 
 function fromHash() {

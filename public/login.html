@@ -20,17 +20,51 @@
 </head>
 <body>
 <main class="center-screen" style="min-height:100vh">
-  <form id="f" class="step" novalidate style="width:min(100%,420px)">
-    <img src="assets/logo-sm.webp" alt="Memories" width="220" height="52" style="width:180px;height:auto">
-    <h1 class="display" style="font-size:52px">Staff</h1>
+  <div class="step signin" style="width:min(100%,420px)">
+    <img src="assets/logo-sm.webp" alt="Memories" width="220" height="52" style="width:170px;height:auto">
+    <h1 class="display" style="font-size:48px;margin:0" id="title">Staff sign in</h1>
     <div class="notice" id="msg" hidden role="alert"></div>
-    <div class="field"><label for="email">Email</label><input id="email" type="email" autocomplete="username" required></div>
-    <div class="field"><label for="pw">Password</label><input id="pw" type="password" autocomplete="current-password" required></div>
-    <button class="btn red" type="submit" id="go">Sign in</button>
+
+    <!-- 1. Phone + PIN -->
+    <form id="pinForm" class="step" novalidate>
+      <div class="field"><label for="phone">Your phone number</label><input id="phone" type="tel" inputmode="tel" autocomplete="tel" placeholder="024 123 4567"></div>
+      <div class="field"><label for="pin">Your PIN</label><div class="pin-row"><input id="pin" type="password" inputmode="numeric" autocomplete="current-password" maxlength="6" pattern="[0-9]*" placeholder="••••"><button type="button" class="link" id="showPin" aria-pressed="false">Show</button></div></div>
+      <button class="btn red block" type="submit" id="go">Sign in</button>
+      <button class="link" type="button" id="toCode" style="justify-self:start">First time, or forgot your PIN?</button>
+    </form>
+
+    <!-- 2. Get a code by text -->
+    <form id="codeForm" class="step" novalidate hidden>
+      <p class="muted" style="margin:0">We’ll text a 6-number code to your phone. Use it to choose your PIN.</p>
+      <div class="field"><label for="cPhone">Your phone number</label><input id="cPhone" type="tel" inputmode="tel" autocomplete="tel" placeholder="024 123 4567"></div>
+      <button class="btn red block" type="submit">Text me a code</button>
+      <button class="link" type="button" id="haveCode" style="justify-self:start">I already have a code</button>
+      <button class="link" type="button" data-back style="justify-self:start">← Back to sign in</button>
+    </form>
+
+    <!-- 3. Code + new PIN -->
+    <form id="setForm" class="step" novalidate hidden>
+      <div class="field"><label for="sPhone">Your phone number</label><input id="sPhone" type="tel" inputmode="tel" autocomplete="tel"></div>
+      <div class="field"><label for="sCode">The code we texted you</label><input id="sCode" inputmode="numeric" autocomplete="one-time-code" maxlength="6" pattern="[0-9]*"></div>
+      <div class="field"><label for="sPin">Choose your PIN</label><input id="sPin" type="password" inputmode="numeric" autocomplete="new-password" maxlength="6" pattern="[0-9]*"><span class="hint" id="pinHint">4 numbers (6 for managers, directors and finance). Not 1234, not 1111.</span></div>
+      <div class="field"><label for="sPin2">Type your PIN again</label><input id="sPin2" type="password" inputmode="numeric" autocomplete="new-password" maxlength="6" pattern="[0-9]*"></div>
+      <button class="btn red block" type="submit">Save my PIN and sign in</button>
+      <button class="link" type="button" data-back style="justify-self:start">← Back to sign in</button>
+    </form>
+
+    <!-- Older accounts: email + password -->
+    <form id="f" class="step" novalidate hidden>
+      <div class="field"><label for="email">Email</label><input id="email" type="email" autocomplete="username"></div>
+      <div class="field"><label for="pw">Password</label><input id="pw" type="password" autocomplete="current-password"></div>
+      <button class="btn red block" type="submit" id="goEmail">Sign in</button>
+      <button class="link" type="button" id="forgot" style="justify-self:start">Forgot password?</button>
+      <button class="link" type="button" data-back style="justify-self:start">← Sign in with phone and PIN</button>
+    </form>
+
     <button class="link" type="button" id="switch" hidden style="justify-self:start">Not you? Sign out</button>
-    <button class="link" type="button" id="forgot" style="justify-self:start">Forgot password?</button>
-    <p class="foot-small" style="margin:0">Staff accounts are created by the club. There’s no public sign-up.</p>
-</form>
+    <button class="link" type="button" id="toEmail" style="justify-self:start;font-size:14px">Sign in with email instead</button>
+    <p class="foot-small" style="margin:0">Staff accounts are added by a manager. There’s no public sign-up.</p>
+  </div>
 </main>
 <script type="module" src="pages/login.js"></script>
 </body>

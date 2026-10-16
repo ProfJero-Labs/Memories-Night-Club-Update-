@@ -1,3 +1,4 @@
+import { pbkdf2Sync } from 'node:crypto';
 // Dev-only fixture data. Every name, price and line here is placeholder content for local testing
 // and screenshots — none of it is production data and none of it is shipped.
 const day = 864e5;
@@ -31,9 +32,32 @@ export function seed(store, origin) {
   store.seed('raffles', 'evt_dev-afro', { eventId: 'dev-afro', prize: 'Dev prize (placeholder)', cap: 20, spotsTaken: 6, enabled: true, public: true, status: 'open' });
   [['Dev Vodka', 'Spirits', 90000], ['Dev Whisky', 'Spirits', 120000], ['Dev Champagne', 'Champagne', 180000], ['Dev Rosé', 'Wine', 60000], ['Dev Mixers (x6)', 'Soft', 12000]]
     .forEach(([name, category, price], i) => store.seed('bottles', `dev-b${i}`, { eventId: 'all', name, category, pricePesewas: price, active: true }));
-  const staff = [['admin@dev', 'uid-admin', { role: 'superAdmin', admin: true }], ['manager@dev', 'uid-mgr', { role: 'manager', admin: false }], ['door@dev', 'uid-door', { role: 'doorStaff', admin: false }], ['bar@dev', 'uid-bar', { role: 'barStaff', admin: false }], ['orga@dev', 'uid-org-a', { role: 'organiser', admin: false }], ['orgb@dev', 'uid-org-b', { role: 'organiser', admin: false }], ['guest@dev', 'uid-guest', {}]];
+  // Dev staff: sign in with the phone and PIN (2580, or 258025 for the 6-number roles), or the email
+  // and the password memories-dev. Placeholders only.
+  const staff = [
+    ['admin@dev', 'uid-admin', { role: 'superAdmin', admin: true }, 'Dev Admin', '0200000001'],
+    ['manager@dev', 'uid-mgr', { role: 'manager', admin: false }, 'Dev Manager', '0200000002'],
+    ['door@dev', 'uid-door', { role: 'doorStaff', admin: false }, 'Dev Front Office', '0200000003'],
+    ['bar@dev', 'uid-bar', { role: 'barStaff', admin: false }, 'Dev Bartender', '0200000004'],
+    ['orga@dev', 'uid-org-a', { role: 'organiser', admin: false }, 'Ama Organiser', '0245552020'],
+    ['orgb@dev', 'uid-org-b', { role: 'organiser', admin: false }, 'Dev Organiser B', '0200000006'],
+    ['waiter@dev', 'uid-waiter', { role: 'waitStaff', admin: false }, 'Dev Waiter', '0200000007'],
+    ['waiter2@dev', 'uid-waiter2', { role: 'waitStaff', admin: false }, 'Dev Waitress', '0200000008'],
+    ['cashier@dev', 'uid-cashier', { role: 'cashier', admin: false }, 'Dev Cashier', '0200000009'],
+    ['finance@dev', 'uid-finance', { role: 'finance', admin: false }, 'Dev Finance', '0200000010'],
+    ['security@dev', 'uid-security', { role: 'security', admin: false }, 'Dev Security', '0200000011'],
+    ['director@dev', 'uid-director', { role: 'director', admin: false }, 'Dev Director', '0200000012'],
+    ['guest@dev', 'uid-guest', {}, 'Guest', ''],
+  ];
   store.claims = {};
-  for (const [email, uid, claims] of staff) { store.authUsers.push({ email, localId: uid }); store.claims[uid] = claims; if (claims.role) store.seed('users', uid, { email, role: claims.role }); }
+  const salt = '00112233445566778899aabbccddeeff';
+  const pinHash = pin => pbkdf2Sync(pin, Buffer.from(salt, 'hex'), 100000, 32, 'sha256').toString('hex');
+  const hashes = { 4: pinHash('2580'), 6: pinHash('258025') };
+  for (const [email, uid, claims, name, phone] of staff) {
+    store.authUsers.push({ email, localId: uid }); store.claims[uid] = claims;
+    const long = ['superAdmin', 'director', 'manager', 'finance'].includes(claims.role);
+    if (claims.role) store.seed('users', uid, { email, role: claims.role, admin: claims.admin === true, name, phone, pinSalt: salt, pinHash: hashes[long ? 6 : 4], pinSetAt: new Date().toISOString() });
+  }
   // Every staff account is a member (no ticket at the gate). Organiser A's, linked to their sign-in:
   store.seed('members', 'dev-mem-orga', { name: 'Ama Organiser', phone: '0245552020', type: 'staff', status: 'active', validUntil: '', staffUid: 'uid-org-a', department: 'Events', position: 'Organiser', staffNo: '', notes: '', createdAt: new Date().toISOString() });
   // Scan to order: one bar (QR → /b/0123…cdef) and a short drinks menu. Dev placeholders.
