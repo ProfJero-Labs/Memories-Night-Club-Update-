@@ -735,26 +735,50 @@ test('promos: the control room starts an automatic promo and a code promo; guest
   for (const p of store.list('promos')) store.seed('promos', p.id, { ...p.fields, active: false });
 });
 
-test('staff sign-in: a manager adds a waitress by phone; she gets a code by text, chooses a PIN, and lands on her Tabs screen; a wrong PIN is refused', async () => {
+test('staff sign-in: a manager adds a waitress; her PIN is texted and shown to the manager; she signs in with it straight away, stays signed in the next day, can change it; forgot PIN texts a new one', async () => {
   const mgr = await phone(390);
   await signInAs(mgr, 'manager@dev'); await mgr.waitForURL(/admin\.html/);
   await openTab(mgr, 'staff');
   assert.equal(await mgr.$eval('#aRole', e => e.value), '', 'no job is pre-selected');
   assert.ok(!(await mgr.$$eval('#aRole option', os => os.map(o => o.value))).some(v => ['superAdmin', 'director', 'finance'].includes(v)), 'a manager can’t give admin, director or finance');
   await mgr.fill('#aName', 'Abena Waitress'); await mgr.fill('#aPhone', '024 777 1001'); await mgr.selectOption('#aRole', 'waitStaff'); await mgr.click('#aBtn');
-  await mgr.getByText(/We’ve texted 024\*\*\*1001 a code/).waitFor();
+  await mgr.locator('.pincards').getByText(/Texted to 024\*\*\*1001/).waitFor();
   const sms = store.sms.filter(x => x.to === '0247771001').at(-1).message;
-  assert.match(sms, /Waiter \/ waitress/); const code = /code: (\d{6})/.exec(sms)[1];
+  assert.match(sms, /Waiter \/ waitress/); const pin = /PIN: (\d{4})/.exec(sms)[1];
+  assert.equal((await mgr.locator('.pincards .pinnum').first().textContent()).trim(), pin, 'the manager sees the same PIN');
+  assert.equal(await mgr.$eval('#aName', e => e.value), '', 'the form is ready for the next person');
+
+  // She signs in with the texted PIN: nothing to choose first.
   const w = await phone(360);
-  await w.goto(`${base}/login.html?invite=1`); await w.waitForSelector('#setForm:not([hidden])');
-  await w.fill('#sPhone', '0247771001'); await w.fill('#sCode', code); await w.fill('#sPin', '1234'); await w.fill('#sPin2', '1234'); await w.click('#setForm button[type=submit]');
-  await w.locator('#msg').getByText(/in a row/).waitFor();
-  await w.fill('#sPin', '4826'); await w.fill('#sPin2', '4826'); await w.click('#setForm button[type=submit]');
-  await w.waitForURL(/waiter\.html/); await w.waitForSelector('#newTab');
-  await w.click('#acctBtn'); await w.click('#signout'); await w.waitForURL(/login\.html/);
+  await w.goto(`${base}/login.html`); await w.waitForSelector('#pinForm');
+  assert.equal(await w.locator('#codeForm, #setForm').count(), 0, 'no extra code or choose-a-PIN screens');
   await w.fill('#phone', '0247771001'); await w.fill('#pin', '9999'); await w.click('#go');
   await w.locator('#msg').getByText(/don’t match/).waitFor();
-  await w.fill('#pin', '4826'); await w.click('#go'); await w.waitForURL(/waiter\.html/);
+  await w.fill('#pin', pin); await w.click('#go');
+  await w.waitForURL(/waiter\.html/); await w.waitForSelector('#newTab');
+
+  // Full-time staff: still signed in the next day (no morning sign-out).
+  // (The old one-night rule read this marker; a sign-in from yesterday must still work today.)
+  await w.evaluate(() => localStorage.setItem('mem-staff-signed-in', String(Date.now() - 30 * 3600e3)));
+  await w.reload(); await w.waitForSelector('#newTab');
+  assert.match(w.url(), /waiter\.html/);
+
+  // Changing it is optional and simple.
+  await w.click('#acctBtn'); await w.click('#changePin');
+  await w.getByText('The PIN we texted you').waitFor();
+  await w.fill('#cpOld', pin); await w.fill('#cpNew', '4826'); await w.fill('#cpNew2', '4826'); await w.click('.sheet button[type=submit]');
+  await w.getByText(/Your PIN is changed/).waitFor();
+  await w.click('#acctBtn'); await w.click('#signout'); await w.waitForURL(/login\.html/);
+  await w.fill('#phone', '0247771001'); await w.fill('#pin', '4826'); await w.click('#go'); await w.waitForURL(/waiter\.html/);
+
+  // Forgot it: "Text me one" sends a new PIN to the number typed in.
+  await w.click('#acctBtn'); await w.click('#signout'); await w.waitForURL(/login\.html/);
+  const before = store.sms.length;
+  await w.fill('#phone', '0247771001'); await w.click('#sendPin');
+  await w.locator('#msg').getByText(/new PIN is on its way/).waitFor();
+  assert.equal(store.sms.length, before + 1);
+  const fresh = /PIN: (\d{4})/.exec(store.sms.at(-1).message)[1];
+  await w.fill('#pin', fresh); await w.click('#go'); await w.waitForURL(/waiter\.html/);
   assert.deepEqual([...mgr.errors, ...w.errors], []);
 });
 

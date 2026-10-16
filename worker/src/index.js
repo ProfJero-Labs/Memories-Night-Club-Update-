@@ -149,8 +149,7 @@ async function route(req, env, ctx) {
     // Per address: generous (a whole team signs in on the club's Wi-Fi). Per phone: strict, plus the PIN lockout.
     if (await throttled(req, env, 'staff-auth', 'standard') || await throttled(req, env, 'staff-auth-phone', 'strict', ph)) return tooMany(req, env);
     if (p === '/api/staff-auth/sign-in') return reply(req, env, await staffauth.signInWithPin(env, b, ip));
-    if (p === '/api/staff-auth/send-code') return reply(req, env, await staffauth.sendPinCode(env, b));
-    if (p === '/api/staff-auth/set-pin') return reply(req, env, await staffauth.setPinWithCode(env, b, ip));
+    if (p === '/api/staff-auth/send-pin') return reply(req, env, await staffauth.sendNewPin(env, b));
     return fail(req, env, 'Not found.', 404);
   }
 
@@ -243,6 +242,7 @@ async function route(req, env, ctx) {
   if (m === 'POST' && p === '/api/admin/people/add') return reply(req, env, await staffauth.addStaffPerson(env, await body(req), user));
   if (m === 'POST' && p === '/api/admin/people/update') return reply(req, env, await staffauth.updateStaffPerson(env, await body(req), user));
   if (m === 'POST' && p === '/api/admin/people/reset-pin') return reply(req, env, await staffauth.resetStaffPin(env, await body(req), user));
+  if (m === 'POST' && p === '/api/admin/people/send-pins') return reply(req, env, await staffauth.sendStarterPins(env, user));
   if (m === 'POST' && p === '/api/admin/people/remove') return reply(req, env, await staffauth.removeStaffPerson(env, await body(req), user));
   if (m === 'POST' && p === '/api/admin/set-role') return reply(req, env, await admin.setRole(env, await body(req), user));
   if (m === 'POST' && p === '/api/admin/staff/invite') {

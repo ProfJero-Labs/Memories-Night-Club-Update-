@@ -139,3 +139,10 @@ details.more > summary { cursor: pointer; font-weight: 700; padding: 8px 0; }
 .sys-banner { max-width: 1400px; margin: 12px auto 0; padding: 12px var(--gutter); display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; background: var(--crimson-deep); border: 1px solid var(--crimson); }
 .sys-banner span { flex: 1 1 240px; } .sys-banner[hidden] { display: none; }
 .role-key { display: grid; grid-template-columns: max-content 1fr; gap: 6px 14px; margin: 10px 0 0; } .role-key dt { font-weight: 700; } .role-key dd { margin: 0; color: var(--muted); }
+
+/* Staff: PINs just sent, shown once */
+.pincards{display:grid;gap:8px;border-color:var(--gold, #c9a24a)}
+.pincards .pinrow{display:grid;grid-template-columns:1fr auto;gap:2px 12px;align-items:center;padding:6px 0;border-top:1px solid var(--line, rgba(255,255,255,.1))}
+.pincards .pinrow small{grid-column:1/-1}
+.pincards .pinnum{font:700 26px/1 ui-monospace,monospace;letter-spacing:.2em}
+.pincards .warn{color:#e0a030}

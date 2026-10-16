@@ -6,19 +6,26 @@ training.
 
 ## Signing in (everyone)
 
-- Staff sign in with their **phone number and PIN**. Floor staff use a **4-number PIN**; managers,
-  directors, finance and the system admin use **6 numbers** (they control money, stock and staff).
-- **New staff:** a manager adds them (Control room → People → Staff → *Add a staff member*: name,
-  phone, job). They get a text with a code. On the sign-in page they enter their phone and the code,
-  then choose their PIN.
-- **Forgot PIN:** tap *First time, or forgot your PIN?* to get a new code by text, or ask a manager
-  to tap *Reset PIN*.
-- **Wrong PINs:** 5 in a row locks the PIN for 15 minutes; 10 locks it until a new code is used.
-- **The name button (top right)** has: My pass (for the gate), Change my PIN, Install the app,
-  Sign out.
-- **Shared phones** (door, bar) sign out by themselves the morning after a night (from 4AM).
+- Staff sign in with their **phone number and PIN**. Floor staff have a **4-number PIN**; managers,
+  directors, finance and the system admin have **6 numbers** (they control money, stock and staff).
+- **Adding staff:** a manager (or director, or the system admin) adds each person once: Control room
+  → People → Staff → *Add a staff member* (name, phone, job) → **Add and text their PIN**. The
+  system picks their PIN and texts it to them; the manager also sees it on screen, in case the text
+  doesn't arrive. They sign in straight away with their phone number and that PIN.
+- **Staff added before PINs** (or anyone without one): Staff → **Text PINs to everyone without one**.
+- **Changing the PIN is optional:** name button (top right) → *Change my PIN*.
+- **Forgot PIN:** on the sign-in page, type the phone number and tap *First time, or forgot your
+  PIN? Text me one*. The new PIN works for 30 minutes; the old one keeps working until the new one
+  is used. Or a manager taps **Send a new PIN** on their row.
+- **Who can add whom:** the system admin adds and changes anyone (managers, directors, finance,
+  other admins). A director adds anyone except system admins. A manager adds floor staff (not
+  managers, directors or finance).
+- **Wrong PINs:** 5 in a row locks the PIN for 15 minutes; 10 locks it until a new PIN is sent.
+- **The name button** has: My pass (for the gate), Change my PIN, Install the app, Sign out.
+- **Staff are full-time:** they stay signed in every night until they tap *Sign out*. (Temporary
+  staff aren't added to the system for now.) On a shared phone, sign out at the end of the shift.
 - Older accounts can still use *Sign in with email instead*. To move them to PIN sign-in, add their
-  phone number (Staff → Change) and they use *First time, or forgot your PIN?*.
+  phone number (Staff → Change), then *Send PIN*.
 - A job change or removal works **at once**, on every phone, without waiting.
 
 ## Who does what
@@ -92,8 +99,8 @@ training.
 - Deploy the Worker (`cd worker && npm ci && npm run deploy`) and the site (Cloudflare Pages).
 - Email for the end-of-day report: set the Worker secrets `BREVO_API_KEY` and `BREVO_SENDER_EMAIL`,
   then set the finance email in the control room. Without them, reports are saved, not emailed.
-- Existing staff: add their phone numbers (Staff → Change), then they use *First time, or forgot
-  your PIN?*. Then People → Members → *Make them all members*.
+- Existing staff: add their phone numbers (Staff → Change), then tap *Text PINs to everyone without
+  one*. Then People → Members → *Make them all members*.
 - Products: check each drink's price, cost and "counted at the bar" under Drinks & prices. Then each
   bar does an **opening count** (Bar → Stock) the first night.
 
