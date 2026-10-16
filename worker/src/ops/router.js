@@ -29,12 +29,14 @@ export async function opsRoute(m, p, u, b, env, user) {
       case '/api/ops/closing': return closing.closingStatus(env, user, { date: q('date') });
       case '/api/ops/eod': return closing.eodReport(env, user, { date: q('date') });
       case '/api/ops/eod/list': return closing.listEod(env, user);
+      case '/api/ops/finance-contact': return closing.financeContact(env, user);
     }
     return undefined;
   }
   if (m !== 'POST') return undefined;
   switch (p) {
     case '/api/ops/products': return stock.saveProduct(env, b, user);
+    case '/api/ops/products/available': return stock.setAvailable(env, b, user);
     case '/api/ops/stock/received': return stock.recordReceived(env, b, user);
     case '/api/ops/stock/transfer': return stock.recordTransfer(env, b, user);
     case '/api/ops/stock/waste': return stock.recordWaste(env, b, user);
@@ -60,6 +62,7 @@ export async function opsRoute(m, p, u, b, env, user) {
     case '/api/ops/front-report': return closing.submitFrontOffice(env, b, user);
     case '/api/ops/close-night': return closing.closeNight(env, b, user);
     case '/api/ops/eod/sign-off': return closing.financeSignOff(env, b, user);
+    case '/api/ops/finance-contact': return closing.financeContact(env, user, b || {});
   }
   return undefined;
 }

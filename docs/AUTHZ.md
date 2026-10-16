@@ -58,3 +58,31 @@ Scoping inside allowed routes: an organiser can check in only tickets for nights
 Public (no sign-in, rate limited): `POST /api/checkout/quote` (the exact price with any promo; a typed promo code gets a strict limit, as it does on `/api/checkout/initiate` and `/api/installments/start`), `POST /api/members/activate` (a one-time activation code a manager showed the member; strict rate limit), `POST /api/members/pass-status` (authenticated by a fresh pass QR), `GET /api/guest/menu`, `POST /api/guest/counter/checkout`, `GET /api/guest/counter/:orderId` (the random order id is the guest's key), `GET /api/guest/receipt/:code`, `POST /api/installments/phone-code` and `/phone-verify`.
 
 **Director and waitress roles.** `director` has exactly the manager's access in every row above (it is in the Worker's `CMS`, `MONEY` and `DOOR` lists and in the Firestore/Storage `staff()` rule). `waitStaff` (waitresses and waiters) has only the bar routes, like `barStaff`. Neither can manage staff: that stays superAdmin only. `POST /api/admin/members/delete` is manager/director/superAdmin only.
+
+## Venue operations (staff sign-in by PIN, tabs, bar, stock, cash, closing)
+
+The role on the staff record (`users/{uid}`) is checked on every request, so a job change or a
+removal applies at once. Each row is covered by `worker/test/staffauth.test.js` or
+`worker/test/ops-night.test.js`.
+
+| Route | Who |
+|---|---|
+| `POST /api/staff-auth/sign-in`, `/send-code`, `/set-pin` | Public, rate limited per address and per phone; PIN lockout after 5 and 10 wrong |
+| `GET /api/ops/me`, `POST /api/ops/change-pin` | Any staff (their own) |
+| `GET/POST /api/admin/people`, `/people/add`, `/update`, `/reset-pin`, `/remove` | System admin, director, manager. Managers can't give or change director, manager, finance or admin; directors can't make admins; nobody changes their own job |
+| `POST /api/ops/tabs/open`, `/round`, `/round-action`, `/close`, `/text-bill` | Waiters (their own tabs), manager, director, admin |
+| `POST /api/ops/tabs/cash` | Cashier, manager, director, admin, and staff marked "can collect cash" |
+| `GET /api/ops/bar/rounds`, `POST /api/ops/bar/round` | Bartender, manager, director, admin |
+| `GET /api/ops/products` | Waiters, bar, cashier, finance, managers (costs only for manager, director, finance, admin) |
+| `POST /api/ops/products` (price, cost) | Manager, director, finance, admin |
+| `POST /api/ops/products/available`, `/stock/received`, `/stock/transfer`, `/stock/waste`, `/stock/count` | Bartender, manager, director, finance, admin |
+| `POST /api/ops/stock/review`, `GET /api/ops/changes` | Manager, director, finance, admin (not your own count) |
+| `POST /api/ops/cash/open`, `/move`, `/close`, `GET /api/ops/cash` | Whoever takes cash (their own shift); refunds and payouts become approvals |
+| `POST /api/ops/cash/review`, `GET /api/ops/cash/all` | Manager, director, finance, admin (not your own) |
+| `POST /api/ops/approvals/request` | Depends on the kind (waiters ask for free drinks, discounts, write-offs) |
+| `POST /api/ops/approvals/decide` | Free drink, discount: manager, director, admin. Write-off, cash out: also finance. Count correction: manager, director, finance, admin. Never your own request |
+| `GET /api/ops/sales`, `/closing`, `/eod`, `/eod/list`, `/finance-contact` | Manager, director, finance, admin |
+| `POST /api/ops/close-night` | Manager, director, admin |
+| `POST /api/ops/eod/sign-off` | Finance, director, admin; not the person who closed the night |
+| `GET/POST /api/ops/tables`, `/incidents`, `/front-report` | Front office, security (no report), managers; waiters and bar see tables and tick bottles served |
+| `GET /api/guest/bill/:token`, `POST /api/guest/bill/:token/pay` | The customer's bill link: read and pay only; prices from the Worker |

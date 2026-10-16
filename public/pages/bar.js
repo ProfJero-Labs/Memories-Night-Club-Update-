@@ -4,7 +4,7 @@
 import { $, $$, esc, money } from '../app.js';
 import { requireStaff, staffHeader, sapi } from '../staff.js';
 import { openQrMaker } from '../lib/qrcard.js';
-const user = await requireStaff(['superAdmin', 'director', 'manager', 'eventManager', 'barStaff', 'waitStaff']);
+const user = await requireStaff(['superAdmin', 'director', 'manager', 'eventManager', 'barStaff']);
 staffHeader(user, 'Bar');
 let station = sessionStorage.getItem('bar-station') || '', open = true, timer = null, data = null, seen = null;
 let sound = localStorage.getItem('bar-sound') === '1';
@@ -44,7 +44,7 @@ async function load() {
     data = await sapi(`/api/bar/queue?stationId=${encodeURIComponent(station)}`);
     if (!data.stations.length) { $('#orders').innerHTML = '<div class="bar-empty"><b>No bars yet</b>A manager adds them in the control room under Setup → Bar orders.</div>'; $('#qr').hidden = true; return; }
     if (data.stationId !== station) seen = null;
-    station = data.stationId; open = data.open; sessionStorage.setItem('bar-station', station);
+    station = data.stationId; open = data.open; sessionStorage.setItem('bar-station', station); document.dispatchEvent(new CustomEvent('bar-station', { detail: station }));
     const fresh = data.orders.filter(o => seen && !seen.has(o.id));
     if (fresh.length) { if (sound) beep(); navigator.vibrate?.(200); document.title = `(${data.orders.length}) Bar · Memories`; }
     seen = new Set(data.orders.map(o => o.id));
@@ -59,7 +59,7 @@ $('#qr').onclick = () => data?.stations?.length && openQrMaker(data.stations, st
 const drawSound = () => { $('#sound').textContent = sound ? 'Sound on' : 'Sound off'; $('#sound').setAttribute('aria-pressed', String(sound)); };
 $('#sound').onclick = () => { sound = !sound; localStorage.setItem('bar-sound', sound ? '1' : '0'); drawSound(); if (sound) beep(); };
 drawSound();
-$('#st').onchange = () => { station = $('#st').value; load(); };
+$('#st').onchange = () => { station = $('#st').value; load(); document.dispatchEvent(new CustomEvent('bar-station', { detail: station })); };
 $('#find').oninput = () => data && draw();
 $('#open').onclick = async () => {
   if (open && !confirm('Pause app orders at this bar? Guests will be told to order at the bar.')) return;

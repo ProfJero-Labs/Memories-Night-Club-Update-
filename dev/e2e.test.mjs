@@ -735,6 +735,93 @@ test('promos: the control room starts an automatic promo and a code promo; guest
   for (const p of store.list('promos')) store.seed('promos', p.id, { ...p.fields, active: false });
 });
 
+test('staff sign-in: a manager adds a waitress by phone; she gets a code by text, chooses a PIN, and lands on her Tabs screen; a wrong PIN is refused', async () => {
+  const mgr = await phone(390);
+  await signInAs(mgr, 'manager@dev'); await mgr.waitForURL(/admin\.html/);
+  await openTab(mgr, 'staff');
+  assert.equal(await mgr.$eval('#aRole', e => e.value), '', 'no job is pre-selected');
+  assert.ok(!(await mgr.$$eval('#aRole option', os => os.map(o => o.value))).some(v => ['superAdmin', 'director', 'finance'].includes(v)), 'a manager can’t give admin, director or finance');
+  await mgr.fill('#aName', 'Abena Waitress'); await mgr.fill('#aPhone', '024 777 1001'); await mgr.selectOption('#aRole', 'waitStaff'); await mgr.click('#aBtn');
+  await mgr.getByText(/We’ve texted 024\*\*\*1001 a code/).waitFor();
+  const sms = store.sms.filter(x => x.to === '0247771001').at(-1).message;
+  assert.match(sms, /Waiter \/ waitress/); const code = /code: (\d{6})/.exec(sms)[1];
+  const w = await phone(360);
+  await w.goto(`${base}/login.html?invite=1`); await w.waitForSelector('#setForm:not([hidden])');
+  await w.fill('#sPhone', '0247771001'); await w.fill('#sCode', code); await w.fill('#sPin', '1234'); await w.fill('#sPin2', '1234'); await w.click('#setForm button[type=submit]');
+  await w.locator('#msg').getByText(/in a row/).waitFor();
+  await w.fill('#sPin', '4826'); await w.fill('#sPin2', '4826'); await w.click('#setForm button[type=submit]');
+  await w.waitForURL(/waiter\.html/); await w.waitForSelector('#newTab');
+  await w.click('#acctBtn'); await w.click('#signout'); await w.waitForURL(/login\.html/);
+  await w.fill('#phone', '0247771001'); await w.fill('#pin', '9999'); await w.click('#go');
+  await w.locator('#msg').getByText(/don’t match/).waitFor();
+  await w.fill('#pin', '4826'); await w.click('#go'); await w.waitForURL(/waiter\.html/);
+  assert.deepEqual([...mgr.errors, ...w.errors], []);
+});
+
+test('a night at the bar: tab without QR → bar → delivered → the customer pays on their phone → another round paid in cash at the cashier → reports, counts, the close and finance’s report', async () => {
+  // Waiter
+  const w = await phone(360); await signInAs(w, 'waiter@dev'); await w.waitForURL(/waiter\.html/);
+  await w.click('#newTab'); await w.fill('#ntTable', '12'); await w.click('#ntGo');
+  await w.waitForURL(/#add\//); await w.click('[data-p="dev-m-beer"]'); await w.click('[data-p="dev-m-beer"]'); await w.click('[data-p="dev-m-shot"]');
+  assert.match(await w.textContent('#send'), /3 drinks · GHS 80/); await w.click('#send');
+  await w.waitForURL(/#tab\//); await w.locator('.tcard').getByText('Sent to bar').waitFor();
+  // Bar
+  const bar = await phone(390); await signInAs(bar, 'bar@dev'); await bar.waitForURL(/bar\.html/);
+  await bar.locator('#rounds .ord').filter({ hasText: '12' }).locator('[data-a="hand"]').click();
+  await bar.locator('#msgTop').getByText(/Handed over/).waitFor();
+  // Waiter delivers; the customer gets the bill
+  await w.locator('[data-act="delivered"]').waitFor({ timeout: 10000 }); await w.click('[data-act="delivered"]');
+  await w.locator('.tcard').getByText('Delivered').waitFor();
+  await w.click('#showBill'); await w.locator('#sbQr svg').waitFor();
+  const tabId = await w.evaluate(() => location.hash.split('/')[1]);
+  const token = docs('tabs').find(t => t.id === tabId).billToken;
+  await w.click('[data-close]');
+  const cust = await phone(360);
+  await cust.goto(`${base}/bill.html?t=${token}`, { waitUntil: 'networkidle' });
+  assert.match(await cust.textContent('#root'), /2 × Club beer/); assert.match(await cust.textContent('#pay'), /GHS 80/);
+  await cust.click('#pay'); await cust.waitForURL(/dev\/paystack/); await cust.getByRole('button', { name: 'Pay' }).click();
+  await cust.waitForURL(/bill\.html/); await cust.getByText('Payment confirmed. Thank you!').waitFor({ timeout: 20000 });
+  await w.locator('.st').getByText('Paid', { exact: true }).waitFor({ timeout: 10000 });
+  // Another round, paid in cash at the cashier
+  await w.click('#add'); await w.waitForURL(/#add\//); await w.click('[data-p="dev-m-water"]'); await w.click('#send'); await w.waitForURL(/#tab\//);
+  await bar.locator('#rounds .ord').filter({ hasText: '12' }).locator('[data-a="hand"]').click();
+  await w.locator('[data-act="delivered"]').waitFor({ timeout: 10000 }); await w.click('[data-act="delivered"]');
+  const cash = await phone(390); await signInAs(cash, 'cashier@dev'); await cash.waitForURL(/cashier\.html/);
+  await cash.click('[data-k="cash"]'); await cash.fill('#fl', '100'); await cash.click('#openGo'); await cash.waitForSelector('#cnt');
+  await cash.click('[data-k="bills"]'); await cash.fill('#q', '12'); await cash.locator('[data-id]').first().click();
+  await cash.click('#cGo'); await cash.getByText('Cash recorded').waitFor();
+  await cash.click('[data-close]');
+  await w.locator('#close').waitFor({ timeout: 10000 }); await w.click('#close'); await w.waitForURL(/#tabs/);
+  // Poor signal: an action that can't reach the server never shows as done.
+  await w.context().setOffline(true);
+  await w.click('#newTab'); await w.fill('#ntTable', '14'); await w.click('#ntGo');
+  await w.locator('#ntMsg').getByText(/CONNECTION/i).waitFor();
+  await w.context().setOffline(false); await w.click('[data-close]');
+  // End of night: waiter report, bar count, cash count, front office, the close, finance.
+  await w.click('[data-k="report"]'); await w.waitForSelector('#rpGo'); await w.click('#rpGo'); await w.getByText(/Report submitted/).waitFor();
+  await bar.click('[data-k="count"]'); await bar.waitForSelector('#cf');
+  for (const row of await bar.locator('[data-p]').all()) await row.locator('[data-n]').fill('0');
+  const reasons = bar.locator('[data-r]:not([hidden])');
+  for (let i = 0; i < await reasons.count(); i++) await reasons.nth(i).selectOption('unknown');
+  bar.once('dialog', d => d.accept()); await bar.click('#cfGo'); await bar.getByText(/Count submitted/).waitFor();
+  await cash.click('[data-k="cash"]'); await cash.fill('#cnt', '108'); await cash.locator('#whyBox').waitFor();
+  await cash.fill('#why', 'gave GHS 2 too much change'); cash.once('dialog', d => d.accept()); await cash.click('#cntGo');
+  await cash.getByText(/GHS 2 less than expected/).waitFor();
+  const fo = await phone(390); await signInAs(fo, 'door@dev'); await fo.waitForURL(/checkin\.html/);
+  await fo.click('[data-k="report"]'); await fo.waitForSelector('#frGo'); await fo.click('#frGo'); await fo.getByText(/Submitted by/).waitFor();
+  const mgr = await phone(390); await signInAs(mgr, 'manager@dev'); await mgr.waitForURL(/admin\.html/);
+  await mgr.getByText('Today’s sales').first().waitFor();
+  await openTab(mgr, 'closing');
+  assert.match(await mgr.textContent('#panel'), /2 less than expected/);
+  mgr.on('dialog', d => d.accept());
+  await mgr.click('#closeGo'); await mgr.getByText(/Night closed/).waitFor({ timeout: 15000 });
+  const fin = await phone(390); await signInAs(fin, 'finance@dev'); await fin.waitForURL(/finance\.html/);
+  await fin.click('[data-k="reports"]'); await fin.locator('[data-d]').first().click();
+  await fin.getByText(/End of day/).waitFor(); assert.match(await fin.textContent('#app'), /GHS 2 less than expected/);
+  await fin.click('#soGo'); await fin.getByText(/Signed off by Dev Finance/).waitFor();
+  assert.deepEqual([...w.errors, ...bar.errors, ...cust.errors, ...cash.errors, ...fo.errors, ...mgr.errors, ...fin.errors], []);
+});
+
 test('every public page renders at 320px with no sideways scroll and no script errors', async () => {
   for (const p of ['/', '/nights.html', '/event.html?id=dev-afro', '/checkout.html?event=dev-afro&type=dev-afro-reg&qty=2', '/tables.html?event=dev-afro', '/private.html', '/installment.html', '/find.html', '/member.html', '/counter.html?s=0123456789abcdef0123456789abcdef', '/offline.html', '/visit.html', '/login.html']) {
     const page = await phone(320);

@@ -29,7 +29,7 @@ import { securitySignal } from './lib/monitor.js';
 
 const FORBIDDEN = { error: 'Forbidden.', status: 403 };
 // Who may verify members at the gate. Organisers run their own nights' doors only, not the club's staff.
-export const MEMBER_DOOR = ['superAdmin', 'director', 'manager', 'eventManager', 'doorStaff'];
+export const MEMBER_DOOR = ['superAdmin', 'director', 'manager', 'eventManager', 'doorStaff', 'security'];
 export const MEMBER_TYPES = ['staff', 'member'];
 const STEP_S = 30;                  // the pass QR changes every 30 seconds
 const STEPS_ACCEPTED = 2;           // and is accepted for the current and the 2 previous steps (60–90 s)
@@ -69,7 +69,7 @@ export async function listMembers(env, user) {
   return {
     members: docs.map(d => ({ ...memberCard(d.id, d.fields), phone: d.fields.phone, notes: d.fields.notes || '', staffUid: d.fields.staffUid || '', staffEmail: emails.get(d.fields.staffUid) || '', createdAt: d.fields.createdAt || '' })).sort((a, b) => a.name.localeCompare(b.name)),
     // Staff accounts with no member record yet: every staff account should be one.
-    unlinkedStaff: staff.filter(s => s.fields.role && !docs.some(d => d.fields.staffUid === s.id)).map(s => ({ uid: s.id, email: s.fields.email, role: s.fields.role, name: s.fields.name || '' })),
+    unlinkedStaff: staff.filter(s => s.fields.role && s.fields.removed !== true && !docs.some(d => d.fields.staffUid === s.id)).map(s => ({ uid: s.id, email: s.fields.email || '', role: s.fields.role, name: s.fields.name || '', hasPhone: !!s.fields.phone })),
   };
 }
 
@@ -295,6 +295,21 @@ export async function doorRequestCode(env, user, phone) {
   return { sent: true, firstName: firstName(hit.m.name), phoneHint: maskPhone(ph), staff: !!hit.m.staffUid, message: 'CODE IS ON THEIR APP' };
 }
 
+// Their phone is dead or has no data: the door lets a known, active member in by name, with a
+// reason. Recorded in attendance as "let in by hand" and raised as an issue for the manager.
+export async function doorManualAdmit(env, user, { phone, reason }) {
+  if (!requireRole(user, MEMBER_DOOR)) return FORBIDDEN;
+  const ph = normalizePhone(phone); if (!ph) return { error: 'Use a Ghana number, e.g. 024 123 4567.' };
+  const why = clean(reason, 200); if (!why) return { error: 'Say why (e.g. phone dead), in a few words.' };
+  const hit = await memberByPhone(env, ph);
+  if (!hit) return { valid: false, code: 'not_member', message: 'NOT A MEMBER', hint: 'That number isn’t on the members list. They need a ticket.' };
+  const st = standing(hit.m);
+  if (!st.ok) return result(st, { id: hit.id, fields: hit.m });
+  await logEntry(env, user, hit.id, hit.m, 'manual');
+  await setDoc(env, 'incidents', id(), { businessDate: nightKey(now()), kind: 'other', note: `Let in without the app: ${hit.m.name} (${why}). Check their photo/ID was seen.`, people: hit.m.name, needsManager: true, status: 'open', by: uidOf(user), byName: user.name || '', at: now(), updates: [] });
+  return result(st, { id: hit.id, fields: hit.m }, { hint: 'Let in by hand: recorded for the manager.' });
+}
+
 export async function doorConfirmCode(env, user, { phone, code }, ip) {
   if (!requireRole(user, MEMBER_DOOR)) return FORBIDDEN;
   const ph = normalizePhone(phone); if (!ph) return { error: 'Use a Ghana number, e.g. 024 123 4567.' };
@@ -315,4 +330,17 @@ export async function doorConfirmCode(env, user, { phone, code }, ip) {
   const st = standing(m?.fields);
   if (st.ok) await logEntry(env, user, m.id, m.fields, 'code');
   return result(st, m);
+}
+
+// Older staff accounts with no membership yet: make them members in one go (those with a phone).
+export async function linkAllStaff(env, user) {
+  if (!requireRole(user, MONEY)) return FORBIDDEN;
+  const [docs, staff] = await Promise.all([listDocs(env, 'members'), listDocs(env, 'users')]);
+  let made = 0, noPhone = 0;
+  for (const s of staff) {
+    if (!s.fields.role || s.fields.removed === true || docs.some(d => d.fields.staffUid === s.id)) continue;
+    if (!normalizePhone(s.fields.phone)) { noPhone++; continue; }
+    await ensureStaffMember(env, { uid: s.id, name: s.fields.name || s.fields.email || 'Staff', phone: s.fields.phone, role: s.fields.role }, user); made++;
+  }
+  return { made, noPhone };
 }

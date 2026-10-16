@@ -15,7 +15,7 @@ import { getDoc, setDoc, listDocs, queryWhere, batchGet, commitTx, updateWrite, 
 import { now, id, clean, normalizePhone, money, paymentRef, validEmail } from './lib/util.js';
 import { requireRole, CMS, uidOf } from './lib/auth.js';
 import { sendSms, siteUrl } from './lib/notify.js';
-import { addMoves } from './ops/stock.js';
+import { addMoves, saveProduct } from './ops/stock.js';
 
 const FORBIDDEN = { error: 'Forbidden.', status: 403 };
 export const BAR = ['superAdmin', 'director', 'manager', 'eventManager', 'barStaff', 'waitStaff'];
@@ -211,17 +211,11 @@ export async function setStationOpen(env, user, b) {
   await audit(env, user, b.open === true ? 'BAR_OPENED' : 'BAR_PAUSED', { stationId: st.id });
   return { open: b.open === true };
 }
+// The old control-room menu save: now the same as Drinks & prices (manager or finance; every price
+// change recorded with the old and new value).
 export async function upsertMenuItem(env, b, user) {
-  if (!requireRole(user, CMS)) return FORBIDDEN;
-  const name = clean(b?.name, 60), price = Number(b?.pricePesewas);
-  if (!name) return { error: 'Add a name.' };
-  if (!Number.isInteger(price) || price < 100) return { error: 'Add a price of at least GHS 1.' };
-  const existing = b?.id ? await getDoc(env, 'menu_items', String(b.id)) : null;
-  if (b?.id && !existing) return { error: 'Item not found.', status: 404 };
-  const mid = existing?.id || id();
-  await setDoc(env, 'menu_items', mid, { name, category: clean(b.category, 30) || 'Drinks', pricePesewas: price, available: b.available !== false, sortOrder: Number(b.sortOrder) || 0, updatedAt: now(), createdAt: existing?.fields?.createdAt || now() });
-  await audit(env, user, 'MENU_ITEM_SAVED', { itemId: mid, name, pricePesewas: price, available: b.available !== false });
-  return { id: mid };
+  const old = b?.id ? await getDoc(env, 'menu_items', String(b.id)) : null;
+  return saveProduct(env, { unit: old?.fields?.unit, costPesewas: old?.fields?.costPesewas ?? '', lowStock: old?.fields?.lowStock ?? '', tracked: old?.fields?.tracked, ...b }, user);
 }
 // Refunds owed on bar orders, for the control room's Refunds tab.
 export async function counterRefunds(env) {

@@ -175,3 +175,14 @@ test('new roles: a director runs People like a manager; a waitress works the bar
   assert.equal((await call(env, 'GET', '/api/bar/queue', { claims: { role: 'waitStaff' } })).status, 200);
   assert.equal((await call(env, 'POST', '/api/admin/staff/invite', { claims: { role: 'director' }, body: { email: 'x@club.test', name: 'X', phone: '0245550013', role: 'manager' } })).status, 403, 'only a super admin manages staff');
 });
+
+test('older staff accounts with a phone become members in one tap; removed staff and those without a phone are left', async () => {
+  const { store, env } = createMockEnv();
+  store.seed('users', 'old1', { email: 'a@club.test', name: 'Old Door', phone: '0245550301', role: 'doorStaff' });
+  store.seed('users', 'old2', { email: 'b@club.test', role: 'barStaff' });
+  store.seed('users', 'gone', { email: 'c@club.test', name: 'Gone', phone: '0245550302', role: '', removed: true });
+  const r = await call(env, 'POST', '/api/admin/members/link-staff', { claims: MANAGER, body: {} });
+  assert.deepEqual([r.data.made, r.data.noPhone], [1, 1]);
+  assert.equal(store.list('members').find(m => m.fields.staffUid === 'old1').fields.type, 'staff');
+  assert.equal((await call(env, 'POST', '/api/admin/members/link-staff', { claims: DOOR, body: {} })).status, 403);
+});

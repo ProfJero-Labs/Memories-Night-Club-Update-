@@ -64,6 +64,18 @@ export async function saveProduct(env, b, user) {
   return { id: pid };
 }
 
+// The bar marks a drink finished (or back) for tonight: no price change, recorded.
+export async function setAvailable(env, b, user) {
+  if (!requireRole(user, STOCK_HANDS)) return FORBIDDEN;
+  const p = await getDoc(env, 'menu_items', String(b?.id || ''));
+  if (!p) return { error: 'Drink not found.', status: 404 };
+  const available = b.available === true;
+  if ((p.fields.available !== false) === available) return { available };
+  await setDoc(env, 'menu_items', p.id, { ...p.fields, available, updatedAt: now(), updatedBy: uidOf(user), updatedByName: user.name || '' });
+  await logChange(env, user, { kind: 'product', refId: p.id, refName: p.fields.name, field: 'on sale', from: !available, to: available });
+  return { available };
+}
+
 // ── The ledger ──
 export async function addMoves(env, moves, user) {
   const at = now();

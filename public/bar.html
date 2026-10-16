@@ -17,6 +17,7 @@
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Anton&family=Archivo:wght@400;600;700&family=Instrument+Serif:ital@0;1&display=swap">
 <link rel="stylesheet" href="styles.css">
 <link rel="stylesheet" href="admin.css">
+<link rel="stylesheet" href="ops.css">
 <style>
   .barq { max-width: 1100px; margin: 0 auto; padding: 14px var(--gutter) 48px; display: grid; gap: 16px; }
   .bar-top { display: grid; gap: 10px; grid-template-columns: minmax(0, 1fr) auto; align-items: end; }
@@ -56,13 +57,23 @@
     <div class="bar-ctl"><select id="st" aria-label="Which bar"></select><span class="bar-state" id="state" role="status"></span></div>
     <div class="bar-ctl"><button class="sbtn" id="open" type="button"></button><button class="sbtn ghost" id="qr" type="button">QR codes</button><button class="sbtn ghost" id="sound" type="button" aria-pressed="false">Sound off</button></div>
   </div>
+  <div id="msgTop"></div>
+  <section id="vOrders">
+  <h2 style="margin:0">Waiter orders <span id="rCount" class="kicker"></span></h2>
+  <div id="returns"></div>
+  <div class="orders" id="rounds"><div class="loading">Loading…</div></div>
+  <h2 style="margin:10px 0 0">App orders (paid by QR)</h2>
   <div class="sfield bar-find"><label for="find">Type the guest’s pickup code</label><input id="find" autocomplete="off" autocapitalize="characters" maxlength="4" placeholder="K7Q2" spellcheck="false"></div>
   <div class="bar-stats" aria-live="polite"><div id="sWait"><b>0</b><span>Waiting</span></div><div id="sLate"><b>0</b><span>Over 10 min</span></div><div><b id="sDone">0</b><span>Handed over</span></div></div>
   <div id="msg"></div>
   <div class="orders" id="orders"></div>
   <details class="done-wrap"><summary>Handed over tonight</summary>
   <div class="tbl-wrap"><table class="tbl"><thead><tr><th>Code</th><th>Table</th><th>Drinks</th><th>When</th></tr></thead><tbody id="done"></tbody></table></div></details>
+  </section>
+  <section id="vStock" hidden></section>
+  <section id="vCount" hidden></section>
 </main>
 <script type="module" src="pages/bar.js"></script>
+<script type="module" src="pages/bar-ops.js"></script>
 </body>
 </html>

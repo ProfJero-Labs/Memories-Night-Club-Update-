@@ -7,14 +7,13 @@
 //                                 approvals (manager, finance), versions (corrections keep the original)
 //   shifts/{date}                 status open | closed (closed nights are locked; see common.js)
 import { getDoc, setDoc, queryWhere, listDocs } from '../lib/firestore.js';
-import { now, clean, nightKey } from '../lib/util.js';
+import { now, clean, nightKey, normalizePhone } from '../lib/util.js';
 import { requireRole, uidOf, REPORTS } from '../lib/auth.js';
 import { sendEmail, sendSms, siteUrl } from '../lib/notify.js';
 import { FORBIDDEN, bizDate, dateOr, audit, nightState, ghs } from './common.js';
 import { billOf } from './tabs.js';
 import { cashFigures } from './cash.js';
 import { stockSheet } from './stock.js';
-import { getSettings } from '../public.js';
 
 const BOSS = ['superAdmin', 'director', 'manager'];
 const sum = (arr, f) => arr.reduce((n, x) => n + Number(f(x) || 0), 0);
@@ -216,13 +215,13 @@ export async function closeNight(env, b, user) {
       pendingApprovals: status.pendingApprovals,
     },
   };
-  const settings = await getSettings(env);
-  const to = settings.financeEmail || env.FINANCE_EMAIL || '';
+  const fc = (await getDoc(env, 'config', 'finance'))?.fields || {};
+  const to = fc.email || env.FINANCE_EMAIL || '';
   const lines = [`Memories: end of day ${d}`, `Sales ${ghs(sales.totals.salesPesewas)} · Paid ${ghs(sales.totals.paidPesewas)} (MoMo/card ${ghs(sales.totals.digitalPesewas)}, cash ${ghs(sales.totals.cashPesewas)}) · Still owed ${ghs(sales.totals.owedPesewas)}`,
     `Cash differences: ${report.exceptions.cashDifferences.length} · Stock differences: ${report.exceptions.stockDifferences.length} · Missing reports: ${report.exceptions.missingReports.length || 'none'}`,
     `Prepared by ${user.name || 'the manager'}. Open the full report: ${siteUrl(env, `/finance.html#report/${d}`)}`];
   const sent = to ? await sendEmail(env, to, `Memories end of day: ${d}`, lines) : false;
-  const smsTo = settings.financePhone || '';
+  const smsTo = fc.phone || '';
   const texted = smsTo ? await sendSms(env, smsTo, lines.slice(0, 2).join('\n')) : false;
   const prev = await getDoc(env, 'eod_reports', d);
   await setDoc(env, 'eod_reports', d, { ...(prev?.fields || {}), date: d, report, versions: [...(prev?.fields?.versions || []), { at: now(), byName: user.name || '' }], sent, texted, sentTo: sent ? to : '', sendNote: sent ? '' : (to ? 'The email didn’t send. Open the report in the system.' : 'No finance email is set (Site settings). The report is saved here.'),
@@ -251,4 +250,17 @@ export async function financeSignOff(env, b, user) {
   await setDoc(env, 'eod_reports', r.id, { ...r.fields, financeApprovedAt: now(), financeApprovedBy: uidOf(user), financeApprovedByName: user.name || '', financeNote: clean(b.note, 400) });
   await audit(env, user, 'EOD_SIGNED_OFF', { date: r.id });
   return { signedOff: true };
+}
+
+// Where the end-of-day report goes. Kept server-side (site settings are public).
+export async function financeContact(env, user, b) {
+  if (!requireRole(user, REPORTS)) return FORBIDDEN;
+  const cur = (await getDoc(env, 'config', 'finance'))?.fields || {};
+  if (!b) return { email: cur.email || '', phone: cur.phone || '', emailReady: !!(env.BREVO_API_KEY && env.BREVO_SENDER_EMAIL) };
+  const email = clean(b.email, 120).toLowerCase(), phone = b.phone ? normalizePhone(b.phone) : '';
+  if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return { error: 'That email doesn’t look right.' };
+  if (b.phone && !phone) return { error: 'Use a Ghana number, e.g. 024 123 4567.' };
+  await setDoc(env, 'config', 'finance', { email, phone, updatedAt: now(), updatedByName: user.name || '' });
+  await audit(env, user, 'FINANCE_CONTACT_SET', { email, phone });
+  return { email, phone, saved: true };
 }

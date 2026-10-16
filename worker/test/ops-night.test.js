@@ -177,7 +177,8 @@ test('10, 14: the cashier has less cash than expected (explanation required); a 
 test('5, 11, 12: an unpaid tab, free drinks by approval, Today’s sales, the guided close, the end-of-day report to finance, sign-off, and the night locked', async () => {
   const ctx = setup();
   ctx.env.BREVO_API_KEY = 'k'; ctx.env.BREVO_SENDER_EMAIL = 'noreply@memories.test';
-  ctx.store.seed('settings', 'site', { financeEmail: 'finance@memories.test' });
+  ok(await ctx.call('POST', '/api/ops/finance-contact', { who: ctx.F1, body: { email: 'finance@memories.test' } }), 'finance contact');
+  assert.ok(!(await ctx.call('GET', '/api/settings')).text.includes('finance@memories.test'), 'never on the public settings');
   await openingCount(ctx);
   ok(await ctx.call('POST', '/api/ops/cash/open', { who: ctx.C1, body: { floatPesewas: 0 } }), 'open cash');
   const paid = ok(await ctx.call('POST', '/api/ops/tabs/open', { who: ctx.W1, body: { table: '7' } }), 'tab a');

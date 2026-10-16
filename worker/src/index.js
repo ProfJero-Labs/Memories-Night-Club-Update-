@@ -146,7 +146,8 @@ async function route(req, env, ctx) {
   // ── Staff sign-in with phone + PIN (public; strict limits per address and per phone) ──
   if (m === 'POST' && p.startsWith('/api/staff-auth/')) {
     const b = await body(req), ph = normalizePhone(b.phone) || 'none', ip = req.headers.get('CF-Connecting-IP');
-    if (await throttled(req, env, 'staff-auth', 'strict') || await throttled(req, env, 'staff-auth-phone', 'strict', ph)) return tooMany(req, env);
+    // Per address: generous (a whole team signs in on the club's Wi-Fi). Per phone: strict, plus the PIN lockout.
+    if (await throttled(req, env, 'staff-auth', 'standard') || await throttled(req, env, 'staff-auth-phone', 'strict', ph)) return tooMany(req, env);
     if (p === '/api/staff-auth/sign-in') return reply(req, env, await staffauth.signInWithPin(env, b, ip));
     if (p === '/api/staff-auth/send-code') return reply(req, env, await staffauth.sendPinCode(env, b));
     if (p === '/api/staff-auth/set-pin') return reply(req, env, await staffauth.setPinWithCode(env, b, ip));
@@ -191,6 +192,7 @@ async function route(req, env, ctx) {
     const b = await body(req), ip = req.headers.get('CF-Connecting-IP');
     if (p === '/api/members/door/request-code' || p === '/api/members/door/send-code') return reply(req, env, await members.doorRequestCode(env, user, b.phone));
     if (p === '/api/members/door/confirm') return reply(req, env, await members.doorConfirmCode(env, user, b, ip));
+    if (p === '/api/members/door/manual') return reply(req, env, await members.doorManualAdmit(env, user, b));
   }
   if (m === 'GET' && p === '/api/door/summary') { if (!requireRole(user, DOOR)) return fail(req, env, 'Forbidden.', 403); return reply(req, env, await doorSummary(env, user, u.searchParams.get('eventId'))); }
   if (m === 'GET' && p === '/api/door/search') {
@@ -256,6 +258,7 @@ async function route(req, env, ctx) {
   if (m === 'POST' && p === '/api/admin/members') return reply(req, env, await members.upsertMember(env, await body(req), user));
   if (m === 'GET' && p === '/api/admin/promos') return reply(req, env, await promos.listPromos(env, user, new URL(req.url).searchParams.get('eventId')));
   if (m === 'POST' && p === '/api/admin/promos') return reply(req, env, await promos.upsertPromo(env, await body(req), user));
+  if (m === 'POST' && p === '/api/admin/members/link-staff') return reply(req, env, await members.linkAllStaff(env, user));
   if (m === 'POST' && p === '/api/admin/members/delete') return reply(req, env, await members.deleteMember(env, await body(req), user));
   if (m === 'POST' && p === '/api/admin/members/activation') return reply(req, env, await members.createActivation(env, await body(req), user));
   if (m === 'GET' && p === '/api/admin/attendance') return reply(req, env, await members.attendance(env, { days: u.searchParams.get('days'), memberId: u.searchParams.get('memberId') }, user));
