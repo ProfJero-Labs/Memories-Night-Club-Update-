@@ -1,0 +1,9 @@
+{
+  "indexes": [
+    {"collectionGroup":"events","queryScope":"COLLECTION","fields":[{"fieldPath":"visibility","order":"ASCENDING"},{"fieldPath":"date","order":"ASCENDING"}]},
+    {"collectionGroup":"ticket_types","queryScope":"COLLECTION","fields":[{"fieldPath":"eventId","order":"ASCENDING"},{"fieldPath":"active","order":"ASCENDING"}]},
+    {"collectionGroup":"table_packages","queryScope":"COLLECTION","fields":[{"fieldPath":"eventId","order":"ASCENDING"},{"fieldPath":"active","order":"ASCENDING"}]},
+    {"collectionGroup":"raffle_entries","queryScope":"COLLECTION","fields":[{"fieldPath":"raffleId","order":"ASCENDING"},{"fieldPath":"status","order":"ASCENDING"}]}
+  ],
+  "fieldOverrides": []
+}
