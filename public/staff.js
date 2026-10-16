@@ -4,20 +4,23 @@ import { onUser, idToken, signOutUser } from './firebase.js';
 import { api, esc, CREDIT } from './app.js';
 
 export const roleOf = claims => (claims?.admin === true ? 'superAdmin' : claims?.role || '');
-export const ROLE_LABEL = { superAdmin: 'Super admin', director: 'Director', manager: 'Manager', eventManager: 'Event manager', doorStaff: 'Door', barStaff: 'Bar', waitStaff: 'Waitress / waiter', organiser: 'Organiser' };
-export const home = role => (role === 'organiser' ? 'organiser.html' : role === 'doorStaff' ? 'checkin.html' : ['barStaff', 'waitStaff'].includes(role) ? 'bar.html' : 'admin.html');
-
-// Resolves with the signed-in staff user, or sends them to the right place.
+export const ROLE_LABEL = { superAdmin: 'System admin', director: 'Director', manager: 'Manager', finance: 'Finance officer', eventManager: 'Events manager', doorStaff: 'Front office', security: 'Security', barStaff: 'Bartender', waitStaff: 'Waiter / waitress', cashier: 'Cashier', organiser: 'Organiser' };
+// Each job opens on its own screen.
+const HOMES = { organiser: 'organiser.html', doorStaff: 'checkin.html', security: 'checkin.html', barStaff: 'bar.html', waitStaff: 'waiter.html', cashier: 'cashier.html', finance: 'finance.html' };
+export const home = role => HOMES[role] || 'admin.html';
+// Resolves with the signed-in staff user (role and name from their staff record), or sends them on.
 export function requireStaff(allowed) {
   return new Promise(resolve => {
     let done = false;
-    onUser(u => {
+    onUser(async u => {
       if (done) return;
       if (!u) { location.replace(`login.html?next=${encodeURIComponent(location.pathname.split('/').pop() + location.search)}`); return; }
-      const role = roleOf(u.claims);
+      let role = roleOf(u.claims), me = null;
+      try { me = await api('/api/ops/me', { token: await idToken() }); role = me.role; }
+      catch (e) { if (e.status === 401) { await signOutUser(); location.replace('login.html?denied=1'); return; } /* offline: the token's role */ }
       if (!role) { signOutUser().then(() => location.replace('login.html?denied=1')); return; }
       if (!allowed.includes(role)) { location.replace(home(role)); return; }
-      done = true; resolve({ ...u, role });
+      done = true; resolve({ ...u, role, name: me?.name || '', me });
     });
   });
 }
@@ -27,14 +30,28 @@ export const sapi = async (path, opts = {}) => api(path, { ...opts, token: await
 export function staffHeader(user, title) {
   const h = document.createElement('header');
   h.className = 'staff-head';
+  const who = user.name || user.email || 'Me';
   h.innerHTML = `<div class="wrap"><a class="logo" href="index.html" title="Public site"><img src="assets/logo-sm.webp" alt="Memories" height="18"></a>
-    <strong style="font:400 20px var(--display);text-transform:uppercase;letter-spacing:.04em">${esc(title)}</strong>
-    <span class="who">${esc(user.email || '')}<br>${esc(ROLE_LABEL[user.role] || user.role)}</span><button type="button" data-install hidden title="Install the Memories app on this device">App</button><button type="button" id="myPass" title="Your member pass for the gate">My pass</button><button type="button" id="signout">Sign out</button></div>
+    <strong class="head-title">${esc(title)}</strong>
+    <div class="acct"><button type="button" id="acctBtn" aria-haspopup="true" aria-expanded="false"><span>${esc(who.split(/\s+/)[0])}</span> ▾</button>
+      <div class="acct-menu" id="acctMenu" hidden role="menu">
+        <p class="acct-who"><b>${esc(who)}</b><span>${esc(ROLE_LABEL[user.role] || user.role)}</span></p>
+        <button type="button" role="menuitem" id="myPass">My pass (for the gate)</button>
+        <button type="button" role="menuitem" id="changePin">Change my PIN</button>
+        <button type="button" role="menuitem" data-install hidden>Install the app</button>
+        <button type="button" role="menuitem" id="signout" class="danger">Sign out</button>
+      </div></div></div>
     <div class="gate-banner" id="gateBanner" hidden role="alert"></div>`;
   document.body.prepend(h);
   const credit = document.createElement('footer'); credit.className = 'staff-credit'; credit.textContent = `Memories platform · ${CREDIT}`;
   document.body.append(credit);
-  h.querySelector('#signout').onclick = () => signOutUser().then(() => location.replace('login.html'));
+  const menu = h.querySelector('#acctMenu'), btn = h.querySelector('#acctBtn');
+  const toggle = open => { menu.hidden = !open; btn.setAttribute('aria-expanded', String(open)); };
+  btn.onclick = e => { e.stopPropagation(); toggle(menu.hidden); };
+  document.addEventListener('click', e => { if (!h.querySelector('.acct').contains(e.target)) toggle(false); });
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') toggle(false); });
+  h.querySelector('#signout').onclick = () => { signOutUser().then(() => location.replace('login.html')); };
+  h.querySelector('#changePin').onclick = () => { toggle(false); changePin(user); };
   // Staff are members: "My pass" puts this person's pass on this phone (their sign-in is the proof).
   h.querySelector('#myPass').onclick = async ev => {
     const b = ev.currentTarget; b.disabled = true; b.textContent = 'Opening…';
@@ -42,9 +59,34 @@ export function staffHeader(user, title) {
       const d = await sapi('/api/members/my-pass', { method: 'POST', body: { device: navigator.userAgent.slice(0, 60) } });
       localStorage.setItem('mem-pass', JSON.stringify({ passId: d.passId, secret: d.secret, stepSeconds: d.stepSeconds, member: d.member, savedAt: Date.now(), skewMs: d.serverTime - Date.now() }));
       location.href = 'member.html';
-    } catch (e) { alert(e.status === 404 && /^not found\.?$/i.test(e.message) ? 'Your pass needs the latest Worker deployed. Ask the admin.' : e.message); b.disabled = false; b.textContent = 'My pass'; }
+    } catch (e) { alert(e.message); b.disabled = false; b.textContent = 'My pass (for the gate)'; }
   };
   watchGate(h.querySelector('#gateBanner'));
+}
+
+// A small sheet: current PIN, new PIN twice.
+function changePin(user) {
+  const n = user.me?.pinLength || 4, has = user.me?.hasPin !== false;
+  const box = document.createElement('div'); box.className = 'sheet-back';
+  box.innerHTML = `<form class="sheet" novalidate role="dialog" aria-modal="true" aria-label="Change my PIN"><h2>Change my PIN</h2>
+    ${has ? `<div class="sfield"><label for="cpOld">${user.me?.pinStarter ? 'The PIN we texted you' : 'Your PIN now'}</label><input id="cpOld" type="password" inputmode="numeric" maxlength="6" autocomplete="current-password"></div>` : ''}
+    <div class="sfield"><label for="cpNew">New PIN (${n} numbers)</label><input id="cpNew" type="password" inputmode="numeric" maxlength="${n}" autocomplete="new-password"></div>
+    <div class="sfield"><label for="cpNew2">New PIN again</label><input id="cpNew2" type="password" inputmode="numeric" maxlength="${n}" autocomplete="new-password"></div>
+    <div id="cpMsg" role="alert"></div>
+    <div class="toolbar" style="margin:0"><button class="sbtn red" type="submit">Save new PIN</button><button class="sbtn ghost" type="button" id="cpClose">Cancel</button></div></form>`;
+  document.body.append(box);
+  const say = (t, ok) => { box.querySelector('#cpMsg').innerHTML = `<div class="msg ${ok ? '' : 'err'}">${esc(t)}</div>`; };
+  const close = () => box.remove();
+  box.querySelector('#cpClose').onclick = close;
+  box.onclick = e => { if (e.target === box) close(); };
+  box.querySelector('input').focus();
+  box.querySelector('form').onsubmit = async e => {
+    e.preventDefault();
+    const pin = box.querySelector('#cpNew').value.trim();
+    if (pin !== box.querySelector('#cpNew2').value.trim()) return say('The new PINs don’t match.');
+    try { await sapi('/api/ops/change-pin', { method: 'POST', body: { current: box.querySelector('#cpOld')?.value.trim() || '', pin } }); say('Your PIN is changed. Use it next time you sign in.', true); setTimeout(close, 1800); }
+    catch (err) { say(err.message); }
+  };
 }
 
 // The phone-number route at the gate: when the door asks for this staff member's code, it shows

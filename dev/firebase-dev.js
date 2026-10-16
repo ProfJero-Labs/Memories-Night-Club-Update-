@@ -9,6 +9,14 @@ export async function signIn(email, password) {
   current = d; sessionStorage.setItem('dev-user', JSON.stringify(d)); emit();
   return { uid: d.uid, email: d.email, claims: d.claims };
 }
+// Phone + PIN: the dev server turns the Worker's custom token into a dev session.
+export async function signInWithToken(token) {
+  const r = await fetch('/dev/custom-token', { method: 'POST', body: JSON.stringify({ token }) });
+  const d = await r.json();
+  if (!r.ok) throw Object.assign(new Error('auth'), { code: d.code });
+  current = d; sessionStorage.setItem('dev-user', JSON.stringify(d)); emit();
+  return { uid: d.uid, email: d.email, claims: d.claims };
+}
 export const signOutUser = async () => { current = null; sessionStorage.removeItem('dev-user'); emit(); };
 export const resetPassword = async () => {};
 export const onUser = cb => { listeners.push(cb); setTimeout(() => cb(current && { uid: current.uid, email: current.email, claims: current.claims }), 0); };

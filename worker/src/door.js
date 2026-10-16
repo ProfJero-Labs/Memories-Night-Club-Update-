@@ -23,7 +23,7 @@ export async function checkin(env, rawToken, user, { eventId, code } = {}) {
   if (!/^[0-9A-Za-z_-]{1,100}$/.test(token)) return { valid: false, code: 'invalid', message: 'TICKET NOT VALID' };
   // Organisers may only check in tickets for their own nights.
   let organiserEvents = null;
-  if (!requireRole(user, ['superAdmin', 'director', 'manager', 'eventManager', 'doorStaff'])) {
+  if (!requireRole(user, ['superAdmin', 'director', 'manager', 'eventManager', 'doorStaff', 'security'])) {
     if (user?.role !== 'organiser') return { valid: false, code: 'forbidden', message: 'NOT ALLOWED' };
     organiserEvents = true;
   }
@@ -90,7 +90,7 @@ export async function verifyTicket(env, rawToken) {
 async function doorNight(env, user, eventId) {
   const ev = eventId ? await getDoc(env, 'events', String(eventId)) : null;
   if (!ev) return null;
-  if (!requireRole(user, ['superAdmin', 'director', 'manager', 'eventManager', 'doorStaff']) && ev.fields.organiserId !== uidOf(user)) return null;
+  if (!requireRole(user, ['superAdmin', 'director', 'manager', 'eventManager', 'doorStaff', 'security']) && ev.fields.organiserId !== uidOf(user)) return null;
   return ev;
 }
 

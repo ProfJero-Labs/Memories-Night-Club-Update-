@@ -11,6 +11,7 @@ import { getSettings, resolveLines, isOver } from './public.js';
 import { openRaffleForEvent, raffleSpotWrites } from './raffle.js';
 import { computeShares } from './shares.js';
 import { issueCounter } from './bar.js';
+import { issueTabPayment } from './ops/tabs.js';
 import { livePromos, bestPromo, promoRecord, promoCountFields } from './promos.js';
 
 // Smallest payment accepted anywhere: GHS 1.
@@ -540,6 +541,15 @@ export async function forfeitStalePlans(env) {
   return { checked: active.length, forfeited };
 }
 
+// A customer paying their waiter's bill: same confirmation, then the payment is added to the tab.
+async function fulfillTab(env, reference) {
+  const pending = await getDoc(env, 'pending_checkouts', reference);
+  if (pending.fields.status === 'issued') return { status: 'issued', kind: 'tab', tabId: pending.fields.tabId };
+  if (pending.fields.status === 'failed') return { status: 'failed', kind: 'tab', error: pending.fields.error || 'Payment was not successful.' };
+  const bad = await confirmCharge(env, pending, reference); if (bad) return { kind: 'tab', ...bad };
+  return issueTabPayment(env, reference, pending.fields);
+}
+
 // Scan-to-order bar payments: same confirmation as tickets, then the bar order gets its pickup code.
 async function fulfillCounter(env, reference) {
   const pending = await getDoc(env, 'pending_checkouts', reference);
@@ -555,6 +565,7 @@ export async function fulfill(env, reference) {
   if (p.fields.kind === 'table') return { kind: 'table', ...(await fulfillTable(env, reference)) };
   if (p.fields.kind === 'installment_topup') return fulfillInstallment(env, reference);
   if (p.fields.kind === 'counter') return fulfillCounter(env, reference);
+  if (p.fields.kind === 'tab') return fulfillTab(env, reference);
   return { kind: 'ticket', ...(await fulfillTicket(env, reference)) };
 }
 

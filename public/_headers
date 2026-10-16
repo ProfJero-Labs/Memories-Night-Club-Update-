@@ -25,6 +25,18 @@
   X-Robots-Tag: noindex
 /member.html
   X-Robots-Tag: noindex
+/waiter.html
+  Referrer-Policy: no-referrer
+  X-Robots-Tag: noindex
+/cashier.html
+  Referrer-Policy: no-referrer
+  X-Robots-Tag: noindex
+/finance.html
+  Referrer-Policy: no-referrer
+  X-Robots-Tag: noindex
+/bill.html
+  Referrer-Policy: no-referrer
+  X-Robots-Tag: noindex
 /sw.js
   Cache-Control: no-cache
 /manifest.webmanifest

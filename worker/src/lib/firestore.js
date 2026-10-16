@@ -32,19 +32,26 @@ function parseValue(v) {
 }
 export function parseFields(fields = {}) { return Object.fromEntries(Object.entries(fields).map(([k, v]) => [k, parseValue(v)])); }
 
+// A JWT signed with the service account's key: Google access-token requests, and Firebase custom
+// tokens (staff who signed in with their phone and PIN; see staffauth.js).
+export async function signServiceJwt(env, payload) {
+  const sa = JSON.parse(env.FIREBASE_SERVICE_ACCOUNT_JSON);
+  const keyPem = sa.private_key.replace(/-----BEGIN PRIVATE KEY-----|-----END PRIVATE KEY-----|\s/g, '');
+  const key = await crypto.subtle.importKey('pkcs8', fromB64(keyPem), { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' }, false, ['sign']);
+  const header = b64(JSON.stringify({ alg: 'RS256', typ: 'JWT' }));
+  const body = b64(JSON.stringify(payload));
+  return `${header}.${body}.${b64url(await crypto.subtle.sign('RSASSA-PKCS1-v1_5', key, enc.encode(`${header}.${body}`)))}`;
+}
+
 // Access tokens are cached per scope: Firestore and Identity Toolkit need different ones.
 const tokenCache = {};
 export async function googleAccessToken(env, scope = 'https://www.googleapis.com/auth/datastore') {
   const cached = tokenCache[scope];
   if (cached && cached.sa === env.FIREBASE_SERVICE_ACCOUNT_JSON && Date.now() < cached.expires - 60000) return cached.value;
   const sa = JSON.parse(env.FIREBASE_SERVICE_ACCOUNT_JSON);
-  const keyPem = sa.private_key.replace(/-----BEGIN PRIVATE KEY-----|-----END PRIVATE KEY-----|\s/g, '');
-  const key = await crypto.subtle.importKey('pkcs8', fromB64(keyPem), { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' }, false, ['sign']);
   const t = Math.floor(Date.now() / 1000);
-  const header = b64(JSON.stringify({ alg: 'RS256', typ: 'JWT' }));
-  const payload = b64(JSON.stringify({ iss: sa.client_email, scope, aud: 'https://oauth2.googleapis.com/token', iat: t, exp: t + 3600 }));
-  const signature = b64url(await crypto.subtle.sign('RSASSA-PKCS1-v1_5', key, enc.encode(`${header}.${payload}`)));
-  const r = await fetch('https://oauth2.googleapis.com/token', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer', assertion: `${header}.${payload}.${signature}` }) });
+  const assertion = await signServiceJwt(env, { iss: sa.client_email, scope, aud: 'https://oauth2.googleapis.com/token', iat: t, exp: t + 3600 });
+  const r = await fetch('https://oauth2.googleapis.com/token', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer', assertion }) });
   const d = await r.json(); if (!r.ok) throw new Error('Google access token failed');
   tokenCache[scope] = { value: d.access_token, expires: Date.now() + d.expires_in * 1000, sa: env.FIREBASE_SERVICE_ACCOUNT_JSON };
   return d.access_token;

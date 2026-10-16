@@ -2,7 +2,7 @@
 // validated, and audit-logged. The browser never writes Firestore directly.
 import { getDoc, setDoc, deleteDoc, listDocs, queryWhere, queryRecent, commitTx, updateWrite, withTransaction, googleAccessToken } from './lib/firestore.js';
 import { now, id, clean, normalizePhone, ticketToken, displayCode, dateKey, firstName, TICKET_STYLES, cleanTicketColors, generatePassword } from './lib/util.js';
-import { requireRole, CMS, MONEY, STAFF_ROLES, uidOf } from './lib/auth.js';
+import { requireRole, CMS, MONEY, STAFF_ROLES, uidOf, forgetStaffRecord } from './lib/auth.js';
 import { sendSms, sendEmail, siteUrl } from './lib/notify.js';
 import { getSettings, DEFAULT_SETTINGS, SETTINGS_FIELDS, isOver, autoStyleFor } from './public.js';
 import { openRaffleForEvent, raffleSpotWrites } from './raffle.js';
@@ -428,9 +428,10 @@ export async function setRole(env, b, user) {
   const claims = role === 'none' ? {} : { role, admin: role === 'superAdmin' };
   await identity(env, 'accounts:update', { localId: account.localId, customAttributes: JSON.stringify(claims) });
   const prev = (await getDoc(env, 'users', account.localId).catch(() => null))?.fields || {};
-  if (role === 'none') { await deleteDoc(env, 'users', account.localId).catch(() => {}); await suspendStaffMember(env, account.localId); }
+  // Removed: the record stays (marked removed) so access stops on the very next request; past work keeps its name.
+  if (role === 'none') { await setDoc(env, 'users', account.localId, { ...prev, email, role: '', admin: false, removed: true, removedAt: now(), removedBy: uidOf(user), pinHash: '', updatedAt: now() }); forgetStaffRecord(env, account.localId); await suspendStaffMember(env, account.localId); }
   else {
-    await setDoc(env, 'users', account.localId, { ...prev, email, role, admin: claims.admin, updatedAt: now() });
+    await setDoc(env, 'users', account.localId, { ...prev, email, role, admin: claims.admin, removed: false, updatedAt: now() }); forgetStaffRecord(env, account.localId);
     // Every staff account is a member, so staff never need a ticket to get in.
     await ensureStaffMember(env, { uid: account.localId, name: prev.name || account.displayName || email.split('@')[0], phone: prev.phone, role }, user);
   }
@@ -480,7 +481,7 @@ export async function inviteStaff(env, b, user) {
   await ensureStaffMember(env, { uid: account.localId, name, phone, role }, user);
   await audit(env, user, 'STAFF_INVITED', { targetUid: account.localId, targetEmail: email, role, name });
 
-  const link = siteUrl(env, '/login.html?invite=1');
+  const link = siteUrl(env, '/login.html?email=1');
   const msg = `MEMORIES STAFF\nSign in: ${link}\nEmail: ${email}\nPassword: ${password}\nChange it after your first sign-in.`;
   const texted = await sendSms(env, phone, msg);
 

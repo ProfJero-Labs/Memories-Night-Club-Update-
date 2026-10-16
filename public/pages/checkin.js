@@ -2,7 +2,7 @@
 // Built for a dark room, one hand, hundreds of scans: big results, tones, no paragraphs.
 import { $, esc, params, shortDate, nightKey } from '../app.js';
 import { requireStaff, staffHeader, sapi } from '../staff.js';
-const user = await requireStaff(['superAdmin', 'director', 'manager', 'eventManager', 'doorStaff', 'organiser']);
+const user = await requireStaff(['superAdmin', 'director', 'manager', 'eventManager', 'doorStaff', 'security', 'organiser']);
 staffHeader(user, 'Door');
 if (['superAdmin', 'director', 'manager', 'eventManager'].includes(user.role)) $('#adminLink').hidden = false;
 if (user.role === 'organiser') { $('#adminLink').hidden = false; $('#adminLink').href = 'organiser.html'; $('#adminLink').textContent = 'My nights'; }
@@ -150,16 +150,20 @@ $('#search').oninput = () => {
 };
 
 // ── Camera ──
-// One code at a time: after a read, detection stops until "Scan next". The camera turns off when
-// the page is hidden, and a torch toggle appears where the phone supports it.
-let stream = null, scanning = false, loopT;
+// One code at a time: after a read the result shows, then scanning carries on by itself (the same
+// code is ignored for a few seconds). "Scan now" skips the wait. The camera turns off when the page
+// is hidden and comes back on by itself when it's shown again; the screen stays awake while scanning.
+let stream = null, scanning = false, loopT, resumeT, wasOn = false, lastCode = '', lastAt = 0, wake = null;
 function stopCamera() {
   scanning = false; clearTimeout(loopT);
   stream?.getTracks().forEach(t => t.stop()); stream = null;
   $('#video').srcObject = null; $('#frame').hidden = true; $('#torch').hidden = true; $('#next').hidden = true;
   $('#camOff').hidden = false;
 }
-document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') stopCamera(); else summary(); });
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'hidden') { wasOn = !!stream; stopCamera(); }
+  else { summary(); if (wasOn) { wasOn = false; $('#start').click(); } }
+});
 window.addEventListener('pagehide', stopCamera);
 
 let detect;
@@ -176,18 +180,22 @@ async function loop() {
   if (!scanning) return;
   try {
     const v = await detect();
+    if (v && v === lastCode && Date.now() - lastAt < 6000) { loopT = setTimeout(loop, 300); return; }
     if (v) {
+      lastCode = v; lastAt = Date.now();
       scanning = false; $('#frame').hidden = true;
       if (isMemberPass(v)) { memberPass(); return; }
       const t = parseTicket(v);
       if (t) await admit({ token: t }); else { $('#out').innerHTML = '<div class="result no" role="alert"><h1 class="display">That is not a ticket code.</h1></div>'; tone(false); }
-      $('#next').hidden = false; $('#next').focus();
+      // Keep going by itself: long enough to read the result, then the next guest.
+      $('#next').hidden = false; $('#next').textContent = 'Scan now';
+      clearTimeout(resumeT); resumeT = setTimeout(resume, $('#out .result.ok') ? 2500 : 4000);
       return;
     }
   } catch { /* keep scanning */ }
   loopT = setTimeout(loop, 200);
 }
-function resume() { if (!stream) return; $('#next').hidden = true; $('#out').innerHTML = ''; $('#frame').hidden = false; scanning = true; loop(); }
+function resume() { clearTimeout(resumeT); if (!stream) return; $('#next').hidden = true; $('#frame').hidden = false; scanning = true; loop(); }
 $('#next').onclick = resume;
 
 $('#start').onclick = async () => {
@@ -204,6 +212,7 @@ $('#start').onclick = async () => {
     btn.onclick = async () => { const on = btn.getAttribute('aria-pressed') !== 'true'; try { await track.applyConstraints({ advanced: [{ torch: on }] }); btn.setAttribute('aria-pressed', String(on)); } catch { btn.hidden = true; } };
   }
   detect ||= await setupDetector(video);
+  try { wake = await navigator.wakeLock?.request('screen'); } catch { /* not supported */ }
   resume();
 };
 
@@ -229,6 +238,13 @@ $('#mCode').onsubmit = async ev => {
     if (r.valid || r.code !== 'wrong_code') { $('#mCode').hidden = true; $('#mPhone').hidden = false; $('#mNum').value = ''; }
     else { $('#mCodeIn').value = ''; $('#mCodeIn').focus(); }
   } catch (e) { e.status === 0 ? offline() : showMember({ valid: false, message: 'Try again', hint: e.message }); }
+};
+// Phone dead or no data: let a known member in by name, with a reason (recorded for the manager).
+$('#mManual').onclick = async () => {
+  const reason = prompt('Why can’t they use the app? (e.g. phone dead). Check their face or ID first.');
+  if (!reason) return;
+  try { showMember(await sapi('/api/members/door/manual', { method: 'POST', body: { phone: mPhone, reason } })); $('#mCode').hidden = true; $('#mPhone').hidden = false; $('#mNum').value = ''; }
+  catch (e) { e.status === 0 ? offline() : showMember({ valid: false, message: 'Try again', hint: e.message }); }
 };
 $('#mCancel').onclick = () => { $('#mCode').hidden = true; $('#mPhone').hidden = false; $('#mNum').focus(); };
 // Organisers run their own nights' doors, not the club's staff list.

@@ -15,6 +15,7 @@ import { getDoc, setDoc, listDocs, queryWhere, batchGet, commitTx, updateWrite, 
 import { now, id, clean, normalizePhone, money, paymentRef, validEmail } from './lib/util.js';
 import { requireRole, CMS, uidOf } from './lib/auth.js';
 import { sendSms, siteUrl } from './lib/notify.js';
+import { addMoves, saveProduct } from './ops/stock.js';
 
 const FORBIDDEN = { error: 'Forbidden.', status: 403 };
 export const BAR = ['superAdmin', 'director', 'manager', 'eventManager', 'barStaff', 'waitStaff'];
@@ -164,7 +165,7 @@ export async function barUpdate(env, user, b) {
   if (!requireRole(user, BAR)) return FORBIDDEN;
   const orderId = String(b?.orderId || ''), action = b?.action;
   if (!/^[0-9a-f]{32}$/.test(orderId) || !['deliver', 'refund'].includes(action)) return { error: 'Unknown order.' };
-  return withTransaction(env, async tx => {
+  const r = await withTransaction(env, async tx => {
     const o = foundFields(await batchGet(env, [`counter_orders/${orderId}`], tx), `/counter_orders/${orderId}`);
     if (!o) return { error: 'Unknown order.', status: 404 };
     if (o.fields.status !== 'paid') return { error: o.fields.status === 'delivered' ? 'Already handed over.' : 'This order isn’t waiting at the bar.' };
@@ -173,8 +174,12 @@ export async function barUpdate(env, user, b) {
       ? { ...o.fields, status: 'delivered', deliveredAt: at, deliveredBy: uidOf(user) }
       : { ...o.fields, status: 'refund_due', refundReason: clean(b.reason, 120) || 'bar_could_not_make', refundFlaggedAt: at, refundFlaggedBy: uidOf(user) };
     await commitTx(env, [updateWrite(env, 'counter_orders', orderId, next), updateWrite(env, 'audit_logs', id(), { action: action === 'deliver' ? 'BAR_HANDED_OVER' : 'BAR_REFUND_FLAGGED', actorUid: uidOf(user), orderId, timestamp: at })], tx);
-    return { status: next.status };
+    return { status: next.status, lines: action === 'deliver' ? o.fields.lines : null, stationId: o.fields.stationId };
   });
+  // Handed to the customer: those drinks leave the bar's stock (once, here).
+  if (r.lines) await addMoves(env, r.lines.map(l => ({ productId: l.itemId, productName: l.name, stationId: r.stationId, qty: -Number(l.qty), kind: 'issue', ref: orderId, qrOrder: true })), user);
+  delete r.lines; delete r.stationId;
+  return r;
 }
 
 // ── Control room: stations and the menu ──
@@ -206,17 +211,11 @@ export async function setStationOpen(env, user, b) {
   await audit(env, user, b.open === true ? 'BAR_OPENED' : 'BAR_PAUSED', { stationId: st.id });
   return { open: b.open === true };
 }
+// The old control-room menu save: now the same as Drinks & prices (manager or finance; every price
+// change recorded with the old and new value).
 export async function upsertMenuItem(env, b, user) {
-  if (!requireRole(user, CMS)) return FORBIDDEN;
-  const name = clean(b?.name, 60), price = Number(b?.pricePesewas);
-  if (!name) return { error: 'Add a name.' };
-  if (!Number.isInteger(price) || price < 100) return { error: 'Add a price of at least GHS 1.' };
-  const existing = b?.id ? await getDoc(env, 'menu_items', String(b.id)) : null;
-  if (b?.id && !existing) return { error: 'Item not found.', status: 404 };
-  const mid = existing?.id || id();
-  await setDoc(env, 'menu_items', mid, { name, category: clean(b.category, 30) || 'Drinks', pricePesewas: price, available: b.available !== false, sortOrder: Number(b.sortOrder) || 0, updatedAt: now(), createdAt: existing?.fields?.createdAt || now() });
-  await audit(env, user, 'MENU_ITEM_SAVED', { itemId: mid, name, pricePesewas: price, available: b.available !== false });
-  return { id: mid };
+  const old = b?.id ? await getDoc(env, 'menu_items', String(b.id)) : null;
+  return saveProduct(env, { unit: old?.fields?.unit, costPesewas: old?.fields?.costPesewas ?? '', lowStock: old?.fields?.lowStock ?? '', tracked: old?.fields?.tracked, ...b }, user);
 }
 // Refunds owed on bar orders, for the control room's Refunds tab.
 export async function counterRefunds(env) {

@@ -41,6 +41,16 @@ async function buyTicket(page, { name, line, event = 'dev-afro', type }) {
   return new URL(page.url()).searchParams.get('token');
 }
 
+// Staff sign in with phone + PIN (dev seed: 2580, or 258025 for managers, directors, finance, admin).
+const STAFF = { 'admin@dev': ['0200000001', '258025'], 'manager@dev': ['0200000002', '258025'], 'door@dev': ['0200000003', '2580'], 'bar@dev': ['0200000004', '2580'], 'orga@dev': ['0245552020', '2580'], 'orgb@dev': ['0200000006', '2580'], 'waiter@dev': ['0200000007', '2580'], 'waiter2@dev': ['0200000008', '2580'], 'cashier@dev': ['0200000009', '2580'], 'finance@dev': ['0200000010', '258025'], 'security@dev': ['0200000011', '2580'], 'director@dev': ['0200000012', '258025'] };
+async function signInAs(page, email) {
+  if (!/login\.html/.test(page.url())) await page.goto(`${base}/login.html`);
+  await page.waitForSelector('#pinForm');
+  const s = STAFF[email];
+  if (s) { await page.fill('#phone', s[0]); await page.fill('#pin', s[1]); await page.click('#go'); return; }
+  await page.click('#toEmail'); await page.fill('#email', email); await page.fill('#pw', 'memories-dev'); await page.click('#goEmail');
+}
+
 // Control-room tabs open by address; wait until that tab is the one showing and has loaded.
 async function openTab(page, tab) {
   await page.evaluate(t => { location.hash = t; }, tab);
@@ -101,7 +111,7 @@ test('two apps: guest pages install “Memories”; staff pages install “Memor
   assert.notEqual(pub.id, staff.id, 'two separate apps');
   assert.match(staff.start_url, /^login\.html/);
   await page.goto(`${base}/login.html`); assert.equal(await page.locator('link[rel=manifest]').getAttribute('href'), 'staff.webmanifest');
-  await page.fill('#email', 'manager@dev'); await page.fill('#pw', 'memories-dev'); await page.click('#go');
+  await signInAs(page, 'manager@dev');
   await page.waitForURL(/admin\.html/);
   assert.equal(await page.locator('link[rel=manifest]').getAttribute('href'), 'staff.webmanifest');
   await page.locator('.staff-credit').getByText(/EvolveIT/).waitFor();
@@ -302,7 +312,7 @@ test('Book an event: Corporate opens the short form with Corporate chosen; admin
   assert.equal(req.eventType, 'Corporate'); assert.equal(req.status, 'NEW');
 
   const admin = await phone(1280);
-  await admin.goto(`${base}/login.html`); await admin.fill('#email', 'manager@dev'); await admin.fill('#pw', 'memories-dev'); await admin.click('#go');
+  await signInAs(admin, 'manager@dev');
   await admin.waitForURL(/admin\.html/); await openTab(admin, 'requests');
   await admin.locator(`[data-open="${req.id}"]`).click();
   admin.once('dialog', d => d.accept());
@@ -315,7 +325,7 @@ test('Book an event: Corporate opens the short form with Corporate chosen; admin
 
 test('admin changes a flyer and a price; the public page shows it with no deploy', async () => {
   const admin = await phone(1280);
-  await admin.goto(`${base}/login.html`); await admin.fill('#email', 'admin@dev'); await admin.fill('#pw', 'memories-dev'); await admin.click('#go');
+  await signInAs(admin, 'admin@dev');
   await admin.waitForURL(/admin\.html/); await admin.goto(`${base}/admin.html#nights/dev-piano`); await admin.waitForLoadState('networkidle');
   await admin.setInputFiles('#artFile', new URL('./fixtures/dnd-party-poster.jpeg', import.meta.url).pathname);
   await admin.getByText(/uploaded/i).waitFor();
@@ -334,7 +344,7 @@ test('admin changes a flyer and a price; the public page shows it with no deploy
 
 test('control room: an unsaved flyer is not lost when a ticket row is saved; a private night says it is not public', async () => {
   const admin = await phone(1280);
-  await admin.goto(`${base}/login.html`); await admin.fill('#email', 'admin@dev'); await admin.fill('#pw', 'memories-dev'); await admin.click('#go');
+  await signInAs(admin, 'admin@dev');
   await admin.waitForURL(/admin\.html/); await admin.goto(`${base}/admin.html#nights/dev-afro`); await admin.waitForLoadState('networkidle');
   await admin.setInputFiles('#artFile', new URL('./fixtures/dnd-party-poster.jpeg', import.meta.url).pathname);
   await admin.getByText(/uploaded/i).waitFor();
@@ -370,7 +380,7 @@ test('control room: an unsaved flyer is not lost when a ticket row is saved; a p
 test('control room: refunds owed are listed and can be marked refunded with a note', async () => {
   store.seed('pending_checkouts', 'e2e-refund', { kind: 'ticket', eventName: 'Afrobeats Friday', buyerName: 'Refund Me', buyerPhone: '0247778888', amountPesewas: 15000, status: 'failed', error: 'sold_out_after_payment', refundStatus: 'manual_required', createdAt: new Date().toISOString() });
   const admin = await phone(1280);
-  await admin.goto(`${base}/login.html`); await admin.fill('#email', 'manager@dev'); await admin.fill('#pw', 'memories-dev'); await admin.click('#go');
+  await signInAs(admin, 'manager@dev');
   await admin.waitForURL(/admin\.html/); await openTab(admin, 'refunds');
   const row = admin.locator('tr', { hasText: 'Refund Me' });
   await row.waitFor();
@@ -389,7 +399,7 @@ test('control room: refunds owed are listed and can be marked refunded with a no
 
 test('control room on a phone: every tab fits the screen; tables become labelled cards', async () => {
   const page = await phone(390);
-  await page.goto(`${base}/login.html`); await page.fill('#email', 'admin@dev'); await page.fill('#pw', 'memories-dev'); await page.click('#go');
+  await signInAs(page, 'admin@dev');
   await page.waitForURL(/admin\.html/);
   for (const tab of ['overview', 'nights', 'bookings', 'requests', 'bits', 'refunds', 'bar', 'settings', 'staff']) {
     await openTab(page, tab);
@@ -412,7 +422,7 @@ test('images uploaded in the control room appear on the public site: hero image 
   await guest.goto(`${base}/index.html`, { waitUntil: 'networkidle' });
   const heroId = new URL(await guest.locator('#heroArt').getAttribute('href'), base).searchParams.get('id');
   const admin = await phone(1280);
-  await admin.goto(`${base}/login.html`); await admin.fill('#email', 'admin@dev'); await admin.fill('#pw', 'memories-dev'); await admin.click('#go');
+  await signInAs(admin, 'admin@dev');
   await admin.waitForURL(/admin\.html/); await admin.goto(`${base}/admin.html#nights/${heroId}`); await admin.waitForLoadState('networkidle');
   await admin.setInputFiles('#heroFile', new URL('./fixtures/dnd-party-poster.jpeg', import.meta.url).pathname);
   await admin.getByText(/uploaded/i).waitFor();
@@ -431,7 +441,7 @@ test('a video uploaded for a night plays behind the homepage hero and on its pag
   await guest.goto(`${base}/index.html`, { waitUntil: 'networkidle' });
   const heroId = new URL(await guest.locator('#heroArt').getAttribute('href'), base).searchParams.get('id');
   const admin = await phone(1280);
-  await admin.goto(`${base}/login.html`); await admin.fill('#email', 'admin@dev'); await admin.fill('#pw', 'memories-dev'); await admin.click('#go');
+  await signInAs(admin, 'admin@dev');
   await admin.waitForURL(/admin\.html/); await admin.goto(`${base}/admin.html#nights/${heroId}`); await admin.waitForLoadState('networkidle');
   await admin.setInputFiles('#evVidF', new URL('./fixtures/clip.webm', import.meta.url).pathname);
   await admin.getByText(/video uploaded/i).waitFor();
@@ -458,7 +468,7 @@ test('door: no any-night mode; valid → ENTRY CONFIRMED, again → ALREADY CHEC
   const valid = docs('tickets').filter(t => t.status === 'valid' && t.eventId === 'dev-afro');
   const token = valid[0].id;
   const door = await phone();
-  await door.goto(`${base}/login.html`); await door.fill('#email', 'door@dev'); await door.fill('#pw', 'memories-dev'); await door.click('#go');
+  await signInAs(door, 'door@dev');
   await door.waitForURL(/checkin\.html/); await door.waitForLoadState('networkidle');
   assert.equal(await door.locator('#ev option', { hasText: /any night/i }).count(), 0, 'no Any night option');
   if (!(await door.inputValue('#ev'))) {
@@ -496,7 +506,7 @@ test('door: a table is found by name and seated once; an admit tapped by mistake
   const t = 'f'.repeat(56) + 'e2e0undo';
   store.seed('tickets', t, { customerName: 'Undo Person', phoneLast4: '0002', eventId: 'dev-afro', eventName: 'Afrobeats Friday', type: 'Regular', admitCount: 1, displayCode: 'MEM-FFFFFF', status: 'valid' });
   const door = await phone();
-  await door.goto(`${base}/login.html`); await door.fill('#email', 'door@dev'); await door.fill('#pw', 'memories-dev'); await door.click('#go');
+  await signInAs(door, 'door@dev');
   await door.waitForURL(/checkin\.html/); await door.waitForLoadState('networkidle'); await door.selectOption('#ev', 'dev-afro');
   await door.fill('#search', 'tablebooker');
   await door.locator('#hits [data-table="TBL-E2ETAB"]').click();
@@ -528,7 +538,7 @@ test('membership: a manager adds someone and gets a one-time code (nothing texte
   const { passSig } = await import('../worker/src/members.js');
   const smsBefore = store.sms.length;
   const admin = await phone(390);
-  await admin.goto(`${base}/login.html`); await admin.fill('#email', 'admin@dev'); await admin.fill('#pw', 'memories-dev'); await admin.click('#go');
+  await signInAs(admin, 'admin@dev');
   await admin.waitForURL(/admin\.html/); await openTab(admin, 'members');
   await admin.getByText(/Staff accounts without a membership/).waitFor();
   await admin.click('#mAdd'); await admin.fill('#fName', 'Kojo Gatekeeper'); await admin.fill('#fPhone', '0245551010'); await admin.selectOption('#fType', 'member'); await admin.fill('#fDept', 'VIP');
@@ -554,7 +564,7 @@ test('membership: a manager adds someone and gets a one-time code (nothing texte
   await ctx.setOffline(false); await mem.reload(); await mem.waitForSelector('#wait');
 
   const door = await phone(390);
-  await door.goto(`${base}/login.html`); await door.fill('#email', 'door@dev'); await door.fill('#pw', 'memories-dev'); await door.click('#go');
+  await signInAs(door, 'door@dev');
   await door.waitForURL(/checkin\.html/); await door.waitForLoadState('networkidle');
   // No QR for members: an old pass QR scanned by habit points the door to the number route.
   assert.equal(await mem.locator('#qr').count(), 0, 'the pass shows no QR');
@@ -590,10 +600,10 @@ test('membership: a manager adds someone and gets a one-time code (nothing texte
 test('staff are members: the organiser sees their gate code on their own dashboard and opens their pass from it', async () => {
   const smsBefore = store.sms.length;
   const org = await phone(390);
-  await org.goto(`${base}/login.html`); await org.fill('#email', 'orga@dev'); await org.fill('#pw', 'memories-dev'); await org.click('#go');
+  await signInAs(org, 'orga@dev');
   await org.waitForURL(/organiser\.html/); await org.waitForLoadState('networkidle');
   const door = await phone(390);
-  await door.goto(`${base}/login.html`); await door.fill('#email', 'door@dev'); await door.fill('#pw', 'memories-dev'); await door.click('#go');
+  await signInAs(door, 'door@dev');
   await door.waitForURL(/checkin\.html/); await door.waitForLoadState('networkidle');
   await door.click('#memberGate summary'); await door.fill('#mNum', '024 555 2020'); await door.click('#mPhone button');
   await door.locator('#out').getByText(/staff dashboard/i).waitFor();
@@ -602,7 +612,7 @@ test('staff are members: the organiser sees their gate code on their own dashboa
   await door.fill('#mCodeIn', gate); await door.click('#mCode button[type=submit]');
   await door.locator('#out').getByText(/staff verified/i).waitFor();
   assert.equal(store.sms.length, smsBefore, 'no SMS');
-  await org.click('#myPass'); await org.waitForURL(/member\.html/); await org.waitForSelector('#wait');
+  await org.click('#acctBtn'); await org.click('#myPass'); await org.waitForURL(/member\.html/); await org.waitForSelector('#wait');
   assert.match(await org.textContent('.who'), /Ama Organiser/);
   assert.deepEqual([...org.errors, ...door.errors], []);
 });
@@ -623,7 +633,7 @@ test('scan to order: the bar QR opens the menu; pay; the pickup code shows only 
   const code = (await g.textContent('.pickup')).trim();
   assert.match(store.sms.at(-1).message, new RegExp(code));
   const bar = await phone(390);
-  await bar.goto(`${base}/login.html`); await bar.fill('#email', 'bar@dev'); await bar.fill('#pw', 'memories-dev'); await bar.click('#go');
+  await signInAs(bar, 'bar@dev');
   await bar.waitForURL(/bar\.html/); await bar.waitForSelector('.ord');
   // Bar staff make table QR cards themselves: "1-3" is three cards, each opening that table's menu.
   await bar.click('#qr'); await bar.fill('#qrmT', '1-3');
@@ -639,13 +649,13 @@ test('scan to order: the bar QR opens the menu; pay; the pickup code shows only 
 
 test('organiser A sees only their night and cannot open the control room; a no-role account is refused', async () => {
   const org = await phone(1280);
-  await org.goto(`${base}/login.html`); await org.fill('#email', 'orga@dev'); await org.fill('#pw', 'memories-dev'); await org.click('#go');
+  await signInAs(org, 'orga@dev');
   await org.waitForURL(/organiser\.html/); await org.waitForLoadState('networkidle');
   const text = await org.textContent('main');
   assert.match(text, /Afrobeats/); assert.doesNotMatch(text, /Amapiano/);
   await org.goto(`${base}/admin.html`); await org.waitForURL(/organiser\.html/);
   const guest = await phone(1280);
-  await guest.goto(`${base}/login.html`); await guest.fill('#email', 'guest@dev'); await guest.fill('#pw', 'memories-dev'); await guest.click('#go');
+  await signInAs(guest, 'guest@dev');
   await guest.getByText(/doesn’t have staff access/i).waitFor();
 });
 
@@ -661,14 +671,14 @@ test('XSS payloads in admin-entered and guest-entered text render as text on pub
     await page.goto(base + p, { waitUntil: 'networkidle' });
     assert.equal(await page.evaluate(() => window.__xss), undefined, `payload executed on ${p}`);
   }
-  await page.goto(`${base}/login.html`); await page.fill('#email', 'admin@dev'); await page.fill('#pw', 'memories-dev'); await page.click('#go');
+  await signInAs(page, 'admin@dev');
   await page.waitForURL(/admin\.html/); await page.waitForLoadState('networkidle');
   for (const h of ['requests', 'nights/dev-dnd', 'bookings']) { await page.goto(`${base}/admin.html#${h}`); await page.waitForLoadState('networkidle'); await page.waitForTimeout(400); if (h === 'requests') await page.locator('[data-open="xss"]').click(); assert.equal(await page.evaluate(() => window.__xss), undefined, `payload executed on admin ${h}`); }
 });
 
 test('promos: the control room starts an automatic promo and a code promo; guests see the promo price; the code (typed or from its link) lowers it; the order and the promo record it', async () => {
   const admin = await phone(390);
-  await admin.goto(`${base}/login.html`); await admin.fill('#email', 'manager@dev'); await admin.fill('#pw', 'memories-dev'); await admin.click('#go');
+  await signInAs(admin, 'manager@dev');
   await admin.waitForURL(/admin\.html/); await openTab(admin, 'nights');
   await admin.evaluate(() => { location.hash = 'nights/dev-dnd'; });
   await admin.click('[data-sec-go="promos"]'); await admin.locator('#prAdd').click();
@@ -723,6 +733,117 @@ test('promos: the control room starts an automatic promo and a code promo; guest
   assert.deepEqual([...admin.errors, ...g.errors, ...f.errors, ...small.errors], []);
   // Switch the test promos off so later journeys see normal prices.
   for (const p of store.list('promos')) store.seed('promos', p.id, { ...p.fields, active: false });
+});
+
+test('staff sign-in: a manager adds a waitress; her PIN is texted and shown to the manager; she signs in with it straight away, stays signed in the next day, can change it; forgot PIN texts a new one', async () => {
+  const mgr = await phone(390);
+  await signInAs(mgr, 'manager@dev'); await mgr.waitForURL(/admin\.html/);
+  await openTab(mgr, 'staff');
+  assert.equal(await mgr.$eval('#aRole', e => e.value), '', 'no job is pre-selected');
+  assert.ok(!(await mgr.$$eval('#aRole option', os => os.map(o => o.value))).some(v => ['superAdmin', 'director', 'finance'].includes(v)), 'a manager can’t give admin, director or finance');
+  await mgr.fill('#aName', 'Abena Waitress'); await mgr.fill('#aPhone', '024 777 1001'); await mgr.selectOption('#aRole', 'waitStaff'); await mgr.click('#aBtn');
+  await mgr.locator('.pincards').getByText(/Texted to 024\*\*\*1001/).waitFor();
+  const sms = store.sms.filter(x => x.to === '0247771001').at(-1).message;
+  assert.match(sms, /Waiter \/ waitress/); const pin = /PIN: (\d{4})/.exec(sms)[1];
+  assert.equal((await mgr.locator('.pincards .pinnum').first().textContent()).trim(), pin, 'the manager sees the same PIN');
+  assert.equal(await mgr.$eval('#aName', e => e.value), '', 'the form is ready for the next person');
+
+  // She signs in with the texted PIN: nothing to choose first.
+  const w = await phone(360);
+  await w.goto(`${base}/login.html`); await w.waitForSelector('#pinForm');
+  assert.equal(await w.locator('#codeForm, #setForm').count(), 0, 'no extra code or choose-a-PIN screens');
+  await w.fill('#phone', '0247771001'); await w.fill('#pin', '9999'); await w.click('#go');
+  await w.locator('#msg').getByText(/don’t match/).waitFor();
+  await w.fill('#pin', pin); await w.click('#go');
+  await w.waitForURL(/waiter\.html/); await w.waitForSelector('#newTab');
+
+  // Full-time staff: still signed in the next day (no morning sign-out).
+  // (The old one-night rule read this marker; a sign-in from yesterday must still work today.)
+  await w.evaluate(() => localStorage.setItem('mem-staff-signed-in', String(Date.now() - 30 * 3600e3)));
+  await w.reload(); await w.waitForSelector('#newTab');
+  assert.match(w.url(), /waiter\.html/);
+
+  // Changing it is optional and simple.
+  await w.click('#acctBtn'); await w.click('#changePin');
+  await w.getByText('The PIN we texted you').waitFor();
+  await w.fill('#cpOld', pin); await w.fill('#cpNew', '4826'); await w.fill('#cpNew2', '4826'); await w.click('.sheet button[type=submit]');
+  await w.getByText(/Your PIN is changed/).waitFor();
+  await w.click('#acctBtn'); await w.click('#signout'); await w.waitForURL(/login\.html/);
+  await w.fill('#phone', '0247771001'); await w.fill('#pin', '4826'); await w.click('#go'); await w.waitForURL(/waiter\.html/);
+
+  // Forgot it: "Text me one" sends a new PIN to the number typed in.
+  await w.click('#acctBtn'); await w.click('#signout'); await w.waitForURL(/login\.html/);
+  const before = store.sms.length;
+  await w.fill('#phone', '0247771001'); await w.click('#sendPin');
+  await w.locator('#msg').getByText(/new PIN is on its way/).waitFor();
+  assert.equal(store.sms.length, before + 1);
+  const fresh = /PIN: (\d{4})/.exec(store.sms.at(-1).message)[1];
+  await w.fill('#pin', fresh); await w.click('#go'); await w.waitForURL(/waiter\.html/);
+  assert.deepEqual([...mgr.errors, ...w.errors], []);
+});
+
+test('a night at the bar: tab without QR → bar → delivered → the customer pays on their phone → another round paid in cash at the cashier → reports, counts, the close and finance’s report', async () => {
+  // Waiter
+  const w = await phone(360); await signInAs(w, 'waiter@dev'); await w.waitForURL(/waiter\.html/);
+  await w.click('#newTab'); await w.fill('#ntTable', '12'); await w.click('#ntGo');
+  await w.waitForURL(/#add\//); await w.click('[data-p="dev-m-beer"]'); await w.click('[data-p="dev-m-beer"]'); await w.click('[data-p="dev-m-shot"]');
+  assert.match(await w.textContent('#send'), /3 drinks · GHS 80/); await w.click('#send');
+  await w.waitForURL(/#tab\//); await w.locator('.tcard').getByText('Sent to bar').waitFor();
+  // Bar
+  const bar = await phone(390); await signInAs(bar, 'bar@dev'); await bar.waitForURL(/bar\.html/);
+  await bar.locator('#rounds .ord').filter({ hasText: '12' }).locator('[data-a="hand"]').click();
+  await bar.locator('#msgTop').getByText(/Handed over/).waitFor();
+  // Waiter delivers; the customer gets the bill
+  await w.locator('[data-act="delivered"]').waitFor({ timeout: 10000 }); await w.click('[data-act="delivered"]');
+  await w.locator('.tcard').getByText('Delivered').waitFor();
+  await w.click('#showBill'); await w.locator('#sbQr svg').waitFor();
+  const tabId = await w.evaluate(() => location.hash.split('/')[1]);
+  const token = docs('tabs').find(t => t.id === tabId).billToken;
+  await w.click('[data-close]');
+  const cust = await phone(360);
+  await cust.goto(`${base}/bill.html?t=${token}`, { waitUntil: 'networkidle' });
+  assert.match(await cust.textContent('#root'), /2 × Club beer/); assert.match(await cust.textContent('#pay'), /GHS 80/);
+  await cust.click('#pay'); await cust.waitForURL(/dev\/paystack/); await cust.getByRole('button', { name: 'Pay' }).click();
+  await cust.waitForURL(/bill\.html/); await cust.getByText('Payment confirmed. Thank you!').waitFor({ timeout: 20000 });
+  await w.locator('.st').getByText('Paid', { exact: true }).waitFor({ timeout: 10000 });
+  // Another round, paid in cash at the cashier
+  await w.click('#add'); await w.waitForURL(/#add\//); await w.click('[data-p="dev-m-water"]'); await w.click('#send'); await w.waitForURL(/#tab\//);
+  await bar.locator('#rounds .ord').filter({ hasText: '12' }).locator('[data-a="hand"]').click();
+  await w.locator('[data-act="delivered"]').waitFor({ timeout: 10000 }); await w.click('[data-act="delivered"]');
+  const cash = await phone(390); await signInAs(cash, 'cashier@dev'); await cash.waitForURL(/cashier\.html/);
+  await cash.click('[data-k="cash"]'); await cash.fill('#fl', '100'); await cash.click('#openGo'); await cash.waitForSelector('#cnt');
+  await cash.click('[data-k="bills"]'); await cash.fill('#q', '12'); await cash.locator('[data-id]').first().click();
+  await cash.click('#cGo'); await cash.getByText('Cash recorded').waitFor();
+  await cash.click('[data-close]');
+  await w.locator('#close').waitFor({ timeout: 10000 }); await w.click('#close'); await w.waitForURL(/#tabs/);
+  // Poor signal: an action that can't reach the server never shows as done.
+  await w.context().setOffline(true);
+  await w.click('#newTab'); await w.fill('#ntTable', '14'); await w.click('#ntGo');
+  await w.locator('#ntMsg').getByText(/CONNECTION/i).waitFor();
+  await w.context().setOffline(false); await w.click('[data-close]');
+  // End of night: waiter report, bar count, cash count, front office, the close, finance.
+  await w.click('[data-k="report"]'); await w.waitForSelector('#rpGo'); await w.click('#rpGo'); await w.getByText(/Report submitted/).waitFor();
+  await bar.click('[data-k="count"]'); await bar.waitForSelector('#cf');
+  for (const row of await bar.locator('[data-p]').all()) await row.locator('[data-n]').fill('0');
+  const reasons = bar.locator('[data-r]:not([hidden])');
+  for (let i = 0; i < await reasons.count(); i++) await reasons.nth(i).selectOption('unknown');
+  bar.once('dialog', d => d.accept()); await bar.click('#cfGo'); await bar.getByText(/Count submitted with 3 differences/).waitFor();
+  await cash.click('[data-k="cash"]'); await cash.fill('#cnt', '108'); await cash.locator('#whyBox').waitFor();
+  await cash.fill('#why', 'gave GHS 2 too much change'); cash.once('dialog', d => d.accept()); await cash.click('#cntGo');
+  await cash.getByText(/GHS 2 less than expected/).waitFor();
+  const fo = await phone(390); await signInAs(fo, 'door@dev'); await fo.waitForURL(/checkin\.html/);
+  await fo.click('[data-k="report"]'); await fo.waitForSelector('#frGo'); await fo.click('#frGo'); await fo.getByText(/Submitted by/).waitFor();
+  const mgr = await phone(390); await signInAs(mgr, 'manager@dev'); await mgr.waitForURL(/admin\.html/);
+  await mgr.getByText('Today’s sales').first().waitFor();
+  await openTab(mgr, 'closing');
+  assert.match(await mgr.textContent('#panel'), /2 less than expected/);
+  mgr.on('dialog', d => d.accept());
+  await mgr.click('#closeGo'); await mgr.getByText(/Night closed/).waitFor({ timeout: 15000 });
+  const fin = await phone(390); await signInAs(fin, 'finance@dev'); await fin.waitForURL(/finance\.html/);
+  await fin.click('[data-k="reports"]'); await fin.locator('[data-d]').first().click();
+  await fin.getByText(/End of day/).waitFor(); assert.match(await fin.textContent('#app'), /GHS 2 less than expected/);
+  await fin.click('#soGo'); await fin.getByText(/Signed off by Dev Finance/).waitFor();
+  assert.deepEqual([...w.errors, ...bar.errors, ...cust.errors, ...cash.errors, ...fo.errors, ...mgr.errors, ...fin.errors], []);
 });
 
 test('every public page renders at 320px with no sideways scroll and no script errors', async () => {

@@ -642,3 +642,7 @@ h1, h2, h3 { margin: 0; }
 .code-row { display: flex; gap: 8px; } .code-row input { flex: 1; min-width: 0; text-transform: uppercase; letter-spacing: .08em; }
 .ev-promo { display: inline-flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .flag.promo { background: var(--mustard); color: var(--ink); letter-spacing: .12em; }
+
+/* Staff sign-in: phone + PIN, big and simple */
+.signin input#pin, .signin #sPin, .signin #sPin2, .signin #sCode { font-size: 28px; letter-spacing: .4em; }
+.pin-row { display: flex; gap: 8px; align-items: center; } .pin-row input { flex: 1; min-width: 0; }

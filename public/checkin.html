@@ -37,10 +37,12 @@
   .count { display: flex; justify-content: space-between; font: 700 12px var(--sans); letter-spacing: .16em; text-transform: uppercase; color: var(--muted); }
   #ev:invalid { border-color: var(--crimson); }
 </style>
+<link rel="stylesheet" href="ops.css">
 <script src="config.js"></script>
 </head>
 <body class="staff">
 <main class="door">
+<section id="vEntrance" style="display:grid;gap:inherit">
   <div class="sfield"><label for="ev">Night</label><select id="ev" required><option value="" disabled selected>Choose the night</option></select><span class="hint" id="evHint"></span></div>
   <div class="headcount" aria-live="polite"><div><small>In</small><br><b id="inCount">–</b></div><div style="text-align:right"><small>Expected</small><br><b id="expCount">–</b></div></div>
   <div id="out" aria-live="assertive"></div>
@@ -48,7 +50,7 @@
   <div class="cam" id="cam"><video id="video" playsinline muted></video><div class="frame" hidden id="frame"></div>
     <button class="sbtn ghost torch" id="torch" type="button" hidden aria-pressed="false">Torch</button>
     <div class="off" id="camOff"><div style="display:grid;gap:12px;justify-items:center"><button class="btn red" id="start" type="button">Scan QR</button><span class="foot-small">Uses the camera on this device.</span></div></div></div>
-  <form id="manual" class="toolbar" style="margin:0" novalidate><input id="code" placeholder="Or paste the ticket link" style="flex:1;min-width:0" autocomplete="off" autocapitalize="off" spellcheck="false"><button class="sbtn" type="submit">Check</button></form>
+  <form id="manual" class="toolbar" style="margin:0" novalidate><input id="code" placeholder="Type a ticket code or paste its link" style="flex:1;min-width:0" autocomplete="off" autocapitalize="off" spellcheck="false"><button class="sbtn" type="submit">Check</button></form>
   <details class="fold member-gate" id="memberGate"><summary>Staff or member? Verify with their app</summary>
     <form id="mPhone" class="step" novalidate style="margin-top:10px;gap:12px">
       <p class="foot-small" style="margin:0">No ticket, no QR: type their number. A 6-digit code appears in their Memories app (staff: on their dashboard), and they read it to you.</p>
@@ -58,12 +60,17 @@
     <form id="mCode" class="step" novalidate hidden style="margin-top:10px;gap:12px">
       <div class="sfield"><label for="mCodeIn">The code they read out</label><input id="mCodeIn" inputmode="numeric" autocomplete="off" maxlength="6" pattern="[0-9]*"></div>
       <div class="toolbar" style="margin:0"><button class="sbtn red" type="submit">Verify</button><button class="sbtn ghost" type="button" id="mCancel">Start over</button></div>
+      <button class="link" type="button" id="mManual" style="justify-self:start">Their phone is dead? Let them in by name</button>
     </form>
   </details>
-  <div class="sfield"><label for="search">Find a guest or table</label><input id="search" type="search" placeholder="Name, code or last 4 of phone" autocomplete="off"></div>
+  <div class="sfield"><label for="search">Find a guest or table</label><input id="search" type="search" placeholder="Last 4 of their phone, name or code" autocomplete="off"></div>
   <ul class="hits" id="hits"></ul>
   <div class="count"><span id="counted">This phone: 0</span><a href="admin.html" id="adminLink" hidden>Control room</a></div>
+</section>
+<section id="vTables" hidden></section><section id="vIssues" hidden></section><section id="vReport" hidden></section>
+<div style="height:70px"></div>
 </main>
 <script type="module" src="pages/checkin.js"></script>
+<script type="module" src="pages/front-ops.js"></script>
 </body>
 </html>

@@ -115,6 +115,7 @@ const SIGNALS = {
   webhook_forged: { threshold: 1, text: n => `MEMORIES SECURITY: a payment notice with a bad signature reached the API (${n} in 10 min). It was ignored and nothing was issued. If it repeats, someone is trying to fake payments.` },
   staff_denied: { threshold: 15, text: n => `MEMORIES SECURITY: ${n} refused staff requests from one address in 10 minutes. Someone may be guessing sign-ins or probing the control room.` },
   member_code_guessing: { threshold: 10, text: n => `MEMORIES SECURITY: ${n} wrong member gate codes from one address in 10 minutes. Someone may be guessing codes at the door.` },
+  staff_pin_failed: { threshold: 12, text: n => `MEMORIES SECURITY: ${n} wrong staff PINs or codes from one address in 10 minutes. Someone may be guessing staff PINs.` },
   rate_limited: { threshold: 60, text: n => `MEMORIES SECURITY: one address hit the rate limits ${n} times in 10 minutes. Possible scraping or a scripted attack.` },
 };
 const hits = new Map();
