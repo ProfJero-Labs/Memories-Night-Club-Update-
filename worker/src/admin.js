@@ -481,7 +481,7 @@ export async function inviteStaff(env, b, user) {
   await ensureStaffMember(env, { uid: account.localId, name, phone, role }, user);
   await audit(env, user, 'STAFF_INVITED', { targetUid: account.localId, targetEmail: email, role, name });
 
-  const link = siteUrl(env, '/login.html?invite=1');
+  const link = siteUrl(env, '/login.html?email=1');
   const msg = `MEMORIES STAFF\nSign in: ${link}\nEmail: ${email}\nPassword: ${password}\nChange it after your first sign-in.`;
   const texted = await sendSms(env, phone, msg);
 

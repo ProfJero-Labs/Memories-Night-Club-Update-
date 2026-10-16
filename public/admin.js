@@ -760,9 +760,12 @@ async function staff(arg, notice) {
   const { staff: list, roles } = await sapi('/api/admin/people');
   const roleOpts = sel => `<option value="" ${sel ? '' : 'selected'} disabled>Pick their job</option>${roles.map(r => `<option value="${esc(r.id)}" ${r.id === sel ? 'selected' : ''}>${esc(r.name)}</option>`).join('')}`;
   const may = r => roles.some(x => x.id === r);
-  const last = s => (s.lastSignInAt ? when(s.lastSignInAt) : s.hasPin ? 'Not yet' : 'Hasn’t chosen a PIN');
+  const last = s => (s.lastSignInAt ? when(s.lastSignInAt) : s.hasPin ? 'Not yet' : 'No PIN yet');
+  const noPin = list.filter(s => !s.hasPin && may(s.role) && s.uid !== user.uid);
   panel.innerHTML = `<h1>Staff</h1>
-    <p class="muted" style="margin-top:-6px">Staff sign in with their phone number and their own PIN. Add someone and they get a text with a code to choose their PIN. Everyone here is also a member: they get in with the app, never a ticket.</p>
+    <p class="muted" style="margin-top:-6px">Add your staff once: they keep their access every night. Each person gets their own PIN by text and signs in with their phone number and that PIN. They can change it later if they want. Everyone here is also a member: they get in with the app, never a ticket.</p>
+    <div id="pinCards"></div>
+    ${noPin.length ? `<div class="card" style="display:grid;gap:8px"><strong>${noPin.length} staff ${noPin.length === 1 ? 'has' : 'have'} no PIN yet</strong><span class="muted">${noPin.map(s => esc(s.name || s.email)).join(', ')}</span><div><button class="sbtn red" id="sendAll">Text PINs to everyone without one</button></div></div>` : ''}
     <form class="card" id="addForm" novalidate><h2 style="margin:0">Add a staff member</h2>
       <div class="grid2">
         <div class="sfield"><label for="aName">Full name</label><input id="aName" maxlength="80" autocomplete="off"></div>
@@ -770,7 +773,7 @@ async function staff(arg, notice) {
         <div class="sfield"><label for="aRole">Job</label><select id="aRole">${roleOpts('')}</select></div>
         <label class="check" style="align-self:end"><input type="checkbox" id="aCash"> Can collect cash from customers</label>
       </div>
-      <div><button class="sbtn red" type="submit" id="aBtn">Add and text them</button></div><div id="addMsg"></div>
+      <div><button class="sbtn red" type="submit" id="aBtn">Add and text their PIN</button></div><div id="addMsg"></div>
     </form>
     <details class="fold"><summary>What each job can do</summary><dl class="role-key">
       <dt>Director</dt><dd>Everything a manager can, and adds managers and finance officers.</dd>
@@ -787,7 +790,7 @@ async function staff(arg, notice) {
     <div id="sMsg"></div>
     <div class="tbl-wrap"><table class="tbl"><thead><tr><th>Name</th><th>Job</th><th>Phone</th><th>Last signed in</th><th></th></tr></thead><tbody>
     ${list.map(s => `<tr data-uid="${esc(s.uid)}"><td><strong>${esc(s.name || s.email)}</strong>${s.locked ? ` ${pill('PIN locked', 'red')}` : ''}${s.canCollectCash ? `<br><small class="muted">Collects cash</small>` : ''}</td><td>${esc(s.roleName)}</td><td>${s.phone ? esc(s.phone) : pill('add phone', 'amber')}</td><td>${esc(last(s))}</td>
-      <td class="actions">${may(s.role) && s.uid !== user.uid ? `<button class="sbtn" data-edit>Change</button><button class="sbtn ghost" data-pin>Reset PIN</button><button class="sbtn ghost" data-rm>Remove</button>` : ''}</td></tr>`).join('') || '<tr><td colspan="5" class="empty-row">No staff yet.</td></tr>'}</tbody></table></div>`;
+      <td class="actions">${may(s.role) && s.uid !== user.uid ? `<button class="sbtn" data-edit>Change</button><button class="sbtn ghost" data-pin>${s.hasPin ? 'Send a new PIN' : 'Send PIN'}</button><button class="sbtn ghost" data-rm>Remove</button>` : ''}</td></tr>`).join('') || '<tr><td colspan="5" class="empty-row">No staff yet.</td></tr>'}</tbody></table></div>`;
   const one = el => list.find(x => x.uid === el.closest('tr').dataset.uid);
   $('#addForm').onsubmit = async ev => {
     ev.preventDefault();
@@ -797,7 +800,7 @@ async function staff(arg, notice) {
     $('#aBtn').disabled = true;
     try {
       const r = await sapi('/api/admin/people/add', { method: 'POST', body: { name: val('#aName'), phone: val('#aPhone'), role, canCollectCash: $('#aCash').checked } });
-      staff(null, { text: r.texted ? `Added. We’ve texted ${r.phoneHint} a code to choose their PIN.` : `Added, but the text didn’t send. Tap “Reset PIN” on their row to try again.` });
+      await staff(null, { pins: [r] }); $('#aName').focus();
     } catch (e) { flash($('#addMsg'), e.message, true); $('#aBtn').disabled = false; }
   };
   $$('[data-edit]').forEach(b => b.onclick = () => {
@@ -819,8 +822,8 @@ async function staff(arg, notice) {
   });
   $$('[data-pin]').forEach(b => b.onclick = async () => {
     const s = one(b);
-    if (!confirm(`Reset ${s.name}’s PIN? Their old PIN stops working and we text them a code to choose a new one.`)) return;
-    try { const r = await sapi('/api/admin/people/reset-pin', { method: 'POST', body: { uid: s.uid } }); flash($('#sMsg'), r.texted ? `Done. Code texted to ${r.phoneHint}.` : 'PIN reset, but the text didn’t send. Check their phone number.', !r.texted); }
+    if (s.hasPin && !confirm(`Send ${s.name} a new PIN? Their old PIN stops working and the new one is texted to them.`)) return;
+    try { const r = await sapi('/api/admin/people/reset-pin', { method: 'POST', body: { uid: s.uid } }); staff(null, { pins: [r] }); }
     catch (e) { flash($('#sMsg'), e.message, true); }
   });
   $$('[data-rm]').forEach(b => b.onclick = async () => {
@@ -829,8 +832,20 @@ async function staff(arg, notice) {
     try { await sapi('/api/admin/people/remove', { method: 'POST', body: { uid: s.uid } }); staff(null, { text: `${s.name} removed.` }); }
     catch (e) { flash($('#sMsg'), e.message, true); }
   });
+  if ($('#sendAll')) $('#sendAll').onclick = async () => {
+    if (!confirm(`Text a PIN to ${noPin.length} staff?`)) return;
+    $('#sendAll').disabled = true;
+    try { const r = await sapi('/api/admin/people/send-pins', { method: 'POST' }); staff(null, { pins: r.sent, skipped: r.skipped }); }
+    catch (e) { flash($('#sMsg'), e.message, true); $('#sendAll').disabled = false; }
+  };
   labelTables();
-  if (notice) flash($('#sMsg'), notice.text);
+  if (notice?.text) flash($('#sMsg'), notice.text);
+  // New PINs stay on screen until the page changes, so the manager can read one out if a text
+  // doesn't arrive. They are shown only here, once: the system keeps no copy.
+  if (notice?.pins) $('#pinCards').innerHTML = `<div class="card pincards" role="status"><strong>PINs sent</strong>
+    ${notice.pins.map(r => `<div class="pinrow"><span>${esc(r.name)}</span><b class="pinnum">${esc(r.pin)}</b><small class="${r.texted ? 'muted' : 'warn'}">${r.texted ? `Texted to ${esc(r.phoneHint)}` : 'The text didn’t send: give them this PIN yourself'}</small></div>`).join('') || '<span class="muted">Nobody needed one.</span>'}
+    ${(notice.skipped || []).map(x => `<small class="warn">${esc(x.name)}: not sent (${esc(x.why)})</small>`).join('')}
+    <small class="muted">They sign in with their phone number and this PIN. This list disappears when you leave the page.</small></div>`;
 }
 
 function fromHash() {

@@ -67,9 +67,9 @@ removal applies at once. Each row is covered by `worker/test/staffauth.test.js` 
 
 | Route | Who |
 |---|---|
-| `POST /api/staff-auth/sign-in`, `/send-code`, `/set-pin` | Public, rate limited per address and per phone; PIN lockout after 5 and 10 wrong |
+| `POST /api/staff-auth/sign-in`, `/send-pin` | Public, rate limited per address and per phone; PIN lockout after 5 and 10 wrong; a texted PIN lasts 30 minutes and never replaces the old one until used |
 | `GET /api/ops/me`, `POST /api/ops/change-pin` | Any staff (their own) |
-| `GET/POST /api/admin/people`, `/people/add`, `/update`, `/reset-pin`, `/remove` | System admin, director, manager. Managers can't give or change director, manager, finance or admin; directors can't make admins; nobody changes their own job |
+| `GET/POST /api/admin/people`, `/people/add`, `/update`, `/reset-pin`, `/send-pins`, `/remove` | System admin, director, manager. Managers can't give or change director, manager, finance or admin; directors can't make admins; nobody changes their own job |
 | `POST /api/ops/tabs/open`, `/round`, `/round-action`, `/close`, `/text-bill` | Waiters (their own tabs), manager, director, admin |
 | `POST /api/ops/tabs/cash` | Cashier, manager, director, admin, and staff marked "can collect cash" |
 | `GET /api/ops/bar/rounds`, `POST /api/ops/bar/round` | Bartender, manager, director, admin |

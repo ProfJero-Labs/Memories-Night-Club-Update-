@@ -1,15 +1,13 @@
 // Shared by the staff pages (admin, organiser, door). Auth is Firebase; every action is a Worker
 // call carrying the Firebase ID token, and the Worker checks the role on every request.
 import { onUser, idToken, signOutUser } from './firebase.js';
-import { api, esc, CREDIT, nightKey } from './app.js';
+import { api, esc, CREDIT } from './app.js';
 
 export const roleOf = claims => (claims?.admin === true ? 'superAdmin' : claims?.role || '');
 export const ROLE_LABEL = { superAdmin: 'System admin', director: 'Director', manager: 'Manager', finance: 'Finance officer', eventManager: 'Events manager', doorStaff: 'Front office', security: 'Security', barStaff: 'Bartender', waitStaff: 'Waiter / waitress', cashier: 'Cashier', organiser: 'Organiser' };
 // Each job opens on its own screen.
 const HOMES = { organiser: 'organiser.html', doorStaff: 'checkin.html', security: 'checkin.html', barStaff: 'bar.html', waitStaff: 'waiter.html', cashier: 'cashier.html', finance: 'finance.html' };
 export const home = role => HOMES[role] || 'admin.html';
-const SIGNED_IN = 'mem-staff-signed-in';
-
 // Resolves with the signed-in staff user (role and name from their staff record), or sends them on.
 export function requireStaff(allowed) {
   return new Promise(resolve => {
@@ -17,8 +15,6 @@ export function requireStaff(allowed) {
     onUser(async u => {
       if (done) return;
       if (!u) { location.replace(`login.html?next=${encodeURIComponent(location.pathname.split('/').pop() + location.search)}`); return; }
-      // Shared phones: a sign-in lasts one night. The morning after (from 4AM), sign in again.
-      try { const at = Number(localStorage.getItem(SIGNED_IN) || 0); if (at && nightKey(new Date(at)) !== nightKey()) { localStorage.removeItem(SIGNED_IN); await signOutUser(); location.replace('login.html'); return; } } catch { /* private mode */ }
       let role = roleOf(u.claims), me = null;
       try { me = await api('/api/ops/me', { token: await idToken() }); role = me.role; }
       catch (e) { if (e.status === 401) { await signOutUser(); location.replace('login.html?denied=1'); return; } /* offline: the token's role */ }
@@ -54,7 +50,7 @@ export function staffHeader(user, title) {
   btn.onclick = e => { e.stopPropagation(); toggle(menu.hidden); };
   document.addEventListener('click', e => { if (!h.querySelector('.acct').contains(e.target)) toggle(false); });
   document.addEventListener('keydown', e => { if (e.key === 'Escape') toggle(false); });
-  h.querySelector('#signout').onclick = () => { try { localStorage.removeItem(SIGNED_IN); } catch { /* private mode */ } signOutUser().then(() => location.replace('login.html')); };
+  h.querySelector('#signout').onclick = () => { signOutUser().then(() => location.replace('login.html')); };
   h.querySelector('#changePin').onclick = () => { toggle(false); changePin(user); };
   // Staff are members: "My pass" puts this person's pass on this phone (their sign-in is the proof).
   h.querySelector('#myPass').onclick = async ev => {
@@ -73,7 +69,7 @@ function changePin(user) {
   const n = user.me?.pinLength || 4, has = user.me?.hasPin !== false;
   const box = document.createElement('div'); box.className = 'sheet-back';
   box.innerHTML = `<form class="sheet" novalidate role="dialog" aria-modal="true" aria-label="Change my PIN"><h2>Change my PIN</h2>
-    ${has ? `<div class="sfield"><label for="cpOld">Your PIN now</label><input id="cpOld" type="password" inputmode="numeric" maxlength="6" autocomplete="current-password"></div>` : ''}
+    ${has ? `<div class="sfield"><label for="cpOld">${user.me?.pinStarter ? 'The PIN we texted you' : 'Your PIN now'}</label><input id="cpOld" type="password" inputmode="numeric" maxlength="6" autocomplete="current-password"></div>` : ''}
     <div class="sfield"><label for="cpNew">New PIN (${n} numbers)</label><input id="cpNew" type="password" inputmode="numeric" maxlength="${n}" autocomplete="new-password"></div>
     <div class="sfield"><label for="cpNew2">New PIN again</label><input id="cpNew2" type="password" inputmode="numeric" maxlength="${n}" autocomplete="new-password"></div>
     <div id="cpMsg" role="alert"></div>

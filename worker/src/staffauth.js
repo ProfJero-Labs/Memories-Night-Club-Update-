@@ -1,17 +1,22 @@
-// Staff sign in with their phone number and a PIN they choose (4 digits; 6 for manager, director,
-// finance and admin). The Worker checks the PIN and hands back a Firebase custom token, so every
-// staff screen keeps using Firebase sign-in and the Worker's usual token check.
+// Staff sign in with their phone number and a PIN (4 numbers; 6 for manager, director, finance and
+// admin). The Worker checks the PIN and hands back a Firebase custom token, so every staff screen
+// keeps using Firebase sign-in and the Worker's usual token check.
 //
-//   New staff: a manager adds them (name, phone, role). They get a text with a one-time code,
-//   open the sign-in page, enter phone + code, and choose their PIN.
-//   Forgot PIN: "Text me a code" (same code flow), or a manager taps Reset PIN.
-//   Wrong PINs: 5 in a row locks the PIN for 15 minutes; 10 locks it until a new code is used.
+//   New staff: a manager adds them (name, phone, job). The system picks their starting PIN, texts
+//   it to them and shows it to the manager once (in case the text doesn't arrive). They sign in
+//   with it straight away and can change it any time (name button → Change my PIN).
+//   Forgot PIN: "Text me a new PIN" sends one that works for 30 minutes; the old PIN keeps working
+//   until the new one is used (so nobody can lock someone out by asking). Or a manager taps
+//   "Send a new PIN".
+//   Wrong PINs: 5 in a row locks the PIN for 15 minutes; 10 locks it until a new PIN is sent.
+//   Staff are full-time: a session lasts until they sign out, every night.
 //
 // Staff records: users/{uid}
-//   name, phone, email?, role, admin, removed, pinHash, pinSalt, pinSetAt, pinFails, lockedUntil,
-//   pinLocked, codeHash, codeExpires, codeTries, codeSentAt, lastSignInAt, addedBy, updatedAt
+//   name, phone, email?, role, admin, removed, pinHash, pinSalt, pinSetAt, pinStarter (still the
+//   PIN that was texted), pinFails, lockedUntil, pinLocked, tempPinHash, tempPinSalt,
+//   tempPinExpires, pinSentAt, lastSignInAt, addedBy, updatedAt
 import { getDoc, setDoc, queryWhere, listDocs, signServiceJwt, googleAccessToken } from './lib/firestore.js';
-import { now, id, clean, normalizePhone, maskPhone, sha256Hex, sixDigits, firstName } from './lib/util.js';
+import { now, id, clean, normalizePhone, maskPhone, firstName } from './lib/util.js';
 import { requireRole, STAFF_ROLES, STAFF_ADMIN, canAssign, pinLength, uidOf, forgetStaffRecord } from './lib/auth.js';
 import { sendSms, siteUrl } from './lib/notify.js';
 import { securitySignal } from './lib/monitor.js';
@@ -19,7 +24,7 @@ import { ensureStaffMember, suspendStaffMember } from './members.js';
 
 const FORBIDDEN = { error: 'You can’t do that with your role.', status: 403 };
 export const ROLE_NAMES = { superAdmin: 'System admin', director: 'Director', manager: 'Manager', finance: 'Finance officer', eventManager: 'Events manager', doorStaff: 'Front office', security: 'Security', barStaff: 'Bartender', waitStaff: 'Waiter / waitress', cashier: 'Cashier', organiser: 'Organiser' };
-const NEW_CODE_MS = 48 * 3600e3, RESET_CODE_MS = 30 * 60e3, LOCK_MS = 15 * 60e3;
+const TEMP_PIN_MS = 30 * 60e3, LOCK_MS = 15 * 60e3;
 const SIGN_IN_FAIL = 'That phone number and PIN don’t match.';
 const audit = (env, user, action, data) => setDoc(env, 'audit_logs', id(), { action, actorUid: uidOf(user) || null, ...data, timestamp: now() });
 
@@ -40,6 +45,15 @@ export function pinProblem(pin, role) {
   if (up.includes(p) || down.includes(p)) return 'Don’t use numbers in a row like 1234.';
   return '';
 }
+// A starting PIN the system picks: random, and never one pinProblem would refuse.
+export function starterPin(role) {
+  const n = pinLength(role);
+  for (;;) {
+    const p = [...crypto.getRandomValues(new Uint32Array(n))].map(x => x % 10).join('');
+    if (!pinProblem(p, role)) return p;
+  }
+}
+async function pinFields(pin) { const salt = newSalt(); return { pinSalt: salt, pinHash: await hashPin(pin, salt) }; }
 const sameTime = (a, b) => { if (a.length !== b.length) return false; let x = 0; for (let i = 0; i < a.length; i++) x |= a.charCodeAt(i) ^ b.charCodeAt(i); return x === 0; };
 
 // ── The Firebase custom token a signed-in staff member's phone exchanges for a session ──
@@ -70,51 +84,39 @@ export async function signInWithPin(env, { phone, pin }, ip) {
   const rec = await staffByPhone(env, phone);
   const f = rec?.fields, role = f && roleOfRecord(f);
   if (!rec || !STAFF_ROLES.includes(role)) { await securitySignal(env, 'staff_pin_failed', ip || 'unknown'); return { error: SIGN_IN_FAIL, status: 401 }; }
-  if (!f.pinHash) return { error: 'You haven’t chosen a PIN yet. Tap “First time or forgot PIN?” to get a code by text.', status: 401, code: 'no_pin' };
-  if (f.pinLocked === true) return { error: 'Your PIN is locked after too many wrong tries. Tap “First time or forgot PIN?” to get a code, or ask a manager to reset it.', status: 423, code: 'locked' };
-  if (f.lockedUntil && new Date(f.lockedUntil).getTime() > Date.now()) return { error: 'Too many wrong PINs. Wait 15 minutes, or ask a manager to reset your PIN.', status: 423, code: 'locked' };
-  const ok = sameTime(await hashPin(String(pin || ''), f.pinSalt), f.pinHash);
+  const temp = f.tempPinHash && new Date(f.tempPinExpires).getTime() > Date.now();
+  if (!f.pinHash && !temp) return { error: 'You don’t have a PIN yet. Tap “First time, or forgot your PIN?” and we’ll text you one.', status: 401, code: 'no_pin' };
+  if (f.pinLocked === true && !temp) return { error: 'Your PIN is locked after too many wrong tries. Tap “First time, or forgot your PIN?” for a new one, or ask a manager.', status: 423, code: 'locked' };
+  if (f.lockedUntil && new Date(f.lockedUntil).getTime() > Date.now()) return { error: 'Too many wrong PINs. Wait 15 minutes, or ask a manager to send you a new PIN.', status: 423, code: 'locked' };
+  const p = String(pin || '');
+  const usedTemp = temp && sameTime(await hashPin(p, f.tempPinSalt), f.tempPinHash);
+  const ok = usedTemp || (f.pinHash && f.pinLocked !== true && sameTime(await hashPin(p, f.pinSalt), f.pinHash));
   if (!ok) {
     const fails = Number(f.pinFails || 0) + 1;
     await setDoc(env, 'users', rec.id, { ...f, pinFails: fails, lockedUntil: fails >= 5 ? new Date(Date.now() + LOCK_MS).toISOString() : f.lockedUntil || '', pinLocked: fails >= 10 });
     await securitySignal(env, 'staff_pin_failed', ip || 'unknown');
-    return { error: fails >= 5 ? 'Too many wrong PINs. Wait 15 minutes, or ask a manager to reset your PIN.' : SIGN_IN_FAIL, status: 401 };
+    return { error: fails >= 5 ? 'Too many wrong PINs. Wait 15 minutes, or ask a manager to send you a new PIN.' : SIGN_IN_FAIL, status: 401 };
   }
-  await setDoc(env, 'users', rec.id, { ...f, pinFails: 0, lockedUntil: '', lastSignInAt: now() });
+  // The texted PIN, once used, becomes their PIN.
+  const pinNow = usedTemp ? { pinHash: f.tempPinHash, pinSalt: f.tempPinSalt, pinSetAt: now(), pinStarter: true, pinLocked: false, tempPinHash: '', tempPinSalt: '', tempPinExpires: '' } : {};
+  await setDoc(env, 'users', rec.id, { ...f, ...pinNow, pinFails: 0, lockedUntil: '', lastSignInAt: now() });
+  if (usedTemp) await audit(env, { uid: rec.id }, 'STAFF_PIN_SET', { targetUid: rec.id, how: 'texted' });
   return { token: await customToken(env, rec.id, role), role, name: f.name || '' };
 }
 
-// "First time or forgot PIN?": a code by text to the phone on file. Same reply whatever happens.
-const NEUTRAL = { sent: true, message: 'If that number belongs to Memories staff, a code is on its way by text.' };
-export async function sendPinCode(env, { phone }) {
+// "First time, or forgot your PIN?": a new PIN by text to the phone on file, valid 30 minutes. Until
+// it's used the old PIN still works, so asking for someone else's can't lock them out. Same reply
+// whatever happens, so the page never says which numbers are staff.
+const NEUTRAL = { sent: true, message: 'If that number belongs to Memories staff, a new PIN is on its way by text. Sign in with it.' };
+export async function sendNewPin(env, { phone }) {
   const rec = await staffByPhone(env, phone);
   if (!rec || !STAFF_ROLES.includes(roleOfRecord(rec.fields))) return NEUTRAL;
   const f = rec.fields;
-  if (f.codeSentAt && Date.now() - new Date(f.codeSentAt).getTime() < 60e3) return NEUTRAL; // one text a minute
-  // A fresh welcome code keeps its 48 hours; asking again replaces it with a 30-minute one.
-  const code = sixDigits();
-  await setDoc(env, 'users', rec.id, { ...f, codeHash: await sha256Hex(`pin:${rec.id}:${code}`), codeExpires: new Date(Date.now() + RESET_CODE_MS).toISOString(), codeTries: 0, codeSentAt: now() });
-  await sendSms(env, f.phone, `MEMORIES STAFF\nYour code: ${code}\nUse it on the sign-in page to choose your PIN. It works for 30 minutes. Don’t share it.`);
+  if (f.pinSentAt && Date.now() - new Date(f.pinSentAt).getTime() < 60e3) return NEUTRAL; // one text a minute
+  const pin = starterPin(roleOfRecord(f)), salt = newSalt();
+  await setDoc(env, 'users', rec.id, { ...f, tempPinSalt: salt, tempPinHash: await hashPin(pin, salt), tempPinExpires: new Date(Date.now() + TEMP_PIN_MS).toISOString(), pinSentAt: now() });
+  await sendSms(env, f.phone, `MEMORIES STAFF\nYour new PIN: ${pin}\nSign in at ${siteUrl(env, '/login.html')} with your phone number and this PIN within 30 minutes. You can change it after. Don’t share it.`);
   return NEUTRAL;
-}
-
-export async function setPinWithCode(env, { phone, code, pin }, ip) {
-  const rec = await staffByPhone(env, phone);
-  const bad = { error: 'That code isn’t right, or it has expired. Ask for a new one.', status: 400 };
-  if (!rec || !rec.fields.codeHash) { await securitySignal(env, 'staff_pin_failed', ip || 'unknown'); return bad; }
-  const f = rec.fields, role = roleOfRecord(f);
-  if (!STAFF_ROLES.includes(role)) return bad;
-  if (new Date(f.codeExpires).getTime() < Date.now() || Number(f.codeTries || 0) >= 5) return bad;
-  if (!sameTime(await sha256Hex(`pin:${rec.id}:${String(code || '').trim()}`), f.codeHash)) {
-    await setDoc(env, 'users', rec.id, { ...f, codeTries: Number(f.codeTries || 0) + 1 });
-    await securitySignal(env, 'staff_pin_failed', ip || 'unknown');
-    return bad;
-  }
-  const problem = pinProblem(pin, role); if (problem) return { error: problem };
-  const salt = newSalt();
-  await setDoc(env, 'users', rec.id, { ...f, pinSalt: salt, pinHash: await hashPin(String(pin), salt), pinSetAt: now(), pinFails: 0, lockedUntil: '', pinLocked: false, codeHash: '', codeExpires: '', codeTries: 0, lastSignInAt: now() });
-  await audit(env, { uid: rec.id }, 'STAFF_PIN_SET', { targetUid: rec.id });
-  return { token: await customToken(env, rec.id, role), role, name: f.name || '' };
 }
 
 // Signed in: change my own PIN.
@@ -125,7 +127,7 @@ export async function changeMyPin(env, user, { current, pin }) {
   if (f.pinHash && !sameTime(await hashPin(String(current || ''), f.pinSalt), f.pinHash)) return { error: 'Your current PIN isn’t right.' };
   const problem = pinProblem(pin, role); if (problem) return { error: problem };
   const salt = newSalt();
-  await setDoc(env, 'users', rec.id, { ...f, pinSalt: salt, pinHash: await hashPin(String(pin), salt), pinSetAt: now(), pinFails: 0, lockedUntil: '', pinLocked: false });
+  await setDoc(env, 'users', rec.id, { ...f, pinSalt: salt, pinHash: await hashPin(String(pin), salt), pinSetAt: now(), pinStarter: false, pinFails: 0, lockedUntil: '', pinLocked: false });
   await audit(env, user, 'STAFF_PIN_CHANGED', { targetUid: rec.id });
   return { changed: true };
 }
@@ -133,13 +135,13 @@ export async function changeMyPin(env, user, { current, pin }) {
 export async function whoAmI(env, user) {
   const rec = await getDoc(env, 'users', uidOf(user));
   const f = rec?.fields || {}, role = user.role;
-  return { uid: uidOf(user), name: f.name || user.name || '', phoneHint: f.phone ? maskPhone(f.phone) : '', role, roleName: ROLE_NAMES[role] || role, pinLength: pinLength(role), hasPin: !!f.pinHash, canCollectCash: f.canCollectCash === true || ['cashier', 'manager', 'director', 'superAdmin'].includes(role) };
+  return { uid: uidOf(user), name: f.name || user.name || '', phoneHint: f.phone ? maskPhone(f.phone) : '', role, roleName: ROLE_NAMES[role] || role, pinLength: pinLength(role), hasPin: !!f.pinHash, pinStarter: f.pinStarter === true, canCollectCash: f.canCollectCash === true || ['cashier', 'manager', 'director', 'superAdmin'].includes(role) };
 }
 
 // ── Managers look after staff ──
 const staffView = d => {
   const f = d.fields, role = roleOfRecord(f);
-  return { uid: d.id, name: f.name || '', phone: f.phone || '', email: f.email || '', role, roleName: ROLE_NAMES[role] || role, removed: f.removed === true, hasPin: !!f.pinHash, locked: f.pinLocked === true || (f.lockedUntil && new Date(f.lockedUntil).getTime() > Date.now()), lastSignInAt: f.lastSignInAt || '', canCollectCash: f.canCollectCash === true };
+  return { uid: d.id, name: f.name || '', phone: f.phone || '', email: f.email || '', role, roleName: ROLE_NAMES[role] || role, removed: f.removed === true, hasPin: !!f.pinHash, pinStarter: f.pinStarter === true, locked: f.pinLocked === true || (f.lockedUntil && new Date(f.lockedUntil).getTime() > Date.now()), lastSignInAt: f.lastSignInAt || '', canCollectCash: f.canCollectCash === true };
 };
 export async function listStaffPeople(env, user) {
   if (!requireRole(user, STAFF_ADMIN)) return FORBIDDEN;
@@ -147,8 +149,17 @@ export async function listStaffPeople(env, user) {
   return { staff: all.sort((a, b) => (a.name || a.email).localeCompare(b.name || b.email)), roles: STAFF_ROLES.filter(r => canAssign(user.role, r)).map(r => ({ id: r, name: ROLE_NAMES[r] })) };
 }
 
-function welcomeText(env, name, role, code) {
-  return `MEMORIES STAFF\nHi ${firstName(name)}, you’re on the Memories team as ${ROLE_NAMES[role]}.\nOpen ${siteUrl(env, '/login.html?invite=1')}\nEnter your phone number and this code: ${code}\nThen choose your own ${pinLength(role)}-number PIN. The code works for 48 hours.`;
+function pinText(env, name, role, pin, again = false) {
+  return `MEMORIES STAFF\nHi ${firstName(name)}, ${again ? 'here is your new PIN' : `you’re on the Memories team as ${ROLE_NAMES[role]}`}.\nSign in at ${siteUrl(env, '/login.html')}\nPhone: your number\nPIN: ${pin}\nYou can change your PIN after signing in (tap your name). Don’t share it.`;
+}
+// Gives someone a fresh starting PIN (replacing any old one), texts it, and returns it once for
+// the manager's screen. The PIN itself is never stored, only its hash.
+async function giveStarterPin(env, rec, user, again) {
+  const f = rec.fields, role = roleOfRecord(f), pin = starterPin(role);
+  await setDoc(env, 'users', rec.id, { ...f, ...(await pinFields(pin)), pinSetAt: now(), pinStarter: true, pinFails: 0, lockedUntil: '', pinLocked: false, tempPinHash: '', tempPinSalt: '', tempPinExpires: '', updatedAt: now() });
+  const texted = f.phone ? await sendSms(env, f.phone, pinText(env, f.name, role, pin, again)) : false;
+  await audit(env, user, again ? 'STAFF_PIN_RESET' : 'STAFF_PIN_SENT', { targetUid: rec.id });
+  return { pin, texted, phoneHint: f.phone ? maskPhone(f.phone) : '', name: f.name || '' };
 }
 
 export async function addStaffPerson(env, b, user) {
@@ -160,16 +171,12 @@ export async function addStaffPerson(env, b, user) {
   if (!canAssign(user.role, role)) return { error: `Your role can’t add a ${ROLE_NAMES[role]}. Ask a director or the system admin.`, status: 403 };
   const clash = await staffByPhone(env, phone);
   if (clash) return { error: `${clash.fields.name || clash.fields.email || 'Someone'} already uses that phone number.` };
-  const uid = `st${id().slice(0, 24)}`, code = sixDigits();
-  await setDoc(env, 'users', uid, {
-    name, phone, email: clean(b.email, 120).toLowerCase(), role, admin: role === 'superAdmin', removed: false, canCollectCash: b.canCollectCash === true,
-    codeHash: await sha256Hex(`pin:${uid}:${code}`), codeExpires: new Date(Date.now() + NEW_CODE_MS).toISOString(), codeTries: 0, codeSentAt: now(),
-    addedBy: uidOf(user), createdAt: now(), updatedAt: now(),
-  });
+  const uid = `st${id().slice(0, 24)}`;
+  const fields = { name, phone, email: clean(b.email, 120).toLowerCase(), role, admin: role === 'superAdmin', removed: false, canCollectCash: b.canCollectCash === true, addedBy: uidOf(user), createdAt: now(), updatedAt: now() };
+  await setDoc(env, 'users', uid, fields);
   await ensureStaffMember(env, { uid, name, phone, role }, user);
-  const texted = await sendSms(env, phone, welcomeText(env, name, role, code));
   await audit(env, user, 'STAFF_ADDED', { targetUid: uid, role, name });
-  return { uid, texted, phoneHint: maskPhone(phone) };
+  return { uid, ...(await giveStarterPin(env, { id: uid, fields }, user, false)) };
 }
 
 export async function updateStaffPerson(env, b, user) {
@@ -200,13 +207,25 @@ export async function resetStaffPin(env, b, user) {
   const f = rec.fields, role = roleOfRecord(f);
   if (!canAssign(user.role, role)) return { error: `Your role can’t reset a ${ROLE_NAMES[role]}’s PIN.`, status: 403 };
   if (!f.phone) return { error: 'Add their phone number first.' };
-  const code = sixDigits();
-  await setDoc(env, 'users', rec.id, { ...f, pinHash: '', pinSalt: '', pinFails: 0, lockedUntil: '', pinLocked: false, codeHash: await sha256Hex(`pin:${rec.id}:${code}`), codeExpires: new Date(Date.now() + NEW_CODE_MS).toISOString(), codeTries: 0, codeSentAt: now(), updatedAt: now() });
+  const out = await giveStarterPin(env, rec, user, !!f.pinHash);
   forgetStaffRecord(env, rec.id);
-  await revokeSessions(env, rec.id);
-  const texted = await sendSms(env, f.phone, `MEMORIES STAFF\nYour PIN was reset by a manager.\nOpen ${siteUrl(env, '/login.html')}, enter your phone number and this code: ${code}, then choose a new PIN.`);
-  await audit(env, user, 'STAFF_PIN_RESET', { targetUid: rec.id });
-  return { texted, phoneHint: maskPhone(f.phone) };
+  if (f.pinHash) await revokeSessions(env, rec.id);
+  return out;
+}
+
+// "Text PINs to everyone": every current staff member with a phone and no PIN yet (e.g. staff
+// added before PIN sign-in) gets a starting PIN. Staff who already have a PIN are left alone.
+export async function sendStarterPins(env, user) {
+  if (!requireRole(user, STAFF_ADMIN)) return FORBIDDEN;
+  const sent = [], skipped = [];
+  for (const d of await listDocs(env, 'users')) {
+    const f = d.fields, role = roleOfRecord(f);
+    if (f.removed === true || !STAFF_ROLES.includes(role) || f.pinHash || d.id === uidOf(user)) continue;
+    if (!f.phone) { skipped.push({ name: f.name || f.email || d.id, why: 'no phone number' }); continue; }
+    if (!canAssign(user.role, role)) { skipped.push({ name: f.name || f.email || d.id, why: `a ${ROLE_NAMES[role]} needs a director` }); continue; }
+    sent.push(await giveStarterPin(env, d, user, false));
+  }
+  return { sent, skipped };
 }
 
 export async function removeStaffPerson(env, b, user) {
@@ -217,7 +236,7 @@ export async function removeStaffPerson(env, b, user) {
   if (rec.id === uidOf(user)) return { error: 'You can’t remove yourself.' };
   if (!canAssign(user.role, role)) return { error: `Your role can’t remove a ${ROLE_NAMES[role]}.`, status: 403 };
   // Kept (marked removed) so their past work still shows who did it; access stops at once.
-  await setDoc(env, 'users', rec.id, { ...rec.fields, removed: true, removedAt: now(), removedBy: uidOf(user), pinHash: '', codeHash: '', updatedAt: now() });
+  await setDoc(env, 'users', rec.id, { ...rec.fields, removed: true, removedAt: now(), removedBy: uidOf(user), pinHash: '', tempPinHash: '', updatedAt: now() });
   forgetStaffRecord(env, rec.id);
   await revokeSessions(env, rec.id);
   await suspendStaffMember(env, rec.id);
