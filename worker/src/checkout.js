@@ -98,6 +98,14 @@ async function confirmCharge(env, pending, reference) {
   return null;
 }
 
+// One line for texts and emails when a promo lowered the price: "Early bird (20% off): you paid
+// GHS 80, not GHS 100." Empty without a promo.
+// For the pages: the promo on an order, so the guest sees the full price, the discount and what
+// they owe (the remaining amount is always worked out from the discounted total).
+export const dealView = promo => (promo && Number(promo.discountPesewas) > 0 ? { name: promo.name || 'Promo', label: promo.label || '', fullPesewas: Number(promo.fullPesewas || 0), discountPesewas: Number(promo.discountPesewas) } : null);
+export const dealLine = (promo, paidPesewas) => (promo && Number(promo.discountPesewas) > 0
+  ? `${promo.name || 'Promo'}${promo.label ? ` (${promo.label})` : ''}: you paid ${money(paidPesewas)}, not ${money(promo.fullPesewas)}.` : '');
+
 function ticketWrites(env, { tokens, holder, phone, eventId, eventName, typeName, admits, identityLine, reference, inDrawToken, extra = {} }) {
   return tokens.map(token => updateWrite(env, 'tickets', token, {
     customerName: holder, phoneLast4: String(phone || '').slice(-4), type: typeName, admitCount: admits, eventId, eventName, identityLine, reference,
@@ -152,8 +160,9 @@ export async function fulfillTicket(env, reference) {
   if (result.status === 'issued' && !result.already) {
     const link = siteUrl(env, `/ticket.html?token=${result.ticketIds[0]}`), n = result.ticketIds.length;
     const what = n > 1 ? `${n} tickets, one QR each. Open yours to send the other ${n - 1}:` : 'Your ticket:';
-    await sendSms(env, P.buyerPhone, `MEMORIES\nYou're in for ${P.eventName}.\n${what} ${link}`);
-    await sendEmail(env, P.buyerEmail, n > 1 ? `Your ${n} Memories tickets` : 'Your Memories ticket', [`You're in for ${P.eventName}.`, `${what} ${link}`, `Reference: ${reference}`]);
+    const deal = dealLine(P.promo, P.amountPesewas);
+    await sendSms(env, P.buyerPhone, `MEMORIES\nYou're in for ${P.eventName}.\n${deal ? `${deal}\n` : ''}${what} ${link}`);
+    await sendEmail(env, P.buyerEmail, n > 1 ? `Your ${n} Memories tickets` : 'Your Memories ticket', [`You're in for ${P.eventName}.`, ...(deal ? [deal] : []), `${what} ${link}`, `Reference: ${reference}`]);
   }
   delete result.already;
   return result;
@@ -330,6 +339,7 @@ export const planSummary = p => {
     // The balance has to be paid before this moment (the night's start), or the plan is forfeited.
     deadline: p.fields.eventDate || '',
     totalPesewas: total, paidPesewas: paid, remainingPesewas: Math.max(0, total - paid), status: p.fields.status, ticketReady: p.fields.status === 'completed',
+    deal: dealView(p.fields.promo),
   };
 };
 
@@ -490,8 +500,9 @@ export async function fulfillInstallment(env, reference) {
     const P = result.plan;
     if (result.planComplete) {
       const link = siteUrl(env, `/ticket.html?token=${result.ticketIds[0]}`), n = result.ticketIds.length;
-      await sendSms(env, P.buyerPhone, `MEMORIES\nPaid in full. Order ${planId}.\nYou're in for ${P.eventName}${n > 1 ? `. ${n} tickets, one QR each. Open yours to send the other ${n - 1}` : ''}: ${link}`);
-      await sendEmail(env, P.buyerEmail, 'Your Memories ticket', [`Paid in full. Order ${planId}.`, `You're in for ${P.eventName}.`, `Your ticket: ${link}`]);
+      const deal = dealLine(P.promo, P.totalPesewas);
+      await sendSms(env, P.buyerPhone, `MEMORIES\nPaid in full. Order ${planId}.\n${deal ? `${deal}\n` : ''}You're in for ${P.eventName}${n > 1 ? `. ${n} tickets, one QR each. Open yours to send the other ${n - 1}` : ''}: ${link}`);
+      await sendEmail(env, P.buyerEmail, 'Your Memories ticket', [`Paid in full. Order ${planId}.`, ...(deal ? [deal] : []), `You're in for ${P.eventName}.`, `Your ticket: ${link}`]);
     } else {
       const balance = P.totalPesewas - result.paidPesewas;
       await sendSms(env, P.buyerPhone, balanceMessage(env, planId, result.received, balance, P));
@@ -597,7 +608,7 @@ export async function checkoutStatus(env, reference, claim) {
         planComplete: f.planComplete === true || P.status === 'completed',
         // What the receipt page needs to tell the guest how to keep paying. Never the full phone.
         eventDate: P.eventDate || '', deadline: P.eventDate || '', ticketTypeName: P.ticketTypeName || '', quantity: Number(P.quantity || 1),
-        firstName: P.firstName || firstName(P.buyerName), phoneHint: maskPhone(P.buyerPhone), reference,
+        firstName: P.firstName || firstName(P.buyerName), phoneHint: maskPhone(P.buyerPhone), reference, deal: dealView(P.promo),
       });
     }
   }

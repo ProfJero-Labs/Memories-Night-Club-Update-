@@ -23,6 +23,7 @@ export async function salesView(el, date) {
     <div class="nums">
       <div><span>Sales</span><b>${money(t.salesPesewas)}</b></div><div class="good"><span>Money received</span><b>${money(t.paidPesewas)}</b></div>
       <div><span>MoMo / card (confirmed)</span><b>${money(t.digitalPesewas)}</b></div><div><span>Cash (recorded)</span><b>${money(t.cashPesewas)}</b></div>
+      <div><span>MoMo to the club (recorded)</span><b>${money(t.momoPesewas || 0)}</b></div>
       <div class="${t.owedPesewas ? 'bad' : 'good'}"><span>Still owed (${t.unpaidTabs} bills)</span><b>${money(t.owedPesewas)}</b></div><div><span>Open tabs</span><b>${t.openTabs}</b></div>
       <div><span>Free drinks (${t.freeDrinksQty})</span><b>${money(t.freeDrinksPesewas)}</b></div><div><span>Discounts</span><b>${money(t.discountsPesewas)}</b></div>
       <div><span>Refunds</span><b>${money(t.refundsPesewas)}</b></div><div><span>Cancelled orders</span><b>${t.cancelledOrders}</b></div></div>
@@ -32,6 +33,7 @@ export async function salesView(el, date) {
     <h2>By bar</h2><div class="tbl-wrap"><table class="tbl"><thead><tr><th>Bar</th><th class="num">Orders</th><th class="num">Sales</th><th class="num">Paid</th></tr></thead><tbody>
       ${d.byStation.map(s => `<tr><td>${esc(s.name)}</td><td class="num">${s.orders}</td><td class="num">${money(s.salesPesewas)}</td><td class="num">${money(s.paidPesewas)}</td></tr>`).join('') || '<tr><td colspan="4" class="empty-row">Nothing yet.</td></tr>'}</tbody></table></div>
     <h2>By payment</h2><div class="tbl-wrap"><table class="tbl"><thead><tr><th>How</th><th class="num">Amount</th></tr></thead><tbody>${d.byMethod.map(m => `<tr><td>${esc(m.method)}</td><td class="num">${money(m.amountPesewas)}</td></tr>`).join('')}</tbody></table></div>
+    ${d.momoPayments?.length ? `<h2>MoMo to check on the statement</h2><div class="tbl-wrap"><table class="tbl"><thead><tr><th>Transaction ID</th><th>Tab</th><th>From</th><th>Recorded by</th><th class="num">Amount</th></tr></thead><tbody>${d.momoPayments.map(m => `<tr><td><b>${esc(m.momoRef)}</b></td><td>Tab ${m.tabNumber}</td><td>${esc(m.momoFrom || '—')}</td><td>${esc(m.byName)} ${when(m.at)}</td><td class="num">${money(m.amountPesewas)}</td></tr>`).join('')}</tbody></table></div>` : ''}
     <h2>By drink</h2><div class="tbl-wrap"><table class="tbl"><thead><tr><th>Drink</th><th class="num">Sold</th><th class="num">Value</th></tr></thead><tbody>${d.byProduct.map(p => `<tr><td>${esc(p.name)}</td><td class="num">${p.qty}</td><td class="num">${money(p.valuePesewas)}</td></tr>`).join('') || '<tr><td colspan="3" class="empty-row">Nothing yet.</td></tr>'}</tbody></table></div>`;
   bindDate(el, v => salesView(el, v)); labelTables(el);
 }
@@ -171,7 +173,7 @@ export async function eodView(el, date, { canSignOff = false } = {}) {
   const R = r.report, t = R.sales.totals, x = R.exceptions;
   el.innerHTML = `<button class="link" id="back" style="justify-self:start">← All reports</button><h1>End of day · ${esc(dayName(r.date))}</h1>
     <p class="lead">Prepared ${when(R.preparedAt)} by ${esc(R.preparedByName)} · ${r.sent ? `emailed to ${esc(r.sentTo)}` : esc(r.sendNote || 'not emailed')}${r.financeApprovedAt ? ` · signed off by ${esc(r.financeApprovedByName)}` : ''}</p>
-    <h2>Sales and money</h2><div class="nums"><div><span>Sales</span><b>${money(t.salesPesewas)}</b></div><div class="good"><span>Received</span><b>${money(t.paidPesewas)}</b></div><div><span>MoMo / card</span><b>${money(t.digitalPesewas)}</b></div><div><span>Cash</span><b>${money(t.cashPesewas)}</b></div><div class="${t.owedPesewas ? 'bad' : 'good'}"><span>Still owed</span><b>${money(t.owedPesewas)}</b></div><div><span>Refunds</span><b>${money(t.refundsPesewas)}</b></div><div><span>Free drinks</span><b>${money(t.freeDrinksPesewas)}</b></div><div><span>Discounts</span><b>${money(t.discountsPesewas)}</b></div></div>
+    <h2>Sales and money</h2><div class="nums"><div><span>Sales</span><b>${money(t.salesPesewas)}</b></div><div class="good"><span>Received</span><b>${money(t.paidPesewas)}</b></div><div><span>MoMo / card</span><b>${money(t.digitalPesewas)}</b></div><div><span>Cash</span><b>${money(t.cashPesewas)}</b></div><div><span>MoMo to the club</span><b>${money(t.momoPesewas || 0)}</b></div><div class="${t.owedPesewas ? 'bad' : 'good'}"><span>Still owed</span><b>${money(t.owedPesewas)}</b></div><div><span>Refunds</span><b>${money(t.refundsPesewas)}</b></div><div><span>Free drinks</span><b>${money(t.freeDrinksPesewas)}</b></div><div><span>Discounts</span><b>${money(t.discountsPesewas)}</b></div></div>
     <h2>Things to check</h2>${[x.unpaidTabs.length ? `${x.unpaidTabs.length} unpaid bill(s): ${x.unpaidTabs.map(u => `Tab ${u.number} ${money(u.balancePesewas)} (${esc(u.waiterName)})`).join(', ')}` : '',
       x.cashDifferences.length ? `Cash: ${x.cashDifferences.map(c => `${esc(c.name)} ${esc(cashWord(c.differencePesewas))} (“${esc(c.explanation)}”)`).join('; ')}` : '',
       x.stockDifferences.length ? `Stock: ${x.stockDifferences.map(b => `${esc(b.name)}: ${b.differences.map(d => `${esc(d.name)} ${esc(diffWord(d.difference))}`).join(', ')}`).join('; ')}` : '',
@@ -189,7 +191,7 @@ export async function eodView(el, date, { canSignOff = false } = {}) {
   $('#back', el).onclick = () => eodListView(el, { canSignOff });
   $('#print', el).onclick = () => print();
   $('#csv', el).onclick = () => {
-    const rows = [['Section', 'Item', 'Value'], ['Sales', 'Total sales (GHS)', t.salesPesewas / 100], ['Money', 'Received (GHS)', t.paidPesewas / 100], ['Money', 'MoMo/card (GHS)', t.digitalPesewas / 100], ['Money', 'Cash (GHS)', t.cashPesewas / 100], ['Money', 'Still owed (GHS)', t.owedPesewas / 100], ['Money', 'Refunds (GHS)', t.refundsPesewas / 100],
+    const rows = [['Section', 'Item', 'Value'], ['Sales', 'Total sales (GHS)', t.salesPesewas / 100], ['Money', 'Received (GHS)', t.paidPesewas / 100], ['Money', 'MoMo/card (GHS)', t.digitalPesewas / 100], ['Money', 'Cash (GHS)', t.cashPesewas / 100], ['Money', 'MoMo to the club, recorded (GHS)', (t.momoPesewas || 0) / 100], ['Money', 'Still owed (GHS)', t.owedPesewas / 100], ['Money', 'Refunds (GHS)', t.refundsPesewas / 100],
       ...R.sales.byProduct.map(p => ['Drinks sold', p.name, p.qty]), ...R.sales.byWaiter.map(w => ['Waiter sales (GHS)', w.name, w.salesPesewas / 100]),
       ...R.cash.map(c => ['Cash difference (GHS)', c.name, (c.differencePesewas || 0) / 100]), ...R.bars.flatMap(b => b.rows.filter(rw => rw.difference).map(rw => [`Stock difference ${b.station}`, rw.name, rw.difference]))];
     const csv = rows.map(row => row.map(c => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\n');

@@ -53,6 +53,7 @@ async function receipt(s) {
       <div class="draw-meter" style="height:12px" aria-hidden="true"><i style="width:${pct}%;background:var(--crimson)"></i></div>
       <div class="summary">
         <div class="r"><span>This payment</span><b>${money(s.amountPesewas)}</b></div>
+        ${s.deal ? `<div class="r promo-line"><span><span class="promo-tag">${esc(s.deal.name)}</span> ${esc(s.deal.label)}</span><span>−${money(s.deal.discountPesewas)} off ${money(s.deal.fullPesewas)}</span></div>` : ''}
         <div class="r"><span>Paid so far</span><span>${money(s.paidPesewas)} of ${money(s.totalPesewas)}</span></div>
         <div class="r t"><span>Left to pay</span><span>${money(left)}</span></div>
       </div>

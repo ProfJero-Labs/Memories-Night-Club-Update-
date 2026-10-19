@@ -1,7 +1,7 @@
 // The ticket: the guest's chosen line is the big type; first name, night, date and Memories sit
 // underneath; QR + short code on the stub. Each night has its own design (style + flyer colours).
 // Used for the live preview at checkout, the real ticket, and the control room's design preview.
-import { esc, shortDate, doors, formatAccra } from './app.js';
+import { esc, shortDate, doors, formatAccra, money } from './app.js';
 import { ticketDesign } from './lib/shared.js';
 
 let qrReady;
@@ -56,6 +56,7 @@ export function ticketHTML(t, { preview = false, qr = '' } = {}) {
       ${qr ? `<div class="t-qr" aria-label="Entry QR code">${qr}</div>` : `<div class="t-qr blank">QR APPEARS<br>ONCE PAID</div>`}
       <div><div class="t-code">${esc(t.code || 'MEM-······')}</div>
         <div class="t-status">${status}${t.inDraw ? '<span class="t-stamp draw">IN THE DRAW</span>' : ''}</div>
+        ${t.price ? `<div class="t-deal"><span class="t-stamp deal">${esc(t.price.promoName)}${t.price.promoLabel ? ` · ${esc(t.price.promoLabel)}` : ''}</span> Paid ${esc(money(t.price.paidPesewas))} <s>${esc(money(t.price.fullPesewas))}</s></div>` : ''}
         <div class="t-small">${t.groupSize > 1 ? `Ticket ${t.ticketNo} of ${t.groupSize} · ` : ''}Show at the door · strictly 18+</div>
         <div class="t-credit">Ticketing by EvolveIT</div></div>
     </div>

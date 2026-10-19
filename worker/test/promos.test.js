@@ -128,3 +128,47 @@ test('only the control room runs promos; bad promos are refused with a clear rea
   assert.equal(list.data.promos.length, 1); assert.equal(list.data.promos[0].code, 'MEM10');
   assert.ok(ctx.store.list('audit_logs').some(a => a.fields.action === 'PROMO_ADDED'));
 });
+
+test('a discounted ticket says so: the ticket shows the promo, what was paid and the full price; the text says it too; pay in bits owes only the discounted rest', async () => {
+  const ctx = setup();
+  await addPromo(ctx, { name: 'Early bird', kind: 'percent', value: 20 });
+  // Paid in full: 2 VIP at GHS 300, 20% off → GHS 480 for both, GHS 240 each.
+  const r = await buy(ctx, { quantity: 2, ticketTypeId: 'vip', buyerPhone: '0241110001' });
+  ctx.store.setPaystack(r.data.reference, { status: 'success', currency: 'GHS', amount: 48000 });
+  await ctx.call('POST', '/api/checkout/verify', { body: { reference: r.data.reference } });
+  const order = ctx.store.list('orders').find(o => o.fields.reference === r.data.reference).fields;
+  for (const token of order.ticketIds) {
+    const t = (await ctx.call('GET', `/api/tickets/${token}`)).data.ticket;
+    assert.deepEqual(t.price, { fullPesewas: 30000, paidPesewas: 24000, savedPesewas: 6000, promoName: 'Early bird', promoLabel: '20% off' });
+  }
+  assert.match(ctx.store.sms.filter(s => s.to === '0241110001').at(-1).message, /Early bird \(20% off\): you paid GHS 480, not GHS 600\./);
+  // Pay in bits: GHS 100 at 20% off is GHS 80. GHS 30 now leaves GHS 50 (not 70), and the page says why.
+  const start = await ctx.call('POST', '/api/installments/start', { body: { eventId: 'n1', ticketTypeId: 'reg', quantity: 1, buyerName: 'Kofi', buyerPhone: '0241110002', depositPesewas: 3000, acknowledged: true } });
+  assert.equal(start.status, 200, start.data.error);
+  const ref = start.data.reference;
+  ctx.store.setPaystack(ref, { status: 'success', currency: 'GHS', amount: 3000 });
+  await ctx.call('POST', '/api/checkout/verify', { body: { reference: ref } });
+  const look = await ctx.call('GET', `/api/installments/lookup?code=${start.data.planId}&phone=0241110002`);
+  const plan = look.data.plans[0];
+  assert.deepEqual([plan.totalPesewas, plan.paidPesewas, plan.remainingPesewas], [8000, 3000, 5000]);
+  assert.deepEqual(plan.deal, { name: 'Early bird', label: '20% off', fullPesewas: 10000, discountPesewas: 2000 });
+  // Paying the rest: exactly GHS 50 more, and the ticket shows the discount.
+  const top = await ctx.call('POST', '/api/installments/topup', { body: { planId: start.data.planId, amountPesewas: 5000, phone: '0241110002' } });
+  assert.equal(top.status, 200, top.data.error);
+  assert.match((await ctx.call('POST', '/api/installments/topup', { body: { planId: start.data.planId, amountPesewas: 6000, phone: '0241110002' } })).data.error || '', /more than|left|balance/i, 'can’t pay more than the discounted rest');
+  ctx.store.setPaystack(top.data.reference, { status: 'success', currency: 'GHS', amount: 5000 });
+  await ctx.call('POST', '/api/checkout/verify', { body: { reference: top.data.reference } });
+  assert.equal(ctx.store.get('installment_plans', start.data.planId).fields.status, 'completed');
+  assert.match(ctx.store.sms.filter(s => s.to === '0241110002').at(-1).message, /you paid GHS 80, not GHS 100/);
+  const planOrder = ctx.store.list('orders').find(o => o.fields.planId === start.data.planId).fields;
+  assert.equal((await ctx.call('GET', `/api/tickets/${planOrder.ticketIds[0]}`)).data.ticket.price.paidPesewas, 8000);
+  // No promo, no price line.
+  const plain = setup();
+  const r2 = await buy(plain);
+  plain.store.setPaystack(r2.data.reference, { status: 'success', currency: 'GHS', amount: 10000 });
+  await plain.call('POST', '/api/checkout/verify', { body: { reference: r2.data.reference } });
+  const tok = plain.store.list('orders')[0].fields.ticketIds[0];
+  assert.equal((await plain.call('GET', `/api/tickets/${tok}`)).data.ticket.price, undefined);
+  assert.doesNotMatch(plain.store.sms.at(-1).message, /you paid/);
+
+});

@@ -87,7 +87,7 @@ test('3–5: another round on the same tab; part paid in cash at the cashier; a 
   ok(await ctx.call('POST', '/api/ops/tabs/cash', { who: ctx.C1, body: { tabId: tab.id, amountPesewas: 1000 } }), 'cash 1000');
   bill = ok(await ctx.call('GET', `/api/guest/bill/${token}`), 'bill').bill;
   assert.deepEqual([bill.balancePesewas, bill.statusLabel], [2000, 'Part paid']);
-  assert.equal((await ctx.call('POST', '/api/ops/tabs/cash', { who: ctx.W1, body: { tabId: tab.id, amountPesewas: 1000 } })).status, 403, 'a waiter without cash permission can’t take cash');
+  assert.equal((await ctx.call('POST', '/api/ops/tabs/cash', { who: ctx.B1, body: { tabId: tab.id, amountPesewas: 1000 } })).status, 403, 'a bartender without cash permission can’t take cash');
   // A menu price change never moves a bill already sent.
   ok(await ctx.call('POST', '/api/ops/products', { who: ctx.F1, body: { id: 'shot', name: 'Tequila shot', category: 'Shots', unit: 'shot', pricePesewas: 5000 } }), 'price change');
   bill = ok(await ctx.call('GET', `/api/guest/bill/${token}`), 'bill').bill;
@@ -243,4 +243,77 @@ test('existing QR self-ordering still works, and its handover takes the drinks o
   assert.deepEqual([m.fields.productId, m.fields.qty, m.fields.kind], ['beer', -2, 'issue']);
   const sales = ok(await ctx.call('GET', '/api/ops/sales', { who: ctx.F1 }), 'sales');
   assert.equal(sales.totals.digitalPesewas, 5000);
+});
+
+test('waiters: invoice by SMS lists every drink; cash and MoMo recorded by the waiter; MoMo needs its ID once; reports split them', async () => {
+  const ctx = setup();
+  await openingCount(ctx);
+  const tab = ok(await ctx.call('POST', '/api/ops/tabs/open', { who: ctx.W1, body: { table: '7', customerName: 'Abena', customerPhone: '024 555 7070' } }), 'open table');
+  assert.match((await ctx.call('POST', '/api/ops/tabs/text-bill', { who: ctx.W1, body: { tabId: tab.id } })).data.error, /invoice is empty/);
+  const round = ok(await ctx.call('POST', '/api/ops/tabs/round', { who: ctx.W1, body: { tabId: tab.id, lines: [{ productId: 'beer', qty: 3 }, { productId: 'shot', qty: 2 }] } }), 'round');
+  await barMakes(ctx, round.id);
+  const sent = ok(await ctx.call('POST', '/api/ops/tabs/text-bill', { who: ctx.W1, body: { tabId: tab.id } }), 'invoice');
+  assert.equal(sent.sent, true);
+  const sms = ctx.store.sms.at(-1);
+  assert.equal(sms.to, '0245557070', 'to the phone given when the table was opened');
+  assert.match(sms.message, /MEMORIES INVOICE/); assert.match(sms.message, /Tab 1 · Table 7/);
+  assert.match(sms.message, /3 x Club beer GHS 75/); assert.match(sms.message, /2 x Tequila shot GHS 60/);
+  assert.match(sms.message, /Total GHS 135/); assert.match(sms.message, /To pay GHS 135/); assert.match(sms.message, /bill\.html\?t=/);
+
+  // Cash, by the waiter herself (no special permission needed).
+  const cash = ok(await ctx.call('POST', '/api/ops/tabs/pay', { who: ctx.W1, body: { tabId: tab.id, method: 'cash', amountPesewas: 5000 } }), 'cash');
+  assert.equal(cash.balancePesewas, 8500);
+  // MoMo: the transaction ID is required, and can't be used twice in a night.
+  assert.match((await ctx.call('POST', '/api/ops/tabs/pay', { who: ctx.W1, body: { tabId: tab.id, method: 'momo', amountPesewas: 5000 } })).data.error, /transaction ID/);
+  assert.match((await ctx.call('POST', '/api/ops/tabs/pay', { who: ctx.W1, body: { tabId: tab.id, method: 'momo', amountPesewas: 99000, momoRef: '51234567890' } })).data.error, /balance is GHS 85/);
+  const momo = ok(await ctx.call('POST', '/api/ops/tabs/pay', { who: ctx.W1, body: { tabId: tab.id, method: 'momo', amountPesewas: 5000, momoRef: '5123 4567 890', momoFrom: '0245557070' } }), 'momo');
+  assert.equal(momo.balancePesewas, 3500);
+  const tab2 = ok(await ctx.call('POST', '/api/ops/tabs/open', { who: ctx.W2, body: { table: '8' } }), 'tab 2');
+  const r2 = ok(await ctx.call('POST', '/api/ops/tabs/round', { who: ctx.W2, body: { tabId: tab2.id, lines: [{ productId: 'beer', qty: 2 }] } }), 'round 2');
+  await barMakes(ctx, r2.id);
+  assert.match((await ctx.call('POST', '/api/ops/tabs/pay', { who: ctx.W2, body: { tabId: tab2.id, method: 'momo', amountPesewas: 5000, momoRef: '51234567890' } })).data.error, /already recorded \(Tab 1\)/);
+  assert.equal((await ctx.call('POST', '/api/ops/tabs/pay', { who: ctx.B1, body: { tabId: tab2.id, method: 'momo', amountPesewas: 5000, momoRef: '99887766' } })).status, 403, 'a bartender can’t record payments');
+
+  // The invoice now shows what's paid and what's left.
+  ok(await ctx.call('POST', '/api/ops/tabs/text-bill', { who: ctx.W1, body: { tabId: tab.id } }), 'invoice again');
+  assert.match(ctx.store.sms.at(-1).message, /Paid GHS 100\nTo pay GHS 35/);
+  const t = ok(await ctx.call('GET', `/api/ops/tab?id=${tab.id}`, { who: ctx.W1 }), 'tab').tab;
+  assert.deepEqual(t.payments.map(p => [p.method, p.amountPesewas, p.momoRef]), [['cash', 5000, ''], ['momo', 5000, '51234567890']]);
+  const token = new URL(t.billUrl).searchParams.get('t');
+  assert.deepEqual(ok(await ctx.call('GET', `/api/guest/bill/${token}`), 'bill').bill.payments.map(p => p.method), ['Cash', 'MoMo']);
+
+  const sales = ok(await ctx.call('GET', '/api/ops/sales', { who: ctx.M1 }), 'sales');
+  assert.deepEqual([sales.totals.cashPesewas, sales.totals.momoPesewas, sales.totals.paidPesewas], [5000, 5000, 10000]);
+  assert.deepEqual(sales.momoPayments.map(m => [m.momoRef, m.tabNumber, m.byName, m.amountPesewas]), [['51234567890', 1, 'Efua Waiter', 5000]]);
+  const mine = ok(await ctx.call('GET', '/api/ops/my-report', { who: ctx.W1 }), 'my report').figures;
+  assert.deepEqual([mine.cashCollectedPesewas, mine.momoRecordedPesewas], [5000, 5000]);
+});
+
+test('the bar confirms drinks a waiter took without a hand-over tap; "not taken" puts them back; only then do they leave the stock', async () => {
+  const ctx = setup();
+  await openingCount(ctx);
+  const tab = ok(await ctx.call('POST', '/api/ops/tabs/open', { who: ctx.W1, body: { table: '3' } }), 'tab');
+  const round = ok(await ctx.call('POST', '/api/ops/tabs/round', { who: ctx.W1, body: { tabId: tab.id, lines: [{ productId: 'beer', qty: 2 }] } }), 'round');
+  ok(await ctx.call('POST', '/api/ops/bar/round', { who: ctx.B1, body: { roundId: round.id, action: 'ready' } }), 'ready');
+  ok(await ctx.call('POST', '/api/ops/tabs/round-action', { who: ctx.W1, body: { roundId: round.id, action: 'took' } }), 'took');
+  const issued = () => ctx.store.list('stock_moves').filter(m => m.fields.kind === 'issue' && m.fields.ref === round.id).length;
+  assert.equal(issued(), 0, 'not out of stock until the bar confirms');
+  let q = ok(await ctx.call('GET', '/api/ops/bar/rounds', { who: ctx.B1 }), 'queue');
+  assert.equal(q.rounds.find(r => r.id === round.id).status, 'taken');
+  assert.match((await ctx.call('POST', '/api/ops/bar/round', { who: ctx.B1, body: { roundId: round.id, action: 'hand' } })).data.error, /Confirm or Not taken/);
+  assert.match((await ctx.call('POST', '/api/ops/tabs/round-action', { who: ctx.W1, body: { roundId: round.id, action: 'received' } })).data.error, /hasn’t handed/);
+  // The bar says no: back on the list.
+  ok(await ctx.call('POST', '/api/ops/bar/round', { who: ctx.B1, body: { roundId: round.id, action: 'not_taken' } }), 'not taken');
+  q = ok(await ctx.call('GET', '/api/ops/bar/rounds', { who: ctx.B1 }), 'queue');
+  assert.equal(q.rounds.find(r => r.id === round.id).status, 'ready');
+  // Took again, and the bar confirms: out of stock, and with the waiter.
+  ok(await ctx.call('POST', '/api/ops/tabs/round-action', { who: ctx.W1, body: { roundId: round.id, action: 'took' } }), 'took again');
+  assert.equal((await ctx.call('POST', '/api/ops/bar/round', { who: ctx.W1, body: { roundId: round.id, action: 'confirm_taken' } })).status, 403, 'a waiter can’t confirm for the bar');
+  ok(await ctx.call('POST', '/api/ops/bar/round', { who: ctx.B1, body: { roundId: round.id, action: 'confirm_taken' } }), 'confirm');
+  assert.equal(issued(), 1);
+  const r = ctx.store.get('rounds', round.id).fields;
+  assert.deepEqual([r.status, r.handedByName, !!r.takenConfirmedAt], ['received', 'Ama Bartender', true]);
+  q = ok(await ctx.call('GET', '/api/ops/bar/rounds', { who: ctx.B1 }), 'queue');
+  assert.deepEqual(q.handedOver.map(x => [x.tabNumber, x.waiterName, x.handedByName, x.takenConfirmed]), [[1, 'Efua Waiter', 'Ama Bartender', true]]);
+  ok(await ctx.call('POST', '/api/ops/tabs/round-action', { who: ctx.W1, body: { roundId: round.id, action: 'delivered' } }), 'delivered');
 });

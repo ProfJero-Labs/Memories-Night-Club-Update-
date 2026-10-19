@@ -32,8 +32,8 @@ training.
 
 | Job | Opens on | Does |
 |---|---|---|
-| Waiter / waitress | **Tabs** | New tab (table or walk-in), add drinks, send to the bar, follow each order, show the bill (QR, link or text), take cash if allowed, close the tab, *Bookings* (bottles booked tables paid for), *My report* |
-| Bartender | **Bar** | Waiter orders (Start → Ready → Hand to the waiter), drinks coming back, app (QR) orders, Stock (deliveries, broken, move to another bar, mark a drink finished), Count (closing count) |
+| Waiter / waitress | **Tables** | Open a table (number or walk-in, customer's name and phone), add drinks, send to the bar, *I took them from the bar*, follow each order, *Send invoice (SMS)*, *Show bill (QR)*, *Customer paid* (cash or MoMo), close, *Bookings*, *My report* |
+| Bartender | **Bar** | Waiter orders (Start → Ready → Hand to the waiter), confirm drinks a waiter took (*Confirm* / *Not taken*), *Handed over tonight*, drinks coming back, app (QR) orders, Stock (deliveries, broken, move to another bar, mark a drink finished), Count (closing count) |
 | Cashier | **Cashier** | Find a bill, record cash, receipts; My cash: open with the float, put cash in the safe, refund or pay out (manager approves), count the cash at the end |
 | Front office | **Door** | Entrance (scan tickets, search), staff and members (code in their app, or *let in by name* if their phone is dead), Tables (arrivals, table number, people), Issues, end-of-night Report |
 | Security | **Door** | Entrance and Issues only |
@@ -43,20 +43,39 @@ training.
 
 ## A customer orders from a waiter (no QR)
 
-1. Waiter: **New tab** → table number (or **Walk-in**) → **Add drinks** → **Send to bar**.
+1. Waiter: **Open a table** → table number (or **Walk-in**), and the customer's name and phone if
+   they want the invoice by text → **Add drinks** → **Send to bar**.
 2. Bar: the order appears with the table, tab number and waiter. **Start** → **Ready** →
    **Hand to Efua**. At that moment the drinks leave the bar's stock.
+   - If the waiter picks the drinks up without the bartender tapping anything, the waiter taps
+     **I took them from the bar**. The bar sees "Efua says they took Tab 3" and taps **Confirm**
+     (the drinks leave the stock) or **Not taken** (back on the list). Nothing leaves the stock
+     until the bar confirms. **Handed over tonight** lists every order that left the bar.
 3. Waiter: **I have them** → **Delivered**. Drinks not taken: **Send back to bar** (the bar taps
    *Got them back*). Broken: **Broken** (off the bill, shows in the waiter's report).
 4. **Show bill to customer**: the customer scans the QR (or gets the link by text), sees every
    drink and pays with **Pay now** (MoMo or card on Paystack). It shows as paid only once Paystack
    confirms it on the server. If drinks are added while they pay, the new drinks stay owed.
-5. Cash: the customer pays the **cashier** (or a waiter allowed to take cash), who records it.
+   **Send invoice (SMS)** texts the customer every drink, the total, what's paid and what's left,
+   with the pay link.
+5. Cash or MoMo to the club's number: the waiter taps **Customer paid** → **Cash** or **MoMo**.
+   For MoMo, type the **transaction ID** from the MoMo text (and the number it came from, if you
+   like). The same ID can't be recorded twice, and Today's sales lists every MoMo ID for finance
+   to check against the MoMo statement. Cash goes in the waiter's cash for the night (their
+   report). The cashier can also take cash.
 6. **Close tab** when everything is delivered and paid.
 - More rounds: **Add drinks** again on the same tab. Part payments are fine.
 - Free drink, money off, or a customer who can't pay: **Ask the manager**. Nothing changes until
   someone else approves it.
 - Customers who prefer the QR at the bar still order the old way; both use the same menu and stock.
+
+## Discounted tickets (promos)
+
+- The price a customer pays is always worked out by the system: with a promo, Paystack is asked for
+  the discounted price. Pay in bits starts from the discounted total, so "left to pay" is the
+  discounted rest.
+- The ticket says it was discounted: the promo, what was paid and the full price (crossed out). The
+  text message and the pay-in-bits pages say it too.
 
 ## Prices and stock
 

@@ -8,7 +8,8 @@ function planCard(p) {
   const head = `<div style="display:flex;justify-content:space-between;gap:12px;align-items:baseline"><span class="kicker">${esc(p.planId)}</span><span class="kicker">${p.eventDate ? esc(shortDate(p.eventDate)) : ''}</span></div>
     <h2 class="display sm">${esc(p.eventName)}</h2>
     <div class="draw-meter" style="height:12px"><i style="width:${pct}%;background:var(--crimson)"></i></div>
-    <div style="display:flex;justify-content:space-between"><span>${money(p.paidPesewas)} paid</span><b>${money(p.totalPesewas)}</b></div>`;
+    <div style="display:flex;justify-content:space-between"><span>${money(p.paidPesewas)} paid</span><b>${money(p.totalPesewas)}</b></div>
+    ${p.deal ? `<div class="promo-line" style="display:flex;justify-content:space-between;gap:8px"><span><span class="promo-tag">${esc(p.deal.name)}</span> ${esc(p.deal.label)}</span><span>${money(p.totalPesewas)} instead of <s>${money(p.deal.fullPesewas)}</s></span></div>` : ''}`;
   // A paid order never shows its ticket here: the code isn't proof of who you are. The link goes
   // by text to the phone on the order.
   if (p.ticketReady) return `<form class="plan" data-resend="${esc(p.planId)}" novalidate>${head}<div class="notice ok">Paid in full. We texted your ticket link.</div>

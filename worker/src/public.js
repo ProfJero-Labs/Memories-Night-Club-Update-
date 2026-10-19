@@ -169,14 +169,23 @@ async function ticketGroup(env, token, t) {
   const order = t.reference ? (await queryWhere(env, 'orders', [{ field: 'reference', value: t.reference }], { limit: 1 }))[0] : null;
   const ids = order?.fields?.ticketIds || [];
   const no = ids.indexOf(token) + 1;
-  if (!no || ids.length < 2) return { no: 1, size: 1 };
-  if (no !== 1) return { no, size: ids.length };
+  const price = ticketPrice(order?.fields);
+  if (!no || ids.length < 2) return { no: 1, size: 1, price };
+  if (no !== 1) return { no, size: ids.length, price };
   const got = await batchGet(env, ids.slice(1).map(x => `tickets/${x}`));
   const others = ids.slice(1).map((x, i) => {
     const f = foundFields(got, `/tickets/${x}`)?.fields || {};
     return { token: x, no: i + 2, status: f.revoked || f.cancelled ? 'cancelled' : f.status || 'valid' };
   });
-  return { no, size: ids.length, others };
+  return { no, size: ids.length, others, price };
+}
+// What one ticket of this order cost, and the promo that lowered it (from the order, so tickets
+// bought before this was shown still say so). Only for discounted orders; null otherwise.
+function ticketPrice(o) {
+  const pr = o?.promo, q = Number(o?.quantity || 0);
+  if (!pr || !(q > 0) || !(Number(pr.discountPesewas) > 0)) return null;
+  const full = Math.round(Number(pr.fullPesewas || 0) / q), off = Math.round(Number(pr.discountPesewas) / q);
+  return { fullPesewas: full, paidPesewas: full - off, savedPesewas: off, promoName: pr.name || 'Promo', promoLabel: pr.label || '' };
 }
 
 export async function publicTicket(env, token) {
@@ -193,7 +202,7 @@ export async function publicTicket(env, token) {
     doors: ev?.fields?.doors || '', venue: ev?.fields?.venue || '', artwork: ev?.fields?.artwork || '',
     ticketStyle: ev?.fields?.ticketStyle || 'auto', ticketColors: cleanTicketColors(ev?.fields?.ticketColors), autoStyle,
     identityLine: t.identityLine || '', displayCode: t.displayCode, status: t.revoked || t.cancelled ? 'cancelled' : t.status,
-    inDraw: t.inDraw === true, comp: t.comp === true,
+    inDraw: t.inDraw === true, comp: t.comp === true, ...(group.price ? { price: group.price } : {}),
     // Every ticket for the night sees who won, never the winning code; only the winner's own ticket is told it won.
     raffle: raffle ? { prize: raffle.fields.prize || '', status: raffle.fields.status, winner: raffle.fields.status === 'drawn' ? { name: raffle.fields.winnerDisplayName || 'Winner' } : null,
       youWon: raffle.fields.status === 'drawn' && !!t.displayCode && raffle.fields.winnerDisplayCode === t.displayCode } : null,

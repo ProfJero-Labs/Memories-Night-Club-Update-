@@ -711,6 +711,10 @@ test('promos: the control room starts an automatic promo and a code promo; guest
   await g.waitForURL(/ticket\.html/, { timeout: 20000 });
   const order = docs('orders').find(o => o.buyerPhone === '0245553030');
   assert.equal(order.amountPesewas, 7000); assert.equal(order.promo.code, 'KOJO30'); assert.equal(order.promo.discountPesewas, 3000);
+  // The ticket and the text say it was discounted, and by how much.
+  await g.locator('.t-deal').getByText(/Paid GHS 70/).waitFor();
+  assert.match(await g.textContent('.deal-note'), /You paid GHS 70 instead of GHS 100/);
+  assert.match(store.sms.filter(x => x.to === '0245553030').at(-1).message, /you paid GHS 70, not GHS 100/);
   assert.equal(docs('promos').find(p => p.code === 'KOJO30').usedCount, 1);
 
   // An influencer's link carries the code all the way to checkout.
@@ -780,6 +784,44 @@ test('staff sign-in: a manager adds a waitress; her PIN is texted and shown to t
   const fresh = /PIN: (\d{4})/.exec(store.sms.at(-1).message)[1];
   await w.fill('#pin', fresh); await w.click('#go'); await w.waitForURL(/waiter\.html/);
   assert.deepEqual([...mgr.errors, ...w.errors], []);
+});
+
+test('waiter and bar: open a table with the customer’s phone, “I took them” confirmed by the bar, invoice by SMS, MoMo recorded with its ID', async () => {
+  const w = await phone(360); await signInAs(w, 'waiter@dev'); await w.waitForURL(/waiter\.html/);
+  await w.click('#newTab'); await w.fill('#ntTable', '21'); await w.fill('#ntName', 'Adwoa'); await w.fill('#ntPhone', '024 555 2121'); await w.click('#ntGo');
+  await w.waitForURL(/#add\//); await w.click('[data-p="dev-m-beer"]'); await w.click('[data-p="dev-m-beer"]'); await w.click('#send');
+  await w.waitForURL(/#tab\//);
+  // The waiter grabs the drinks herself; the bar confirms.
+  await w.locator('[data-act="took"]').click(); await w.locator('.tcard').getByText(/the bar must confirm/).waitFor();
+  const bar = await phone(390); await signInAs(bar, 'bar@dev'); await bar.waitForURL(/bar\.html/);
+  await bar.locator('#taken').getByText(/says they took Tab \d+ \(21\)/).waitFor({ timeout: 10000 });
+  await bar.locator('#taken [data-a="confirm_taken"]').click();
+  await bar.locator('#msgTop').getByText(/Confirmed/).waitFor();
+  await bar.locator('#handedList summary').click(); await bar.locator('#handedList').getByText('(waiter took them)').waitFor();
+  await w.locator('[data-act="delivered"]').waitFor({ timeout: 10000 }); await w.click('[data-act="delivered"]');
+  // Invoice by SMS to the phone given when the table was opened.
+  await w.click('#invoice'); await w.click('#ivGo'); await w.locator('#msg').getByText(/Invoice texted to 024\*\*\*2121/).waitFor();
+  const sms = store.sms.filter(x => x.to === '0245552121').at(-1).message;
+  assert.match(sms, /MEMORIES INVOICE/); assert.match(sms, /2 x Club beer/); assert.match(sms, /To pay GHS/);
+  // MoMo to the club's number, with its transaction ID.
+  await w.click('#cash'); await w.click('[data-m="momo"]'); await w.click('#tcGo');
+  await w.locator('#tcMsg').getByText(/transaction ID/).waitFor();
+  await w.fill('#tcRef', '7712345678'); await w.click('#tcGo');
+  await w.locator('#msg').getByText(/MoMo recorded\. The table is paid/).waitFor();
+  const tabId = await w.evaluate(() => location.hash.split('/')[1]);
+  assert.deepEqual(docs('tabs').find(t => t.id === tabId).payments.map(p => [p.method, p.momoRef]), [['momo', '7712345678']]);
+  await w.click('#close'); await w.waitForURL(/#tabs/);
+  assert.deepEqual([...w.errors, ...bar.errors], []);
+});
+
+test('sign-in: an email typed in the phone box goes to the email form', async () => {
+  const p = await phone(360);
+  await p.goto(`${base}/login.html`); await p.waitForSelector('#pinForm');
+  await p.fill('#phone', 'manager@dev'); await p.fill('#pin', '1234'); await p.click('#go');
+  await p.locator('#f:not([hidden])').waitFor();
+  assert.equal(await p.$eval('#email', e => e.value), 'manager@dev');
+  await p.fill('#pw', 'memories-dev'); await p.click('#goEmail'); await p.waitForURL(/admin\.html/);
+  assert.deepEqual(p.errors, []);
 });
 
 test('a night at the bar: tab without QR → bar → delivered → the customer pays on their phone → another round paid in cash at the cashier → reports, counts, the close and finance’s report', async () => {
