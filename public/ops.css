@@ -37,7 +37,7 @@
 /* Status words */
 .st { display: inline-block; font: 700 12px/1 var(--sans); letter-spacing: .08em; text-transform: uppercase; padding: 6px 8px; border: 1px solid currentColor; white-space: nowrap; }
 .st.waiting, .st.unpaid { color: var(--mustard); } .st.preparing { color: #8fb6ff; } .st.ready { color: #6fcfae; } .st.handed, .st.part_paid { color: #ffb36b; }
-.st.received { color: #c8a2ff; } .st.delivered, .st.paid { color: #6fcfae; } .st.cancelled, .st.written_off, .st.overpaid { color: #ff7a9c; } .st.empty { color: var(--muted); }
+.st.received { color: #c8a2ff; } .st.taken { color: #ffb36b; } .st.delivered, .st.paid { color: #6fcfae; } .st.cancelled, .st.written_off, .st.overpaid { color: #ff7a9c; } .st.empty { color: var(--muted); }
 
 /* Big numbers */
 .nums { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
@@ -85,3 +85,7 @@
 .stepbar > div.done::before { content: '✓'; border-color: #6fcfae; color: #6fcfae; }
 .stepbar small { display: block; color: var(--muted); }
 .sfield .money-in input, .money-in input { padding-left: 64px !important; } .money-in input { font-size: 20px; }
+
+/* Two-way choice (Cash / MoMo) */
+.seg { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.seg .mid.on { background: var(--crimson-btn); color: #fff; border-color: transparent; }

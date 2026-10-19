@@ -40,7 +40,7 @@ test('lookup needs the code AND the phone on the order; it shows the order but n
   const r = await call(env, 'GET', '/api/installments/lookup?code=mem-7k3qx-9wp2m&phone=024%20123%204567');
   assert.equal(r.status, 200);
   const [p] = r.data.plans;
-  assert.deepEqual(Object.keys(p).sort(), ['deadline', 'eventDate', 'eventName', 'firstName', 'paidPesewas', 'planId', 'remainingPesewas', 'status', 'ticketReady', 'totalPesewas']);
+  assert.deepEqual(Object.keys(p).sort(), ['deadline', 'deal', 'eventDate', 'eventName', 'firstName', 'paidPesewas', 'planId', 'remainingPesewas', 'status', 'ticketReady', 'totalPesewas']);
   assert.equal(p.ticketReady, true);
   for (const leak of [TOKEN, 'ticket.html', 'token', '0241234567', '4567', 'Owusu']) assert.ok(!r.text.includes(leak), `response contains ${leak}`);
   const legacy = await call(env, 'GET', '/api/installments/lookup?code=MEM-AB1234&phone=0551112222');

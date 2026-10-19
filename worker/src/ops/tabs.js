@@ -3,7 +3,7 @@
 //
 //   tabs/{id}    number ("Tab 27", counted per night), businessDate, stationId, table, customerName,
 //                customerPhone, waiterUid, waiterName, status open|closed|written_off, billToken
-//                (the customer's bill link), payments[{id, method cash|digital, amountPesewas, at,
+//                (the customer's bill link), payments[{id, method cash|momo|digital, amountPesewas, at,
 //                byName, sessionId?}], discounts[{amountPesewas, reason, approvedByName}], pending
 //                (a Paystack payment in progress)
 //   rounds/{id}  one order sent to the bar: tabId, tabNumber, stationId, waiterUid, table, lines
@@ -53,16 +53,16 @@ const tabView = (t, rounds, { full = true } = {}) => {
   return {
     id: t.id, number: t.number, label: `Tab ${t.number}`, businessDate: t.businessDate, table: t.table || '', customerName: t.customerName || '', customerPhoneHint: t.customerPhone ? maskPhone(t.customerPhone) : '',
     waiterUid: t.waiterUid, waiterName: t.waiterName, stationId: t.stationId, stationName: t.stationName, status: t.status, payStatus: bill.status, payLabel: PAY_LABEL[bill.status],
-    bill, payments: (t.payments || []).map(p => ({ method: p.method, amountPesewas: p.amountPesewas, at: p.at, byName: p.byName || '' })),
+    bill, payments: (t.payments || []).map(p => ({ method: p.method, label: METHOD_LABEL[p.method] || p.method, amountPesewas: p.amountPesewas, at: p.at, byName: p.byName || '', momoRef: p.momoRef || '' })),
     openRounds: rounds.filter(r => !['delivered', 'cancelled'].includes(r.status)).length,
     ...(full ? { rounds: rounds.sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt))).map(roundView), billUrl: null } : {}),
     createdAt: t.createdAt,
   };
 };
-export const ROUND_LABEL = { waiting: 'Sent to bar', preparing: 'Bar is making it', ready: 'Ready at the bar', handed: 'Bar handed it to you', received: 'With you', delivered: 'Delivered', cancelled: 'Cancelled' };
+export const ROUND_LABEL = { waiting: 'Sent to bar', preparing: 'Bar is making it', ready: 'Ready at the bar', taken: 'You took it: the bar must confirm', handed: 'Bar handed it to you', received: 'With you', delivered: 'Delivered', cancelled: 'Cancelled' };
 const roundView = r => ({ id: r.id, tabId: r.tabId, tabNumber: r.tabNumber, table: r.table || '', status: r.status, statusLabel: ROUND_LABEL[r.status], waiterUid: r.waiterUid, waiterName: r.waiterName, stationId: r.stationId,
   lines: r.lines.map(l => ({ lineId: l.lineId, productId: l.productId, name: l.name, qty: l.qty, unitPesewas: l.unitPesewas, returnedQty: l.returnedQty || 0, brokenQty: l.brokenQty || 0, compQty: l.compQty || 0, returnPending: l.returnPending || 0 })),
-  note: r.note || '', createdAt: r.createdAt, handedByName: r.handedByName || '', cancelReason: r.cancelReason || '' });
+  note: r.note || '', createdAt: r.createdAt, handedAt: r.handedAt || '', handedByName: r.handedByName || '', takenAt: r.takenAt || '', takenByName: r.takenByName || '', takenConfirmed: !!r.takenConfirmedAt, cancelReason: r.cancelReason || '' });
 
 const mineOrBoss = (user, t) => requireRole(user, BOSS) || t.waiterUid === uidOf(user);
 
@@ -149,6 +149,11 @@ export async function waiterRound(env, b, user) {
     if (action === 'cancel') {
       if (f.status !== 'waiting') return { error: f.status === 'cancelled' ? 'Already cancelled.' : 'The bar has started it. Ask the bar, or send it back after you get it.' };
       next = { ...f, status: 'cancelled', cancelledAt: at, cancelledByName: byName, cancelReason: clean(b.reason, 120) || 'Cancelled by waiter' };
+    } else if (action === 'took') {
+      // The waiter picked the drinks up without the bartender tapping "Hand over": the bar confirms
+      // it next (and only then do the drinks leave the bar's stock).
+      if (!['waiting', 'preparing', 'ready'].includes(f.status)) return { error: f.status === 'taken' ? 'Already marked: waiting for the bar to confirm.' : 'This order isn’t at the bar.' };
+      next = { ...f, status: 'taken', takenAt: at, takenByName: byName };
     } else if (action === 'received') {
       if (f.status !== 'handed') return { error: 'The bar hasn’t handed this over yet.' };
       next = { ...f, status: 'received', receivedAt: at };
@@ -180,11 +185,15 @@ export async function barRounds(env, user, { stationId }) {
   const all = [...new Map([...live, ...older].map(r => [r.id, r])).values()];
   return {
     stationId: st.id,
-    rounds: all.filter(r => ['waiting', 'preparing', 'ready', 'handed'].includes(r.status)).sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt))).map(roundView),
+    rounds: all.filter(r => ['waiting', 'preparing', 'ready', 'taken', 'handed'].includes(r.status)).sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt))).map(roundView),
     returns: all.filter(r => r.lines.some(l => l.returnPending > 0)).map(roundView),
     handedToday: all.filter(r => ['received', 'delivered'].includes(r.status)).length,
+    // Everything that left this bar tonight, newest first: who took it, when, who confirmed.
+    handedOver: all.filter(r => r.handedAt && ['handed', 'received', 'delivered'].includes(r.status)).sort((a, b) => String(b.handedAt).localeCompare(String(a.handedAt))).slice(0, 40).map(roundView),
   };
 }
+
+const issueMoves = (rid, f) => f.lines.map(l => ({ productId: l.productId, productName: l.name, stationId: f.stationId, qty: -l.qty, kind: 'issue', ref: rid, tabId: f.tabId, toWaiterUid: f.waiterUid, toWaiterName: f.waiterName, businessDate: f.businessDate }));
 
 export async function barRound(env, b, user) {
   if (!requireRole(user, BAR_HANDS)) return FORBIDDEN;
@@ -198,9 +207,17 @@ export async function barRound(env, b, user) {
     if (action === 'preparing') { if (f.status !== 'waiting') return { error: 'Already started.' }; next = { ...f, status: 'preparing', preparingAt: at, preparingByName: byName }; }
     else if (action === 'ready') { if (!['waiting', 'preparing'].includes(f.status)) return { error: 'This order isn’t being made.' }; next = { ...f, status: 'ready', readyAt: at }; }
     else if (action === 'hand') {
-      if (!['waiting', 'preparing', 'ready'].includes(f.status)) return { error: f.status === 'handed' ? 'Already handed over.' : 'This order isn’t at the bar.' };
+      if (!['waiting', 'preparing', 'ready'].includes(f.status)) return { error: f.status === 'handed' ? 'Already handed over.' : f.status === 'taken' ? 'The waiter says they took it: tap Confirm or Not taken.' : 'This order isn’t at the bar.' };
       next = { ...f, status: 'handed', handedAt: at, handedBy: uidOf(user), handedByName: byName };
-      moves = f.lines.map(l => ({ productId: l.productId, productName: l.name, stationId: f.stationId, qty: -l.qty, kind: 'issue', ref: rid, tabId: f.tabId, toWaiterUid: f.waiterUid, toWaiterName: f.waiterName, businessDate: f.businessDate }));
+      moves = issueMoves(rid, f);
+    } else if (action === 'confirm_taken') {
+      // The waiter already has the drinks: confirmed by the bar, they leave its stock now.
+      if (f.status !== 'taken') return { error: 'Nothing to confirm on this order.' };
+      next = { ...f, status: 'received', handedAt: at, handedBy: uidOf(user), handedByName: byName, receivedAt: f.takenAt || at, takenConfirmedAt: at };
+      moves = issueMoves(rid, f);
+    } else if (action === 'not_taken') {
+      if (f.status !== 'taken') return { error: 'Nothing to confirm on this order.' };
+      next = { ...f, status: 'ready', takenAt: '', takenByName: '', takenDisputedAt: at, takenDisputedByName: byName };
     } else if (action === 'cant_make') {
       if (!['waiting', 'preparing', 'ready'].includes(f.status)) return { error: 'Already handed over.' };
       next = { ...f, status: 'cancelled', cancelledAt: at, cancelledByName: byName, cancelReason: clean(b.reason, 120) || 'The bar couldn’t make it' };
@@ -218,7 +235,47 @@ export async function barRound(env, b, user) {
 
 // ── Money ──
 async function staffRecord(env, user) { return (await getDoc(env, 'users', uidOf(user)))?.fields || {}; }
-export async function canTakeCash(env, user) { return requireRole(user, CASH_TAKERS) || (await staffRecord(env, user)).canCollectCash === true; }
+// Waiters record what their tables paid them; cashiers and managers too; anyone else only if a
+// manager ticked "Can collect cash" on their staff record.
+export async function canTakeCash(env, user) { return requireRole(user, [...CASH_TAKERS, 'waitStaff']) || (await staffRecord(env, user)).canCollectCash === true; }
+export const METHOD_LABEL = { cash: 'Cash', momo: 'MoMo (to the club’s number)', digital: 'MoMo / card (paid on the bill link)' };
+
+// "Customer paid": cash (into this person's cash bag for the night) or MoMo sent straight to the
+// club's MoMo number. A MoMo payment needs the transaction ID from the MoMo text, so finance can
+// match it on the MoMo statement; the same ID can't be recorded twice in a night.
+export async function recordPayment(env, b, user) {
+  const method = b?.method === 'momo' ? 'momo' : 'cash';
+  return method === 'momo' ? recordMomo(env, b, user) : recordCash(env, b, user);
+}
+
+async function recordMomo(env, b, user) {
+  if (!(await canTakeCash(env, user))) return { error: 'Your job doesn’t include recording payments. Send the customer to the cashier.', status: 403 };
+  const amount = int(b?.amountPesewas);
+  if (!(amount >= 100)) return { error: 'Enter the amount (at least GHS 1).' };
+  const ref = String(b?.momoRef || '').toUpperCase().replace(/[^A-Z0-9.]/g, '').slice(0, 40);
+  if (ref.length < 6) return { error: 'Enter the MoMo transaction ID from the customer’s MoMo text (at least 6 letters or numbers).' };
+  const from = b?.momoFrom ? normalizePhone(b.momoFrom) : '';
+  if (b?.momoFrom && !from) return { error: 'That MoMo number doesn’t look right, or leave it blank.' };
+  const date = bizDate(), closed = await closedError(env, date); if (closed) return closed;
+  const tonight = await queryWhere(env, 'tabs', [{ field: 'businessDate', value: date }]);
+  const dup = tonight.find(t => (t.fields.payments || []).some(p => p.method === 'momo' && p.momoRef === ref));
+  if (dup) return { error: `That MoMo transaction ID is already recorded (Tab ${dup.fields.number}). Check the ID.` };
+  const tabId = String(b?.tabId || '');
+  return withTransaction(env, async tx => {
+    const t = foundFields(await batchGet(env, [`tabs/${tabId}`], tx), `/tabs/${tabId}`);
+    if (!t) return { error: 'Tab not found.', status: 404 };
+    if (t.fields.status === 'written_off') return { error: 'This tab was written off. Ask a manager.' };
+    const bill = billOf(t.fields, await roundsOf(env, tabId));
+    if (amount > bill.balancePesewas) return { error: bill.balancePesewas ? `The balance is ${ghs(bill.balancePesewas)}. Record that amount; anything extra goes back to the customer.` : 'This tab is already paid.' };
+    const payId = id(), at = now();
+    const pay = { id: payId, method: 'momo', amountPesewas: amount, at, businessDate: date, by: uidOf(user), byName: user.name || '', momoRef: ref, momoFrom: from };
+    await commitTx(env, [
+      updateWrite(env, 'tabs', tabId, { ...t.fields, payments: [...(t.fields.payments || []), pay] }),
+      updateWrite(env, 'audit_logs', id(), { action: 'MOMO_PAYMENT', actorUid: uidOf(user), actorName: user.name || '', tabId, amountPesewas: amount, momoRef: ref, timestamp: at }),
+    ], tx);
+    return { recorded: true, method: 'momo', balancePesewas: bill.balancePesewas - amount, receiptId: payId };
+  });
+}
 
 export async function recordCash(env, b, user) {
   if (!(await canTakeCash(env, user))) return { error: 'Your job doesn’t include taking cash. Send the customer to the cashier.', status: 403 };
@@ -267,6 +324,19 @@ export async function closeTab(env, b, user) {
   return { closed: true };
 }
 
+// The invoice by text: every drink with its price, the total, what's paid and what's left, and the
+// link to see it and pay with MoMo or card. Long bills list the first drinks and count the rest.
+export function invoiceText(env, tab, bill) {
+  const where = tab.table && tab.table !== 'Walk-in' ? `Table ${String(tab.table).replace(/^table\s*/i, '')}` : 'Walk-in';
+  const items = bill.lines.slice(0, 8).map(l => `${l.qty} x ${l.name.slice(0, 24)} ${ghs(l.amountPesewas)}`);
+  if (bill.lines.length > 8) items.push(`+ ${bill.lines.length - 8} more on the link`);
+  return ['MEMORIES INVOICE', `Tab ${tab.number} · ${where}`, ...items,
+    ...(bill.discountPesewas ? [`Discount -${ghs(bill.discountPesewas)}`] : []),
+    `Total ${ghs(bill.totalPesewas)}`, ...(bill.paidPesewas ? [`Paid ${ghs(bill.paidPesewas)}`] : []),
+    bill.balancePesewas ? `To pay ${ghs(bill.balancePesewas)}` : 'Fully paid. Thank you!',
+    ...(bill.balancePesewas ? [`Pay with MoMo or card: ${siteUrl(env, `/bill.html?t=${tab.billToken}`)}`] : [])].join('\n');
+}
+
 export async function textBill(env, b, user) {
   if (!requireRole(user, [...WAITERS, 'cashier'])) return FORBIDDEN;
   const t = await getDoc(env, 'tabs', String(b?.tabId || ''));
@@ -274,7 +344,8 @@ export async function textBill(env, b, user) {
   const phone = normalizePhone(b.phone || t.fields.customerPhone);
   if (!phone) return { error: 'Enter the customer’s phone number.' };
   const bill = billOf(t.fields, await roundsOf(env, t.id));
-  const sent = await sendSms(env, phone, `MEMORIES\nYour bill (Tab ${t.fields.number}): ${ghs(bill.balancePesewas)} to pay.\nSee it and pay on your phone: ${siteUrl(env, `/bill.html?t=${t.fields.billToken}`)}`);
+  if (!bill.totalPesewas) return { error: 'Add drinks first: the invoice is empty.' };
+  const sent = await sendSms(env, phone, invoiceText(env, t.fields, bill));
   if (phone !== t.fields.customerPhone) await setDoc(env, 'tabs', t.id, { ...t.fields, customerPhone: phone });
   return { sent, phoneHint: maskPhone(phone) };
 }
@@ -289,7 +360,7 @@ export async function publicBill(env, token) {
   const t = await tabByToken(env, token); if (!t) return PUBLIC;
   const bill = billOf(t.fields, await roundsOf(env, t.id));
   return { bill: { label: `Tab ${t.fields.number}`, table: t.fields.table, waiterFirstName: String(t.fields.waiterName || '').split(/\s+/)[0], date: t.fields.businessDate, lines: bill.lines, grossPesewas: bill.grossPesewas, discountPesewas: bill.discountPesewas, totalPesewas: bill.totalPesewas, paidPesewas: bill.paidPesewas, balancePesewas: bill.balancePesewas, status: bill.status, statusLabel: PAY_LABEL[bill.status],
-    payments: (t.fields.payments || []).map(p => ({ method: p.method === 'cash' ? 'Cash' : 'MoMo / card', amountPesewas: p.amountPesewas, at: p.at })), paying: !!(t.fields.pending && Date.now() - new Date(t.fields.pending.at).getTime() < 30 * 60e3) } };
+    payments: (t.fields.payments || []).map(p => ({ method: p.method === 'cash' ? 'Cash' : 'MoMo', amountPesewas: p.amountPesewas, at: p.at })), paying: !!(t.fields.pending && Date.now() - new Date(t.fields.pending.at).getTime() < 30 * 60e3) } };
 }
 
 async function paystackInit(env, payload) {

@@ -1,5 +1,5 @@
 // ticket.html: page script (kept out of the HTML so the CSP can forbid inline scripts).
-import { chrome, api, esc, params, $, $$, errorState, toast, shortDate, shareUrl } from '../app.js';
+import { chrome, api, esc, params, $, $$, errorState, toast, shortDate, shareUrl, money } from '../app.js';
 import { ticketHTML, qrSvg, verifyUrl, shareImage } from '../ticket-art.js';
 chrome();
 const root = $('#root');
@@ -12,7 +12,7 @@ function view(t, qr) {
     : r?.status === 'drawn' && r.winner ? `<div class="notice">The draw is done: won by ${esc(r.winner.name)}.</div>`
     : t.inDraw ? `<div class="notice ok">You’re in the draw${r?.prize ? ` for ${esc(r.prize)}` : ''}. Winner is picked before the night and gets a text.</div>` : '';
   root.innerHTML = `<div class="ticket-page">
-    <div>${ticketHTML({ line: t.identityLine, firstName: t.firstName, eventName: t.eventName, eventId: t.eventId, ticketStyle: t.ticketStyle, ticketColors: t.ticketColors, autoStyle: t.autoStyle, date: t.eventDate, doors: t.doors, venue: t.venue, artwork: t.artwork, code: t.displayCode, status: t.status, inDraw: t.inDraw, type: t.type, admits: t.admits, ticketNo: t.ticketNo, groupSize: t.groupSize }, { qr })}
+    <div>${ticketHTML({ line: t.identityLine, firstName: t.firstName, eventName: t.eventName, eventId: t.eventId, ticketStyle: t.ticketStyle, ticketColors: t.ticketColors, autoStyle: t.autoStyle, date: t.eventDate, doors: t.doors, venue: t.venue, artwork: t.artwork, code: t.displayCode, status: t.status, inDraw: t.inDraw, type: t.type, admits: t.admits, ticketNo: t.ticketNo, groupSize: t.groupSize, price: t.price }, { qr })}
       <p class="foot-small" style="text-align:center;margin-top:16px">This page is your ticket. Tap the QR to make it big at the door. Keep the link to yourself; it gets you in once.</p></div>
     <div class="post">
       <p class="kicker red">${params.get('new') ? 'You’re in' : esc(shortDate(t.eventDate || new Date()))}</p>
@@ -22,6 +22,7 @@ function view(t, qr) {
       ${t.status === 'cancelled' ? '' : `<div class="section-title" style="margin-top:14px"><h2>Your post</h2><span class="kicker">No QR · safe to post</span></div>
       <img id="postImg" alt="Your Memories share image: ${esc(t.identityLine || t.eventName)} — ${esc(t.firstName)}">
       <div class="share-actions no-print"><button class="btn red" id="share">Share my night</button><button class="btn" id="dl">Download</button></div>`}
+      ${t.price ? `<div class="notice ok deal-note"><b>Discounted ticket: ${esc(t.price.promoName)}${t.price.promoLabel ? ` (${esc(t.price.promoLabel)})` : ''}</b>You paid ${esc(money(t.price.paidPesewas))} instead of ${esc(money(t.price.fullPesewas))}. You saved ${esc(money(t.price.savedPesewas))}.</div>` : ''}
       <div class="info-rows no-print" style="margin-top:6px">
         <button type="button" class="link" id="print" style="display:flex;justify-content:space-between;width:100%;text-decoration:none;padding:16px 0;border:0;border-bottom:1px solid var(--line)"><span class="k">Offline copy</span><span>Save / print ticket</span></button>
         <a href="event.html?id=${encodeURIComponent(t.eventId)}"><span class="k">The night</span><span>${esc(t.eventName)} ↗</span></a>

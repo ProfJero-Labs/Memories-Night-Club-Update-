@@ -97,7 +97,9 @@ jobs:
   deploy-worker:
     name: Deploy Worker (Cloudflare)
     needs: [test, secrets, rules, changes]
-    if: github.event_name == 'workflow_dispatch' || needs.changes.outputs.worker == 'true'
+    # Every push to main: the site (Cloudflare Pages) deploys itself on every push, so the Worker
+    # must too, or a new page can end up talking to an older Worker. Re-deploying is harmless.
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
     runs-on: ubuntu-latest
     environment: production
     concurrency:

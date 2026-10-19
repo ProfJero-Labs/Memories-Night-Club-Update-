@@ -48,6 +48,7 @@ export function waiterFigures(uid, data) {
   const withYouLines = lines(handed.filter(r => r.status !== 'delivered')).map(l => ({ ...l, qty: l.qty - (l.returnedQty || 0) - (l.brokenQty || 0) - (l.returnPending || 0) })).filter(l => l.qty > 0);
   const tabs = data.tabs.filter(t => t.waiterUid === uid);
   const cash = data.tabs.flatMap(t => (t.payments || []).filter(p => p.method === 'cash' && p.by === uid));
+  const momo = data.tabs.flatMap(t => (t.payments || []).filter(p => p.method === 'momo' && p.by === uid));
   return {
     ordersTaken: rounds.length,
     salesPesewas: sum(tabs, t => t.bill.totalPesewas),
@@ -56,11 +57,11 @@ export function waiterFigures(uid, data) {
     returnedQty: qty(recv, 'returnedQty'), returnPendingQty: qty(recv, 'returnPending'), brokenQty: qty(recv, 'brokenQty'), brokenPesewas: val(recv, 'brokenQty'),
     freeQty: qty(recv, 'compQty'), freePesewas: val(recv, 'compQty'),
     withYouQty: qty(withYouLines), withYouPesewas: val(withYouLines), withYou: withYouLines.map(l => ({ name: l.name, qty: l.qty })),
-    waitingAtBar: rounds.filter(r => ['waiting', 'preparing', 'ready'].includes(r.status)).length,
+    waitingAtBar: rounds.filter(r => ['waiting', 'preparing', 'ready', 'taken'].includes(r.status)).length,
     billsPaid: tabs.filter(t => ['paid', 'overpaid'].includes(t.bill.status)).length, paidPesewas: sum(tabs, t => t.bill.paidPesewas),
     billsUnpaid: tabs.filter(t => ['unpaid', 'part_paid'].includes(t.bill.status)).length, unpaidPesewas: sum(tabs, t => t.bill.balancePesewas),
     unpaidTabs: tabs.filter(t => t.bill.balancePesewas > 0).map(t => ({ id: t.id, number: t.number, table: t.table, balancePesewas: t.bill.balancePesewas })),
-    cashCollectedPesewas: sum(cash, p => p.amountPesewas),
+    cashCollectedPesewas: sum(cash, p => p.amountPesewas), momoRecordedPesewas: sum(momo, p => p.amountPesewas),
     cancelledRounds: data.rounds.filter(r => r.waiterUid === uid && r.status === 'cancelled').length,
   };
 }
@@ -119,7 +120,7 @@ export async function todaySales(env, user, { date } = {}) {
   return { date: d, night: await nightState(env, d), ...salesFrom(data) };
 }
 function salesFrom(data) {
-  const tabPays = data.tabs.flatMap(t => t.payments || []);
+  const tabPays = data.tabs.flatMap(t => (t.payments || []).map(p => ({ ...p, tabNumber: t.number })));
   const qrValue = sum(data.qr, o => o.totalPesewas);
   const qrRefunds = data.qr.filter(o => ['refund_due', 'refunded'].includes(o.status));
   const byStation = new Map(data.stations.map(s => [s.id, { name: s.name, salesPesewas: 0, paidPesewas: 0, orders: 0 }]));
@@ -142,10 +143,13 @@ function salesFrom(data) {
   // Money confirmed by Paystack: tab payments and QR self-orders (refunds are listed on their own).
   const digital = sum(tabPays.filter(p => p.method === 'digital'), p => p.amountPesewas) + qrValue;
   const cash = sum(tabPays.filter(p => p.method === 'cash'), p => p.amountPesewas);
+  // MoMo sent straight to the club's number, recorded by staff with its transaction ID: finance
+  // checks these against the MoMo statement (listed in the report).
+  const momo = sum(tabPays.filter(p => p.method === 'momo'), p => p.amountPesewas);
   const sales = sum(data.tabs, t => t.bill.totalPesewas) + qrValue;
   return {
     totals: {
-      salesPesewas: sales, paidPesewas: digital + cash, digitalPesewas: digital, cashPesewas: cash,
+      salesPesewas: sales, paidPesewas: digital + cash + momo, digitalPesewas: digital, cashPesewas: cash, momoPesewas: momo,
       owedPesewas: sum(data.tabs.filter(t => t.status !== 'written_off'), t => t.bill.balancePesewas), writtenOffPesewas: sum(data.tabs.filter(t => t.status === 'written_off'), t => t.bill.balancePesewas),
       discountsPesewas: sum(data.tabs, t => t.bill.discountPesewas), freeDrinksPesewas: sum(comps, l => l.compQty * l.unitPesewas), freeDrinksQty: sum(comps, l => l.compQty),
       cancelledOrders: cancelled.length, cancelledPesewas: sum(cancelled.flatMap(r => r.lines), lineValue),
@@ -155,7 +159,8 @@ function salesFrom(data) {
     },
     byStation: [...byStation.values()].filter(s => s.orders), byWaiter: [...byWaiter.values()].sort((a, b) => b.salesPesewas - a.salesPesewas),
     byProduct: [...byProduct.values()].sort((a, b) => b.valuePesewas - a.valuePesewas),
-    byMethod: [{ method: 'MoMo / card (Paystack, confirmed)', amountPesewas: digital }, { method: 'Cash (recorded)', amountPesewas: cash }],
+    byMethod: [{ method: 'MoMo / card (Paystack, confirmed)', amountPesewas: digital }, { method: 'MoMo to the club’s number (recorded, check the statement)', amountPesewas: momo }, { method: 'Cash (recorded)', amountPesewas: cash }],
+    momoPayments: tabPays.filter(p => p.method === 'momo').map(p => ({ tabNumber: p.tabNumber, amountPesewas: p.amountPesewas, momoRef: p.momoRef, momoFrom: p.momoFrom || '', byName: p.byName || '', at: p.at })),
     unpaid: data.tabs.filter(t => t.bill.balancePesewas > 0 && t.status !== 'written_off').map(t => ({ id: t.id, number: t.number, table: t.table, waiterName: t.waiterName, balancePesewas: t.bill.balancePesewas })),
   };
 }
@@ -217,7 +222,7 @@ export async function closeNight(env, b, user) {
   };
   const fc = (await getDoc(env, 'config', 'finance'))?.fields || {};
   const to = fc.email || env.FINANCE_EMAIL || '';
-  const lines = [`Memories: end of day ${d}`, `Sales ${ghs(sales.totals.salesPesewas)} · Paid ${ghs(sales.totals.paidPesewas)} (MoMo/card ${ghs(sales.totals.digitalPesewas)}, cash ${ghs(sales.totals.cashPesewas)}) · Still owed ${ghs(sales.totals.owedPesewas)}`,
+  const lines = [`Memories: end of day ${d}`, `Sales ${ghs(sales.totals.salesPesewas)} · Paid ${ghs(sales.totals.paidPesewas)} (MoMo/card ${ghs(sales.totals.digitalPesewas)}, MoMo to the club ${ghs(sales.totals.momoPesewas || 0)}, cash ${ghs(sales.totals.cashPesewas)}) · Still owed ${ghs(sales.totals.owedPesewas)}`,
     `Cash differences: ${report.exceptions.cashDifferences.length} · Stock differences: ${report.exceptions.stockDifferences.length} · Missing reports: ${report.exceptions.missingReports.length || 'none'}`,
     `Prepared by ${user.name || 'the manager'}. Open the full report: ${siteUrl(env, `/finance.html#report/${d}`)}`];
   const sent = to ? await sendEmail(env, to, `Memories end of day: ${d}`, lines) : false;

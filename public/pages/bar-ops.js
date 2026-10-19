@@ -28,11 +28,18 @@ const nextBtn = r => (r.status === 'waiting' ? `<button class="mid" data-a="prep
     : r.status === 'ready' ? `<button class="mid red" data-a="hand" data-r="${esc(r.id)}">Hand to ${esc(r.waiterName.split(' ')[0])}</button>` : '');
 async function rounds() {
   const d = await sapi(`/api/ops/bar/rounds?stationId=${encodeURIComponent(station)}`);
-  const atBar = d.rounds.filter(r => r.status !== 'handed'), waiting = d.rounds.filter(r => r.status === 'handed');
+  const taken = d.rounds.filter(r => r.status === 'taken');
+  const atBar = d.rounds.filter(r => !['handed', 'taken'].includes(r.status)), waiting = d.rounds.filter(r => r.status === 'handed');
   const fresh = atBar.filter(r => seen && !seen.has(r.id)); if (fresh.length) navigator.vibrate?.(200);
   seen = new Set(atBar.map(r => r.id));
   $('#rCount').textContent = atBar.length ? `${atBar.length} to make` : '';
-  nav.setDot('orders', atBar.length);
+  nav.setDot('orders', atBar.length + taken.length);
+  // A waiter took drinks without a "Hand over" tap: the bar confirms (then they leave the stock).
+  $('#taken').innerHTML = taken.map(r => `<div class="say warn" role="status"><b>${esc(r.waiterName)} says they took Tab ${r.tabNumber} (${esc(r.table)})</b>
+      ${r.lines.map(l => `${l.qty} × ${esc(l.name)}`).join(', ')} · ${when(r.takenAt)}
+      <div class="btn-row" style="margin-top:8px"><button class="mid okc" data-a="confirm_taken" data-r="${esc(r.id)}">Confirm: they took them</button><button class="mid" data-a="not_taken" data-r="${esc(r.id)}">Not taken</button></div></div>`).join('');
+  $('#handedList').innerHTML = d.handedOver?.length ? `<details class="fold"><summary>Handed over tonight (${d.handedOver.length})</summary><div class="tbl-wrap"><table class="tbl"><thead><tr><th>Time</th><th>Tab</th><th>Drinks</th><th>Took them</th><th>Confirmed by</th></tr></thead><tbody>
+      ${d.handedOver.map(r => `<tr><td>${when(r.handedAt)}</td><td>Tab ${r.tabNumber} · ${esc(r.table)}</td><td>${r.lines.map(l => `${l.qty} × ${esc(l.name)}`).join(', ')}</td><td>${esc(r.waiterName)}</td><td>${esc(r.handedByName)}${r.takenConfirmed ? ' <small class="muted">(waiter took them)</small>' : ''}</td></tr>`).join('')}</tbody></table></div></details>` : '';
   $('#returns').innerHTML = d.returns.length ? `<div class="say warn"><b>Drinks coming back</b>${d.returns.map(r => `<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-top:8px"><span>${esc(r.waiterName)} · Tab ${r.tabNumber}: ${r.lines.filter(l => l.returnPending).map(l => `${l.returnPending} × ${esc(l.name)}`).join(', ')}</span><button class="mid okc" data-back="${esc(r.id)}">Got them back</button></div>`).join('')}</div>` : '';
   $('#rounds').innerHTML = atBar.map(r => `<article class="ord" aria-label="Tab ${r.tabNumber}"><div class="head"><span class="code" style="font-size:40px">${esc(r.table)}</span><span class="waited">${when(r.createdAt)}</span></div>
       <span class="foot-small">Tab ${r.tabNumber} · ${esc(r.waiterName)}</span>
@@ -47,7 +54,7 @@ async function rounds() {
 async function act(roundId, action) {
   let reason;
   if (action === 'cant_make') { reason = prompt('Why can’t the bar make it? (e.g. finished)'); if (reason === null) return; }
-  try { await sapi('/api/ops/bar/round', { method: 'POST', body: { roundId, action, reason } }); top(action === 'hand' ? 'Handed over. It’s in the waiter’s drinks now.' : action === 'confirm_return' ? 'Taken back into the bar’s stock.' : ''); rounds(); }
+  try { await sapi('/api/ops/bar/round', { method: 'POST', body: { roundId, action, reason } }); top(action === 'hand' ? 'Handed over. It’s in the waiter’s drinks now.' : action === 'confirm_taken' ? 'Confirmed. It’s in the waiter’s drinks now, out of the bar’s stock.' : action === 'not_taken' ? 'Back on the bar’s list. Tell the waiter.' : action === 'confirm_return' ? 'Taken back into the bar’s stock.' : ''); rounds(); }
   catch (e) { top(e.message, 'bad'); }
 }
 

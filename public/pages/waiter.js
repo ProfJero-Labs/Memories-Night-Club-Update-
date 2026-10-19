@@ -8,11 +8,11 @@ import { qrSvg } from '../ticket-art.js';
 import { sheet, say, st, every, bottomNav, busy, ghsIn, moneyField, money, when } from '../lib/ops-ui.js';
 
 const user = await requireStaff(['waitStaff', 'superAdmin', 'director', 'manager']);
-staffHeader(user, 'Tabs');
+staffHeader(user, 'Tables');
 const app = $('#app');
 const canCash = user.me?.canCollectCash === true;
 let stop = null, menu = null;
-const nav = bottomNav([['tabs', 'My tabs'], ['tables', 'Bookings'], ['report', 'My report']], k => { location.hash = k; });
+const nav = bottomNav([['tabs', 'My tables'], ['tables', 'Bookings'], ['report', 'My report']], k => { location.hash = k; });
 
 function route() {
   if (stop) { stop(); stop = null; }
@@ -30,13 +30,13 @@ const fail = e => { app.innerHTML = `<div class="say bad" role="alert"><b>Couldn
 
 // ── My tabs ──
 async function tabsList() {
-  app.innerHTML = `<h1>My tabs</h1><button class="big" id="newTab">New tab</button><div id="msg"></div><div class="cards" id="list"><div class="loading">Loading…</div></div>`;
+  app.innerHTML = `<h1>My tables</h1><button class="big" id="newTab">Open a table</button><div id="msg"></div><div class="cards" id="list"><div class="loading">Loading…</div></div>`;
   $('#newTab').onclick = newTab;
   stop = every(6000, async () => {
     const { tabs } = await sapi('/api/ops/tabs');
     const open = tabs.filter(t => t.status === 'open'), done = tabs.filter(t => t.status !== 'open');
     nav.setDot('tabs', open.length || 0);
-    $('#list').innerHTML = (open.length ? open.map(card).join('') : '<div class="empty-box"><b>No open tabs</b>Tap “New tab” when a table orders.</div>')
+    $('#list').innerHTML = (open.length ? open.map(card).join('') : '<div class="empty-box"><b>No open tables</b>Tap “Open a table” when a table or customer orders.</div>')
       + (done.length ? `<h2>Closed tonight</h2>${done.map(card).join('')}` : '');
     $$('[data-tab]').forEach(b => b.onclick = () => { location.hash = `tab/${b.dataset.tab}`; });
   });
@@ -49,16 +49,15 @@ async function newTab() {
   let tables = [], stations = [];
   try { [tables, stations] = await Promise.all([sapi('/api/ops/tables').then(d => d.tables).catch(() => []), sapi('/api/ops/products').then(d => d.stations)]); } catch { /* the form still works */ }
   const booked = tables.filter(t => t.arrived).map(t => t.tableNumber || t.firstName).filter(Boolean);
-  const { box, close } = sheet(`<h2>New tab</h2>
+  const { box, close } = sheet(`<h2>Open a table</h2>
     <div class="sfield"><label for="ntTable">Table number or place</label><input id="ntTable" maxlength="30" autocomplete="off" placeholder="e.g. 5, VIP 2, Bar side"></div>
     ${booked.length ? `<div class="chips" aria-label="Booked tables here tonight">${booked.map(b => `<button type="button" data-t="${esc(b)}">${esc(b)}</button>`).join('')}</div>` : ''}
     <button type="button" class="mid" id="ntWalk">Walk-in (no table)</button>
     ${stations.length > 1 ? `<div class="sfield"><label for="ntBar">Which bar makes the drinks?</label><select id="ntBar">${stations.map(s => `<option value="${esc(s.id)}">${esc(s.name)}</option>`).join('')}</select></div>` : ''}
-    <details class="fold"><summary>Customer’s name or phone (optional)</summary>
-      <div class="sfield" style="margin-top:10px"><label for="ntName">Name</label><input id="ntName" maxlength="60" autocomplete="off"></div>
-      <div class="sfield"><label for="ntPhone">Phone (to text them the bill)</label><input id="ntPhone" type="tel" inputmode="tel" placeholder="024 123 4567"></div></details>
+    <div class="sfield"><label for="ntName">Customer’s name (optional)</label><input id="ntName" maxlength="60" autocomplete="off"></div>
+    <div class="sfield"><label for="ntPhone">Customer’s phone, to text the invoice (optional)</label><input id="ntPhone" type="tel" inputmode="tel" placeholder="024 123 4567"></div>
     <div id="ntMsg"></div>
-    <button class="big" id="ntGo">Open tab and add drinks</button><button class="big ghost" data-close>Cancel</button>`, { label: 'New tab' });
+    <button class="big" id="ntGo">Open tab and add drinks</button><button class="big ghost" data-close>Cancel</button>`, { label: 'Open a table' });
   let walkIn = false;
   $$('[data-t]', box).forEach(b => b.onclick = () => { $('#ntTable', box).value = b.dataset.t; walkIn = false; });
   $('#ntWalk', box).onclick = () => { walkIn = true; $('#ntTable', box).value = ''; open(); };
@@ -80,7 +79,7 @@ async function tabView(id) {
   const draw = async () => {
     t = (await sapi(`/api/ops/tab?id=${encodeURIComponent(id)}`)).tab;
     const b = t.bill, delivered = t.rounds.every(r => ['delivered', 'cancelled'].includes(r.status));
-    app.innerHTML = `<button class="link" data-back style="justify-self:start">← My tabs</button>
+    app.innerHTML = `<button class="link" data-back style="justify-self:start">← My tables</button>
       <div class="row" style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap"><h1>${esc(t.label)} · ${esc(t.table)}</h1>${st(t.payStatus, t.payLabel)}</div>
       ${t.customerName ? `<p class="lead">${esc(t.customerName)}${t.customerPhoneHint ? ` · ${esc(t.customerPhoneHint)}` : ''}</p>` : ''}
       <div id="msg"></div>
@@ -91,17 +90,19 @@ async function tabView(id) {
       <div class="lines-list">${b.lines.map(l => `<div class="ln"><span>${l.qty} × ${esc(l.name)}</span><span>${money(l.amountPesewas)}</span></div>`).join('')}
         ${b.discountPesewas ? `<div class="ln"><span>Discount</span><span>−${money(b.discountPesewas)}</span></div>` : ''}
         <div class="ln total"><span>Total</span><span>${money(b.totalPesewas)}</span></div>
-        <div class="ln"><span>Paid${t.payments.length ? ` <small>(${t.payments.map(p => `${p.method === 'cash' ? 'cash' : 'MoMo/card'} ${money(p.amountPesewas)}`).join(', ')})</small>` : ''}</span><span>${money(b.paidPesewas)}</span></div>
+        <div class="ln"><span>Paid${t.payments.length ? ` <small>(${t.payments.map(p => `${p.method === 'cash' ? 'cash' : 'MoMo'} ${money(p.amountPesewas)}`).join(', ')})</small>` : ''}</span><span>${money(b.paidPesewas)}</span></div>
         <div class="ln total"><span>Still to pay</span><span>${money(b.balancePesewas)}</span></div></div>
       ${t.status === 'open' ? `<div class="btn-row">
-        ${b.balancePesewas ? '<button class="mid red" id="showBill">Show bill to customer</button>' : ''}
-        ${b.balancePesewas && canCash ? '<button class="mid" id="cash">Take cash</button>' : ''}
+        ${b.balancePesewas && canCash ? '<button class="mid red" id="cash">Customer paid</button>' : ''}
+        ${b.totalPesewas ? '<button class="mid" id="invoice">Send invoice (SMS)</button>' : ''}
+        ${b.balancePesewas ? '<button class="mid" id="showBill">Show bill (QR)</button>' : ''}
         <button class="mid" id="ask">Ask the manager</button>
         ${!b.balancePesewas && delivered && b.totalPesewas ? '<button class="mid okc" id="close">Close tab</button>' : ''}</div>` : ''}`;
     $('[data-back]').onclick = () => { location.hash = 'tabs'; };
     $('#add') && ($('#add').onclick = () => { location.hash = `add/${t.id}`; });
     $('#showBill') && ($('#showBill').onclick = () => showBill(t));
-    $('#cash') && ($('#cash').onclick = () => takeCash(t));
+    $('#cash') && ($('#cash').onclick = () => takePayment(t));
+    $('#invoice') && ($('#invoice').onclick = () => sendInvoice(t));
     $('#ask') && ($('#ask').onclick = () => askManager(t));
     $('#close') && ($('#close').onclick = async () => { try { await sapi('/api/ops/tabs/close', { method: 'POST', body: { tabId: t.id } }); location.hash = 'tabs'; } catch (e) { say($('#msg'), e.message, 'bad'); } });
     $$('[data-act]').forEach(btn => btn.onclick = () => roundAct(btn.dataset.r, btn.dataset.act, t));
@@ -110,7 +111,9 @@ async function tabView(id) {
 }
 const roundCard = r => {
   const back = r.lines.some(l => l.returnPending);
-  const acts = r.status === 'waiting' ? `<button class="mid" data-r="${esc(r.id)}" data-act="cancel">Cancel</button>`
+  const took = `<button class="mid" data-r="${esc(r.id)}" data-act="took">I took them from the bar</button>`;
+  const acts = r.status === 'waiting' ? `<button class="mid" data-r="${esc(r.id)}" data-act="cancel">Cancel</button>${took}`
+    : ['preparing', 'ready'].includes(r.status) ? took
     : r.status === 'handed' ? `<button class="mid okc" data-r="${esc(r.id)}" data-act="received">I have them</button><button class="mid red" data-r="${esc(r.id)}" data-act="delivered">Delivered</button>`
       : r.status === 'received' ? `<button class="mid red" data-r="${esc(r.id)}" data-act="delivered">Delivered</button><button class="mid" data-r="${esc(r.id)}" data-act="return">Send back to bar</button><button class="mid warn" data-r="${esc(r.id)}" data-act="broken">Broken</button>`
         : '';
@@ -157,13 +160,52 @@ async function showBill(t) {
   };
 }
 
-function takeCash(t) {
-  const { box, close } = sheet(`<h2>Take cash · ${esc(t.label)}</h2>
-    ${moneyField('tcAmt', 'Cash received (GHS)', (t.bill.balancePesewas / 100).toString(), `Still to pay: ${money(t.bill.balancePesewas)}. Give change from the cash.`)}
-    <div id="tcMsg"></div><button class="big" id="tcGo">Record cash</button><button class="big ghost" data-close>Cancel</button>`);
+// The invoice by text: to the phone on the table (or one typed now). Lists every drink and the total.
+function sendInvoice(t) {
+  const { box, close } = sheet(`<h2>Send invoice · ${esc(t.label)}</h2>
+    <p class="muted" style="margin:0">A text with every drink, the total, and a link to pay with MoMo or card.</p>
+    <div class="sfield"><label for="ivPhone">Customer’s phone</label><input id="ivPhone" type="tel" inputmode="tel" placeholder="${esc(t.customerPhoneHint || '024 123 4567')}"><span class="hint">${t.customerPhoneHint ? `Leave empty to use ${esc(t.customerPhoneHint)}.` : 'Ghana number.'}</span></div>
+    <div id="ivMsg"></div><button class="big" id="ivGo">Send invoice</button><button class="big ghost" data-close>Cancel</button>`, { label: 'Send invoice' });
+  $('#ivGo', box).onclick = async () => {
+    const phone = $('#ivPhone', box).value.trim();
+    if (phone && !normalizePhone(phone)) return say($('#ivMsg', box), 'That phone number doesn’t look right.', 'bad');
+    if (!phone && !t.customerPhoneHint) return say($('#ivMsg', box), 'Enter the customer’s phone number.', 'bad');
+    try {
+      const r = await busy($('#ivGo', box), () => sapi('/api/ops/tabs/text-bill', { method: 'POST', body: { tabId: t.id, phone } }), 'Sending…');
+      if (!r.sent) return say($('#ivMsg', box), 'The text didn’t send. Use “Show bill (QR)” instead.', 'bad');
+      close(); say($('#msg'), `Invoice texted to ${r.phoneHint}.`);
+    } catch (e) { say($('#ivMsg', box), e.message, 'bad'); }
+  };
+}
+
+// "Customer paid": cash (into your cash bag) or MoMo sent to the club's number (with its ID).
+function takePayment(t) {
+  const { box, close } = sheet(`<h2>Customer paid · ${esc(t.label)}</h2>
+    <div class="seg" role="radiogroup" aria-label="How they paid"><button type="button" class="mid on" data-m="cash" role="radio" aria-checked="true">Cash</button><button type="button" class="mid" data-m="momo" role="radio" aria-checked="false">MoMo</button></div>
+    ${moneyField('tcAmt', 'Amount paid (GHS)', (t.bill.balancePesewas / 100).toString(), `Still to pay: ${money(t.bill.balancePesewas)}.`)}
+    <div id="tcMomo" hidden>
+      <div class="sfield"><label for="tcRef">MoMo transaction ID</label><input id="tcRef" maxlength="40" autocomplete="off" autocapitalize="characters" placeholder="From the MoMo text, e.g. 51234567890"><span class="hint">Check the customer’s MoMo text, or the club’s MoMo phone.</span></div>
+      <div class="sfield"><label for="tcFrom">Paid from number (optional)</label><input id="tcFrom" type="tel" inputmode="tel" placeholder="024 123 4567"></div>
+    </div>
+    <p class="muted" id="tcHint" style="margin:0">Give change from the cash. Cash you take goes in your report.</p>
+    <div id="tcMsg"></div><button class="big" id="tcGo">Record cash</button><button class="big ghost" data-close>Cancel</button>`, { label: 'Customer paid' });
+  let method = 'cash';
+  $$('[data-m]', box).forEach(b => b.onclick = () => {
+    method = b.dataset.m;
+    $$('[data-m]', box).forEach(x => { x.classList.toggle('on', x === b); x.setAttribute('aria-checked', String(x === b)); });
+    $('#tcMomo', box).hidden = method !== 'momo';
+    $('#tcHint', box).textContent = method === 'momo' ? 'Only record MoMo you can see arrived on the club’s number. Finance checks every ID.' : 'Give change from the cash. Cash you take goes in your report.';
+    $('#tcGo', box).textContent = method === 'momo' ? 'Record MoMo' : 'Record cash';
+    if (method === 'momo') $('#tcRef', box).focus();
+  });
   $('#tcGo', box).onclick = async () => {
-    try { const r = await busy($('#tcGo', box), () => sapi('/api/ops/tabs/cash', { method: 'POST', body: { tabId: t.id, amountPesewas: ghsIn($('#tcAmt', box).value) } })); close(); route(); setTimeout(() => say($('#msg'), r.balancePesewas ? `Cash recorded. ${money(r.balancePesewas)} still to pay.` : 'Cash recorded. The tab is paid.'), 50); }
-    catch (e) { say($('#tcMsg', box), e.message, 'bad'); }
+    const body = { tabId: t.id, method, amountPesewas: ghsIn($('#tcAmt', box).value) };
+    if (method === 'momo') Object.assign(body, { momoRef: $('#tcRef', box).value, momoFrom: $('#tcFrom', box).value.trim() || undefined });
+    try {
+      const r = await busy($('#tcGo', box), () => sapi('/api/ops/tabs/pay', { method: 'POST', body }));
+      const what = method === 'momo' ? 'MoMo recorded.' : 'Cash recorded.';
+      close(); route(); setTimeout(() => say($('#msg'), r.balancePesewas ? `${what} ${money(r.balancePesewas)} still to pay.` : `${what} The table is paid.`), 50);
+    } catch (e) { say($('#tcMsg', box), e.message, 'bad'); }
   };
 }
 
@@ -240,6 +282,7 @@ async function report() {
       <div class="good"><span>Bills paid</span><b>${f.billsPaid}</b><small class="muted">${money(f.paidPesewas)}</small></div>
       <div class="${f.billsUnpaid ? 'bad' : 'good'}"><span>Bills unpaid</span><b>${f.billsUnpaid}</b><small class="muted">${money(f.unpaidPesewas)}</small></div>
       ${canCash || f.cashCollectedPesewas ? `<div><span>Cash you collected</span><b>${money(f.cashCollectedPesewas)}</b></div>` : ''}
+      ${f.momoRecordedPesewas ? `<div><span>MoMo you recorded</span><b>${money(f.momoRecordedPesewas)}</b></div>` : ''}
       <div><span>Waiting at the bar</span><b>${f.waitingAtBar}</b></div></div>
     ${f.withYou.length ? `<div class="say bad"><b>Still with you</b>${f.withYou.map(x => `${x.qty} × ${esc(x.name)}`).join(', ')}. Deliver them, send them back, or record them as broken.</div>` : ''}
     ${f.unpaidTabs.length ? `<div class="say warn"><b>Unpaid bills</b>${f.unpaidTabs.map(x => `Tab ${x.number} (${esc(x.table)}): ${money(x.balancePesewas)}`).join(' · ')}</div>` : ''}

@@ -68,7 +68,7 @@ Before the first prize of real value, confirm the draw's framing with the club (
 ## 8. Automatic deploys (after the first manual go-live)
 
 Once the steps above have been done by hand once, routine changes ship from GitHub. On every push to `main`, `.github/workflows/ci.yml` runs all the checks. If they pass, it deploys what changed:
-- `worker/**` changed → `wrangler deploy` (Worker secrets stay in Cloudflare and aren't touched)
+- every push to `main` → `wrangler deploy` (the site deploys itself on every push, so the Worker does too and they never drift apart; Worker secrets stay in Cloudflare and aren't touched)
 - `firebase.json` or `firebase/firestore.rules` / `firebase/storage.rules` changed → `firebase deploy --only firestore:rules,storage`
 - `public/**` is deployed by the Cloudflare Pages project itself, which is connected to this repo.
 

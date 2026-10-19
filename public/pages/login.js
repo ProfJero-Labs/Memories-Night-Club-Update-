@@ -29,19 +29,24 @@ $('#toEmail').onclick = () => show('#f');
 $('#showPin').onclick = e => { const on = $('#pin').type === 'password'; $('#pin').type = on ? 'text' : 'password'; e.target.textContent = on ? 'Hide' : 'Show'; e.target.setAttribute('aria-pressed', String(on)); };
 
 const busy = (btn, on, text) => { btn.disabled = on; if (text) btn.textContent = text; };
+// The site and the Worker update separately: if the Worker online is older than this page, its
+// PIN sign-in doesn't exist yet. Say so plainly (and point to email sign-in) instead of "Not found".
+const explain = e => (e.status === 404 ? 'Phone and PIN sign-in isn’t switched on yet (the system is being updated). Use “Sign in with email instead”, or try again later. Tell your manager.' : e.message);
 async function finish(d) { route(await signInWithToken(d.token)); }
 
 // 1. Phone + PIN
 $('#pinForm').onsubmit = async ev => {
   ev.preventDefault(); msg('');
   const phone = $('#phone').value.trim(), pin = $('#pin').value.trim();
+  // An email typed in the phone box: that person has an email account. Take them to it.
+  if (phone.includes('@')) { show('#f'); $('#email').value = phone; $('#pw').focus(); msg('That’s an email address: sign in with your email and password here.', true); return; }
   if (!normalizePhone(phone)) { msg('Enter your phone number, e.g. 024 123 4567.'); return $('#phone').focus(); }
   if (!/^\d{4,6}$/.test(pin)) { msg('Enter your PIN (4 or 6 numbers).'); return $('#pin').focus(); }
   const btn = $('#go'); busy(btn, true, 'Signing in…');
   try { remember(phone); await finish(await api('/api/staff-auth/sign-in', { method: 'POST', body: { phone, pin } })); }
   catch (e) {
     busy(btn, false, 'Sign in'); $('#pin').value = '';
-    msg(e.message); $('#pin').focus();
+    msg(explain(e)); $('#pin').focus();
   }
 };
 
@@ -52,7 +57,7 @@ $('#sendPin').onclick = async () => {
   if (!normalizePhone(phone)) { msg('Type your phone number first, then tap “Text me one”.'); return $('#phone').focus(); }
   const btn = $('#sendPin'); busy(btn, true, 'Sending…');
   try { const r = await api('/api/staff-auth/send-pin', { method: 'POST', body: { phone } }); remember(phone); msg(r.message, true); $('#pin').value = ''; $('#pin').focus(); }
-  catch (e) { msg(e.message); }
+  catch (e) { msg(explain(e)); }
   busy(btn, false, 'First time, or forgot your PIN? Text me one');
 };
 
