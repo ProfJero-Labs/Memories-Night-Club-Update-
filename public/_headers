@@ -34,6 +34,9 @@
 /finance.html
   Referrer-Policy: no-referrer
   X-Robots-Tag: noindex
+/night.html
+  Referrer-Policy: no-referrer
+  X-Robots-Tag: noindex
 /bill.html
   Referrer-Policy: no-referrer
   X-Robots-Tag: noindex

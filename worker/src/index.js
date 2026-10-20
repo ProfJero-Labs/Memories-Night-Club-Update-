@@ -2,7 +2,7 @@
 // writes business data. See docs/ARCHITECTURE.md for the route map and role matrix.
 import { cors, ok, fail, reply, throttled, allowedOrigin } from './lib/http.js';
 import { logError } from './lib/log.js';
-import { verifyStaff, requireRole, MONEY, DOOR } from './lib/auth.js';
+import { verifyStaff, requireRole, ADMIN, MONEY, DOOR } from './lib/auth.js';
 import { smsRequest } from './lib/notify.js';
 import { getSettings, publicEvents, eventBundle, calendar, createPrivateRequest, publicTicket } from './public.js';
 import { initiateTicket, initiateTable, startInstallment, topupInstallment, lookupInstallments, textOrderCodes, textTicketLinks, resendTicketLink, startPhoneLookup, verifyPhoneLookup, NEUTRAL_PHONE_CODE, NEUTRAL_CODES, NEUTRAL_LINK, NEUTRAL_TICKETS, fulfill, checkoutStatus, forfeitStalePlans } from './checkout.js';
@@ -234,7 +234,7 @@ async function route(req, env, ctx) {
   if (m === 'POST' && p === '/api/admin/refunds/mark') return reply(req, env, await admin.markRefunded(env, await body(req), user));
   if (m === 'GET' && p === '/api/admin/installments') return reply(req, env, await admin.adminInstallments(env, user));
   if (m === 'POST' && p === '/api/admin/installments/resend-sms') { if (await throttled(req, env, 'sms', 'strict')) return tooMany(req, env); return reply(req, env, await admin.resendInstallmentSms(env, await body(req), user)); }
-  if (m === 'GET' && p === '/api/admin/settings') { if (!requireRole(user, MONEY)) return fail(req, env, 'Forbidden.', 403); return ok(req, env, { settings: await getSettings(env) }); }
+  if (m === 'GET' && p === '/api/admin/settings') { if (!requireRole(user, ADMIN)) return fail(req, env, 'Forbidden.', 403); return ok(req, env, { settings: await getSettings(env) }); }
   if (m === 'POST' && p === '/api/admin/settings') return reply(req, env, await admin.updateSettings(env, await body(req), user));
   if (m === 'GET' && p === '/api/admin/organisers') return reply(req, env, await admin.listOrganisers(env, user));
   if (m === 'GET' && p === '/api/admin/staff') return reply(req, env, await admin.listStaff(env, user));

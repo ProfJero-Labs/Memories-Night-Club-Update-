@@ -200,7 +200,7 @@ test('comps: recorded against who issued them, out of the draw unless marked in'
   const { store, env } = createMockEnv();
   seedNight(store);
   store.seed('raffles', 'evt_night1', { eventId: 'night1', prize: 'x', cap: 20, spotsTaken: 0, enabled: true, public: true, status: 'open' });
-  const mgr = { uid: 'mgr-1', role: 'manager' };
+  const mgr = { uid: 'mgr-1', role: 'eventManager' };
   const plain = await issueComp(env, { eventId: 'night1', name: 'Table of Six', admits: 6 }, mgr);
   const t = store.get('tickets', plain.token).fields;
   assert.equal(t.comp, true); assert.equal(t.issuedBy, 'mgr-1'); assert.equal(t.admitCount, 6); assert.equal(t.inDraw, false);

@@ -3,9 +3,12 @@ import { getDoc } from './firestore.js';
 
 // Who can do what. A person's role is on their staff record (users/{uid}); the sign-in token also
 // carries it, for the Firestore and Storage rules. superAdmin also carries admin:true.
-//   superAdmin   system access and technical settings (the only role that can make admins)
-//   director     the club's directors: a manager's access, plus adding managers and finance
-//   manager      runs the night: everything in the control room, staff, approvals
+//   superAdmin   administrator: all technical control (site, nights, settings, system) and the
+//                only role that can make admins
+//   director     the club's directors: money and reports (the night's sales, ticket money,
+//                refunds, end-of-day reports), plus adding managers and finance
+//   manager      runs the night: drinks, tables, money expected and received, approvals, closing
+//                the night, staff. No technical areas (site, nights, settings)
 //   finance      prices, stock, money, reports and the end-of-day report
 //   eventManager nights, tickets, tables, promos, bar setup
 //   doorStaff    front office: tickets, entry, table bookings and arrivals, customer issues
@@ -15,8 +18,10 @@ import { getDoc } from './firestore.js';
 //   cashier      money received: cash payments, the cash shift
 //   organiser    an outside organiser: their own nights
 export const STAFF_ROLES = ['superAdmin', 'director', 'manager', 'finance', 'eventManager', 'doorStaff', 'security', 'barStaff', 'waitStaff', 'cashier', 'organiser'];
-export const CMS = ['superAdmin', 'director', 'manager', 'eventManager'];     // run the site
-export const MONEY = ['superAdmin', 'director', 'manager'];                    // settings, SMS, installments, people
+export const ADMIN = ['superAdmin'];                                           // site settings, system status
+export const CMS = ['superAdmin', 'eventManager'];                             // run the site: nights, tickets, promos, bar setup
+export const TICKET_MONEY = ['superAdmin', 'director', 'eventManager'];        // ticket sales and payments (read)
+export const MONEY = ['superAdmin', 'director'];                               // refunds, pay in bits, SMS, members, attendance
 export const DOOR = ['superAdmin', 'director', 'manager', 'eventManager', 'doorStaff', 'security', 'organiser'];
 export const STOCK = ['superAdmin', 'director', 'manager', 'finance'];         // products, prices, stock received, reviews
 export const REPORTS = ['superAdmin', 'director', 'manager', 'finance'];       // today's sales, staff reports, end of day

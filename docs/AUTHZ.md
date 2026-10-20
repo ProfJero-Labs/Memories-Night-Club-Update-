@@ -86,3 +86,14 @@ removal applies at once. Each row is covered by `worker/test/staffauth.test.js` 
 | `POST /api/ops/eod/sign-off` | Finance, director, admin; not the person who closed the night |
 | `GET/POST /api/ops/tables`, `/incidents`, `/front-report` | Front office, security (no report), managers; waiters and bar see tables and tick bottles served |
 | `GET /api/guest/bill/:token`, `POST /api/guest/bill/:token/pay` | The customer's bill link: read and pay only; prices from the Worker |
+
+## Who sees what (from October 2026)
+
+| Area | Who | Routes |
+|---|---|---|
+| The site: nights, tickets, promos, draws, bar setup, comps, event requests, uploads | System admin, events manager | `/api/admin/events…`, `/ticket-types`, `/table-packages`, `/bottles`, `/comps`, `/raffles`, `/requests`, `/promos`, `/bar/setup`; Storage uploads |
+| Site settings, system health | System admin | `/api/admin/settings`, `/api/admin/system` |
+| Ticket money (read) | System admin, director, events manager | `/api/admin/overview`, `/orders`, `/payments`, `/events` (list), `/settlements` (list) |
+| Money: refunds, pay in bits, SMS, members, attendance, organiser settlements | System admin, director | `/api/admin/refunds…`, `/installments…`, `/sms…`, `/members…`, `/attendance`, `/settlements` |
+| The night: sales, tables, approvals, closing, drinks & prices, stock, staff | System admin, director, manager (finance for reports and stock) | `/api/ops/*`, `/api/admin/people*` |
+

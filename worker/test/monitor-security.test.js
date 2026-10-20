@@ -29,17 +29,18 @@ test('a run of refused staff requests from one address alerts; a few do not', as
   assert.match(secTexts(store)[0].message, /15 refused staff requests/);
 });
 
-test('System panel: the last payment check and recent alerts, managers only; a stale check is flagged', async () => {
+test('System panel: the last payment check and recent alerts, the administrator only; a stale check is flagged', async () => {
   const { store, env } = createMockEnv();
   env.ALERT_PHONES = '0240000001';
   store.paystackTransactions = [{ reference: 'MEM-1700000000000-NOREC', amount: 5000 }];
   await reconcilePayments(env);
   const get = async claims => { const r = await worker.fetch(new Request('https://api.test/api/admin/system', { headers: { Authorization: `Bearer ${await idToken(claims)}` } }), env); return { status: r.status, data: await r.json() }; };
   assert.equal((await get({ role: 'doorStaff' })).status, 403);
-  const { data } = await get({ role: 'manager' });
+  assert.equal((await get({ role: 'manager' })).status, 403, 'a manager doesn’t see the technical side');
+  const { data } = await get({ role: 'superAdmin', admin: true });
   assert.equal(data.reconcile.ok, true); assert.equal(data.reconcile.stale, false);
   assert.equal(data.alerts.length, 1); assert.match(data.alerts[0].text, /ACTION NEEDED/);
   assert.equal(data.configured.alertPhones, true); assert.equal(data.configured.sentry, false);
   store.seed('system', 'reconcile', { ...store.get('system', 'reconcile').fields, at: new Date(Date.now() - 45 * 60_000).toISOString() });
-  assert.equal((await get({ role: 'manager' })).data.reconcile.stale, true, 'the check stopped running');
+  assert.equal((await get({ role: 'superAdmin', admin: true })).data.reconcile.stale, true, 'the check stopped running');
 });

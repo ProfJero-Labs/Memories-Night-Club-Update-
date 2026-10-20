@@ -95,7 +95,8 @@ test('hero videos: site staff only, MP4/WebM/MOV only, under 60 MB', async () =>
   await assertFails(uploadBytes(ref(st('door', { role: 'doorStaff' }), 'event-art/v.mp4'), clip, { contentType: 'video/mp4' }));
   await assertFails(uploadBytes(ref(st('em', { role: 'eventManager' }), 'event-art/v.avi'), clip, { contentType: 'video/x-msvideo' }));
   await assertSucceeds(uploadBytes(ref(st('em', { role: 'eventManager' }), 'event-art/v.mp4'), clip, { contentType: 'video/mp4' }));
-  await assertSucceeds(uploadBytes(ref(st('mgr', { role: 'manager' }), 'event-art/v.webm'), clip, { contentType: 'video/webm' }));
+  await assertSucceeds(uploadBytes(ref(st('adm', { role: 'superAdmin', admin: true }), 'event-art/v.webm'), clip, { contentType: 'video/webm' }));
+  await assertFails(uploadBytes(ref(st('mgr', { role: 'manager' }), 'event-art/v2.webm'), clip, { contentType: 'video/webm' }), 'managers run the night; the site is the administrator’s');
   await assertFails(uploadBytes(ref(st('em', { role: 'eventManager' }), 'event-art/big.jpg'), new Uint8Array(9 * 1024 * 1024), { contentType: 'image/jpeg' }), 'images still capped at 8 MB');
   await assertSucceeds(getBytes(ref(st(), 'event-art/v.mp4')));
 });

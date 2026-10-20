@@ -37,7 +37,9 @@ training.
 | Cashier | **Cashier** | Find a bill, record cash, receipts; My cash: open with the float, put cash in the safe, refund or pay out (manager approves), count the cash at the end |
 | Front office | **Door** | Entrance (scan tickets, search), staff and members (code in their app, or *let in by name* if their phone is dead), Tables (arrivals, table number, people), Issues, end-of-night Report |
 | Security | **Door** | Entrance and Issues only |
-| Manager / director | **Control room → Today’s sales** | Today’s sales, Close the night, Approvals, Drinks & prices, Stock, End-of-day reports, Staff, everything else in the control room |
+| Manager | **Tonight** (a simple till screen) | Tonight: money expected, received and still owed (cash, MoMo, paid on phone), *Needs you* (approve or refuse with one tap), the tables, *Close the night*. Bottom: Tonight · Tables · Staff · More. *More*: tonight in detail, approvals, drinks & prices, stock, past nights. No technical areas. |
+| Director | **Tonight**, plus **Reports** | The same Tonight and Tables, *Reports* (end-of-day, sign off). *More* adds staff, **ticket money** (control room: tickets sold, payments, orders, pay in bits, refunds) and members & attendance. |
+| System admin | **Control room** | Everything technical: the site, nights, tickets, promos, settings, system health, bar setup, and every report. |
 | Finance officer | **Finance** | Today, Check (staff reports, cash and stock differences, approvals), Stock (received, counts), Reports (end of day, sign off, print, CSV), Prices (and who changed what) |
 | Events manager | Control room | Nights, tickets, tables, promos, bar setup (no money reports) |
 

@@ -2,7 +2,7 @@
 // validated, and audit-logged. The browser never writes Firestore directly.
 import { getDoc, setDoc, deleteDoc, listDocs, queryWhere, queryRecent, commitTx, updateWrite, withTransaction, googleAccessToken } from './lib/firestore.js';
 import { now, id, clean, normalizePhone, ticketToken, displayCode, dateKey, firstName, TICKET_STYLES, cleanTicketColors, generatePassword } from './lib/util.js';
-import { requireRole, CMS, MONEY, STAFF_ROLES, uidOf, forgetStaffRecord } from './lib/auth.js';
+import { requireRole, ADMIN, CMS, TICKET_MONEY, MONEY, STAFF_ROLES, uidOf, forgetStaffRecord } from './lib/auth.js';
 import { sendSms, sendEmail, siteUrl } from './lib/notify.js';
 import { getSettings, DEFAULT_SETTINGS, SETTINGS_FIELDS, isOver, autoStyleFor } from './public.js';
 import { openRaffleForEvent, raffleSpotWrites } from './raffle.js';
@@ -39,7 +39,7 @@ export const DEFAULT_TABLE_PACKAGES = [
 
 // ── Overview ──
 export async function adminOverview(env, user) {
-  if (!requireRole(user, CMS)) return FORBIDDEN;
+  if (!requireRole(user, TICKET_MONEY)) return FORBIDDEN;
   const [events, orders, checkins, requests, plans, checkouts] = await Promise.all([
     listDocs(env, 'events'),
     listDocs(env, 'orders'),
@@ -112,7 +112,7 @@ export async function adminOverview(env, user) {
 
 // ── Nights ──
 export async function listEvents(env, user) {
-  if (!requireRole(user, CMS)) return FORBIDDEN;
+  if (!requireRole(user, TICKET_MONEY)) return FORBIDDEN;
   const events = (await listDocs(env, 'events')).map(x => ({ id: x.id, ...x.fields })).sort((a, b) => new Date(b.date) - new Date(a.date));
   return { events };
 }
@@ -238,7 +238,7 @@ export async function listBottles(env, user) {
 
 // ── Orders & bookings ──
 export async function listOrders(env, q, user) {
-  if (!requireRole(user, CMS)) return FORBIDDEN;
+  if (!requireRole(user, TICKET_MONEY)) return FORBIDDEN;
   const filters = [];
   if (q.eventId) filters.push({ field: 'eventId', value: q.eventId });
   if (q.kind) filters.push({ field: 'kind', value: q.kind });
@@ -378,7 +378,7 @@ export async function resendInstallmentSms(env, b, user) {
 
 // ── Settings ──
 export async function updateSettings(env, b, user) {
-  if (!requireRole(user, MONEY)) return FORBIDDEN;
+  if (!requireRole(user, ADMIN)) return FORBIDDEN;
   const cur = await getSettings(env);
   const data = {};
   for (const [k, max] of Object.entries(SETTINGS_FIELDS)) if (b?.[k] !== undefined) data[k] = clean(b[k], max);
@@ -565,7 +565,7 @@ export async function listSettlements(env, q, user) {
 // Recent checkout attempts, for the Payments tab. Confirmed orders live in `orders` and are read
 // separately. This list is deliberately read-only: it's a view, not a ledger.
 export async function listPendingCheckouts(env, q, user) {
-  if (!requireRole(user, CMS)) return FORBIDDEN;
+  if (!requireRole(user, TICKET_MONEY)) return FORBIDDEN;
   const docs = await listDocs(env, 'pending_checkouts');
   const cutoffMs = Number(q?.sinceMs) || 24 * 60 * 60 * 1000;
   const from = Date.now() - cutoffMs;
@@ -595,7 +595,7 @@ export async function listPendingCheckouts(env, q, user) {
 // in the last 7 days. If the check is more than 30 minutes old, the panel says so: the cron, or the
 // Worker, has stopped.
 export async function systemStatus(env, user) {
-  if (!requireRole(user, MONEY)) return FORBIDDEN;
+  if (!requireRole(user, ADMIN)) return FORBIDDEN;
   const [rec, alerts] = await Promise.all([
     getDoc(env, 'system', 'reconcile'),
     queryRecent(env, 'recon_alerts', 'at', new Date(Date.now() - 7 * 864e5), 30),

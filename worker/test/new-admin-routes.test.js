@@ -23,7 +23,7 @@ test('updateSettings applies only the whitelisted fields, and getSettings reflec
   const { env } = createMockEnv();
   const r = await updateSettings(env, {
     phone: '0555555555', email: 'hello@memoriesnightclub.gh', notAllowed: 'should be ignored',
-  }, { uid: 'staff-1', role: 'manager' });
+  }, { uid: 'staff-1', role: 'superAdmin', admin: true });
   assert.equal(r.error, undefined);
 
   const s = await getSettings(env);
@@ -47,7 +47,7 @@ test('accepting a request SMS+emails the customer exactly once, not on a second 
     name: 'Ama', phone: '0555000111', email: 'ama@example.com',
     eventType: 'Launch', status: 'NEW', createdAt: new Date().toISOString(),
   });
-  const admin = { uid: 'staff-1', role: 'manager' };
+  const admin = { uid: 'staff-1', role: 'eventManager' };
 
   const r1 = await updatePrivateRequest(env, 'req1', { status: 'ACCEPTED' }, admin);
   assert.equal(r1.error, undefined);
@@ -104,7 +104,7 @@ test('adminInstallments lists every plan, newest first', async () => {
   store.seed('installment_plans', 'MEM-OLD1', { buyerName: 'Old Plan', createdAt: '2024-01-01T00:00:00.000Z', status: 'active' });
   store.seed('installment_plans', 'MEM-NEW1', { buyerName: 'New Plan', createdAt: '2025-06-01T00:00:00.000Z', status: 'active' });
 
-  const d = await adminInstallments(env, { uid: 'm1', role: 'manager' });
+  const d = await adminInstallments(env, { uid: 'm1', role: 'director' });
   assert.equal(d.plans.length, 2);
   assert.equal(d.plans[0].id, 'MEM-NEW1', 'newest plan first');
   assert.equal(d.plans[1].id, 'MEM-OLD1');
