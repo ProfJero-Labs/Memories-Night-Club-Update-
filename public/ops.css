@@ -89,3 +89,25 @@
 /* Two-way choice (Cash / MoMo) */
 .seg { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .seg .mid.on { background: var(--crimson-btn); color: #fff; border-color: transparent; }
+
+/* The night screen (managers, directors): a till, not a control panel */
+.pos { display: grid; gap: 18px; }
+.pos-money { display: grid; gap: 6px; padding: 16px; border: 1px solid var(--line); background: rgba(255,255,255,.03); }
+.pos-money .big-line { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
+.pos-money .big-line span { font-size: 15px; color: var(--muted); }
+.pos-money .big-line b { font: 400 clamp(30px, 9vw, 44px)/1.05 var(--display); letter-spacing: .02em; }
+.pos-money .big-line.good b { color: #6fcfae; } .pos-money .big-line.bad b { color: #ff7a9c; }
+.pos-money .how { margin: 6px 0 0; font-size: 14px; color: var(--muted); }
+.pos h2 { margin: 0 0 8px; font: 400 22px/1 var(--display); text-transform: uppercase; }
+.pos-head { display: flex; justify-content: space-between; align-items: baseline; }
+.pos-need .count { display: inline-grid; place-items: center; min-width: 26px; height: 26px; border-radius: 13px; background: var(--crimson-btn); color: #fff; font: 700 14px/1 var(--sans); vertical-align: middle; }
+.need { display: grid; grid-template-columns: 1fr auto; gap: 10px; align-items: center; padding: 12px 0; border-top: 1px solid var(--line); }
+.need div:first-child { display: grid; gap: 2px; } .need small { color: var(--muted); }
+.need-btns { display: flex; gap: 8px; } .need-btns .mid { min-width: 56px; font-size: 20px; }
+.pos-tables { display: grid; gap: 8px; }
+.pos-row { display: flex; justify-content: space-between; align-items: center; gap: 12px; width: 100%; text-align: left; padding: 14px; border: 1px solid var(--line); background: transparent; color: inherit; font: inherit; min-height: 64px; }
+.pos-row .where { display: grid; gap: 2px; font-weight: 700; font-size: 18px; } .pos-row .where small { font-weight: 400; font-size: 13px; color: var(--muted); }
+.pos-row .amt { display: grid; justify-items: end; gap: 4px; font-weight: 700; font-size: 18px; }
+.more-list { display: grid; gap: 8px; }
+.more-list button { display: grid; gap: 2px; text-align: left; padding: 14px; border: 1px solid var(--line); background: transparent; color: inherit; font: inherit; min-height: 60px; }
+.more-list button span { font-size: 13px; color: var(--muted); }

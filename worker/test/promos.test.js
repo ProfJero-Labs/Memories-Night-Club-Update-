@@ -22,7 +22,7 @@ function setup() {
   };
   return { store, env, call };
 }
-const MANAGER = { role: 'manager' };
+const MANAGER = { role: 'eventManager' };
 const addPromo = (ctx, body) => ctx.call('POST', '/api/admin/promos', { claims: MANAGER, body: { eventId: 'n1', ...body } });
 const buy = (ctx, extra = {}) => ctx.call('POST', '/api/checkout/initiate', { body: { eventId: 'n1', ticketTypeId: 'reg', quantity: 1, buyerName: 'Ama', buyerPhone: '0241234567', ...extra } });
 
@@ -118,13 +118,14 @@ test('only the control room runs promos; bad promos are refused with a clear rea
   const ctx = setup();
   assert.equal((await ctx.call('POST', '/api/admin/promos', { claims: { role: 'doorStaff' }, body: { eventId: 'n1', name: 'X', kind: 'percent', value: 10 } })).status, 403);
   assert.equal((await ctx.call('GET', '/api/admin/promos?eventId=n1', { claims: { role: 'organiser' } })).status, 403);
+  for (const role of ['manager', 'director']) assert.equal((await ctx.call('POST', '/api/admin/promos', { claims: { role }, body: { eventId: 'n1', name: 'X', kind: 'percent', value: 10 } })).status, 403, `${role}: promos are set up by the administrator and the events manager`);
   assert.match((await addPromo(ctx, { name: 'Free', kind: 'percent', value: 100 })).data.error, /comps/);
   assert.match((await addPromo(ctx, { name: 'Too much', kind: 'amount', value: 10000, ticketTypeIds: ['reg'] })).data.error, /as much as the ticket/);
   assert.match((await addPromo(ctx, { name: 'Bad', kind: 'bundle', buy: 3, pay: 3 })).data.error, /group deal/);
   assert.match((await addPromo(ctx, { name: 'Back', kind: 'percent', value: 10, startsAt: '2099-02-01T00:00:00Z', endsAt: '2099-01-01T00:00:00Z' })).data.error, /end after/);
   assert.equal((await addPromo(ctx, { name: 'A', kind: 'percent', value: 10, code: 'MEM10' })).status, 200);
   assert.match((await addPromo(ctx, { name: 'B', kind: 'percent', value: 15, code: 'mem10' })).data.error, /already used/);
-  const list = await ctx.call('GET', '/api/admin/promos?eventId=n1', { claims: { role: 'director' } });
+  const list = await ctx.call('GET', '/api/admin/promos?eventId=n1', { claims: { role: 'superAdmin', admin: true } });
   assert.equal(list.data.promos.length, 1); assert.equal(list.data.promos[0].code, 'MEM10');
   assert.ok(ctx.store.list('audit_logs').some(a => a.fields.action === 'PROMO_ADDED'));
 });

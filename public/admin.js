@@ -5,21 +5,26 @@ import { requireStaff, staffHeader, sapi, compressImage, paletteFrom, ghs, pes, 
 import { ticketHTML, designFor, qrSvg } from './ticket-art.js';
 import { openQrMaker, ensureQrCss } from './lib/qrcard.js';
 import * as OV from './lib/ops-views.js';
+import { staffView } from './lib/staff-view.js';
 import { uploadImage } from './firebase.js';
 
-const CMS = ['superAdmin', 'director', 'manager', 'eventManager'], MONEY = ['superAdmin', 'director', 'manager'];
-const user = await requireStaff(CMS);
+// The control room is the administrator's (everything technical), the events manager's (nights,
+// tickets, promos, bar setup) and the directors' (money and reports). Managers use night.html.
+const ADMIN = ['superAdmin'], CMS = ['superAdmin', 'eventManager'], TICKET_MONEY = ['superAdmin', 'director', 'eventManager'], MONEY = ['superAdmin', 'director'];
+const user = await requireStaff(['superAdmin', 'director', 'eventManager']);
 staffHeader(user, 'Control room');
 const can = roles => roles.includes(user.role);
-const REPORTS = ['superAdmin', 'director', 'manager', 'finance'], BOSS = ['superAdmin', 'director', 'manager'];
+// The night itself (sales, closing, approvals, drinks, stock) is on night.html for managers and
+// directors; here it stays for the administrator only.
+const REPORTS = ['superAdmin'], BOSS = ['superAdmin'];
 const TABS = [
-  ['today', 'Today’s sales', REPORTS], ['closing', 'Close the night', BOSS], ['approvals', 'Approvals', REPORTS], ['eod', 'End-of-day reports', REPORTS],
+  ['today', 'Today’s sales', REPORTS], ['closing', 'Close the night', BOSS], ['approvals', 'Approvals', REPORTS], ['eod', 'End-of-day reports', MONEY],
   ['products', 'Drinks & prices', REPORTS], ['stock', 'Stock', REPORTS],
-  ['overview', 'Tickets & nights', CMS], ['nights', 'Nights', CMS], ['payments', 'Payments', CMS], ['bookings', 'Orders', CMS], ['requests', 'Event requests', CMS],
-  ['system', 'System', MONEY], ['members', 'Members', MONEY], ['attendance', 'Attendance', MONEY], ['bits', 'Pay in bits', MONEY], ['refunds', 'Refunds', MONEY], ['counter', 'Bar orders', CMS], ['bar', 'Table bottles', CMS], ['settings', 'Site settings', MONEY], ['staff', 'Staff', MONEY],
+  ['overview', 'Tickets & nights', TICKET_MONEY], ['nights', 'Nights', CMS], ['payments', 'Payments', TICKET_MONEY], ['bookings', 'Orders', TICKET_MONEY], ['requests', 'Event requests', CMS],
+  ['system', 'System', ADMIN], ['members', 'Members', MONEY], ['attendance', 'Attendance', MONEY], ['bits', 'Pay in bits', MONEY], ['refunds', 'Refunds', MONEY], ['counter', 'Bar orders', CMS], ['bar', 'Table bottles', CMS], ['settings', 'Site settings', ADMIN], ['staff', 'Staff', MONEY],
 ].filter(t => can(t[2]));
 // Five places, not ten: related tabs sit together behind one button, with their own row underneath.
-const GROUPS = [['tonight', 'Tonight', ['today', 'closing', 'approvals', 'overview', 'system']], ['nights', 'Nights', ['nights', 'requests']], ['money', 'Money', ['eod', 'payments', 'bookings', 'bits', 'refunds']], ['people', 'People', ['staff', 'members', 'attendance']], ['setup', 'Setup', ['products', 'stock', 'counter', 'bar', 'settings']]]
+const GROUPS = [['tonight', can(CMS) ? 'Tonight' : 'Tickets', ['today', 'closing', 'approvals', 'overview', 'system']], ['nights', 'Nights', ['nights', 'requests']], ['money', 'Money', ['eod', 'payments', 'bookings', 'bits', 'refunds']], ['people', 'People', ['staff', 'members', 'attendance']], ['setup', 'Setup', ['products', 'stock', 'counter', 'bar', 'settings']]]
   .map(([k, l, tabs]) => [k, l, tabs.filter(t => TABS.some(x => x[0] === t))]).filter(([, , tabs]) => tabs.length);
 const groupOf = tab => GROUPS.find(g => g[2].includes(tab)) || GROUPS[0];
 const panel = $('#panel');
@@ -60,7 +65,7 @@ function drawSubtabs(tab) {
   const [g, , tabs] = groupOf(tab);
   $$('[data-group]').forEach(b => b.setAttribute('aria-selected', String(b.dataset.group === g)));
   const items = tabs.length > 1 ? tabs.map(k => `<button type="button" data-tab="${k}" aria-pressed="${k === tab}">${TABS.find(t => t[0] === k)[1]}</button>`) : [];
-  if (g === 'tonight') items.push('<a href="checkin.html">Door ↗</a>');
+  if (g === 'tonight' && can(CMS)) items.push('<a href="checkin.html">Door ↗</a>');
   subtabs.innerHTML = items.join(''); subtabs.hidden = !items.length;
   $$('[data-tab]', subtabs).forEach(b => b.onclick = () => show(b.dataset.tab));
 }
@@ -94,11 +99,11 @@ const stock = () => OV.stockAdminView(panel);
 // ── Overview ──
 async function overview() {
   const d = await sapi('/api/admin/overview');
-  const sys = can(MONEY) ? await sapi('/api/admin/system').catch(() => null) : null;
+  const sys = can(ADMIN) ? await sapi('/api/admin/system').catch(() => null) : null;
   const quick = [['counter', 'Bar orders', 'Menu, bars and table QR codes'], ['members', 'People', 'Staff & members: passes, no tickets'], ['attendance', 'Attendance', 'Who came in, by night'], ['system', 'System health', sys ? health(sys).label : 'Payment checks and alerts']]
     .filter(([t]) => TABS.some(x => x[0] === t));
-  panel.innerHTML = `<h1>Tonight & next</h1>
-  ${quick.length ? `<div class="quick">${quick.map(([t, l, sub]) => `<button type="button" class="quick-btn ${t === 'system' && sys ? health(sys).tone : ''}" data-quick="${t}"><b>${l}</b><span>${esc(sub)}</span></button>`).join('')}<a class="quick-btn" href="checkin.html"><b>Door</b><span>Scan tickets and passes</span></a><a class="quick-btn" href="bar.html"><b>Bar screen</b><span>Paid orders to hand over</span></a></div>` : ''}
+  panel.innerHTML = `<h1>${can(CMS) ? 'Tonight & next' : 'Tickets & money'}</h1>
+  ${quick.length ? `<div class="quick">${quick.map(([t, l, sub]) => `<button type="button" class="quick-btn ${t === 'system' && sys ? health(sys).tone : ''}" data-quick="${t}"><b>${l}</b><span>${esc(sub)}</span></button>`).join('')}${can(CMS) ? `<a class="quick-btn" href="checkin.html"><b>Door</b><span>Scan tickets and passes</span></a><a class="quick-btn" href="bar.html"><b>Bar screen</b><span>Paid orders to hand over</span></a>` : ''}</div>` : ''}
   <div class="kpis">
       <div><span>Revenue (confirmed only)</span><b>${money(d.revenuePesewas)}</b></div>
       <div><span>Memories’ share</span><b>${money(d.memoriesSharePesewas)}</b></div>
@@ -756,97 +761,7 @@ async function settings() {
 }
 
 // ── Staff ──
-async function staff(arg, notice) {
-  const { staff: list, roles } = await sapi('/api/admin/people');
-  const roleOpts = sel => `<option value="" ${sel ? '' : 'selected'} disabled>Pick their job</option>${roles.map(r => `<option value="${esc(r.id)}" ${r.id === sel ? 'selected' : ''}>${esc(r.name)}</option>`).join('')}`;
-  const may = r => roles.some(x => x.id === r);
-  const last = s => (s.lastSignInAt ? when(s.lastSignInAt) : s.hasPin ? 'Not yet' : 'No PIN yet');
-  const noPin = list.filter(s => !s.hasPin && may(s.role) && s.uid !== user.uid);
-  panel.innerHTML = `<h1>Staff</h1>
-    <p class="muted" style="margin-top:-6px">Add your staff once: they keep their access every night. Each person gets their own PIN by text and signs in with their phone number and that PIN. They can change it later if they want. Everyone here is also a member: they get in with the app, never a ticket.</p>
-    <div id="pinCards"></div>
-    ${noPin.length ? `<div class="card" style="display:grid;gap:8px"><strong>${noPin.length} staff ${noPin.length === 1 ? 'has' : 'have'} no PIN yet</strong><span class="muted">${noPin.map(s => esc(s.name || s.email)).join(', ')}</span><div><button class="sbtn red" id="sendAll">Text PINs to everyone without one</button></div></div>` : ''}
-    <form class="card" id="addForm" novalidate><h2 style="margin:0">Add a staff member</h2>
-      <div class="grid2">
-        <div class="sfield"><label for="aName">Full name</label><input id="aName" maxlength="80" autocomplete="off"></div>
-        <div class="sfield"><label for="aPhone">Phone number (they sign in with it)</label><input id="aPhone" type="tel" inputmode="tel" placeholder="024 123 4567"></div>
-        <div class="sfield"><label for="aRole">Job</label><select id="aRole">${roleOpts('')}</select></div>
-        <label class="check" style="align-self:end"><input type="checkbox" id="aCash"> Can collect cash from customers</label>
-      </div>
-      <div><button class="sbtn red" type="submit" id="aBtn">Add and text their PIN</button></div><div id="addMsg"></div>
-    </form>
-    <details class="fold"><summary>What each job can do</summary><dl class="role-key">
-      <dt>Director</dt><dd>Everything a manager can, and adds managers and finance officers.</dd>
-      <dt>Manager</dt><dd>Runs the night: today’s sales, staff reports, approvals, stock, prices, staff.</dd>
-      <dt>Finance officer</dt><dd>Prices, stock received, money, staff reports and the end-of-day report.</dd>
-      <dt>Events manager</dt><dd>Nights, tickets, tables, promos and bar setup.</dd>
-      <dt>Front office</dt><dd>Tickets at the entrance, table bookings and arrivals, customer issues.</dd>
-      <dt>Security</dt><dd>Checks tickets at the entrance and records incidents.</dd>
-      <dt>Bartender</dt><dd>Prepares orders, hands drinks to waiters, records breakages, counts stock.</dd>
-      <dt>Waiter / waitress</dt><dd>Opens tabs for tables, sends rounds to the bar, shares bills, “My report”.</dd>
-      <dt>Cashier</dt><dd>Takes cash payments and counts the cash at the end of the shift.</dd>
-      <dt>Organiser</dt><dd>An outside organiser: their own nights only.</dd>
-      <dt>System admin</dt><dd>Everything, including making other admins.</dd></dl></details>
-    <div id="sMsg"></div>
-    <div class="tbl-wrap"><table class="tbl"><thead><tr><th>Name</th><th>Job</th><th>Phone</th><th>Last signed in</th><th></th></tr></thead><tbody>
-    ${list.map(s => `<tr data-uid="${esc(s.uid)}"><td><strong>${esc(s.name || s.email)}</strong>${s.locked ? ` ${pill('PIN locked', 'red')}` : ''}${s.canCollectCash ? `<br><small class="muted">Collects cash</small>` : ''}</td><td>${esc(s.roleName)}</td><td>${s.phone ? esc(s.phone) : pill('add phone', 'amber')}</td><td>${esc(last(s))}</td>
-      <td class="actions">${may(s.role) && s.uid !== user.uid ? `<button class="sbtn" data-edit>Change</button><button class="sbtn ghost" data-pin>${s.hasPin ? 'Send a new PIN' : 'Send PIN'}</button><button class="sbtn ghost" data-rm>Remove</button>` : ''}</td></tr>`).join('') || '<tr><td colspan="5" class="empty-row">No staff yet.</td></tr>'}</tbody></table></div>`;
-  const one = el => list.find(x => x.uid === el.closest('tr').dataset.uid);
-  $('#addForm').onsubmit = async ev => {
-    ev.preventDefault();
-    const role = $('#aRole').value;
-    if (!role) return flash($('#addMsg'), 'Pick their job.', true);
-    if (['superAdmin', 'director'].includes(role) && !confirm(`Give ${val('#aName') || 'this person'} the ${roles.find(r => r.id === role).name} job? They’ll be able to change almost everything.`)) return;
-    $('#aBtn').disabled = true;
-    try {
-      const r = await sapi('/api/admin/people/add', { method: 'POST', body: { name: val('#aName'), phone: val('#aPhone'), role, canCollectCash: $('#aCash').checked } });
-      await staff(null, { pins: [r] }); $('#aName').focus();
-    } catch (e) { flash($('#addMsg'), e.message, true); $('#aBtn').disabled = false; }
-  };
-  $$('[data-edit]').forEach(b => b.onclick = () => {
-    const s = one(b);
-    const box = document.createElement('div'); box.className = 'sheet-back';
-    box.innerHTML = `<form class="sheet" novalidate><h2>Change ${esc(s.name)}</h2>
-      <div class="sfield"><label for="eName">Full name</label><input id="eName" maxlength="80" value="${esc(s.name)}"></div>
-      <div class="sfield"><label for="ePhone">Phone number</label><input id="ePhone" type="tel" value="${esc(s.phone)}"></div>
-      <div class="sfield"><label for="eRole">Job</label><select id="eRole">${roleOpts(s.role)}</select></div>
-      <label class="check"><input type="checkbox" id="eCash" ${s.canCollectCash ? 'checked' : ''}> Can collect cash from customers</label>
-      <div id="eMsg"></div><div class="toolbar" style="margin:0"><button class="sbtn red" type="submit">Save</button><button class="sbtn ghost" type="button" id="eClose">Cancel</button></div></form>`;
-    document.body.append(box);
-    box.querySelector('#eClose').onclick = () => box.remove();
-    box.querySelector('form').onsubmit = async ev => {
-      ev.preventDefault();
-      try { await sapi('/api/admin/people/update', { method: 'POST', body: { uid: s.uid, name: box.querySelector('#eName').value, phone: box.querySelector('#ePhone').value, role: box.querySelector('#eRole').value, canCollectCash: box.querySelector('#eCash').checked } }); box.remove(); staff(null, { text: `Saved. ${s.name}’s new job works on their next tap.` }); }
-      catch (e) { box.querySelector('#eMsg').innerHTML = `<div class="msg err">${esc(e.message)}</div>`; }
-    };
-  });
-  $$('[data-pin]').forEach(b => b.onclick = async () => {
-    const s = one(b);
-    if (s.hasPin && !confirm(`Send ${s.name} a new PIN? Their old PIN stops working and the new one is texted to them.`)) return;
-    try { const r = await sapi('/api/admin/people/reset-pin', { method: 'POST', body: { uid: s.uid } }); staff(null, { pins: [r] }); }
-    catch (e) { flash($('#sMsg'), e.message, true); }
-  });
-  $$('[data-rm]').forEach(b => b.onclick = async () => {
-    const s = one(b);
-    if (!confirm(`Remove ${s.name}? They can’t sign in any more, from any phone, starting now. Their past work keeps their name.`)) return;
-    try { await sapi('/api/admin/people/remove', { method: 'POST', body: { uid: s.uid } }); staff(null, { text: `${s.name} removed.` }); }
-    catch (e) { flash($('#sMsg'), e.message, true); }
-  });
-  if ($('#sendAll')) $('#sendAll').onclick = async () => {
-    if (!confirm(`Text a PIN to ${noPin.length} staff?`)) return;
-    $('#sendAll').disabled = true;
-    try { const r = await sapi('/api/admin/people/send-pins', { method: 'POST' }); staff(null, { pins: r.sent, skipped: r.skipped }); }
-    catch (e) { flash($('#sMsg'), e.message, true); $('#sendAll').disabled = false; }
-  };
-  labelTables();
-  if (notice?.text) flash($('#sMsg'), notice.text);
-  // New PINs stay on screen until the page changes, so the manager can read one out if a text
-  // doesn't arrive. They are shown only here, once: the system keeps no copy.
-  if (notice?.pins) $('#pinCards').innerHTML = `<div class="card pincards" role="status"><strong>PINs sent</strong>
-    ${notice.pins.map(r => `<div class="pinrow"><span>${esc(r.name)}</span><b class="pinnum">${esc(r.pin)}</b><small class="${r.texted ? 'muted' : 'warn'}">${r.texted ? `Texted to ${esc(r.phoneHint)}` : 'The text didn’t send: give them this PIN yourself'}</small></div>`).join('') || '<span class="muted">Nobody needed one.</span>'}
-    ${(notice.skipped || []).map(x => `<small class="warn">${esc(x.name)}: not sent (${esc(x.why)})</small>`).join('')}
-    <small class="muted">They sign in with their phone number and this PIN. This list disappears when you leave the page.</small></div>`;
-}
+const staff = (arg, notice) => staffView(panel, user, notice);
 
 function fromHash() {
   const [tab, arg] = location.hash.slice(1).split('/');

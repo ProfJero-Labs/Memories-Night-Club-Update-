@@ -14,7 +14,8 @@ async function call(env, method, path, { body, claims, uid } = {}) {
   const r = await worker.fetch(new Request(`https://api.test${path}`, { method, headers, body: body ? JSON.stringify(body) : undefined }), env);
   return { status: r.status, text: await r.clone().text(), data: await r.json().catch(() => ({})) };
 }
-const MANAGER = { role: 'manager' }, DOOR = { role: 'doorStaff' };
+// Members and attendance are the directors' (and the administrator's); managers run the night.
+const MANAGER = { role: 'director' }, DOOR = { role: 'doorStaff' };
 const step = () => Math.floor(Date.now() / 1000 / 30);
 const qr = async (pass, s = step()) => `MP1.${pass.passId}.${s}.${await passSig(pass.secret, pass.passId, s)}`;
 async function addKofi(env) {

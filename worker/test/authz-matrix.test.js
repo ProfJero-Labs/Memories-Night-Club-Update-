@@ -6,9 +6,12 @@ import assert from 'node:assert/strict';
 import { createMockEnv, idToken } from './mock-firestore.js';
 import worker from '../src/index.js';
 
-const ALL = ['superAdmin', 'manager', 'eventManager', 'doorStaff', 'organiser'];
-const CMS = ['superAdmin', 'manager', 'eventManager'];
-const MONEY = ['superAdmin', 'manager'];
+// Technical areas (the site, nights, settings) are the administrator's and the events manager's;
+// directors see the money; managers run the night only (their routes are under /api/ops/).
+const ALL = ['superAdmin', 'director', 'manager', 'eventManager', 'doorStaff', 'organiser'];
+const CMS = ['superAdmin', 'eventManager'];
+const TICKET_MONEY = ['superAdmin', 'director', 'eventManager'];
+const MONEY = ['superAdmin', 'director'];
 const SUPER = ['superAdmin'];
 
 export const MATRIX = [
@@ -21,8 +24,8 @@ export const MATRIX = [
   ['POST', '/api/admin/sms/send', MONEY, { recipients: [], message: 'x' }],
   ['GET', '/api/admin/sms/balance', MONEY],
   ['GET', '/api/admin/me', ALL],
-  ['GET', '/api/admin/overview', CMS],
-  ['GET', '/api/admin/events', CMS],
+  ['GET', '/api/admin/overview', TICKET_MONEY],
+  ['GET', '/api/admin/events', TICKET_MONEY],
   ['GET', '/api/admin/events/e1', CMS],
   ['POST', '/api/admin/events', CMS, { name: 'N', date: '2099-01-01T22:00:00Z' }],
   ['DELETE', '/api/admin/events/e1', SUPER],
@@ -33,7 +36,7 @@ export const MATRIX = [
   ['POST', '/api/admin/bottles', CMS, { name: 'B', pricePesewas: 1000 }],
   ['DELETE', '/api/admin/bottles/b1', CMS],
   ['GET', '/api/admin/bottles', CMS],
-  ['GET', '/api/admin/orders', CMS],
+  ['GET', '/api/admin/orders', TICKET_MONEY],
   ['POST', '/api/admin/comps', CMS, { eventId: 'e1', name: 'Guest' }],
   ['POST', '/api/admin/raffles', CMS, { eventId: 'e1', prize: 'x', cap: 5 }],
   ['POST', '/api/admin/raffle/draw', CMS, { raffleId: 'r1' }],
@@ -43,8 +46,8 @@ export const MATRIX = [
   ['GET', '/api/admin/refunds', MONEY],
   ['POST', '/api/admin/refunds/mark', MONEY, { source: 'checkout', id: 'x', note: 'n' }],
   ['POST', '/api/admin/installments/resend-sms', MONEY, { planId: 'MEM-AB1234' }],
-  ['GET', '/api/admin/settings', MONEY],
-  ['POST', '/api/admin/settings', MONEY, { venue: 'x' }],
+  ['GET', '/api/admin/settings', SUPER],
+  ['POST', '/api/admin/settings', SUPER, { venue: 'x' }],
   ['GET', '/api/admin/organisers', CMS],
   ['GET', '/api/admin/staff', SUPER],
   ['POST', '/api/admin/set-role', SUPER, { email: 'a@b.c', role: 'doorStaff' }],

@@ -6,7 +6,7 @@ import { api, esc, CREDIT } from './app.js';
 export const roleOf = claims => (claims?.admin === true ? 'superAdmin' : claims?.role || '');
 export const ROLE_LABEL = { superAdmin: 'System admin', director: 'Director', manager: 'Manager', finance: 'Finance officer', eventManager: 'Events manager', doorStaff: 'Front office', security: 'Security', barStaff: 'Bartender', waitStaff: 'Waiter / waitress', cashier: 'Cashier', organiser: 'Organiser' };
 // Each job opens on its own screen.
-const HOMES = { organiser: 'organiser.html', doorStaff: 'checkin.html', security: 'checkin.html', barStaff: 'bar.html', waitStaff: 'waiter.html', cashier: 'cashier.html', finance: 'finance.html' };
+const HOMES = { manager: 'night.html', director: 'night.html', organiser: 'organiser.html', doorStaff: 'checkin.html', security: 'checkin.html', barStaff: 'bar.html', waitStaff: 'waiter.html', cashier: 'cashier.html', finance: 'finance.html' };
 export const home = role => HOMES[role] || 'admin.html';
 // Resolves with the signed-in staff user (role and name from their staff record), or sends them on.
 export function requireStaff(allowed) {
