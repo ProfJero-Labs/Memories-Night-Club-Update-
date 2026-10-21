@@ -80,6 +80,10 @@ export async function openTab(env, b, user) {
   if (!table && !walkIn) return { error: 'Pick a table, or tap “Walk-in”.' };
   const phone = b?.customerPhone ? normalizePhone(b.customerPhone) : '';
   if (b?.customerPhone && !phone) return { error: 'That phone number doesn’t look right. Use a Ghana number, or leave it blank.' };
+  // Who brought the table (a 10% commission on a deal over GHS 3,000; see commission.js).
+  const dealName = clean(b?.broughtByName, 60), dealPhone = b?.broughtByPhone ? normalizePhone(b.broughtByPhone) : '';
+  if (b?.broughtByPhone && !dealPhone) return { error: 'The phone of the person who brought the table doesn’t look right, or leave it blank.' };
+  const broughtBy = dealName ? { name: dealName, phone: dealPhone, setBy: uidOf(user), setByName: user.name || '', at: now() } : null;
   const tabId = id();
   const number = await withTransaction(env, async tx => {
     const key = `tabs_${date}`, got = foundFields(await batchGet(env, [`counters/${key}`], tx), `/counters/${key}`);
@@ -87,7 +91,7 @@ export async function openTab(env, b, user) {
     await commitTx(env, [
       updateWrite(env, 'counters', key, { n }),
       updateWrite(env, 'tabs', tabId, { number: n, businessDate: date, stationId: st.id, stationName: st.fields.name, table: walkIn ? 'Walk-in' : table, customerName: clean(b.customerName, 60), customerPhone: phone,
-        waiterUid: uidOf(user), waiterName: user.name || '', status: 'open', billToken: id(), payments: [], discounts: [], createdAt: now() }),
+        waiterUid: uidOf(user), waiterName: user.name || '', status: 'open', billToken: id(), payments: [], discounts: [], createdAt: now(), broughtBy }),
     ], tx);
     return n;
   });

@@ -6,7 +6,7 @@
 import { $ } from '../app.js';
 import { requireStaff, staffHeader } from '../staff.js';
 import { bottomNav } from '../lib/ops-ui.js';
-import { salesView, closingView, approvalsView, stockAdminView, eodListView, eodView, productsView, changesView, moneyView, budgetView, paymentsView } from '../lib/ops-views.js';
+import { salesView, closingView, approvalsView, stockAdminView, eodListView, eodView, productsView, changesView, moneyView, budgetView, paymentsView, commissionsView } from '../lib/ops-views.js';
 
 const user = await requireStaff(['finance', 'superAdmin', 'director', 'manager']);
 staffHeader(user, 'Finance');
@@ -17,11 +17,12 @@ const fail = e => { app.innerHTML = `<div class="say bad" role="alert"><b>Couldn
 
 async function route() {
   const [k, arg] = location.hash.slice(1).split('/');
-  nav.setActive(k === 'report' ? 'reports' : k === 'prices' ? 'stock' : ['budget', 'payments'].includes(k) ? 'money' : k || 'today'); scrollTo(0, 0);
+  nav.setActive(k === 'report' ? 'reports' : k === 'prices' ? 'stock' : ['budget', 'payments', 'commissions'].includes(k) ? 'money' : k || 'today'); scrollTo(0, 0);
   try {
     if (k === 'check') { app.innerHTML = '<div id="cl"></div><div id="ap" style="margin-top:20px"></div>'; await closingView($('#cl'), undefined, { canClose: false }); await approvalsView($('#ap')); return; }
     if (k === 'money') return await moneyView(app);
     if (k === 'budget') return await budgetView(app);
+    if (k === 'commissions') return await commissionsView(app);
     if (k === 'payments') return await paymentsView(app);
     if (k === 'stock') { app.innerHTML = '<div id="sk"></div><button class="big ghost" id="toPrices" style="margin-top:16px">Drinks, prices and costs</button>'; $('#toPrices').onclick = () => { location.hash = 'prices'; }; return await stockAdminView($('#sk'), undefined, undefined, { role: user.role }); }
     if (k === 'reports') return await eodListView(app, { canSignOff });

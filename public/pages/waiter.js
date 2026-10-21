@@ -65,6 +65,9 @@ async function newTab() {
     ${stations.length > 1 ? `<div class="sfield"><label for="ntBar">Which bar makes the drinks?</label><select id="ntBar">${stations.map(s => `<option value="${esc(s.id)}">${esc(s.name)}</option>`).join('')}</select></div>` : ''}
     <div class="sfield"><label for="ntName">Customer’s name (optional)</label><input id="ntName" maxlength="60" autocomplete="off"></div>
     <div class="sfield"><label for="ntPhone">Customer’s phone, to text the invoice (optional)</label><input id="ntPhone" type="tel" inputmode="tel" placeholder="024 123 4567"></div>
+    <details class="fold"><summary>Did someone bring this table? (commission)</summary>
+      <div class="sfield"><label for="ntBy">Their name</label><input id="ntBy" maxlength="60" autocomplete="off"></div>
+      <div class="sfield"><label for="ntByPh">Their phone</label><input id="ntByPh" type="tel" inputmode="tel" placeholder="024 123 4567"></div></details>
     <div id="ntMsg"></div>
     <button class="big" id="ntGo">Open and add drinks</button><button class="big ghost" data-close>Cancel</button>`, { label: 'Open a table' });
   let walkIn = false;
@@ -74,7 +77,7 @@ async function newTab() {
     const phone = $('#ntPhone', box).value.trim();
     if (phone && !normalizePhone(phone)) return say($('#ntMsg', box), 'That phone number doesn’t look right.', 'bad');
     try {
-      const r = await busy($('#ntGo', box), () => sapi('/api/ops/tabs/open', { method: 'POST', body: { table: $('#ntTable', box).value.trim(), walkIn, stationId: $('#ntBar', box)?.value, customerName: $('#ntName', box).value.trim(), customerPhone: phone } }), 'Opening…');
+      const r = await busy($('#ntGo', box), () => sapi('/api/ops/tabs/open', { method: 'POST', body: { table: $('#ntTable', box).value.trim(), walkIn, stationId: $('#ntBar', box)?.value, customerName: $('#ntName', box).value.trim(), customerPhone: phone, broughtByName: $('#ntBy', box).value.trim(), broughtByPhone: $('#ntByPh', box).value.trim() } }), 'Opening…');
       close(); location.hash = `add/${r.id}`;
     } catch (e) { say($('#ntMsg', box), e.message, 'bad'); }
   };

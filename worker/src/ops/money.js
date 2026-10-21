@@ -17,7 +17,7 @@ import { FORBIDDEN, bizDate, isDate, audit, int, ghs } from './common.js';
 import { billOf } from './tabs.js';
 
 export const EXPENSE_HANDS = ['superAdmin', 'director', 'manager', 'finance'];
-export const EXPENSE_CATEGORIES = { staff: 'Staff pay', dj: 'DJ and artists', rent: 'Rent', power: 'Light and water', fuel: 'Fuel / generator', security: 'Security', cleaning: 'Cleaning', repairs: 'Repairs', marketing: 'Adverts and promotion', supplies: 'Ice, cups and supplies', transport: 'Transport', other: 'Other' };
+export const EXPENSE_CATEGORIES = { staff: 'Staff pay', dj: 'DJ and artists', rent: 'Rent', power: 'Light and water', fuel: 'Fuel / generator', security: 'Security', cleaning: 'Cleaning', repairs: 'Repairs', marketing: 'Adverts and promotion', supplies: 'Ice, cups and supplies', transport: 'Transport', commission: 'Commissions', other: 'Other' };
 const PAID_WITH = { cash: 'Cash', momo: 'MoMo', bank: 'Bank' };
 const sum = (arr, f) => arr.reduce((n, x) => n + Number(f(x) || 0), 0);
 const DAY = 864e5;

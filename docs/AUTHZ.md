@@ -83,6 +83,7 @@ removal applies at once. Each row is covered by `worker/test/staffauth.test.js` 
 | `GET /api/ops/money`, `/payments`, `/budget` | Manager, director, finance, admin |
 | `POST /api/ops/expenses`, `/expenses/remove` | Manager, director, finance, admin (taking one off: finance, director, admin, or whoever added it) |
 | `POST /api/ops/budget`, `/bills`, `/bills/pay`, `/bills/remove`, `/bills/copy` | Finance, admin |
+| `GET /api/ops/commissions` | Manager, director, finance, admin. `POST /commissions/assign`: the same. `POST /commissions/pay`: finance, admin |
 | `GET /api/guest/counter-night/:orderId` | A QR customer: everything paid tonight from the phone that paid that order |
 | `POST /api/ops/stock/review`, `GET /api/ops/changes` | Manager, director, finance, admin (not your own count) |
 | `POST /api/ops/cash/open`, `/move`, `/close`, `GET /api/ops/cash` | Whoever takes cash (their own shift); refunds and payouts become approvals |
@@ -102,6 +103,6 @@ removal applies at once. Each row is covered by `worker/test/staffauth.test.js` 
 | The site: nights, tickets, promos, draws, bar setup, comps, event requests, uploads | System admin, events manager | `/api/admin/events…`, `/ticket-types`, `/table-packages`, `/bottles`, `/comps`, `/raffles`, `/requests`, `/promos`, `/bar/setup`; Storage uploads |
 | Site settings, system health | System admin | `/api/admin/settings`, `/api/admin/system` |
 | Ticket money (read) | System admin, events manager (not the director) | `/api/admin/overview`, `/orders`, `/payments`, `/events` (list), `/settlements` (list) |
-| Money: refunds, pay in bits, SMS, members, attendance, organiser settlements | System admin, director | `/api/admin/refunds…`, `/installments…`, `/sms…`, `/members…`, `/attendance`, `/settlements` |
+| Money: refunds, pay in bits, SMS, members, attendance, organiser settlements | System admin (not the director: the ticket side) | `/api/admin/refunds…`, `/installments…`, `/sms…`, `/members…`, `/attendance`, `/settlements` |
 | The night: sales, tables, approvals, closing, drinks & prices, stock, staff | System admin, director, manager (finance for reports and stock) | `/api/ops/*`, `/api/admin/people*` |
 

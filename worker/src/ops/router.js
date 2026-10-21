@@ -9,6 +9,7 @@ import * as closing from './closing.js';
 import * as money from './money.js';
 import * as budget from './budget.js';
 import * as payments from './payments.js';
+import * as commission from './commission.js';
 
 export async function opsRoute(m, p, u, b, env, user) {
   const q = k => u.searchParams.get(k) || undefined;
@@ -36,6 +37,7 @@ export async function opsRoute(m, p, u, b, env, user) {
       case '/api/ops/eod/list': return closing.listEod(env, user);
       case '/api/ops/finance-contact': return closing.financeContact(env, user);
       case '/api/ops/payments': return payments.nightPayments(env, user, { date: q('date') });
+      case '/api/ops/commissions': return commission.commissions(env, user, { month: q('month') });
       case '/api/ops/budget': return budget.monthBudget(env, user, { month: q('month') });
       case '/api/ops/money': return money.moneyReport(env, user, { period: q('period'), from: q('from'), to: q('to') });
     }
@@ -77,6 +79,8 @@ export async function opsRoute(m, p, u, b, env, user) {
     case '/api/ops/finance-contact': return closing.financeContact(env, user, b || {});
     case '/api/ops/expenses': return money.addExpense(env, b, user);
     case '/api/ops/budget': return budget.setBudget(env, b, user);
+    case '/api/ops/commissions/assign': return commission.assignDeal(env, b, user);
+    case '/api/ops/commissions/pay': return commission.payCommission(env, b, user);
     case '/api/ops/bills': return budget.addBill(env, b, user);
     case '/api/ops/bills/pay': return budget.payBill(env, b, user);
     case '/api/ops/bills/remove': return budget.removeBill(env, b, user);

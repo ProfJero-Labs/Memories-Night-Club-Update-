@@ -379,9 +379,11 @@ test('control room: an unsaved flyer is not lost when a ticket row is saved; a p
 
 test('control room: refunds owed are listed and can be marked refunded with a note', async () => {
   store.seed('pending_checkouts', 'e2e-refund', { kind: 'ticket', eventName: 'Afrobeats Friday', buyerName: 'Refund Me', buyerPhone: '0247778888', amountPesewas: 15000, status: 'failed', error: 'sold_out_after_payment', refundStatus: 'manual_required', createdAt: new Date().toISOString() });
+  // Refunds are the ticket side: the system admin's, not the director's.
+  const dir = await phone(390); await signInAs(dir, 'director@dev'); await dir.waitForURL(/night\.html/);
+  await dir.goto(`${base}/admin.html`); await dir.waitForURL(/night\.html/);
   const admin = await phone(1280);
-  await signInAs(admin, 'director@dev'); await admin.waitForURL(/night\.html/);
-  await admin.goto(`${base}/admin.html`); await admin.waitForURL(/admin\.html/); await openTab(admin, 'refunds');
+  await signInAs(admin, 'admin@dev'); await admin.waitForURL(/admin\.html/); await openTab(admin, 'refunds');
   const row = admin.locator('tr', { hasText: 'Refund Me' });
   await row.waitFor();
   assert.match(await row.textContent(), /GHS 150/);
@@ -869,6 +871,9 @@ test('stock, money and quick sales: finance buys drinks (in stock at once), the 
   await dir.locator('#app').getByText('Staff salaries').waitFor();
   assert.equal(await dir.locator('#bAdd').count(), 0, 'the director looks; finance sets');
   assert.doesNotMatch(await dir.textContent('#app'), /Ticket/);
+  await dir.goto(`${base}/night.html#money`); await dir.locator('a[href="#commissions"]').click();
+  await dir.locator('#app').getByText('Who is owed').waitFor();
+  assert.match(await dir.textContent('#app'), /10% of every table deal over GHS 3,000/);
   // The manager taps a payment: what was bought, who served, how it was paid.
   await mgr.goto(`${base}/night.html#payments`); await mgr.locator('[data-pay]').first().click();
   await mgr.locator('.sheet').getByText('Served by').waitFor(); await mgr.locator('.sheet').getByText('How it was paid').waitFor();

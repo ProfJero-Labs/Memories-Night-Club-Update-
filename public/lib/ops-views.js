@@ -167,7 +167,7 @@ export async function stockAdminView(el, date, stationId, { role = '' } = {}) {
 // ── Money: is the club making money? Tonight / this week / this month ──
 export async function moneyView(el, period = 'today') {
   el.innerHTML = '<div class="loading">Loading…</div>';
-  const [m, due] = await Promise.all([sapi(`/api/ops/money?period=${encodeURIComponent(period)}`), sapi('/api/ops/budget').catch(() => null)]);
+  const [m, due, com] = await Promise.all([sapi(`/api/ops/money?period=${encodeURIComponent(period)}`), sapi('/api/ops/budget').catch(() => null), sapi('/api/ops/commissions').catch(() => null)]);
   const t = m.totals, d = m.drinks, profit = t.profitPesewas >= 0;
   const rows = list => list.filter(r => r.amountPesewas).map(r => `<div class="ln"><span>${esc(r.label)}</span><span>${money(r.amountPesewas)}</span></div>`).join('') || '<div class="ln"><span class="muted">Nothing yet</span></div>';
   el.innerHTML = `<h1>Money</h1>
@@ -178,6 +178,7 @@ export async function moneyView(el, period = 'today') {
       <div class="big-line ${profit ? 'good' : 'bad'}"><span>${profit ? 'Profit' : 'Loss'}</span><b>${money(Math.abs(t.profitPesewas))}</b></div>
     </div>
     ${due ? `<a class="pos-row" href="#budget" style="text-decoration:none"><span class="where">Bills this month<small>${due.totals.overdue ? `${due.totals.overdue} overdue · ` : ''}${money(due.totals.paidPesewas)} paid of ${money(due.totals.billsPesewas)}</small></span><span class="amt">${money(due.totals.duePesewas)}<small style="display:block">still to pay</small></span></a>` : ''}
+    ${com ? `<a class="pos-row" href="#commissions" style="text-decoration:none"><span class="where">Commissions this month<small>${com.ratePct}% on tables over ${money(com.overPesewas)}${com.totals.unassigned ? ` · ${com.totals.unassigned} not named yet` : ''}</small></span><span class="amt">${money(com.totals.owedPesewas)}<small style="display:block">to pay out</small></span></a>` : ''}
     ${m.canAddExpense ? '<button class="big" id="addExp">Add an expense</button>' : ''}<div id="mMsg"></div>
     <h2>Money in</h2><div class="lines-list">${rows(m.moneyIn)}<div class="ln total"><span>Total</span><span>${money(t.inPesewas)}</span></div></div>
     ${d.unpaidPesewas ? `<p class="muted" style="margin:0">Not counted yet: ${money(d.unpaidPesewas)} of drinks still unpaid on open tables.</p>` : ''}
@@ -301,6 +302,45 @@ export async function budgetView(el, month) {
     try { await sapi('/api/ops/bills/remove', { method: 'POST', body: { id: x.dataset.rmb, reason } }); again(); } catch (e) { say($('#bMsg', el), e.message, 'bad'); }
   });
   labelTables(el);
+}
+
+// ── Commissions: 10% to whoever brings a table deal over GHS 3,000 ──
+export async function commissionsView(el, month) {
+  el.innerHTML = '<div class="loading">Loading…</div>';
+  const c = await sapi(`/api/ops/commissions${month ? `?month=${month}` : ''}`);
+  const t = c.totals, mon = m => new Date(`${m}-15T12:00:00Z`).toLocaleDateString('en-GB', { month: 'short' });
+  el.innerHTML = `<h1 style="margin:0">Commissions</h1>
+    <p class="lead" style="margin:0">${c.ratePct}% of every table deal over ${money(c.overPesewas)}, to the person who brought it.</p>
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><button class="sbtn" data-mon="${c.prev}">← ${esc(mon(c.prev))}</button><b style="font-size:18px">${esc(c.label)}</b><button class="sbtn" data-mon="${c.next}">${esc(mon(c.next))} →</button></div>
+    <div class="pos-money">
+      <div class="big-line ${t.owedPesewas ? 'bad' : 'good'}"><span>Still to pay out</span><b>${money(t.owedPesewas)}</b></div>
+      <div class="big-line good"><span>Paid out</span><b>${money(t.paidPesewas)}</b></div>
+      ${t.unassigned ? `<p class="how">${t.unassigned} deal${t.unassigned > 1 ? 's' : ''} with nobody named yet (${money(t.unassignedPesewas)})</p>` : ''}
+    </div><div id="cMsg"></div>
+    <h2>Who is owed</h2>
+    ${c.people.length ? `<div class="lines-list">${c.people.map(p => `<div class="ln"><span><b>${esc(p.name)}</b>${p.phone ? ` · <a href="tel:${esc(p.phone)}">${esc(p.phone)}</a>` : ''}<br><small class="muted">${p.deals} deal${p.deals > 1 ? 's' : ''}${p.paidPesewas ? ` · ${money(p.paidPesewas)} paid` : ''}</small></span>
+      <span>${p.owedPesewas ? money(p.owedPesewas) : st('paid', 'Paid')}${c.canPay && p.owedPesewas ? `<br><button class="sbtn" data-payc="${esc(p.key)}">Pay</button>` : ''}</span></div>`).join('')}</div>` : '<p class="muted">Nobody yet this month.</p>'}
+    <h2>Deals</h2>
+    ${c.deals.length ? `<div class="lines-list">${c.deals.map((d, i) => `<div class="ln"><span><b>${esc(d.label)}</b>${d.night ? ` · ${esc(d.night)}` : ''}<br><small class="muted">${esc(dayName(d.date))}${d.customer ? ` · ${esc(d.customer)}` : ''}${d.servedBy ? ` · served by ${esc(d.servedBy)}` : ''} · sold ${money(d.amountPesewas)}</small><br>
+      ${d.broughtBy ? `<small>Brought by <b>${esc(d.broughtBy.name)}</b></small>` : st('unpaid', 'Who brought it?')} ${d.paid ? st('paid', 'Paid') : ''}</span>
+      <span>${money(d.commissionPesewas)}${c.canAssign && !d.paid ? `<br><button class="sbtn" data-who="${i}">${d.broughtBy ? 'Change' : 'Name them'}</button>` : ''}</span></div>`).join('')}</div>` : `<p class="muted">No table over ${money(c.overPesewas)} in ${esc(c.label)}.</p>`}`;
+  const again = () => commissionsView(el, c.month);
+  $$('[data-mon]', el).forEach(x => x.onclick = () => commissionsView(el, x.dataset.mon));
+  $$('[data-who]', el).forEach(x => x.onclick = () => {
+    const d = c.deals[Number(x.dataset.who)];
+    const { box, close } = sheet(`<h2>Who brought this deal?</h2><p class="muted" style="margin:0">${esc(d.label)} · ${money(d.amountPesewas)} · commission ${money(d.commissionPesewas)}</p>
+      <div class="sfield"><label for="wbN">Their name</label><input id="wbN" maxlength="60" value="${esc(d.broughtBy?.name || '')}"></div>
+      <div class="sfield"><label for="wbP">Their phone (to pay them)</label><input id="wbP" type="tel" inputmode="tel" value="${esc(d.broughtBy?.phone || '')}" placeholder="024 123 4567"></div>
+      <div id="wbM"></div><button class="big" id="wbGo">Save</button><button class="big ghost" data-close>Cancel</button>`, { label: 'Who brought this deal' });
+    $('#wbGo', box).onclick = async () => { try { await busy($('#wbGo', box), () => sapi('/api/ops/commissions/assign', { method: 'POST', body: { kind: d.kind, id: d.id, name: $('#wbN', box).value, phone: $('#wbP', box).value } })); close(); again(); } catch (e) { say($('#wbM', box), e.message, 'bad'); } };
+  });
+  $$('[data-payc]', el).forEach(x => x.onclick = () => {
+    const p = c.people.find(y => y.key === x.dataset.payc);
+    const { box, close } = sheet(`<h2>Pay ${esc(p.name)} ${money(p.owedPesewas)}</h2><p class="muted" style="margin:0">Commission on ${p.deals} deal${p.deals > 1 ? 's' : ''} in ${esc(c.label)}. It’s recorded as an expense under Commissions.</p>
+      <div class="sfield"><label for="pcW">Paid with</label><select id="pcW"><option value="momo">MoMo</option><option value="cash">Cash</option><option value="bank">Bank</option></select></div>
+      <div id="pcM"></div><button class="big" id="pcGo">Record payment</button><button class="big ghost" data-close>Cancel</button>`, { label: 'Pay commission' });
+    $('#pcGo', box).onclick = async () => { try { await busy($('#pcGo', box), () => sapi('/api/ops/commissions/pay', { method: 'POST', body: { month: c.month, key: p.key, paidWith: $('#pcW', box).value } })); close(); again(); } catch (e) { say($('#pcM', box), e.message, 'bad'); } };
+  });
 }
 
 // ── Every payment of the night, and the top customers (manager, director, finance) ──

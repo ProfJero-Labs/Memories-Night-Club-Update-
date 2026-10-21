@@ -10,8 +10,8 @@ import { uploadImage } from './firebase.js';
 
 // The control room is the administrator's (everything technical), the events manager's (nights,
 // tickets, promos, bar setup) and the directors' (money and reports). Managers use night.html.
-const ADMIN = ['superAdmin'], CMS = ['superAdmin', 'eventManager'], TICKET_MONEY = ['superAdmin', 'eventManager'], MONEY = ['superAdmin', 'director'];
-const user = await requireStaff(['superAdmin', 'director', 'eventManager']);
+const ADMIN = ['superAdmin'], CMS = ['superAdmin', 'eventManager'], TICKET_MONEY = ['superAdmin', 'eventManager'], MONEY = ['superAdmin'];
+const user = await requireStaff(['superAdmin', 'eventManager']);
 staffHeader(user, 'Control room');
 const can = roles => roles.includes(user.role);
 // The night itself (sales, closing, approvals, drinks, stock) is on night.html for managers and

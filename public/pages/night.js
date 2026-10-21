@@ -3,8 +3,8 @@
 // night. Everything else is behind "More", shown only when tapped. The technical side (the site,
 // nights, settings) is the administrator's, in the control room.
 //   Manager:  Tonight · Tables · Staff · More (money & expenses, drinks & prices, stock, full sales, past nights)
-//   Director: Tonight · Money (with bills and budget) · Reports · More (tables, staff, members &
-//             attendance). No ticket sales: those are the events side, not the director's.
+//   Director: Tonight · Money (with bills, budget and commissions) · Reports · More (tables, staff).
+//             Nothing from the ticket side (tickets, refunds, pay in bits, members): not the director's.
 // Tonight also opens Payments tonight (every payment, tap for what was bought, who served, how it
 // was paid) and Top customers.
 // "Needs you" on Tonight: approvals, and stock differences the bar found when it opened (the
@@ -12,7 +12,7 @@
 import { $, $$, esc } from '../app.js';
 import { requireStaff, staffHeader, sapi } from '../staff.js';
 import { bottomNav, sheet, say, st, every, money, when } from '../lib/ops-ui.js';
-import { salesView, closingView, approvalsView, productsView, stockAdminView, eodListView, eodView, moneyView, expenseSheet, explainSheet, budgetView, paymentsView } from '../lib/ops-views.js';
+import { salesView, closingView, approvalsView, productsView, stockAdminView, eodListView, eodView, moneyView, expenseSheet, explainSheet, budgetView, paymentsView, commissionsView } from '../lib/ops-views.js';
 import { staffView } from '../lib/staff-view.js';
 
 const user = await requireStaff(['manager', 'director', 'superAdmin']);
@@ -41,6 +41,7 @@ async function route() {
     if (key === 'approvals') { app.innerHTML = `${back()}<div id="av"></div>`; bindBack(); return await approvalsView($('#av')); }
     if (key === 'sales') { app.innerHTML = `${back()}<div id="sv"></div>`; bindBack(); return await salesView($('#sv')); }
     if (key === 'prices') { app.innerHTML = `${back()}<div id="pv"></div>`; bindBack(); return await productsView($('#pv'), { canEdit: user.role === 'superAdmin' }); }
+    if (key === 'commissions') { app.innerHTML = `${back('Money', 'money')}<div id="cv2"></div>`; bindBack(); return await commissionsView($('#cv2')); }
     if (key === 'budget') { app.innerHTML = `${back('Money', 'money')}<div id="bv"></div>`; bindBack(); return await budgetView($('#bv')); }
     if (key === 'payments' || key === 'customers') { app.innerHTML = `${back()}<div id="yv"></div>`; bindBack(); return await paymentsView($('#yv'), { tab: key }); }
     if (key === 'stock') { app.innerHTML = `${back()}<div id="kv"></div>`; bindBack(); return await stockAdminView($('#kv'), undefined, undefined, { role: user.role }); }
@@ -131,10 +132,10 @@ function more() {
     ['sales', 'Tonight in detail', 'By waiter, by bar, by drink'],
     ['approvals', 'Approvals', 'Everything asked tonight'],
     ['budget', 'Bills and budget', 'What’s due this month, set by finance'],
+    ['commissions', 'Commissions', '10% on tables over GHS 3,000: who is owed'],
     ['prices', 'Drinks & prices', 'Prices and costs (finance sets them)'],
     ['stock', 'Stock', 'Deliveries, counts, differences'],
     ...(director ? [['staff', 'Staff', 'Add people, send PINs']] : [['reports', 'Past nights', 'End-of-day reports']]),
-    ...(director ? [['@admin.html#members', 'Members & attendance', 'Who came in, by night']] : []),
     ...(user.role === 'superAdmin' ? [['@admin.html', 'Control room', 'Site, nights, settings']] : []),
   ];
   const { box, close } = sheet(`<h2>More</h2><div class="more-list">${items.map(([k, l, sub]) => `<button type="button" data-more="${esc(k)}"><b>${esc(l)}</b><span>${esc(sub)}</span></button>`).join('')}</div>

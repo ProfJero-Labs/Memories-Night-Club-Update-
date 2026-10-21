@@ -38,7 +38,7 @@ training.
 | Front office | **Door** | Entrance (scan tickets, search), staff and members (code in their app, or *let in by name* if their phone is dead), Tables (arrivals, table number, people), Issues, end-of-night Report |
 | Security | **Door** | Entrance and Issues only |
 | Manager | **Tonight** (a simple till screen) | Tonight: money expected, received and still owed (cash, MoMo, paid on phone), *Stock to explain* (the bar found a different number when it opened), *Needs you* (approve or refuse with one tap), the tables, *Add an expense*, *Close the night*. Bottom: Tonight · Tables · Staff · More. *More*: money, tonight in detail, approvals, drinks & prices, stock (add new stock during the night), past nights. No technical areas. |
-| Director | **Tonight**, plus **Money** | Tonight, **Money** (money in, money out, profit, for tonight, this week or this month; drinks sold against what they cost; expenses), *Reports* (end-of-day, sign off). No ticket sales. **Bills and budget** (set by finance): what's due this month, paid, overdue; budget against spending. *More* adds tables, staff and members & attendance. |
+| Director | **Tonight**, plus **Money** | Tonight, **Money** (money in, money out, profit, for tonight, this week or this month; drinks sold against what they cost; expenses), *Reports* (end-of-day, sign off). Nothing from the ticket side (tickets, refunds, pay in bits, members) and no control room. **Commissions** (who is owed for bringing big tables). **Bills and budget** (set by finance): what's due this month, paid, overdue; budget against spending. *More* adds tables and staff. |
 | System admin | **Control room** | Everything technical: the site, nights, tickets, promos, settings, system health, bar setup, and every report. |
 | Finance officer | **Finance** | Today, **Money** (in, out, profit; add expenses), Stock (*Record drinks bought*, stock the manager added, the bar's counts and the manager's explanations; drinks, prices and costs), Check (staff reports, cash, approvals), Reports (end of day, sign off, print, CSV) |
 | Events manager | Control room | Nights, tickets, tables, promos, bar setup (no money reports) |
@@ -140,6 +140,19 @@ training.
   unpaid, due on the same day.
 - **The director** sees it all (bills this month, paid, still to pay, overdue, budget against
   spending) but doesn't change it.
+
+## Commissions (10% on tables over GHS 3,000)
+
+- A **deal** is a table that sells for more than GHS 3,000: a table booked online (what the customer
+  paid), or a table in the club (what's been paid on its bill). The person who brought it earns
+  **10% of the whole amount**. (The rate and the line are `COMMISSION_RATE_PCT` and
+  `COMMISSION_OVER_PESEWAS` in `worker/src/ops/commission.js`.)
+- **Who brought it**: the waiter can say when opening the table (*Did someone bring this table?*);
+  the manager or finance can name or change it on Money → *Commissions* (until it's paid).
+- **Finance pays** a person everything owed for the month in one tap; it becomes one expense under
+  *Commissions* (Money out). A paid deal can't be moved to someone else.
+- **The director** sees, month by month: what's still to pay out, what's been paid, who is owed, and
+  every deal (sold for how much, served by whom, brought by whom).
 
 ## Payments tonight and top customers (manager, director, finance)
 
