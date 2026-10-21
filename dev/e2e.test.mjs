@@ -386,7 +386,7 @@ test('control room: refunds owed are listed and can be marked refunded with a no
   store.seed('pending_checkouts', 'e2e-refund', { kind: 'ticket', eventName: 'Afrobeats Friday', buyerName: 'Refund Me', buyerPhone: '0247778888', amountPesewas: 15000, status: 'failed', error: 'sold_out_after_payment', refundStatus: 'manual_required', createdAt: new Date().toISOString() });
   // Refunds are the ticket side: the system admin's, not the director's.
   const dir = await phone(390); await signInAs(dir, 'director@dev'); await dir.waitForURL(/night\.html/);
-  await dir.goto(`${base}/admin.html`); await dir.waitForURL(/admin\.html#members/); // members only
+  await dir.goto(`${base}/admin.html`); await dir.waitForFunction(() => location.hash === '#members'); // members only
   assert.equal(await dir.locator('text=Refunds').count(), 0);
   const admin = await phone(1280);
   await signInAs(admin, 'admin@dev'); await admin.waitForURL(/admin\.html/); await openTab(admin, 'refunds');
@@ -989,7 +989,7 @@ test('a night at the bar: tab without QR → bar → delivered → the customer 
   assert.match(await mgr.textContent('.pos-money'), /Received/); assert.match(await mgr.textContent('.pos-money'), /Still owed/);
   assert.equal(await mgr.locator('.bnav button').count(), 4, 'four buttons, nothing else');
   assert.equal(await mgr.locator('text=Site settings').count(), 0);
-  await mgr.goto(`${base}/admin.html`); await mgr.waitForURL(/admin\.html#members/); // only members and attendance there
+  await mgr.goto(`${base}/admin.html`); await mgr.waitForFunction(() => location.hash === '#members'); // only members and attendance there
   assert.equal(await mgr.locator('text=Site settings').count(), 0); await mgr.goto(`${base}/night.html`);
   await mgr.locator('#toClose').click(); await mgr.waitForSelector('#closeGo');
   assert.match(await mgr.textContent('#app'), /2 less than expected/);
