@@ -102,7 +102,7 @@ removal applies at once. Each row is covered by `worker/test/staffauth.test.js` 
 | `POST /api/ops/approvals/request` | Depends on the kind (waiters ask for free drinks, discounts, write-offs) |
 | `POST /api/ops/approvals/decide` | Free drink, discount: manager, director, admin. Write-off, cash out: also finance. Count correction: manager, director, finance, admin. Never your own request |
 | `GET /api/ops/sales`, `/closing`, `/eod`, `/eod/list`, `/finance-contact` | Manager, director, finance, admin |
-| `POST /api/ops/close-night` | Manager, director, admin |
+| `POST /api/ops/close-night` | The Manager (not the directors), or the Human manager / Event manager who accepted the Manager's handover that night; admin. `POST /close-night/hand-over`: the Manager. `POST /close-night/accept`: Human manager, Event manager |
 | `POST /api/ops/eod/sign-off` | Finance, director, admin; not the person who closed the night |
 | `GET/POST /api/ops/tables`, `/incidents`, `/front-report` | Front office, security (no report), managers; waiters and bar see tables and tick bottles served |
 | `GET /api/guest/bill/:token`, `POST /api/guest/bill/:token/pay` | The customer's bill link: read and pay only; prices from the Worker |

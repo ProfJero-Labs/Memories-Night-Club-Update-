@@ -178,6 +178,13 @@ training.
   everything paid tonight from their phone. The menu has a search box that forgives spelling
   mistakes ("henikin" finds Heineken; "coke" finds Coca-Cola).
 
+## Who closes the night
+
+- **The Manager closes the night.** Not the directors (they can look: *How closing is going*).
+- If the Manager can't be there: Close the night → **I can't close tonight**, with the reason. The
+  Human manager and the Event manager are texted, and a notice goes to the managers. The first to tap
+  **I'll close tonight** is responsible for closing that night, and only they (or the Manager) can.
+
 ## Payments need a director (any director)
 
 - **Salaries**: fixed monthly. The Human manager sets each person's salary and how they're paid

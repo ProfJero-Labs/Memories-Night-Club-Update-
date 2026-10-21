@@ -43,7 +43,7 @@ async function route() {
     if (key === 'staff') { app.innerHTML = `${back()}<div id="sv"></div>`; bindBack(); return await staffView($('#sv'), user); }
     if (key === 'reports') { app.innerHTML = `<div id="rv"></div>`; return await eodListView($('#rv'), { canSignOff: director }); }
     if (key === 'report' && arg) { app.innerHTML = `${back('Reports', 'reports')}<div id="rv"></div>`; bindBack(); return await eodView($('#rv'), arg, { canSignOff: director }); }
-    if (key === 'close') { app.innerHTML = `${back()}<div id="cv"></div>`; bindBack(); return await closingView($('#cv'), undefined, { canClose: true }); }
+    if (key === 'close') { app.innerHTML = `${back()}<div id="cv"></div>`; bindBack(); return await closingView($('#cv'), undefined, { canClose: !director || user.role === 'superAdmin' }); }
     if (key === 'approvals') { app.innerHTML = `${back()}<div id="av"></div>`; bindBack(); return await approvalsView($('#av')); }
     if (key === 'sales') { app.innerHTML = `${back()}<div id="sv"></div>`; bindBack(); return await salesView($('#sv')); }
     if (key === 'prices') { app.innerHTML = `${back()}<div id="pv"></div>`; bindBack(); return await productsView($('#pv'), { canEdit: user.role === 'superAdmin' }); }
@@ -99,7 +99,7 @@ async function tonight(alive = () => location.hash.slice(1).split('/')[0] in { '
       <div class="pos-tables">${open.slice(0, 8).map(tableRow).join('') || '<p class="muted">No open tables.</p>'}</div>
       ${open.length > 8 ? `<button class="link" data-goto="tables">See all ${open.length} tables →</button>` : ''}</section>
     <button class="big ghost" id="addExp">Add an expense</button>
-    ${closed ? `<div class="say good"><b>The night is closed</b>The report is under ${director ? 'Reports' : 'More → Past nights'}.</div>` : '<button class="big" id="toClose">Close the night</button>'}
+    ${closed ? `<div class="say good"><b>The night is closed</b>The report is under ${director ? 'More → End-of-day reports' : 'More → Past nights'}.</div>` : `<button class="big${director ? ' ghost' : ''}" id="toClose">${director ? 'How closing is going' : 'Close the night'}</button>`}
   </div>`;
   bindRows();
   if (flash && Date.now() - flash.at < 8000) say($('#msg'), flash.text, flash.kind);

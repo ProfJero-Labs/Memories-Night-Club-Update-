@@ -919,7 +919,16 @@ test('people: the Human manager sets the DJ’s pay and a bonus and sends the mo
   await dj.click('.bnav [data-k="pay"]'); await dj.locator('summary', { hasText: /GHS 1,700/ }).waitFor();
   await dj.click('.bnav [data-k="messages"]'); await dj.waitForSelector('#mT');
   await dj.fill('#mT', 'Who has the aux cable?'); await dj.click('#mGo'); await dj.locator('.tcard').getByText('Who has the aux cable?').waitFor();
-  assert.deepEqual([...hr.errors, ...d2.errors, ...fin.errors, ...dj.errors], []);
+  // The Manager can't close tonight: hands it over; the Human manager takes it; a director can only look.
+  const mg = await phone(390); await signInAs(mg, 'manager@dev'); await mg.waitForURL(/night\.html/);
+  await mg.goto(`${base}/night.html#close`); await mg.waitForSelector('#clHand');
+  mg.once('dialog', dl => dl.accept('Family emergency')); await mg.click('#clHand');
+  await mg.locator('#clMsg').getByText(/Handed over/).waitFor();
+  await hr.goto(`${base}/hr.html#close`); await hr.click('#clAccept'); await hr.locator('#clMsg').getByText('You’re closing tonight.').waitFor();
+  await d2.goto(`${base}/night.html#tonight`); await d2.locator('#toClose', { hasText: 'How closing is going' }).click();
+  await d2.locator('#app').getByText(/Dev Human Manager is closing instead/).waitFor();
+  assert.equal(await d2.locator('#closeGo').count(), 0, 'no close button for a director');
+  assert.deepEqual([...hr.errors, ...d2.errors, ...fin.errors, ...dj.errors, ...mg.errors], []);
 });
 
 test('sign-in: an email typed in the phone box goes to the email form', async () => {

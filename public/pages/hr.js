@@ -8,7 +8,7 @@
 import { $, $$, esc } from '../app.js';
 import { requireStaff, staffHeader, sapi } from '../staff.js';
 import { bottomNav, sheet, st, every, money, when } from '../lib/ops-ui.js';
-import { approvalsView, paymentsView, feedbackInboxView } from '../lib/ops-views.js';
+import { approvalsView, paymentsView, feedbackInboxView, closingView } from '../lib/ops-views.js';
 import { staffView } from '../lib/staff-view.js';
 import * as people from '../lib/people-views.js';
 
@@ -34,6 +34,7 @@ async function route() {
     if (key === 'payments') { app.innerHTML = `${back('Floor', 'floor')}<div id="pv"></div>`; bindBack(); return await paymentsView($('#pv')); }
     if (key === 'feedback') { app.innerHTML = '<div id="fv"></div>'; return await feedbackInboxView($('#fv')); }
     if (key === 'perf') return await people.perfView(app, arg);
+    if (key === 'close') { app.innerHTML = '<div id="clv"></div>'; return await closingView($('#clv'), undefined, { canClose: true }); }
     stop = every(10000, alive => floor(alive).catch(e => alive() && fail(e)));
   } catch (e) { fail(e); }
 }
@@ -53,7 +54,7 @@ async function floor(alive = () => true) {
 }
 
 function more() {
-  const items = [['feedback', 'Staff feedback', 'Complaints and ideas from the staff'], ['perf', 'Performance reviews', 'Each person, every month'], ['@me.html#notices', 'Notices and messages', 'Post to everyone or a team'], ['@me.html', 'My page', 'My own pay and messages']];
+  const items = [['close', 'Close the night', 'When the Manager hands it over to you'], ['feedback', 'Staff feedback', 'Complaints and ideas from the staff'], ['perf', 'Performance reviews', 'Each person, every month'], ['@me.html#notices', 'Notices and messages', 'Post to everyone or a team'], ['@me.html', 'My page', 'My own pay and messages']];
   const { box, close } = sheet(`<h2>More</h2><div class="more-list">${items.map(([k, l, sub]) => `<button type="button" data-more="${esc(k)}"><b>${esc(l)}</b><span>${esc(sub)}</span></button>`).join('')}</div><button class="big ghost" data-close>Close</button>`, { label: 'More' });
   $$('[data-more]', box).forEach(b => b.onclick = () => { close(); const k = b.dataset.more; if (k.startsWith('@')) location.href = k.slice(1); else location.hash = k; });
 }

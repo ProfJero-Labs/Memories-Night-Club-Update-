@@ -44,7 +44,14 @@ export async function closingView(el, date, { canClose = false } = {}) {
   el.innerHTML = '<div class="loading">Loading…</div>';
   const d = await sapi(`/api/ops/closing${date ? `?date=${date}` : ''}`);
   const closed = d.night.status === 'closed';
-  el.innerHTML = `<h1>Close the night</h1>${dateBar(d.date)}<p class="lead">${esc(dayName(d.date))}. Each step shows who has finished and what still needs doing.</p>
+  // The Manager closes the night; if they can't be there, whoever accepted the handover does.
+  canClose = canClose && !!d.closer?.canClose;
+  const h = d.closer?.handover;
+  const who = closed ? '' : `<div class="say ${h && !h.acceptedByName ? 'warn' : 'good'}"><b>Who closes tonight</b>${h
+    ? `${esc(h.byName)} can’t close: “${esc(h.note)}”. ${h.acceptedByName ? `<b>${esc(h.acceptedByName)}</b> is closing instead.` : 'Waiting for the Human manager or the Event manager to take it.'}`
+    : 'The Manager.'}
+    ${d.closer?.canHandOver ? '<br><button class="mid" id="clHand" style="margin-top:8px">I can’t close tonight</button>' : ''}${d.closer?.canAccept ? '<br><button class="mid okc" id="clAccept" style="margin-top:8px">I’ll close tonight</button>' : ''}</div>`;
+  el.innerHTML = `<h1>Close the night</h1>${dateBar(d.date)}<p class="lead">${esc(dayName(d.date))}. Each step shows who has finished and what still needs doing.</p>${who}
     <div class="stepbar">${d.steps.map(s => `<div class="${s.done ? 'done' : ''}"><span><b>${esc(s.label)}</b><small>${esc(s.detail)}</small></span>${s.done ? st('paid', 'Done') : st('unpaid', 'Waiting')}</div>`).join('')}</div>
     <div id="clMsg"></div>
     <h2>1. Waiters</h2><div class="tbl-wrap"><table class="tbl"><thead><tr><th>Waiter</th><th class="num">Sales</th><th class="num">Not delivered</th><th class="num">Unpaid</th><th>Report</th></tr></thead><tbody>
@@ -60,7 +67,16 @@ export async function closingView(el, date, { canClose = false } = {}) {
     <h2>4. Front office</h2>${d.frontOffice ? `<div class="say good"><b>Submitted by ${esc(d.frontOffice.name)}</b>${d.frontOffice.figures.ticketsChecked} tickets checked · ${d.frontOffice.figures.admitted} people in · ${d.frontOffice.figures.tablesArrived} of ${d.frontOffice.figures.tablesBooked} tables arrived · ${d.frontOffice.figures.openIssues} open issues${d.frontOffice.note ? `<br>“${esc(d.frontOffice.note)}”` : ''}</div>` : '<p class="muted">Not submitted yet.</p>'}
     <h2>5. Approvals</h2><p class="muted" style="margin:0">${d.pendingApprovals ? `${d.pendingApprovals} waiting: see Approvals.` : 'Nothing waiting.'}</p>
     ${closed ? `<div class="say good"><b>This night is closed</b>The end-of-day report is saved for finance.</div>` : canClose ? '<h2>6. Close the night</h2><p class="muted" style="margin:0">This prepares the end-of-day report, sends it to finance, and locks the night’s records.</p><button class="big" id="closeGo">Close the night and send the report</button>' : ''}`;
-  bindDate(el, v => closingView(el, v, { canClose })); labelTables(el);
+  bindDate(el, v => closingView(el, v, { canClose: true })); labelTables(el);
+  $('#clHand', el) && ($('#clHand', el).onclick = async () => {
+    const note = prompt('Why can’t you close tonight? The Human manager and the Event manager are texted.'); if (!note) return;
+    try { await sapi('/api/ops/close-night/hand-over', { method: 'POST', body: { date: d.date, note } }); await closingView(el, d.date, { canClose: true }); say($('#clMsg', el), 'Handed over. The Human manager and the Event manager have been texted.'); }
+    catch (e) { say($('#clMsg', el), e.message, 'bad'); }
+  });
+  $('#clAccept', el) && ($('#clAccept', el).onclick = async () => {
+    try { await sapi('/api/ops/close-night/accept', { method: 'POST', body: { date: d.date } }); await closingView(el, d.date, { canClose: true }); say($('#clMsg', el), 'You’re closing tonight.'); }
+    catch (e) { say($('#clMsg', el), e.message, 'bad'); }
+  });
   $$('[data-review]', el).forEach(b => b.onclick = async () => { try { await sapi('/api/ops/stock/review', { method: 'POST', body: { stationId: b.dataset.review, date: d.date } }); closingView(el, d.date, { canClose }); } catch (e) { say($('#clMsg', el), e.message, 'bad'); } });
   $$('[data-cash]', el).forEach(b => b.onclick = async () => { try { await sapi('/api/ops/cash/review', { method: 'POST', body: { id: b.dataset.cash } }); closingView(el, d.date, { canClose }); } catch (e) { say($('#clMsg', el), e.message, 'bad'); } });
   // Close: the Worker says if it's early or if steps are missing; the manager decides to go ahead.
