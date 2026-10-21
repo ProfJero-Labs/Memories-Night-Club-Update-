@@ -9,6 +9,6 @@ try {
     <div class="summary" style="margin-top:18px">${r.lines.map(l => `<div class="r"><span>${l.qty} × ${esc(l.name)}</span><span>${money(l.qty * l.unitPesewas)}</span></div>`).join('')}
       <div class="r t"><span>Paid</span><span>${money(r.totalPesewas)}</span></div></div>
     <p class="foot-small">Pickup code ${esc(r.pickupCode || '')} · Payment reference ${esc(r.reference)}${r.status === 'refund_due' ? ' · <strong>Refund owed</strong>' : r.status === 'refunded' ? ' · Refunded' : ''}</p>
-    <button class="btn" type="button" id="print">Save / print</button>`;
+    <div class="row-actions"><button class="btn" type="button" id="print">Save / print</button><a class="btn red" href="review.html?s=qr">Rate your night</a></div>`;
   $('#print').onclick = () => print();
 } catch (e) { root.innerHTML = `<div class="notice" role="alert">${esc(e.status === 404 ? 'We can’t find that receipt. Check the link from your text.' : e.message)}</div>`; }

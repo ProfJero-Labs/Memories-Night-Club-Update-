@@ -23,7 +23,10 @@ import { securitySignal } from './lib/monitor.js';
 import { ensureStaffMember, suspendStaffMember } from './members.js';
 
 const FORBIDDEN = { error: 'You can’t do that with your role.', status: 403 };
-export const ROLE_NAMES = { superAdmin: 'System admin', director: 'Director', manager: 'Manager', finance: 'Finance officer', eventManager: 'Events manager', doorStaff: 'Front office', security: 'Security', barStaff: 'Bartender', waitStaff: 'Waiter / waitress', cashier: 'Cashier', organiser: 'Organiser' };
+export const ROLE_NAMES = { superAdmin: 'System admin', director: 'Director', manager: 'Manager', hrManager: 'Human manager', finance: 'Finance officer', eventManager: 'Event manager', doorStaff: 'Front office', security: 'Security', barStaff: 'Bartender', waitStaff: 'Waiter / waitress', cashier: 'Cashier', dj: 'DJ', mc: 'MC', organiser: 'Organiser' };
+// Teams, for notices and the message board.
+export const TEAMS = { managers: 'Managers', bar: 'Bar', floor: 'Floor', door: 'Door and security', entertainment: 'DJs and MCs', office: 'Office' };
+export const teamOf = role => ({ superAdmin: 'managers', director: 'managers', manager: 'managers', hrManager: 'managers', eventManager: 'managers', finance: 'office', cashier: 'office', barStaff: 'bar', waitStaff: 'floor', doorStaff: 'door', security: 'door', dj: 'entertainment', mc: 'entertainment' }[role] || '');
 const TEMP_PIN_MS = 30 * 60e3, LOCK_MS = 15 * 60e3;
 const SIGN_IN_FAIL = 'That phone number and PIN don’t match.';
 const audit = (env, user, action, data) => setDoc(env, 'audit_logs', id(), { action, actorUid: uidOf(user) || null, ...data, timestamp: now() });
@@ -135,17 +138,18 @@ export async function changeMyPin(env, user, { current, pin }) {
 export async function whoAmI(env, user) {
   const rec = await getDoc(env, 'users', uidOf(user));
   const f = rec?.fields || {}, role = user.role;
-  return { uid: uidOf(user), name: f.name || user.name || '', phoneHint: f.phone ? maskPhone(f.phone) : '', role, roleName: ROLE_NAMES[role] || role, pinLength: pinLength(role), hasPin: !!f.pinHash, pinStarter: f.pinStarter === true, canCollectCash: f.canCollectCash === true || ['cashier', 'manager', 'director', 'superAdmin', 'waitStaff'].includes(role) };
+  return { uid: uidOf(user), name: f.name || user.name || '', phoneHint: f.phone ? maskPhone(f.phone) : '', role, roleName: ROLE_NAMES[role] || role, pinLength: pinLength(role), hasPin: !!f.pinHash, pinStarter: f.pinStarter === true, canCollectCash: f.canCollectCash === true || ['cashier', 'manager', 'director', 'superAdmin', 'waitStaff', 'barStaff', 'eventManager'].includes(role), team: teamOf(role) };
 }
 
 // ── Managers look after staff ──
 const staffView = d => {
   const f = d.fields, role = roleOfRecord(f);
-  return { uid: d.id, name: f.name || '', phone: f.phone || '', email: f.email || '', role, roleName: ROLE_NAMES[role] || role, removed: f.removed === true, hasPin: !!f.pinHash, pinStarter: f.pinStarter === true, locked: f.pinLocked === true || (f.lockedUntil && new Date(f.lockedUntil).getTime() > Date.now()), lastSignInAt: f.lastSignInAt || '', canCollectCash: f.canCollectCash === true };
+  return { uid: d.id, name: f.name || '', phone: f.phone || '', email: f.email || '', role, roleName: ROLE_NAMES[role] || role, removed: f.removed === true, hasPin: !!f.pinHash, pinStarter: f.pinStarter === true, locked: f.pinLocked === true || (f.lockedUntil && new Date(f.lockedUntil).getTime() > Date.now()), lastSignInAt: f.lastSignInAt || '', canCollectCash: f.canCollectCash === true, ...(role === 'director' ? { sharePct: Number(f.sharePct || 0) } : {}) };
 };
 export async function listStaffPeople(env, user) {
   if (!requireRole(user, STAFF_ADMIN)) return FORBIDDEN;
-  const all = (await listDocs(env, 'users')).map(staffView).filter(s => !s.removed && STAFF_ROLES.includes(s.role));
+  // The Event manager sees only the organisers (the accounts that are theirs to look after).
+  const all = (await listDocs(env, 'users')).map(staffView).filter(s => !s.removed && STAFF_ROLES.includes(s.role) && (user.role !== 'eventManager' || s.role === 'organiser'));
   return { staff: all.sort((a, b) => (a.name || a.email).localeCompare(b.name || b.email)), roles: STAFF_ROLES.filter(r => canAssign(user.role, r)).map(r => ({ id: r, name: ROLE_NAMES[r] })) };
 }
 
@@ -193,7 +197,19 @@ export async function updateStaffPerson(env, b, user) {
   if (!name) return { error: 'Add their name.' };
   if (b.phone !== undefined && !phone) return { error: 'Use a Ghana number, e.g. 024 123 4567.' };
   if (phone && phone !== f.phone) { const clash = await staffByPhone(env, phone); if (clash && clash.id !== rec.id) return { error: `${clash.fields.name || 'Someone'} already uses that phone number.` }; }
-  await setDoc(env, 'users', rec.id, { ...f, name, phone, role, admin: role === 'superAdmin', canCollectCash: b.canCollectCash === undefined ? f.canCollectCash === true : b.canCollectCash === true, updatedAt: now() });
+  // A director's share of the club (e.g. 35 and 65): set by the system admin only; all directors
+  // together can't go over 100.
+  let sharePct = f.sharePct ?? null;
+  if (b.sharePct !== undefined && b.sharePct !== '' && b.sharePct !== null) {
+    if (user.role !== 'superAdmin') return { error: 'Only the system admin sets the directors’ shares.', status: 403 };
+    if (role !== 'director') return { error: 'Only a director has a share.' };
+    const pct = Number(b.sharePct);
+    if (!(pct >= 0 && pct <= 100)) return { error: 'The share is a percentage from 0 to 100.' };
+    const others = (await queryWhere(env, 'users', [{ field: 'role', value: 'director' }])).filter(d => d.id !== rec.id && !d.fields.removed).reduce((n, d) => n + Number(d.fields.sharePct || 0), 0);
+    if (others + pct > 100) return { error: `The other directors already hold ${others}%. Shares can’t add up to more than 100%.` };
+    sharePct = pct;
+  }
+  await setDoc(env, 'users', rec.id, { ...f, name, phone, role, admin: role === 'superAdmin', canCollectCash: b.canCollectCash === undefined ? f.canCollectCash === true : b.canCollectCash === true, ...(sharePct != null ? { sharePct } : {}), updatedAt: now() });
   forgetStaffRecord(env, rec.id);
   if (role !== oldRole) { await revokeSessions(env, rec.id); await ensureStaffMember(env, { uid: rec.id, name, phone, role }, user); }
   await audit(env, user, 'STAFF_UPDATED', { targetUid: rec.id, from: oldRole, role, name });

@@ -6,14 +6,25 @@ import * as cash from './cash.js';
 import * as approvals from './approvals.js';
 import * as front from './frontoffice.js';
 import * as closing from './closing.js';
+import * as money from './money.js';
+import * as budget from './budget.js';
+import * as payments from './payments.js';
+import * as commission from './commission.js';
+import * as team from './team.js';
+import * as payroll from './payroll.js';
+import * as purchases from './purchases.js';
+import * as director from './director.js';
+import * as reviews from './reviews.js';
 
 export async function opsRoute(m, p, u, b, env, user) {
   const q = k => u.searchParams.get(k) || undefined;
   if (m === 'GET') {
     switch (p) {
-      case '/api/ops/products': return stock.listProducts(env, user);
+      case '/api/ops/products': return stock.listProducts(env, user, { stationId: q('stationId') });
       case '/api/ops/stock': return stock.stockSheet(env, { stationId: q('stationId'), date: q('date') }, user);
       case '/api/ops/changes': return stock.changeLog(env, user);
+      case '/api/ops/stock/to-explain': return stock.countsToExplain(env, user);
+      case '/api/ops/stock/deliveries': return stock.listDeliveries(env, user, { stationId: q('stationId') });
       case '/api/ops/tabs': return tabs.myTabs(env, user, { all: q('all') === '1' });
       case '/api/ops/tabs/find': return tabs.findTabs(env, user, q('q'));
       case '/api/ops/tab': return tabs.getTab(env, user, q('id'));
@@ -30,6 +41,21 @@ export async function opsRoute(m, p, u, b, env, user) {
       case '/api/ops/eod': return closing.eodReport(env, user, { date: q('date') });
       case '/api/ops/eod/list': return closing.listEod(env, user);
       case '/api/ops/finance-contact': return closing.financeContact(env, user);
+      case '/api/ops/payments': return payments.nightPayments(env, user, { date: q('date') });
+      case '/api/ops/notices': return team.listNotices(env, user);
+      case '/api/ops/payroll': return payroll.payroll(env, user, { month: q('month') });
+      case '/api/ops/my-pay': return payroll.myPay(env, user);
+      case '/api/ops/purchases': return purchases.purchases(env, user, { stationId: q('stationId') });
+      case '/api/ops/to-approve': return director.toApprove(env, user);
+      case '/api/ops/reviews': return reviews.listReviews(env, user, { days: q('days') });
+      case '/api/ops/perf': return reviews.perfReviews(env, user, { month: q('month') });
+      case '/api/ops/reviews/mine': return reviews.myPerf(env, user);
+      case '/api/ops/board': return team.listBoard(env, user);
+      case '/api/ops/feedback/mine': return team.myFeedback(env, user);
+      case '/api/ops/feedback': return team.feedbackInbox(env, user);
+      case '/api/ops/commissions': return commission.commissions(env, user, { month: q('month') });
+      case '/api/ops/budget': return budget.monthBudget(env, user, { month: q('month') });
+      case '/api/ops/money': return money.moneyReport(env, user, { period: q('period'), from: q('from'), to: q('to') });
     }
     return undefined;
   }
@@ -38,6 +64,9 @@ export async function opsRoute(m, p, u, b, env, user) {
     case '/api/ops/products': return stock.saveProduct(env, b, user);
     case '/api/ops/products/available': return stock.setAvailable(env, b, user);
     case '/api/ops/stock/received': return stock.recordReceived(env, b, user);
+    case '/api/ops/stock/explain': return stock.explainCount(env, b, user);
+    case '/api/ops/stock/delivery': return stock.decideDelivery(env, b, user);
+    case '/api/ops/quick-sale': return tabs.quickSale(env, b, user);
     case '/api/ops/stock/transfer': return stock.recordTransfer(env, b, user);
     case '/api/ops/stock/waste': return stock.recordWaste(env, b, user);
     case '/api/ops/stock/count': return stock.submitCount(env, b, user);
@@ -62,8 +91,40 @@ export async function opsRoute(m, p, u, b, env, user) {
     case '/api/ops/my-report': return closing.submitMyReport(env, b, user);
     case '/api/ops/front-report': return closing.submitFrontOffice(env, b, user);
     case '/api/ops/close-night': return closing.closeNight(env, b, user);
+    case '/api/ops/close-night/hand-over': return closing.handOverClosing(env, b, user);
+    case '/api/ops/close-night/accept': return closing.acceptClosing(env, b, user);
     case '/api/ops/eod/sign-off': return closing.financeSignOff(env, b, user);
     case '/api/ops/finance-contact': return closing.financeContact(env, user, b || {});
+    case '/api/ops/expenses': return money.addExpense(env, b, user);
+    case '/api/ops/budget': return budget.setBudget(env, b, user);
+    case '/api/ops/notices': return team.postNotice(env, b, user);
+    case '/api/ops/pay/details': return payroll.setPayDetails(env, b, user);
+    case '/api/ops/pay/item': return payroll.addPayItem(env, b, user);
+    case '/api/ops/pay/item/remove': return payroll.removePayItem(env, b, user);
+    case '/api/ops/loans': return payroll.requestLoan(env, b, user);
+    case '/api/ops/loans/pay': return payroll.payLoan(env, b, user);
+    case '/api/ops/payroll/submit': return payroll.submitPayroll(env, b, user);
+    case '/api/ops/payroll/pay': return payroll.payPayroll(env, b, user);
+    case '/api/ops/purchases': return purchases.askPurchase(env, b, user);
+    case '/api/ops/purchases/check': return purchases.checkPurchase(env, b, user);
+    case '/api/ops/approve': return director.decide(env, b, user);
+    case '/api/ops/commissions/request': return commission.requestPayout(env, b, user);
+    case '/api/ops/cash/receive': return cash.receiveCash(env, b, user);
+    case '/api/ops/reviews/handle': return reviews.handleReview(env, b, user);
+    case '/api/ops/perf': return reviews.writePerf(env, b, user);
+    case '/api/ops/perf/reply': return reviews.replyPerf(env, b, user);
+    case '/api/ops/notices/remove': return team.removeNotice(env, b, user);
+    case '/api/ops/board': return team.postBoard(env, b, user);
+    case '/api/ops/board/remove': return team.removeBoard(env, b, user);
+    case '/api/ops/feedback': return team.sendFeedback(env, b, user);
+    case '/api/ops/feedback/reply': return team.replyFeedback(env, b, user);
+    case '/api/ops/commissions/assign': return commission.assignDeal(env, b, user);
+    case '/api/ops/commissions/pay': return commission.payCommission(env, b, user);
+    case '/api/ops/bills': return budget.addBill(env, b, user);
+    case '/api/ops/bills/pay': return budget.payBill(env, b, user);
+    case '/api/ops/bills/remove': return budget.removeBill(env, b, user);
+    case '/api/ops/bills/copy': return budget.copyMonth(env, b, user);
+    case '/api/ops/expenses/remove': return money.removeExpense(env, b, user);
   }
   return undefined;
 }

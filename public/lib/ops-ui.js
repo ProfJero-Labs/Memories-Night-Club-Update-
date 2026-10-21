@@ -25,7 +25,9 @@ export function sheet(html, { label = 'Details' } = {}) {
   addEventListener('keydown', key);
   box.onclick = e => { if (e.target === box) close(); };
   $$('[data-close]', box).forEach(b => b.onclick = close);
-  setTimeout(() => box.querySelector('input, select, textarea, button')?.focus(), 30);
+  // Focus the first field, unless the person has already started typing in the sheet (moving the
+  // cursor then would send the rest of what they type into the wrong box).
+  setTimeout(() => { if (!box.contains(document.activeElement)) box.querySelector('input, select, textarea, button')?.focus(); }, 30);
   return { box, close };
 }
 
@@ -48,9 +50,12 @@ export function bottomNav(items, onGo) {
 }
 
 // Run fn now and every `ms` while the screen is visible. Returns stop().
+// fn gets alive(): false once stopped (the person has moved to another screen). A refresh that was
+// already on its way checks it before drawing, so it never draws over the screen they moved to.
 export function every(ms, fn) {
   let t = null, stopped = false;
-  const tick = async () => { clearTimeout(t); if (stopped) return; if (document.visibilityState === 'visible') { try { await fn(); } catch { /* next tick retries */ } } t = setTimeout(tick, ms); };
+  const alive = () => !stopped;
+  const tick = async () => { clearTimeout(t); if (stopped) return; if (document.visibilityState === 'visible') { try { await fn(alive); } catch { /* next tick retries */ } } t = setTimeout(tick, ms); };
   const vis = () => { if (document.visibilityState === 'visible' && !stopped) tick(); };
   document.addEventListener('visibilitychange', vis);
   tick();

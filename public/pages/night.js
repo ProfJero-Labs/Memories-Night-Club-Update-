@@ -2,20 +2,31 @@
 // received, still owed, how it was paid), what needs them (approvals), the tables, and closing the
 // night. Everything else is behind "More", shown only when tapped. The technical side (the site,
 // nights, settings) is the administrator's, in the control room.
-//   Manager:  Tonight · Tables · Staff · More (drinks & prices, stock, full sales, past nights)
-//   Director: Tonight · Tables · Reports · More (+ staff, ticket money, members & attendance)
+//   Manager:  Tonight · Tables · Customers · More (buying drinks, cash from the staff, money and
+//             expenses, stock, drinks & prices, payments, commissions, members, past nights)
+//   Director: Tonight · Money (their share, bills, budget, commissions) · To approve (every payment:
+//             salaries, loans, bills, commissions, purchases; either director) · More (reports,
+//             salaries, customer reviews, staff feedback, performance, tables, staff, members).
+//             Nothing from the ticket side (tickets, refunds, pay in bits).
+// Tonight also opens Payments tonight (every payment, tap for what was bought, who served, how it
+// was paid) and Top customers.
+// "Needs you" on Tonight: approvals, and stock differences the bar found when it opened (the
+// manager explains them). The manager adds expenses from Tonight; the director sees Money.
 import { $, $$, esc } from '../app.js';
 import { requireStaff, staffHeader, sapi } from '../staff.js';
 import { bottomNav, sheet, say, st, every, money, when } from '../lib/ops-ui.js';
-import { salesView, closingView, approvalsView, productsView, stockAdminView, eodListView, eodView } from '../lib/ops-views.js';
+import { salesView, closingView, approvalsView, productsView, stockAdminView, eodListView, eodView, moneyView, expenseSheet, explainSheet, budgetView, paymentsView, commissionsView, toApproveView, purchasesView, cashReceiveView, feedbackInboxView } from '../lib/ops-views.js';
+import { payView, reviewsView, perfView } from '../lib/people-views.js';
 import { staffView } from '../lib/staff-view.js';
 
 const user = await requireStaff(['manager', 'director', 'superAdmin']);
 const director = user.role !== 'manager';
 staffHeader(user, 'Tonight');
 const app = $('#app');
-const third = director ? ['reports', 'Reports'] : ['staff', 'Staff'];
-const nav = bottomNav([['tonight', 'Tonight'], ['tables', 'Tables'], third, ['more', 'More']], k => { if (k === 'more') more(); else location.hash = k; });
+const navItems = director ? [['tonight', 'Tonight'], ['money', 'Money'], ['approve', 'To approve'], ['more', 'More']] : [['tonight', 'Tonight'], ['tables', 'Tables'], ['customers', 'Customers'], ['more', 'More']];
+// The directors see how many payments wait for them, wherever they are.
+if (director) sapi('/api/ops/to-approve').then(d => nav.setDot('approve', d.items.length)).catch(() => {});
+const nav = bottomNav(navItems, k => { if (k === 'more') more(); else location.hash = k; });
 let stop = null;
 const fail = e => { app.innerHTML = `<div class="say bad" role="alert"><b>Couldn’t load</b>${esc(e.message)}</div><button class="big ghost" id="retry">Try again</button>`; $('#retry').onclick = route; };
 const back = (label = 'Tonight', to = 'tonight') => `<button class="link" data-goto="${to}" style="justify-self:start">← ${esc(label)}</button>`;
@@ -25,30 +36,48 @@ async function route() {
   if (stop) { stop(); stop = null; }
   const [k, arg] = location.hash.slice(1).split('/');
   const key = k || 'tonight';
-  nav.setActive(['tonight', 'tables', 'staff', 'reports'].includes(key) ? key : key === 'report' ? 'reports' : 'more');
+  nav.setActive(navItems.some(([k2]) => k2 === key) ? key : key === 'report' ? 'reports' : 'more');
   scrollTo(0, 0);
   try {
-    if (key === 'tables') { stop = every(10000, () => tables().catch(fail)); return; }
+    if (key === 'tables') { stop = every(10000, alive => tables(alive).catch(e => alive() && fail(e))); return; }
     if (key === 'staff') { app.innerHTML = `${back()}<div id="sv"></div>`; bindBack(); return await staffView($('#sv'), user); }
     if (key === 'reports') { app.innerHTML = `<div id="rv"></div>`; return await eodListView($('#rv'), { canSignOff: director }); }
     if (key === 'report' && arg) { app.innerHTML = `${back('Reports', 'reports')}<div id="rv"></div>`; bindBack(); return await eodView($('#rv'), arg, { canSignOff: director }); }
-    if (key === 'close') { app.innerHTML = `${back()}<div id="cv"></div>`; bindBack(); return await closingView($('#cv'), undefined, { canClose: true }); }
+    if (key === 'close') { app.innerHTML = `${back()}<div id="cv"></div>`; bindBack(); return await closingView($('#cv'), undefined, { canClose: !director || user.role === 'superAdmin' }); }
     if (key === 'approvals') { app.innerHTML = `${back()}<div id="av"></div>`; bindBack(); return await approvalsView($('#av')); }
     if (key === 'sales') { app.innerHTML = `${back()}<div id="sv"></div>`; bindBack(); return await salesView($('#sv')); }
-    if (key === 'prices') { app.innerHTML = `${back()}<div id="pv"></div>`; bindBack(); return await productsView($('#pv')); }
-    if (key === 'stock') { app.innerHTML = `${back()}<div id="kv"></div>`; bindBack(); return await stockAdminView($('#kv')); }
-    stop = every(10000, () => tonight().catch(fail));
+    if (key === 'prices') { app.innerHTML = `${back()}<div id="pv"></div>`; bindBack(); return await productsView($('#pv'), { canEdit: user.role === 'superAdmin' }); }
+    if (key === 'commissions') { app.innerHTML = `${back('Money', 'money')}<div id="cv2"></div>`; bindBack(); return await commissionsView($('#cv2')); }
+    if (key === 'budget') { app.innerHTML = `${back('Money', 'money')}<div id="bv"></div>`; bindBack(); return await budgetView($('#bv')); }
+    if (key === 'payments') { app.innerHTML = `${back()}<div id="yv"></div>`; bindBack(); return await paymentsView($('#yv'), { tab: key }); }
+    if (key === 'customers') { app.innerHTML = `${director ? back() : ''}<div id="rv2"></div><div id="yv" style="margin-top:20px"></div>`; bindBack(); await reviewsView($('#rv2')).catch(() => {}); return await paymentsView($('#yv'), { tab: 'customers' }); }
+    if (key === 'approve') { app.innerHTML = '<div id="tav"></div>'; return await toApproveView($('#tav'), { onCount: n => nav.setDot('approve', n) }); }
+    if (key === 'salaries') { app.innerHTML = `${back('Money', 'money')}<div id="slv"></div>`; bindBack(); return await payView($('#slv'), arg); }
+    if (key === 'reviews') { app.innerHTML = `${back()}<div id="rvv"></div>`; bindBack(); return await reviewsView($('#rvv')); }
+    if (key === 'feedback') { app.innerHTML = `${back()}<div id="fbv"></div>`; bindBack(); return await feedbackInboxView($('#fbv')); }
+    if (key === 'perf') { app.innerHTML = `${back()}<div id="pfv"></div>`; bindBack(); return await perfView($('#pfv'), arg); }
+    if (key === 'purchases') { app.innerHTML = `${back()}<div id="puv"></div>`; bindBack(); return await purchasesView($('#puv')); }
+    if (key === 'cash') { app.innerHTML = `${back()}<div id="crv"></div>`; bindBack(); return await cashReceiveView($('#crv')); }
+    if (key === 'stock') { app.innerHTML = `${back()}<div id="kv"></div>`; bindBack(); return await stockAdminView($('#kv'), undefined, undefined, { role: user.role }); }
+    if (key === 'money') { app.innerHTML = `${director ? '' : back()}<div id="mv"></div>`; bindBack(); return await moneyView($('#mv')); }
+    stop = every(10000, alive => tonight(alive).catch(e => alive() && fail(e)));
   } catch (e) { fail(e); }
 }
 addEventListener('hashchange', route);
 
 // ── Tonight: the money, what needs you, close ──
-async function tonight() {
-  const [s, a, t] = await Promise.all([sapi('/api/ops/sales'), sapi('/api/ops/approvals'), sapi('/api/ops/tabs?all=1')]);
-  const x = s.totals, waiting = a.approvals.filter(p => p.canDecide);
+// Tonight redraws itself (every 10 seconds, and after each action), so a confirmation is kept for a
+// few seconds and shown again after each redraw instead of vanishing with it.
+let flash = null;
+const flashNote = (text, kind = 'good') => { flash = { text, kind, at: Date.now() }; say($('#msg'), text, kind); };
+const note = flashNote;
+async function tonight(alive = () => location.hash.slice(1).split('/')[0] in { '': 1, tonight: 1 }) {
+  const [s, a, t, ex] = await Promise.all([sapi('/api/ops/sales'), sapi('/api/ops/approvals'), sapi('/api/ops/tabs?all=1'), sapi('/api/ops/stock/to-explain').catch(() => ({ counts: [] }))]);
+  if (!alive()) return;
+  const x = s.totals, waiting = a.approvals.filter(p => p.canDecide), toExplain = ex.counts || [];
   const open = t.tabs.filter(tb => tb.status === 'open');
   const closed = s.night.status === 'closed';
-  nav.setDot('tonight', waiting.length);
+  nav.setDot('tonight', waiting.length + toExplain.length);
   app.innerHTML = `<div class="pos">
     <p class="kicker">${esc(new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'Africa/Accra' }))}${closed ? ' · closed' : ''}</p>
     <div class="pos-money">
@@ -58,21 +87,30 @@ async function tonight() {
       <p class="how">Cash ${money(x.cashPesewas)} · MoMo ${money((x.momoPesewas || 0))} · Paid on phone ${money(x.digitalPesewas)}</p>
     </div>
     <div id="msg"></div>
+    ${toExplain.length ? `<section class="pos-need"><h2>Stock to explain <span class="count">${toExplain.length}</span></h2>
+      ${toExplain.map((c, i) => `<div class="need"><div><b>${esc(c.stationName)}: the bar found a different number</b><span>${c.differences.map(d => `${esc(d.name)} ${Math.abs(d.difference)} ${d.difference < 0 ? 'fewer' : 'more'}`).join(' · ')}</span><small>${esc(c.byName)} counted when the bar opened · ${esc(c.date)}</small></div>
+        <div class="need-btns"><button class="mid" data-explain="${i}">Explain</button></div></div>`).join('')}</section>` : ''}
     ${waiting.length ? `<section class="pos-need"><h2>Needs you <span class="count">${waiting.length}</span></h2>
       ${waiting.map(p => `<div class="need"><div><b>${esc(p.label)}</b><span>${esc(p.summary)}</span><small>${esc(p.requestedByName)} · “${esc(p.reason)}”</small></div>
         <div class="need-btns"><button class="mid okc" data-yes="${esc(p.id)}" aria-label="Approve">✓</button><button class="mid" data-no="${esc(p.id)}" aria-label="Refuse">✗</button></div></div>`).join('')}</section>` : ''}
+    <div class="btn-row"><button class="big ghost" data-goto="payments">Payments tonight</button><button class="big ghost" data-goto="customers">${director ? 'Customers' : 'Top customers'}</button></div>
+    ${director ? '' : '<div class="btn-row"><button class="big ghost" data-goto="cash">Cash from the staff</button><button class="big ghost" data-goto="purchases">Buying drinks</button></div>'}
     <section><div class="pos-head"><h2>Tables</h2><span class="muted">${open.length} open</span></div>
       <div class="pos-tables">${open.slice(0, 8).map(tableRow).join('') || '<p class="muted">No open tables.</p>'}</div>
       ${open.length > 8 ? `<button class="link" data-goto="tables">See all ${open.length} tables →</button>` : ''}</section>
-    ${closed ? `<div class="say good"><b>The night is closed</b>The report is under ${director ? 'Reports' : 'More → Past nights'}.</div>` : '<button class="big" id="toClose">Close the night</button>'}
+    <button class="big ghost" id="addExp">Add an expense</button>
+    ${closed ? `<div class="say good"><b>The night is closed</b>The report is under ${director ? 'More → End-of-day reports' : 'More → Past nights'}.</div>` : `<button class="big${director ? ' ghost' : ''}" id="toClose">${director ? 'How closing is going' : 'Close the night'}</button>`}
   </div>`;
   bindRows();
+  if (flash && Date.now() - flash.at < 8000) say($('#msg'), flash.text, flash.kind);
   $('#toClose') && ($('#toClose').onclick = () => { location.hash = 'close'; });
+  $$('[data-explain]', app).forEach(b => b.onclick = () => explainSheet(toExplain[Number(b.dataset.explain)], () => { note('Explanation saved. Finance can see it.'); tonight().catch(fail); }));
+  $('#addExp').onclick = async () => { const m = await sapi('/api/ops/money?period=today').catch(() => null); expenseSheet(m, r => note(r?.needsApproval ? 'Saved. It’s above the limit, so it waits for a director.' : 'Expense saved.')); };
   $$('[data-goto]', app).forEach(b => b.onclick = () => { location.hash = b.dataset.goto; });
   const decide = async (id, approve) => {
     const note = approve ? '' : prompt('Why refuse? (optional)') ?? null; if (note === null) return;
-    try { await sapi('/api/ops/approvals/decide', { method: 'POST', body: { id, approve, note } }); say($('#msg'), approve ? 'Approved.' : 'Refused.'); tonight().catch(fail); }
-    catch (e) { say($('#msg'), e.message, 'bad'); }
+    try { await sapi('/api/ops/approvals/decide', { method: 'POST', body: { id, approve, note } }); flashNote(approve ? 'Approved.' : 'Refused.'); tonight().catch(fail); }
+    catch (e) { flashNote(e.message, 'bad'); }
   };
   $$('[data-yes]', app).forEach(b => b.onclick = () => decide(b.dataset.yes, true));
   $$('[data-no]', app).forEach(b => b.onclick = () => decide(b.dataset.no, false));
@@ -84,8 +122,9 @@ const tableRow = tb => `<button type="button" class="pos-row" data-tab="${esc(tb
   <span class="amt">${money(tb.bill.balancePesewas || tb.bill.totalPesewas)}${st(tb.payStatus, tb.bill.balancePesewas ? (tb.bill.paidPesewas ? 'part paid' : 'unpaid') : tb.bill.totalPesewas ? 'paid' : 'empty')}</span></button>`;
 function bindRows() { $$('[data-tab]', app).forEach(b => b.onclick = () => tableSheet(b.dataset.tab)); }
 
-async function tables() {
+async function tables(alive = () => true) {
   const { tabs } = await sapi('/api/ops/tabs?all=1');
+  if (!alive()) return;
   const open = tabs.filter(t => t.status === 'open'), done = tabs.filter(t => t.status !== 'open');
   const owed = open.reduce((n, t) => n + t.bill.balancePesewas, 0);
   app.innerHTML = `<h1>Tables</h1><p class="lead">${open.length} open · ${money(owed)} still to pay</p>
@@ -111,14 +150,31 @@ async function tableSheet(id) {
 
 // ── More: everything else, only when asked for ──
 function more() {
-  const items = [
+  const items = director ? [
+    ['reports', 'End-of-day reports', 'Each night, signed off'],
+    ['salaries', 'Salaries and loans', 'What staff are paid, set by the Human manager'],
+    ['budget', 'Bills and budget', 'What’s due this month, set by finance'],
+    ['commissions', 'Commissions', '10% on tables over GHS 3,000: who is owed'],
+    ['reviews', 'Customer reviews', 'What customers say'],
+    ['feedback', 'Staff feedback', 'Complaints and ideas from the staff'],
+    ['perf', 'Performance reviews', 'Each staff member, every month'],
+    ['tables', 'Tables', 'Open tables and what they owe'],
     ['sales', 'Tonight in detail', 'By waiter, by bar, by drink'],
-    ['approvals', 'Approvals', 'Everything asked tonight'],
-    ['prices', 'Drinks & prices', 'Add a drink, change a price'],
-    ['stock', 'Stock', 'Deliveries, counts, differences'],
-    ...(director ? [['staff', 'Staff', 'Add people, send PINs']] : [['reports', 'Past nights', 'End-of-day reports']]),
-    ...(director ? [['@admin.html#overview', 'Ticket money', 'Tickets sold, payments, refunds'], ['@admin.html#members', 'Members & attendance', 'Who came in, by night']] : []),
+    ['staff', 'Staff', 'Add people, send PINs'],
+    ['@admin.html#members', 'Members', 'Members and passes'],
     ...(user.role === 'superAdmin' ? [['@admin.html', 'Control room', 'Site, nights, settings']] : []),
+  ] : [
+    ['purchases', 'Buying drinks', 'Ask for what to buy; finance and a director approve'],
+    ['cash', 'Cash from the staff', 'Receive each person’s counted cash'],
+    ['money', 'Money', 'Money in, money out, profit; expenses'],
+    ['stock', 'Stock', 'New stock, counts, differences'],
+    ['payments', 'Payments tonight', 'Every payment, with details'],
+    ['approvals', 'Approvals', 'Everything asked tonight'],
+    ['sales', 'Tonight in detail', 'By waiter, by bar, by drink'],
+    ['commissions', 'Commissions', 'Who brought the big tables'],
+    ['prices', 'Drinks & prices', 'Prices and costs (finance sets them)'],
+    ['@admin.html#members', 'Members', 'Members and passes'],
+    ['reports', 'Past nights', 'End-of-day reports'],
   ];
   const { box, close } = sheet(`<h2>More</h2><div class="more-list">${items.map(([k, l, sub]) => `<button type="button" data-more="${esc(k)}"><b>${esc(l)}</b><span>${esc(sub)}</span></button>`).join('')}</div>
     <button class="big ghost" data-close>Close</button>`, { label: 'More' });

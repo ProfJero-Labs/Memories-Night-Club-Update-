@@ -58,6 +58,7 @@
 .pick.out .grow { color: var(--muted); text-decoration: line-through; }
 .qstep { display: flex; align-items: center; border: 1.5px solid var(--line-2); }
 .qstep button { width: 48px; height: 48px; background: none; border: 0; color: var(--paper); font-size: 24px; cursor: pointer; }
+.qstep button:disabled { opacity: .3; cursor: default; }
 .qstep span { min-width: 30px; text-align: center; font-weight: 700; font-size: 18px; }
 .cat-h { font: 400 20px var(--display); text-transform: uppercase; color: var(--mustard); margin: 12px 0 0; }
 

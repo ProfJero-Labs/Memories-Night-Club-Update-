@@ -104,7 +104,7 @@ test('adminInstallments lists every plan, newest first', async () => {
   store.seed('installment_plans', 'MEM-OLD1', { buyerName: 'Old Plan', createdAt: '2024-01-01T00:00:00.000Z', status: 'active' });
   store.seed('installment_plans', 'MEM-NEW1', { buyerName: 'New Plan', createdAt: '2025-06-01T00:00:00.000Z', status: 'active' });
 
-  const d = await adminInstallments(env, { uid: 'm1', role: 'director' });
+  const d = await adminInstallments(env, { uid: 'm1', role: 'superAdmin' });
   assert.equal(d.plans.length, 2);
   assert.equal(d.plans[0].id, 'MEM-NEW1', 'newest plan first');
   assert.equal(d.plans[1].id, 'MEM-OLD1');

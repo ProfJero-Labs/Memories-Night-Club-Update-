@@ -20,6 +20,8 @@ function setup() {
   store.seed('menu_items', 'beer', { name: 'Club beer', category: 'Beer', pricePesewas: 2500, available: true });
   store.seed('menu_items', 'shot', { name: 'Tequila shot', category: 'Shots', pricePesewas: 3000, available: true });
   store.seed('menu_items', 'gone', { name: 'Champagne flute', category: 'Wine', pricePesewas: 9000, available: false });
+  // Stock in the bar (delivered on an earlier night: it carries forward), so drinks can be sold.
+  for (const pid of ['beer', 'shot', 'gone']) store.seed('stock_moves', `seed-${pid}`, { productId: pid, stationId: 'main', qty: 100, kind: 'received', businessDate: '2000-01-01' });
   return { store, env };
 }
 const BAR = { role: 'barStaff' };
@@ -90,7 +92,7 @@ test('a declined payment says so (nothing taken); a wrong amount is never honour
   store.setPaystack(store.list('pending_checkouts')[0].id, { status: 'success', currency: 'GHS', amount: 100 });
   const o = await call(env, 'GET', `/api/guest/counter/${r.data.orderId}`);
   assert.equal(o.data.status, 'refund_due'); assert.equal(o.data.pickupCode, undefined, 'no drinks for a wrong amount');
-  const refunds = await call(env, 'GET', '/api/admin/refunds', { claims: { role: 'director' } });
+  const refunds = await call(env, 'GET', '/api/admin/refunds', { claims: { role: 'superAdmin' } });
   assert.ok(refunds.data.refunds.some(x => x.source === 'counter' && x.id === r.data.orderId));
 });
 
@@ -111,10 +113,10 @@ test('the bar: paid orders queue oldest first; hand over once; "can’t make it"
   store.setPaystack(ref2, { status: 'success', currency: 'GHS', amount: 8000 });
   await call(env, 'GET', `/api/guest/counter/${second.data.orderId}`);
   await call(env, 'POST', '/api/bar/order', { claims: BAR, body: { orderId: second.data.orderId, action: 'refund', reason: 'out of tequila' } });
-  const refunds = await call(env, 'GET', '/api/admin/refunds', { claims: { role: 'director' } });
+  const refunds = await call(env, 'GET', '/api/admin/refunds', { claims: { role: 'superAdmin' } });
   const owed = refunds.data.refunds.find(x => x.source === 'counter');
   assert.equal(owed.amountPesewas, 8000); assert.equal(owed.reason, 'out of tequila');
-  assert.equal((await call(env, 'POST', '/api/admin/refunds/mark', { claims: { role: 'director' }, body: { source: 'counter', id: second.data.orderId, note: 'MoMo reversal 123' } })).status, 200);
+  assert.equal((await call(env, 'POST', '/api/admin/refunds/mark', { claims: { role: 'superAdmin' }, body: { source: 'counter', id: second.data.orderId, note: 'MoMo reversal 123' } })).status, 200);
   assert.equal(store.get('counter_orders', second.data.orderId).fields.status, 'refunded');
 });
 

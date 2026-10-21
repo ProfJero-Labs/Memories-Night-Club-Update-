@@ -8,7 +8,7 @@ import { requireRole, uidOf } from '../lib/auth.js';
 import { FORBIDDEN, bizDate, dateOr, who, audit } from './common.js';
 import { tableCode } from '../lib/util.js';
 
-const FRONT = ['superAdmin', 'director', 'manager', 'eventManager', 'doorStaff', 'security'];
+const FRONT = ['superAdmin', 'director', 'manager', 'hrManager', 'eventManager', 'doorStaff', 'security'];
 export const INCIDENT_KINDS = { fight: 'Fight or threat', refused: 'Refused entry', id: 'ID / age problem', fake_ticket: 'Fake or used ticket', lost: 'Lost or found item', medical: 'Medical', customer: 'Customer complaint', booking: 'Booking or payment problem', other: 'Other' };
 
 // Tonight's table bookings: who, which table package, how many people, bottles already paid for.

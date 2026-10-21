@@ -1,6 +1,7 @@
-// Views shared by the manager (control room) and the finance officer (finance.html):
-// Today's sales · Closing the night · Approvals · Products & prices · Stock & counts · Staff reports
-// & cash · End-of-day reports · Who changed what. Each takes an element to draw into.
+// Views shared by the manager and director (night.html) and the finance officer (finance.html):
+// Money (in, out, profit; expenses) · Today's sales · Closing the night · Approvals · Products &
+// prices · Stock & counts · Staff reports & cash · End-of-day reports · Who changed what. Each takes
+// an element to draw into.
 import { $, $$, esc } from '../app.js';
 import { sapi } from '../staff.js';
 import { sheet, say, st, busy, ghsIn, moneyField, money, when, dayName } from './ops-ui.js';
@@ -43,7 +44,14 @@ export async function closingView(el, date, { canClose = false } = {}) {
   el.innerHTML = '<div class="loading">Loading…</div>';
   const d = await sapi(`/api/ops/closing${date ? `?date=${date}` : ''}`);
   const closed = d.night.status === 'closed';
-  el.innerHTML = `<h1>Close the night</h1>${dateBar(d.date)}<p class="lead">${esc(dayName(d.date))}. Each step shows who has finished and what still needs doing.</p>
+  // The Manager closes the night; if they can't be there, whoever accepted the handover does.
+  canClose = canClose && !!d.closer?.canClose;
+  const h = d.closer?.handover;
+  const who = closed ? '' : `<div class="say ${h && !h.acceptedByName ? 'warn' : 'good'}"><b>Who closes tonight</b>${h
+    ? `${esc(h.byName)} can’t close: “${esc(h.note)}”. ${h.acceptedByName ? `<b>${esc(h.acceptedByName)}</b> is closing instead.` : 'Waiting for the Human manager or the Event manager to take it.'}`
+    : 'The Manager.'}
+    ${d.closer?.canHandOver ? '<br><button class="mid" id="clHand" style="margin-top:8px">I can’t close tonight</button>' : ''}${d.closer?.canAccept ? '<br><button class="mid okc" id="clAccept" style="margin-top:8px">I’ll close tonight</button>' : ''}</div>`;
+  el.innerHTML = `<h1>Close the night</h1>${dateBar(d.date)}<p class="lead">${esc(dayName(d.date))}. Each step shows who has finished and what still needs doing.</p>${who}
     <div class="stepbar">${d.steps.map(s => `<div class="${s.done ? 'done' : ''}"><span><b>${esc(s.label)}</b><small>${esc(s.detail)}</small></span>${s.done ? st('paid', 'Done') : st('unpaid', 'Waiting')}</div>`).join('')}</div>
     <div id="clMsg"></div>
     <h2>1. Waiters</h2><div class="tbl-wrap"><table class="tbl"><thead><tr><th>Waiter</th><th class="num">Sales</th><th class="num">Not delivered</th><th class="num">Unpaid</th><th>Report</th></tr></thead><tbody>
@@ -59,7 +67,16 @@ export async function closingView(el, date, { canClose = false } = {}) {
     <h2>4. Front office</h2>${d.frontOffice ? `<div class="say good"><b>Submitted by ${esc(d.frontOffice.name)}</b>${d.frontOffice.figures.ticketsChecked} tickets checked · ${d.frontOffice.figures.admitted} people in · ${d.frontOffice.figures.tablesArrived} of ${d.frontOffice.figures.tablesBooked} tables arrived · ${d.frontOffice.figures.openIssues} open issues${d.frontOffice.note ? `<br>“${esc(d.frontOffice.note)}”` : ''}</div>` : '<p class="muted">Not submitted yet.</p>'}
     <h2>5. Approvals</h2><p class="muted" style="margin:0">${d.pendingApprovals ? `${d.pendingApprovals} waiting: see Approvals.` : 'Nothing waiting.'}</p>
     ${closed ? `<div class="say good"><b>This night is closed</b>The end-of-day report is saved for finance.</div>` : canClose ? '<h2>6. Close the night</h2><p class="muted" style="margin:0">This prepares the end-of-day report, sends it to finance, and locks the night’s records.</p><button class="big" id="closeGo">Close the night and send the report</button>' : ''}`;
-  bindDate(el, v => closingView(el, v, { canClose })); labelTables(el);
+  bindDate(el, v => closingView(el, v, { canClose: true })); labelTables(el);
+  $('#clHand', el) && ($('#clHand', el).onclick = async () => {
+    const note = prompt('Why can’t you close tonight? The Human manager and the Event manager are texted.'); if (!note) return;
+    try { await sapi('/api/ops/close-night/hand-over', { method: 'POST', body: { date: d.date, note } }); await closingView(el, d.date, { canClose: true }); say($('#clMsg', el), 'Handed over. The Human manager and the Event manager have been texted.'); }
+    catch (e) { say($('#clMsg', el), e.message, 'bad'); }
+  });
+  $('#clAccept', el) && ($('#clAccept', el).onclick = async () => {
+    try { await sapi('/api/ops/close-night/accept', { method: 'POST', body: { date: d.date } }); await closingView(el, d.date, { canClose: true }); say($('#clMsg', el), 'You’re closing tonight.'); }
+    catch (e) { say($('#clMsg', el), e.message, 'bad'); }
+  });
   $$('[data-review]', el).forEach(b => b.onclick = async () => { try { await sapi('/api/ops/stock/review', { method: 'POST', body: { stationId: b.dataset.review, date: d.date } }); closingView(el, d.date, { canClose }); } catch (e) { say($('#clMsg', el), e.message, 'bad'); } });
   $$('[data-cash]', el).forEach(b => b.onclick = async () => { try { await sapi('/api/ops/cash/review', { method: 'POST', body: { id: b.dataset.cash } }); closingView(el, d.date, { canClose }); } catch (e) { say($('#clMsg', el), e.message, 'bad'); } });
   // Close: the Worker says if it's early or if steps are missing; the manager decides to go ahead.
@@ -93,61 +110,388 @@ export async function approvalsView(el) {
 }
 
 // ── Products & prices ──
-export async function productsView(el) {
+// Finance sets the selling price and the cost price; everyone else with access only looks.
+export async function productsView(el, { canEdit = true } = {}) {
   el.innerHTML = '<div class="loading">Loading…</div>';
   const { products, units } = await sapi('/api/ops/products');
-  el.innerHTML = `<h1>Drinks and prices</h1><p class="lead">New orders use the price here. A bill already sent keeps its price. Every change is recorded with who made it.</p>
-    <button class="big" id="pAdd">Add a drink</button><div id="pMsg"></div>
-    <div class="tbl-wrap"><table class="tbl"><thead><tr><th>Drink</th><th class="num">Selling</th><th class="num">Cost</th><th class="num">Low at</th><th>Status</th><th></th></tr></thead><tbody>
-    ${products.map(p => `<tr><td><strong>${esc(p.name)}</strong><br><small class="muted">${esc(p.category)} · ${esc(p.unit)}${p.updatedByName ? ` · changed by ${esc(p.updatedByName)}` : ''}</small></td><td class="num">${money(p.pricePesewas)}</td><td class="num">${p.costPesewas ? money(p.costPesewas) : '—'}</td><td class="num">${p.lowStock || '—'}</td><td>${p.available ? st('paid', 'On sale') : st('cancelled', 'Finished')}</td><td class="actions"><button class="sbtn" data-edit="${esc(p.id)}">Change</button></td></tr>`).join('') || '<tr><td colspan="6" class="empty-row">No drinks yet.</td></tr>'}</tbody></table></div>`;
+  const noCost = products.filter(p => !p.costPesewas).length;
+  el.innerHTML = `<h1>Drinks and prices</h1><p class="lead">${canEdit ? 'You set the selling price and the cost price (what the club pays for one), so the director sees the profit.' : 'Finance sets the prices.'} A bill already sent keeps its price. Every change is recorded with who made it.</p>
+    ${canEdit ? '<button class="big" id="pAdd">Add a drink</button>' : ''}<div id="pMsg"></div>
+    ${noCost && canEdit ? `<div class="say warn"><b>${noCost} drink${noCost > 1 ? 's have' : ' has'} no cost price</b>Add it, or the profit on ${noCost > 1 ? 'them' : 'it'} can’t be worked out.</div>` : ''}
+    <div class="tbl-wrap"><table class="tbl"><thead><tr><th>Drink</th><th class="num">Selling</th><th class="num">Cost</th><th class="num">Made on one</th><th>Status</th><th></th></tr></thead><tbody>
+    ${products.map(p => `<tr><td><strong>${esc(p.name)}</strong><br><small class="muted">${esc(p.category)} · ${esc(p.unit)}${p.updatedByName ? ` · changed by ${esc(p.updatedByName)}` : ''}</small></td><td class="num">${money(p.pricePesewas)}</td><td class="num">${p.costPesewas ? money(p.costPesewas) : st('unpaid', 'Missing')}</td><td class="num">${p.costPesewas ? money(p.pricePesewas - p.costPesewas) : '—'}</td><td>${p.available ? st('paid', 'On sale') : st('cancelled', 'Finished')}</td><td class="actions">${canEdit ? `<button class="sbtn" data-edit="${esc(p.id)}">Change</button>` : ''}</td></tr>`).join('') || '<tr><td colspan="6" class="empty-row">No drinks yet.</td></tr>'}</tbody></table></div>`;
   const form = (p = null) => {
     const { box, close } = sheet(`<h2>${p ? `Change ${esc(p.name)}` : 'Add a drink'}</h2>
       <div class="sfield"><label for="pfN">Name</label><input id="pfN" maxlength="60" value="${esc(p?.name || '')}"></div>
       <div class="sfield"><label for="pfC">Group (e.g. Beer, Spirits, Soft)</label><input id="pfC" maxlength="30" value="${esc(p?.category || '')}"></div>
       <div class="sfield"><label for="pfU">Sold by the</label><select id="pfU">${units.map(u => `<option ${u === (p?.unit || 'bottle') ? 'selected' : ''}>${u}</option>`).join('')}</select></div>
-      ${moneyField('pfP', 'Selling price (GHS)', p ? String(p.pricePesewas / 100) : '')}${moneyField('pfK', 'Cost to the club (GHS, optional)', p?.costPesewas ? String(p.costPesewas / 100) : '')}
-      <div class="sfield"><label for="pfL">Warn when stock is down to (optional)</label><input id="pfL" inputmode="numeric" value="${esc(p?.lowStock || '')}"></div>
+      ${moneyField('pfP', 'Selling price (GHS)', p ? String(p.pricePesewas / 100) : '')}${moneyField('pfK', 'Cost price: what the club pays for one (GHS)', p?.costPesewas ? String(p.costPesewas / 100) : '')}
+      <div class="sfield"><label for="pfL">Minimum stock: buy more at or below (optional)</label><input id="pfL" inputmode="numeric" value="${esc(p?.lowStock || '')}"></div>
+      <div class="sfield"><label for="pfX">Maximum stock: never hold more than (optional)</label><input id="pfX" inputmode="numeric" value="${esc(p?.maxStock || '')}"></div>
       <label class="check"><input type="checkbox" id="pfT" ${p?.tracked === false ? '' : 'checked'}> Count it at the bar (bottles and cans)</label>
       <label class="check"><input type="checkbox" id="pfA" ${p?.available === false ? '' : 'checked'}> On sale tonight</label>
       <div id="pfM"></div><button class="big" id="pfGo">Save</button><button class="big ghost" data-close>Cancel</button>`);
     $('#pfGo', box).onclick = async () => {
-      const price = ghsIn($('#pfP', box).value), cost = $('#pfK', box).value ? ghsIn($('#pfK', box).value) : '';
+      const price = ghsIn($('#pfP', box).value), cost = $('#pfK', box).value !== '' ? ghsIn($('#pfK', box).value) : '';
       if (p && price !== p.pricePesewas && !confirm(`Change the price of ${p.name} from ${money(p.pricePesewas)} to ${money(price)}? New orders will use it.`)) return;
-      try { await busy($('#pfGo', box), () => sapi('/api/ops/products', { method: 'POST', body: { id: p?.id, name: $('#pfN', box).value, category: $('#pfC', box).value, unit: $('#pfU', box).value, pricePesewas: price, costPesewas: cost, lowStock: $('#pfL', box).value, tracked: $('#pfT', box).checked, available: $('#pfA', box).checked } })); close(); productsView(el); }
+      try { await busy($('#pfGo', box), () => sapi('/api/ops/products', { method: 'POST', body: { id: p?.id, name: $('#pfN', box).value, category: $('#pfC', box).value, unit: $('#pfU', box).value, pricePesewas: price, costPesewas: cost, lowStock: $('#pfL', box).value, maxStock: $('#pfX', box).value, tracked: $('#pfT', box).checked, available: $('#pfA', box).checked } })); close(); productsView(el); }
       catch (e) { say($('#pfM', box), e.message, 'bad'); }
     };
   };
-  $('#pAdd', el).onclick = () => form();
+  $('#pAdd', el) && ($('#pAdd', el).onclick = () => form());
   $$('[data-edit]', el).forEach(b => b.onclick = () => form(products.find(x => x.id === b.dataset.edit)));
   labelTables(el);
 }
 
 // ── Stock & counts ──
-export async function stockAdminView(el, date, stationId) {
+export async function stockAdminView(el, date, stationId, { role = '' } = {}) {
+  const buyer = ['finance', 'director', 'superAdmin'].includes(role), explainer = ['manager', 'director', 'superAdmin'].includes(role);
   el.innerHTML = '<div class="loading">Loading…</div>';
   const { stations, products } = await sapi('/api/ops/products');
   const sid = stationId || stations[0]?.id;
   if (!sid) { el.innerHTML = '<div class="empty-box"><b>No bars yet</b>Add one under Setup → Bar orders.</div>'; return; }
-  const s = await sapi(`/api/ops/stock?stationId=${encodeURIComponent(sid)}${date ? `&date=${date}` : ''}`);
+  const [s, dl] = await Promise.all([sapi(`/api/ops/stock?stationId=${encodeURIComponent(sid)}${date ? `&date=${date}` : ''}`), sapi(`/api/ops/stock/deliveries?stationId=${encodeURIComponent(sid)}`).catch(() => ({ deliveries: [] }))]);
+  const dlState = x => (x.status === 'pending' ? st('unpaid', x.byBar ? 'Waiting for finance or the manager' : 'Waiting for the bar to confirm') : x.status === 'rejected' ? st('cancelled', 'Didn’t arrive') : x.purchase ? st('paid', 'Bought: in stock') : x.confirmedQty !== x.qty ? st('part_paid', `Bar counted ${x.confirmedQty}`) : st('paid', 'Confirmed by the bar'));
+  const oc = s.openingCount;
   el.innerHTML = `<h1>Stock</h1><div class="toolbar" style="margin:0">${stations.length > 1 ? `<select id="stSel">${stations.map(x => `<option value="${esc(x.id)}" ${x.id === sid ? 'selected' : ''}>${esc(x.name)}</option>`).join('')}</select>` : `<strong>${esc(s.station.name)}</strong>`}</div>${dateBar(s.date)}
     <p class="lead">Expected = opening + received + moved in + returned − handed out − broken − moved out.${s.closing ? ` Counted by ${esc(s.closing.byName)}${s.closing.reviewedByName ? `, reviewed by ${esc(s.closing.reviewedByName)}` : ''}.` : ' Not counted yet.'}</p>
-    <button class="big" id="rcv">Record stock received</button><div id="stMsg"></div>
+    ${oc ? `<div class="say ${oc.differences.length && !oc.explanation ? 'warn' : 'good'}"><b>Bar’s count when it opened (${esc(oc.byName)}, ${when(oc.at)})</b>${oc.differences.length ? oc.differences.map(x => `${esc(x.name)}: system ${x.expected}, bar found ${x.counted} (${Math.abs(x.difference)} ${x.difference < 0 ? 'fewer' : 'more'})`).join('<br>') : 'Everything matched.'}
+      ${oc.explanation ? `<br><b style="margin-top:6px">Manager: ${esc(oc.explanation)}</b><small>${esc(oc.explainedByName)}</small>` : oc.differences.length ? `<br>${explainer ? '<button class="mid" id="explain" style="margin-top:8px">Explain the difference</button>' : 'Waiting for the manager to explain.'}` : ''}</div>` : '<p class="muted" style="margin:0">The bar hasn’t counted tonight’s stock yet. Sales go on; the count is compared when it comes in.</p>'}
+    <button class="big" id="rcv">${buyer ? 'Record drinks bought' : 'Add new stock'}</button><p class="muted" style="margin:0">${buyer ? 'Drinks you record are in the bar’s stock straight away.' : 'The bar confirms it when it arrives; finance sees it.'}</p><div id="stMsg"></div>
+    ${dl.deliveries.length ? `<h2>New stock (last 7 days)</h2><div class="tbl-wrap"><table class="tbl"><thead><tr><th>Drink</th><th class="num">Recorded</th><th>Recorded by</th><th>Status</th><th>Confirmed by</th><th></th></tr></thead><tbody>
+      ${dl.deliveries.map(x => `<tr><td><strong>${esc(x.productName)}</strong>${x.supplier ? `<br><small class="muted">${esc(x.supplier)}${x.reference ? ` · ${esc(x.reference)}` : ''}</small>` : ''}</td><td class="num">${x.qty}</td><td>${esc(x.recordedByName)}<br><small class="muted">${when(x.recordedAt)}</small></td><td>${dlState(x)}${x.confirmNote ? `<br><small class="muted">${esc(x.confirmNote)}</small>` : ''}</td><td>${x.confirmedByName ? `${esc(x.confirmedByName)}<br><small class="muted">${when(x.confirmedAt)}</small>` : ''}</td>
+        <td>${x.canConfirm ? `<button class="sbtn" data-dl="${esc(x.id)}">Confirm ${x.qty}</button>` : ''}</td></tr>`).join('')}</tbody></table></div>` : ''}
     <div class="tbl-wrap"><table class="tbl"><thead><tr><th>Drink</th><th class="num">Opening</th><th class="num">Received</th><th class="num">Moved in</th><th class="num">Moved out</th><th class="num">Returned</th><th class="num">Handed out</th><th class="num">Free</th><th class="num">Broken</th><th class="num">Expected</th><th class="num">Counted</th><th>Difference</th></tr></thead><tbody>
     ${s.rows.map(r => `<tr><td><strong>${esc(r.name)}</strong>${r.low ? ` ${st('unpaid', 'Low')}` : ''}</td><td class="num">${r.opening}</td><td class="num">${r.received}</td><td class="num">${r.transferIn}</td><td class="num">${r.transferOut}</td><td class="num">${r.returns}</td><td class="num">${r.issued}</td><td class="num">${r.comps}</td><td class="num">${r.waste}</td><td class="num"><b>${r.expected}</b></td><td class="num">${r.counted ?? '—'}</td>
       <td>${r.difference ? `<span class="${r.difference < 0 ? 'diff-neg' : 'diff-pos'}">${esc(diffWord(r.difference))}</span><br><small class="muted">${esc(s.reasons[r.reason] || '')}${r.note ? ` · ${esc(r.note)}` : ''}</small>` : r.counted != null ? 'Matches' : ''}</td></tr>`).join('')}</tbody></table></div>
     ${s.closing && s.closing.status !== 'reviewed' ? '<button class="mid" id="rev">Mark this count reviewed</button>' : ''}`;
-  bindDate(el, v => stockAdminView(el, v, sid));
-  $('#stSel', el) && ($('#stSel', el).onchange = e => stockAdminView(el, s.date, e.target.value));
-  $('#rev', el) && ($('#rev', el).onclick = async () => { try { await sapi('/api/ops/stock/review', { method: 'POST', body: { stationId: sid, date: s.date } }); stockAdminView(el, s.date, sid); } catch (e) { say($('#stMsg', el), e.message, 'bad'); } });
+  bindDate(el, v => stockAdminView(el, v, sid, { role }));
+  $('#stSel', el) && ($('#stSel', el).onchange = e => stockAdminView(el, s.date, e.target.value, { role }));
+  $('#rev', el) && ($('#rev', el).onclick = async () => { try { await sapi('/api/ops/stock/review', { method: 'POST', body: { stationId: sid, date: s.date } }); stockAdminView(el, s.date, sid, { role }); } catch (e) { say($('#stMsg', el), e.message, 'bad'); } });
+  $('#explain', el) && ($('#explain', el).onclick = () => explainSheet({ ...oc, stationId: sid, stationName: s.station.name, date: s.date }, () => stockAdminView(el, s.date, sid, { role })));
+  $$('[data-dl]', el).forEach(b => b.onclick = async () => { try { await busy(b, () => sapi('/api/ops/stock/delivery', { method: 'POST', body: { id: b.dataset.dl, action: 'confirm' } })); stockAdminView(el, s.date, sid, { role }); } catch (e) { say($('#stMsg', el), e.message, 'bad'); } });
   $('#rcv', el).onclick = () => {
-    const { box, close } = sheet(`<h2>Stock received</h2><div class="sfield"><label for="rvP">Drink</label><select id="rvP">${products.filter(p => p.tracked).map(p => `<option value="${esc(p.id)}">${esc(p.name)}</option>`).join('')}</select></div>
+    const { box, close } = sheet(`<h2>${buyer ? 'Drinks bought' : 'New stock'}</h2><p class="muted" style="margin:0">${buyer ? 'It goes into the bar’s stock straight away.' : 'The bar confirms it when it arrives; only then does it count.'}</p><div class="sfield"><label for="rvP">Drink</label><select id="rvP">${products.filter(p => p.tracked).map(p => `<option value="${esc(p.id)}">${esc(p.name)}</option>`).join('')}</select></div>
       <div class="sfield"><label for="rvB">Into which bar</label><select id="rvB">${stations.map(x => `<option value="${esc(x.id)}" ${x.id === sid ? 'selected' : ''}>${esc(x.name)}</option>`).join('')}</select></div>
       <div class="sfield"><label for="rvQ">How many</label><input id="rvQ" inputmode="numeric"></div><div class="sfield"><label for="rvS">Supplier</label><input id="rvS" maxlength="80"></div>
-      <div class="sfield"><label for="rvR">Invoice or reference</label><input id="rvR" maxlength="60"></div>${moneyField('rvC', 'Cost of one (GHS)')}
+      <div class="sfield"><label for="rvR">Receipt or invoice number</label><input id="rvR" maxlength="60"></div>${moneyField('rvC', buyer ? 'Total paid (GHS)' : 'Total paid (GHS, if you know it)')}
       <div id="rvM"></div><button class="big" id="rvGo">Save</button><button class="big ghost" data-close>Cancel</button>`);
-    $('#rvGo', box).onclick = async () => { try { await busy($('#rvGo', box), () => sapi('/api/ops/stock/received', { method: 'POST', body: { productId: $('#rvP', box).value, stationId: $('#rvB', box).value, qty: Number($('#rvQ', box).value), supplier: $('#rvS', box).value, reference: $('#rvR', box).value, unitCostPesewas: $('#rvC', box).value ? ghsIn($('#rvC', box).value) : '' } })); close(); stockAdminView(el, s.date, sid); } catch (e) { say($('#rvM', box), e.message, 'bad'); } };
+    $('#rvGo', box).onclick = async () => { try { await busy($('#rvGo', box), () => sapi('/api/ops/stock/received', { method: 'POST', body: { productId: $('#rvP', box).value, stationId: $('#rvB', box).value, qty: Number($('#rvQ', box).value), supplier: $('#rvS', box).value, reference: $('#rvR', box).value, totalCostPesewas: $('#rvC', box).value ? ghsIn($('#rvC', box).value) : '' } })); close(); await stockAdminView(el, s.date, sid, { role }); say($('#stMsg', el), buyer ? 'Saved. It’s in the bar’s stock.' : 'Saved. The bar confirms it when it arrives.'); } catch (e) { say($('#rvM', box), e.message, 'bad'); } };
   };
   labelTables(el);
+}
+
+// ── Money: is the club making money? Tonight / this week / this month ──
+export async function moneyView(el, period = 'today') {
+  el.innerHTML = '<div class="loading">Loading…</div>';
+  const [m, due, com] = await Promise.all([sapi(`/api/ops/money?period=${encodeURIComponent(period)}`), sapi('/api/ops/budget').catch(() => null), sapi('/api/ops/commissions').catch(() => null)]);
+  const t = m.totals, d = m.drinks, profit = t.profitPesewas >= 0;
+  const rows = list => list.filter(r => r.amountPesewas).map(r => `<div class="ln"><span>${esc(r.label)}</span><span>${money(r.amountPesewas)}</span></div>`).join('') || '<div class="ln"><span class="muted">Nothing yet</span></div>';
+  el.innerHTML = `<h1>Money</h1>
+    <div class="seg" role="radiogroup" aria-label="Period" style="grid-template-columns:repeat(3,minmax(0,1fr))">${[['today', 'Tonight'], ['week', 'This week'], ['month', 'This month']].map(([k, l]) => `<button type="button" class="mid ${k === m.period.key ? 'on' : ''}" data-per="${k}" role="radio" aria-checked="${k === m.period.key}">${l}</button>`).join('')}</div>
+    ${m.myShare ? `<div class="say ${m.myShare.profitPesewas >= 0 ? 'good' : 'bad'}"><b>Your share (${m.myShare.pct}%): ${m.myShare.profitPesewas < 0 ? '−' : ''}${money(Math.abs(m.myShare.profitPesewas))}</b>${esc(m.period.label)}.</div>` : ''}
+    <div class="pos-money">
+      <div class="big-line good"><span>Money in</span><b>${money(t.inPesewas)}</b></div>
+      <div class="big-line bad"><span>Money out</span><b>${money(t.outPesewas)}</b></div>
+      <div class="big-line ${profit ? 'good' : 'bad'}"><span>${profit ? 'Profit' : 'Loss'}</span><b>${money(Math.abs(t.profitPesewas))}</b></div>
+    </div>
+    ${due ? `<a class="pos-row" href="#budget" style="text-decoration:none"><span class="where">Bills this month<small>${due.totals.overdue ? `${due.totals.overdue} overdue · ` : ''}${money(due.totals.paidPesewas)} paid of ${money(due.totals.billsPesewas)}</small></span><span class="amt">${money(due.totals.duePesewas)}<small style="display:block">still to pay</small></span></a>` : ''}
+    ${com ? `<a class="pos-row" href="#commissions" style="text-decoration:none"><span class="where">Commissions this month<small>${com.ratePct}% on tables over ${money(com.overPesewas)}${com.totals.unassigned ? ` · ${com.totals.unassigned} not named yet` : ''}</small></span><span class="amt">${money(com.totals.owedPesewas)}<small style="display:block">to pay out</small></span></a>` : ''}
+    ${t.waiting ? `<div class="say warn"><b>${t.waiting} expense${t.waiting > 1 ? 's' : ''} waiting for a director: ${money(t.waitingPesewas)}</b>Not counted until approved.</div>` : ''}
+    ${m.canAddExpense ? '<button class="big" id="addExp">Add an expense</button>' : ''}<div id="mMsg"></div>
+    ${m.owners?.length ? `<h2>Directors’ shares</h2><div class="lines-list">${m.owners.map(o => `<div class="ln"><span>${esc(o.name)} <small class="muted">${o.pct}%</small></span><span>${o.profitPesewas < 0 ? '−' : ''}${money(Math.abs(o.profitPesewas))}</span></div>`).join('')}</div>` : ''}
+    <h2>Money in</h2><div class="lines-list">${rows(m.moneyIn)}<div class="ln total"><span>Total</span><span>${money(t.inPesewas)}</span></div></div>
+    ${d.unpaidPesewas ? `<p class="muted" style="margin:0">Not counted yet: ${money(d.unpaidPesewas)} of drinks still unpaid on open tables.</p>` : ''}
+    <h2>Money out</h2><div class="lines-list">${rows(m.moneyOut)}<div class="ln total"><span>Total</span><span>${money(t.outPesewas)}</span></div></div>
+    <h2>Drinks</h2><div class="nums">
+      <div><span>Sold</span><b>${money(d.soldPesewas)}</b></div><div><span>What they cost us</span><b>${money(d.costPesewas)}</b></div>
+      <div class="${d.profitPesewas >= 0 ? 'good' : 'bad'}"><span>Made on drinks</span><b>${money(d.profitPesewas)}</b></div></div>
+    ${d.missingCost.length ? `<p class="muted" style="margin:0">No cost entered for: ${d.missingCost.map(esc).join(', ')}. Finance can add it under Drinks &amp; prices.</p>` : ''}
+    ${d.rows.length ? `<details class="fold"><summary>By drink</summary><div class="tbl-wrap"><table class="tbl"><thead><tr><th>Drink</th><th class="num">Sold</th><th class="num">Money</th><th class="num">Cost</th><th class="num">Made</th></tr></thead><tbody>
+      ${d.rows.map(r => `<tr><td>${esc(r.name)}</td><td class="num">${r.qty}</td><td class="num">${money(r.salesPesewas)}</td><td class="num">${money(r.costPesewas)}</td><td class="num">${money(r.profitPesewas)}</td></tr>`).join('')}</tbody></table></div></details>` : ''}
+    ${m.byNight.length > 1 ? `<details class="fold"><summary>Night by night</summary><div class="tbl-wrap"><table class="tbl"><thead><tr><th>Night</th><th class="num">In</th><th class="num">Out</th><th class="num">Profit</th></tr></thead><tbody>
+      ${m.byNight.map(r => `<tr><td>${esc(dayName(r.date))}</td><td class="num">${money(r.inPesewas)}</td><td class="num">${money(r.outPesewas)}</td><td class="num">${r.profitPesewas < 0 ? '−' : ''}${money(Math.abs(r.profitPesewas))}</td></tr>`).join('')}</tbody></table></div></details>` : ''}
+    <details class="fold" ${m.expenses.length ? 'open' : ''}><summary>Expenses (${m.expenses.filter(e => !e.removed).length})</summary>
+      ${m.expenses.length ? `<div class="lines-list">${m.expenses.map(e => `<div class="ln" style="${e.removed ? 'opacity:.55' : ''}"><span><b>${esc(e.description)}</b><br><small class="muted">${esc(e.categoryLabel)} · ${esc(dayName(e.date))} · ${esc(e.paidWith)} · ${esc(e.recordedByName)}${e.removed ? ` · taken off by ${esc(e.removedByName)}: ${esc(e.removedReason)}` : ''}${e.approval === 'pending' ? ' · <b>waiting for a director</b>' : e.approval === 'refused' ? ` · <b>refused by ${esc(e.decidedByName)}</b>: ${esc(e.decisionNote)}` : ''}</small></span>
+        <span>${e.removed ? `<s>${money(e.amountPesewas)}</s>` : money(e.amountPesewas)}${e.canRemove ? `<br><button class="sbtn" data-rmexp="${esc(e.id)}">Take off</button>` : ''}</span></div>`).join('')}</div>` : '<p class="muted">No expenses recorded.</p>'}</details>
+    ${m.purchases.length ? `<details class="fold"><summary>Drinks bought (${m.purchases.length})</summary><div class="lines-list">${m.purchases.map(x => `<div class="ln"><span><b>${x.qty} × ${esc(x.productName)}</b><br><small class="muted">${esc(dayName(x.date))} · ${esc(x.recordedByName)}${x.supplier ? ` · ${esc(x.supplier)}` : ''}</small></span><span>${money(x.costPesewas)}</span></div>`).join('')}</div></details>` : ''}`;
+  $$('[data-per]', el).forEach(b => b.onclick = () => moneyView(el, b.dataset.per));
+  $('#addExp', el) && ($('#addExp', el).onclick = () => expenseSheet(m, async r => { await moneyView(el, m.period.key); say($('#mMsg', el), r?.needsApproval ? 'Saved. It’s above the limit, so it waits for a director.' : 'Expense saved.'); }));
+  $$('[data-rmexp]', el).forEach(b => b.onclick = () => {
+    const { box, close } = sheet(`<h2>Take off this expense</h2><p class="muted" style="margin:0">It stays on record, crossed out.</p>
+      <div class="sfield"><label for="rxWhy">Why</label><input id="rxWhy" maxlength="200" placeholder="e.g. entered twice"></div><div id="rxMsg"></div>
+      <button class="big" id="rxGo">Take it off</button><button class="big ghost" data-close>Cancel</button>`);
+    $('#rxGo', box).onclick = async () => { try { await busy($('#rxGo', box), () => sapi('/api/ops/expenses/remove', { method: 'POST', body: { id: b.dataset.rmexp, reason: $('#rxWhy', box).value } })); close(); moneyView(el, m.period.key); } catch (e) { say($('#rxMsg', box), e.message, 'bad'); } };
+  });
+}
+
+// Add an expense: what for, how much, how it was paid. Shared by the manager and finance.
+export function expenseSheet(m, done) {
+  const cats = m?.categories || {};
+  const { box, close } = sheet(`<h2>Add an expense</h2>
+    <div class="sfield"><label for="exCat">What for</label><select id="exCat"><option value="">Pick one</option>${Object.entries(cats).map(([k, v]) => `<option value="${k}">${esc(v)}</option>`).join('')}</select></div>
+    <div class="sfield"><label for="exDesc">Details</label><input id="exDesc" maxlength="160" placeholder="e.g. DJ Kofi, Saturday"></div>
+    ${moneyField('exAmt', 'Amount (GHS)')}
+    <div class="sfield"><label for="exPaid">Paid with</label><select id="exPaid"><option value="cash">Cash</option><option value="momo">MoMo</option><option value="bank">Bank</option></select></div>
+    <div class="sfield"><label for="exDate">Which night</label><input id="exDate" type="date" value="${esc(m?.period?.to || '')}"></div>
+    <div id="exMsg"></div><button class="big" id="exGo">Save expense</button><button class="big ghost" data-close>Cancel</button>`, { label: 'Add an expense' });
+  $('#exGo', box).onclick = async () => {
+    try {
+      const r = await busy($('#exGo', box), () => sapi('/api/ops/expenses', { method: 'POST', body: { category: $('#exCat', box).value, description: $('#exDesc', box).value, amountPesewas: ghsIn($('#exAmt', box).value), paidWith: $('#exPaid', box).value, date: $('#exDate', box).value } }));
+      close(); done?.(r);
+    } catch (e) { say($('#exMsg', box), e.message, 'bad'); }
+  };
+}
+
+// Opening counts the manager must explain (the bar found a different number when it opened).
+export function explainSheet(c, done) {
+  const { box, close } = sheet(`<h2>Explain the stock difference</h2>
+    <p class="muted" style="margin:0">${esc(c.stationName)} · ${esc(dayName(c.date))} · counted by ${esc(c.byName)} when the bar opened.</p>
+    <div class="lines-list">${c.differences.map(x => `<div class="ln"><span>${esc(x.name)}<br><small class="muted">System said ${x.expected}, bar found ${x.counted}</small></span><span class="${x.difference < 0 ? 'diff-neg' : 'diff-pos'}">${Math.abs(x.difference)} ${x.difference < 0 ? 'fewer' : 'more'}</span></div>`).join('')}</div>
+    <div class="sfield"><label for="xpWhy">What happened</label><textarea id="xpWhy" rows="3" maxlength="500" placeholder="e.g. 3 beers given to the DJ on Thursday"></textarea></div>
+    <div id="xpMsg"></div><button class="big" id="xpGo">Save explanation</button><button class="big ghost" data-close>Later</button>`, { label: 'Explain the stock difference' });
+  $('#xpGo', box).onclick = async () => {
+    try { await busy($('#xpGo', box), () => sapi('/api/ops/stock/explain', { method: 'POST', body: { stationId: c.stationId, date: c.date, note: $('#xpWhy', box).value } })); close(); done?.(); }
+    catch (e) { say($('#xpMsg', box), e.message, 'bad'); }
+  };
+}
+
+// ── Bills and budget for the month (finance sets them; the director and manager look) ──
+export async function budgetView(el, month) {
+  el.innerHTML = '<div class="loading">Loading…</div>';
+  const b = await sapi(`/api/ops/budget${month ? `?month=${month}` : ''}`);
+  const t = b.totals, bud = b.budget;
+  const stateLabel = { due: ['unpaid', 'Due'], overdue: ['cancelled', 'Overdue'], part_paid: ['part_paid', 'Part paid'], paid: ['paid', 'Paid'], removed: ['empty', 'Taken off'], awaiting_approval: ['waiting', 'Waiting for a director'] };
+  const mon = m => new Date(`${m}-15T12:00:00Z`).toLocaleDateString('en-GB', { month: 'short' });
+  el.innerHTML = `<h1 style="margin:0">Bills and budget</h1>
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><button class="sbtn" data-mon="${b.prev}" aria-label="Previous month">← ${esc(mon(b.prev))}</button><b style="font-size:18px">${esc(b.label)}</b><button class="sbtn" data-mon="${b.next}" aria-label="Next month">${esc(mon(b.next))} →</button></div>
+    <div class="pos-money">
+      <div class="big-line"><span>Bills this month</span><b>${money(t.billsPesewas)}</b></div>
+      <div class="big-line good"><span>Paid</span><b>${money(t.paidPesewas)}</b></div>
+      <div class="big-line ${t.duePesewas ? 'bad' : 'good'}"><span>Still to pay</span><b>${money(t.duePesewas)}</b></div>
+      ${t.overdue ? `<p class="how" style="color:#ff7a9c">${t.overdue} overdue: ${money(t.overduePesewas)}</p>` : t.dueSoon ? `<p class="how">${t.dueSoon} due in the next 7 days</p>` : ''}
+    </div>
+    ${b.canEdit ? '<div class="btn-row"><button class="big" id="bAdd">Add a bill</button><button class="big ghost" id="bBud">Set the budget</button></div><button class="mid" id="bCopy">Copy last month’s bills and budget</button>' : ''}<div id="bMsg"></div>
+    ${b.salaries?.people ? `<a class="pos-row" href="#salaries" style="text-decoration:none"><span class="where">Salaries (${b.salaries.people} people)<small>${esc(b.salaries.statusLabel)}</small></span><span class="amt">${money(b.salaries.netPesewas - b.salaries.paidPesewas)}<small style="display:block">to pay</small></span></a>` : ''}
+    <h2>Bills</h2>
+    ${b.bills.length ? `<div class="lines-list">${b.bills.map(x => `<div class="ln" style="${x.state === 'removed' ? 'opacity:.5' : ''}"><span><b>${esc(x.payee)}</b>${x.description ? ` · ${esc(x.description)}` : ''}<br><small class="muted">${esc(x.categoryLabel)} · due ${esc(dayName(x.dueDate))}${x.paidPesewas && x.state !== 'paid' ? ` · ${money(x.paidPesewas)} paid` : ''}${x.removedReason ? ` · ${esc(x.removedReason)}` : ''}</small><br>${st(...stateLabel[x.state])}</span>
+      <span>${money(x.state === 'paid' ? x.amountPesewas : x.leftPesewas || x.amountPesewas)}${b.canEdit && x.leftPesewas && x.approved ? `<br><button class="sbtn" data-pay="${esc(x.id)}">Pay</button>` : ''}${b.canEdit && x.leftPesewas && !x.approved ? '<br><small class="muted">A director approves first</small>' : ''}${b.canEdit && x.leftPesewas && !x.paidPesewas ? `<br><button class="sbtn" data-rmb="${esc(x.id)}">Take off</button>` : ''}</span></div>`).join('')}</div>` : `<p class="muted">No bills for ${esc(b.label)}${b.canEdit ? ' yet. Add salaries, rent, suppliers owed…' : '.'}</p>`}
+    <h2>Budget against spending</h2>
+    <p class="muted" style="margin:0">${bud.limitInForcePesewas != null ? `Expenses over ${money(bud.limitInForcePesewas)} wait for a director.` : 'No expense limit set yet: every expense waits for a director.'}</p>
+    ${bud.lines.length ? `<div class="tbl-wrap"><table class="tbl"><thead><tr><th>For</th><th class="num">Budget</th><th class="num">Spent</th><th class="num">Left</th></tr></thead><tbody>
+      ${bud.lines.map(l => `<tr><td>${esc(l.label)}${l.over ? ` ${st('cancelled', 'Over budget')}` : l.unplanned ? ` ${st('unpaid', 'Not in the budget')}` : ''}</td><td class="num">${l.budgetPesewas ? money(l.budgetPesewas) : '—'}</td><td class="num">${money(l.spentPesewas)}</td><td class="num">${l.budgetPesewas ? `${l.leftPesewas < 0 ? '−' : ''}${money(Math.abs(l.leftPesewas))}` : '—'}</td></tr>`).join('')}
+      <tr><td><b>Total</b></td><td class="num"><b>${money(bud.totalPesewas)}</b></td><td class="num"><b>${money(bud.spentPesewas)}</b></td><td class="num"><b>${money(bud.totalPesewas - bud.spentPesewas)}</b></td></tr></tbody></table></div>${bud.setByName ? `<p class="muted" style="margin:0">Budget set by ${esc(bud.setByName)}.${bud.note ? ` ${esc(bud.note)}` : ''}</p>` : ''}` : `<p class="muted">No budget for ${esc(b.label)}${b.canEdit ? ' yet.' : '.'}</p>`}`;
+  const again = () => budgetView(el, b.month);
+  $$('[data-mon]', el).forEach(x => x.onclick = () => budgetView(el, x.dataset.mon));
+  if (!b.canEdit) return labelTables(el);
+  const cats = obj => Object.entries(obj).map(([k, v]) => `<option value="${k}">${esc(v)}</option>`).join('');
+  $('#bAdd', el).onclick = () => {
+    const { box, close } = sheet(`<h2>Add a bill</h2>
+      <div class="sfield"><label for="blP">Owed to</label><input id="blP" maxlength="80" placeholder="e.g. Staff salaries, Landlord, Guinness Ghana"></div>
+      <div class="sfield"><label for="blC">What for</label><select id="blC"><option value="">Pick one</option>${cats(b.billCategories)}</select><span class="hint">A drinks supplier you owe: paying it doesn’t count twice (the drinks were counted when bought).</span></div>
+      <div class="sfield"><label for="blD">Details (optional)</label><input id="blD" maxlength="160"></div>
+      ${moneyField('blA', 'Amount (GHS)')}
+      <div class="sfield"><label for="blW">Pay by</label><input id="blW" type="date" value="${esc(b.month === b.today.slice(0, 7) ? b.today : `${b.month}-28`)}"></div>
+      <div id="blM"></div><button class="big" id="blGo">Save bill</button><button class="big ghost" data-close>Cancel</button>`, { label: 'Add a bill' });
+    $('#blGo', box).onclick = async () => { try { await busy($('#blGo', box), () => sapi('/api/ops/bills', { method: 'POST', body: { payee: $('#blP', box).value, category: $('#blC', box).value, description: $('#blD', box).value, amountPesewas: ghsIn($('#blA', box).value), dueDate: $('#blW', box).value } })); close(); again(); } catch (e) { say($('#blM', box), e.message, 'bad'); } };
+  };
+  $('#bBud', el).onclick = () => {
+    const have = Object.fromEntries(bud.lines.map(l => [l.category, l.budgetPesewas]));
+    const { box, close } = sheet(`<h2>Budget for ${esc(b.label)}</h2><p class="muted" style="margin:0">How much the club plans to spend on each. Leave blank what doesn’t apply.</p>
+      ${moneyField('bg_limit', 'Most one expense can be without a director (GHS)', bud.expenseLimitPesewas != null ? String(bud.expenseLimitPesewas / 100) : '', 'Above this, an expense waits for a director. Blank: every expense waits.')}
+      ${Object.entries(b.categories).map(([k, v]) => moneyField(`bg_${k}`, v, have[k] ? String(have[k] / 100) : '')).join('')}
+      <div class="sfield"><label for="bgN">Note (optional)</label><input id="bgN" maxlength="300" value="${esc(bud.note)}"></div>
+      <div id="bgM"></div><button class="big" id="bgGo">Save budget</button><button class="big ghost" data-close>Cancel</button>`, { label: 'Budget' });
+    $('#bgGo', box).onclick = async () => {
+      const lines = Object.fromEntries(Object.keys(b.categories).map(k => [k, $(`#bg_${k}`, box).value === '' ? '' : ghsIn($(`#bg_${k}`, box).value)]));
+      try { await busy($('#bgGo', box), () => sapi('/api/ops/budget', { method: 'POST', body: { month: b.month, lines, note: $('#bgN', box).value, expenseLimitPesewas: $('#bg_limit', box).value === '' ? '' : ghsIn($('#bg_limit', box).value) } })); close(); again(); } catch (e) { say($('#bgM', box), e.message, 'bad'); }
+    };
+  };
+  $('#bCopy', el).onclick = async () => {
+    try { const r = await sapi('/api/ops/bills/copy', { method: 'POST', body: { month: b.month } }); await budgetView(el, b.month); say($('#bMsg', el), `${r.copied} bill${r.copied === 1 ? '' : 's'} copied${r.budget ? ', and the budget' : ''}.`); }
+    catch (e) { say($('#bMsg', el), e.message, 'bad'); }
+  };
+  $$('[data-pay]', el).forEach(x => x.onclick = () => {
+    const bill = b.bills.find(y => y.id === x.dataset.pay);
+    const { box, close } = sheet(`<h2>Pay ${esc(bill.payee)}</h2>
+      ${moneyField('pyA', 'Amount paid (GHS)', String(bill.leftPesewas / 100), `Left to pay: ${money(bill.leftPesewas)}. Pay part if you like.`)}
+      <div class="sfield"><label for="pyW">Paid with</label><select id="pyW"><option value="bank">Bank</option><option value="momo">MoMo</option><option value="cash">Cash</option></select></div>
+      <div class="sfield"><label for="pyD">Date paid</label><input id="pyD" type="date" value="${esc(b.today)}"></div>
+      <div id="pyM"></div><button class="big" id="pyGo">Record payment</button><button class="big ghost" data-close>Cancel</button>`, { label: 'Pay a bill' });
+    $('#pyGo', box).onclick = async () => { try { await busy($('#pyGo', box), () => sapi('/api/ops/bills/pay', { method: 'POST', body: { id: bill.id, amountPesewas: ghsIn($('#pyA', box).value), paidWith: $('#pyW', box).value, date: $('#pyD', box).value } })); close(); again(); } catch (e) { say($('#pyM', box), e.message, 'bad'); } };
+  });
+  $$('[data-rmb]', el).forEach(x => x.onclick = async () => {
+    const reason = prompt('Why take this bill off?'); if (!reason) return;
+    try { await sapi('/api/ops/bills/remove', { method: 'POST', body: { id: x.dataset.rmb, reason } }); again(); } catch (e) { say($('#bMsg', el), e.message, 'bad'); }
+  });
+  labelTables(el);
+}
+
+// ── Commissions: 10% to whoever brings a table deal over GHS 3,000 ──
+export async function commissionsView(el, month) {
+  el.innerHTML = '<div class="loading">Loading…</div>';
+  const c = await sapi(`/api/ops/commissions${month ? `?month=${month}` : ''}`);
+  const t = c.totals, mon = m => new Date(`${m}-15T12:00:00Z`).toLocaleDateString('en-GB', { month: 'short' });
+  el.innerHTML = `<h1 style="margin:0">Commissions</h1>
+    <p class="lead" style="margin:0">${c.ratePct}% of every table deal over ${money(c.overPesewas)}, to the person who brought it.</p>
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><button class="sbtn" data-mon="${c.prev}">← ${esc(mon(c.prev))}</button><b style="font-size:18px">${esc(c.label)}</b><button class="sbtn" data-mon="${c.next}">${esc(mon(c.next))} →</button></div>
+    <div class="pos-money">
+      <div class="big-line ${t.owedPesewas ? 'bad' : 'good'}"><span>Still to pay out</span><b>${money(t.owedPesewas)}</b></div>
+      <div class="big-line good"><span>Paid out</span><b>${money(t.paidPesewas)}</b></div>
+      ${t.unassigned ? `<p class="how">${t.unassigned} deal${t.unassigned > 1 ? 's' : ''} with nobody named yet (${money(t.unassignedPesewas)})</p>` : ''}
+    </div><div id="cMsg"></div>
+    <h2>Who is owed</h2>
+    ${c.people.length ? `<div class="lines-list">${c.people.map(p => `<div class="ln"><span><b>${esc(p.name)}</b>${p.phone ? ` · <a href="tel:${esc(p.phone)}">${esc(p.phone)}</a>` : ''}<br><small class="muted">${p.deals} deal${p.deals > 1 ? 's' : ''}${p.paidPesewas ? ` · ${money(p.paidPesewas)} paid` : ''}</small></span>
+      <span>${p.owedPesewas ? money(p.owedPesewas) : st('paid', 'Paid')}${p.owedPesewas && !p.payout && c.canAssign ? `<br><button class="sbtn" data-askc="${esc(p.key)}">Ask a director</button>` : ''}${p.payout?.status === 'requested' ? `<br>${st('waiting', 'Waiting for a director')}` : ''}${p.payout?.status === 'refused' ? `<br>${st('cancelled', 'Refused')}` : ''}${c.canPay && p.owedPesewas && p.payout?.status === 'approved' ? `<br><button class="sbtn" data-payc="${esc(p.key)}">Pay</button>` : ''}</span></div>`).join('')}</div>` : '<p class="muted">Nobody yet this month.</p>'}
+    <h2>Deals</h2>
+    ${c.deals.length ? `<div class="lines-list">${c.deals.map((d, i) => `<div class="ln"><span><b>${esc(d.label)}</b>${d.night ? ` · ${esc(d.night)}` : ''}<br><small class="muted">${esc(dayName(d.date))}${d.customer ? ` · ${esc(d.customer)}` : ''}${d.servedBy ? ` · served by ${esc(d.servedBy)}` : ''} · sold ${money(d.amountPesewas)}</small><br>
+      ${d.broughtBy ? `<small>Brought by <b>${esc(d.broughtBy.name)}</b></small>` : st('unpaid', 'Who brought it?')} ${d.paid ? st('paid', 'Paid') : ''}</span>
+      <span>${money(d.commissionPesewas)}${c.canAssign && !d.paid ? `<br><button class="sbtn" data-who="${i}">${d.broughtBy ? 'Change' : 'Name them'}</button>` : ''}</span></div>`).join('')}</div>` : `<p class="muted">No table over ${money(c.overPesewas)} in ${esc(c.label)}.</p>`}`;
+  const again = () => commissionsView(el, c.month);
+  $$('[data-mon]', el).forEach(x => x.onclick = () => commissionsView(el, x.dataset.mon));
+  $$('[data-who]', el).forEach(x => x.onclick = () => {
+    const d = c.deals[Number(x.dataset.who)];
+    const { box, close } = sheet(`<h2>Who brought this deal?</h2><p class="muted" style="margin:0">${esc(d.label)} · ${money(d.amountPesewas)} · commission ${money(d.commissionPesewas)}</p>
+      <div class="sfield"><label for="wbN">Their name</label><input id="wbN" maxlength="60" value="${esc(d.broughtBy?.name || '')}"></div>
+      <div class="sfield"><label for="wbP">Their phone (to pay them)</label><input id="wbP" type="tel" inputmode="tel" value="${esc(d.broughtBy?.phone || '')}" placeholder="024 123 4567"></div>
+      <div id="wbM"></div><button class="big" id="wbGo">Save</button><button class="big ghost" data-close>Cancel</button>`, { label: 'Who brought this deal' });
+    $('#wbGo', box).onclick = async () => { try { await busy($('#wbGo', box), () => sapi('/api/ops/commissions/assign', { method: 'POST', body: { kind: d.kind, id: d.id, name: $('#wbN', box).value, phone: $('#wbP', box).value } })); close(); again(); } catch (e) { say($('#wbM', box), e.message, 'bad'); } };
+  });
+  $$('[data-askc]', el).forEach(x => x.onclick = async () => {
+    try { await sapi('/api/ops/commissions/request', { method: 'POST', body: { month: c.month, key: x.dataset.askc } }); again(); } catch (e) { say($('#cMsg', el), e.message, 'bad'); }
+  });
+  $$('[data-payc]', el).forEach(x => x.onclick = () => {
+    const p = c.people.find(y => y.key === x.dataset.payc);
+    const { box, close } = sheet(`<h2>Pay ${esc(p.name)} ${money(p.owedPesewas)}</h2><p class="muted" style="margin:0">Commission on ${p.deals} deal${p.deals > 1 ? 's' : ''} in ${esc(c.label)}. It’s recorded as an expense under Commissions.</p>
+      <div class="sfield"><label for="pcW">Paid with</label><select id="pcW"><option value="momo">MoMo</option><option value="cash">Cash</option><option value="bank">Bank</option></select></div>
+      <div id="pcM"></div><button class="big" id="pcGo">Record payment</button><button class="big ghost" data-close>Cancel</button>`, { label: 'Pay commission' });
+    $('#pcGo', box).onclick = async () => { try { await busy($('#pcGo', box), () => sapi('/api/ops/commissions/pay', { method: 'POST', body: { month: c.month, key: p.key, paidWith: $('#pcW', box).value } })); close(); again(); } catch (e) { say($('#pcM', box), e.message, 'bad'); } };
+  });
+}
+
+// ── Every payment of the night, and the top customers (manager, director, finance) ──
+export async function paymentsView(el, { tab = 'payments' } = {}) {
+  el.innerHTML = '<div class="loading">Loading…</div>';
+  const d = await sapi('/api/ops/payments');
+  el.innerHTML = `<h1>${tab === 'customers' ? 'Top customers tonight' : 'Payments tonight'}</h1>
+    <div class="seg" role="radiogroup" aria-label="Show"><button type="button" class="mid ${tab === 'payments' ? 'on' : ''}" data-tabv="payments">Payments (${d.payments.length})</button><button type="button" class="mid ${tab === 'customers' ? 'on' : ''}" data-tabv="customers">Top customers</button></div>
+    ${tab === 'customers' ? `${d.customers.length ? `<div class="lines-list">${d.customers.map((c, i) => `<div class="ln"><span><b>${i + 1}. ${esc(c.name || 'Customer')}</b> · <a href="tel:${esc(c.phone)}">${esc(c.phone)}</a><br><small class="muted">${c.visits} order${c.visits > 1 ? 's' : ''} · ${esc(c.where)} · last ${when(c.lastAt)}</small></span><span>${money(c.spentPesewas)}</span></div>`).join('')}</div>` : '<p class="muted">No customers with a phone number yet tonight.</p>'}
+      ${d.noPhonePesewas ? `<p class="muted" style="margin:0">${money(d.noPhonePesewas)} was spent by customers who gave no phone number. Ask waiters and the bar to add the customer’s phone, so their spending adds up.</p>` : ''}`
+    : `<div class="pos-money"><div class="big-line good"><span>Paid tonight</span><b>${money(d.totalPesewas)}</b></div><p class="how">${d.byMethod.map(m => `${esc(m.label)} ${money(m.amountPesewas)}`).join(' · ')}</p></div>
+      ${d.payments.length ? `<div class="pos-tables">${d.payments.map((p, i) => `<button type="button" class="pos-row" data-pay="${i}"><span class="where">${when(p.at)} · ${esc(p.where)}<small>${esc(p.methodLabel)} · served by ${esc(p.servedByName || '—')}${p.customerName ? ` · ${esc(p.customerName)}` : ''}</small></span><span class="amt">${money(p.amountPesewas)}${p.refund ? st('cancelled', 'refund') : ''}</span></button>`).join('')}</div>` : '<p class="muted">No payments yet tonight.</p>'}`}`;
+  $$('[data-tabv]', el).forEach(b => b.onclick = () => paymentsView(el, { tab: b.dataset.tabv }));
+  $$('[data-pay]', el).forEach(b => b.onclick = () => {
+    const p = d.payments[Number(b.dataset.pay)];
+    sheet(`<h2>${money(p.amountPesewas)} · ${when(p.at)}</h2>
+      <div class="lines-list">
+        <div class="ln"><span>How it was paid</span><span>${esc(p.methodLabel)}</span></div>
+        ${p.momoRef ? `<div class="ln"><span>Reference</span><span>${esc(p.momoRef)}</span></div>` : ''}
+        <div class="ln"><span>Payment taken by</span><span>${esc(p.takenByName || '—')}</span></div>
+        <div class="ln"><span>Served by</span><span>${esc(p.servedByName || '—')}</span></div>
+        <div class="ln"><span>Where</span><span>${esc(p.where)}${p.bar ? ` · ${esc(p.bar)}` : ''} · ${esc(p.tab)}</span></div>
+        ${p.customerName || p.customerPhone ? `<div class="ln"><span>Customer</span><span>${esc(p.customerName)}${p.customerPhone ? ` <a href="tel:${esc(p.customerPhone)}">${esc(p.customerPhone)}</a>` : ''}</span></div>` : ''}
+      </div>
+      <h3 style="margin:6px 0 0">${p.wholeBill ? 'What the table had (this payment is towards the whole bill)' : 'What was bought'}</h3>
+      <div class="lines-list">${p.lines.map(l => `<div class="ln"><span>${l.qty} × ${esc(l.name)}</span><span>${money(l.amountPesewas)}</span></div>`).join('') || '<div class="ln"><span class="muted">No drinks</span></div>'}
+        ${p.wholeBill ? `<div class="ln total"><span>Table total</span><span>${money(p.billTotalPesewas)}</span></div>${p.billLeftPesewas ? `<div class="ln"><span>Still to pay on the table</span><span>${money(p.billLeftPesewas)}</span></div>` : ''}` : ''}</div>
+      ${p.refund ? `<div class="say bad">${p.refund === 'refunded' ? 'Refunded.' : 'The bar couldn’t make it: a refund is owed.'}</div>` : ''}
+      <button class="big ghost" data-close>Done</button>`, { label: 'Payment' });
+  });
+}
+
+// ── For the directors: everything waiting for a director (any director may approve any of it) ──
+export async function toApproveView(el, { onCount } = {}) {
+  el.innerHTML = '<div class="loading">Loading…</div>';
+  const d = await sapi('/api/ops/to-approve');
+  onCount?.(d.items.length);
+  const KIND = { payroll: 'Salaries', loan: 'Staff loan', bill: 'Bill', commission: 'Commission', purchase: 'Drinks to buy', expense: 'Expense' };
+  el.innerHTML = `<h1>To approve</h1><p class="lead" style="margin:0">${d.items.length ? `${d.items.length} waiting · ${money(d.totalPesewas)}. Finance pays only what a director approves.` : 'Nothing waiting. Finance pays only what a director approves.'}</p>
+    <div id="taMsg"></div>
+    <div class="cards">${d.items.map((x, i) => `<div class="tcard" style="cursor:default"><span class="row"><span class="t" style="font-size:16px">${esc(x.title)}</span><span class="amt">${money(x.amountPesewas)}</span></span>
+      <span class="sub">${esc(KIND[x.kind])} · ${esc(x.detail || '')}</span><span class="sub">Asked by ${esc(x.byName || '—')}${x.at ? ` · ${esc(dayName(String(x.at).slice(0, 10)))}` : ''}</span>
+      ${x.lines?.length ? `<details class="fold"><summary>Details</summary><div class="lines-list">${x.lines.map(l => `<div class="ln"><span>${esc(l.label)}${l.sub ? `<br><small class="muted">${esc(l.sub)}</small>` : ''}</span><span>${money(l.amountPesewas)}</span></div>`).join('')}</div></details>` : ''}
+      <span class="btn-row"><button class="mid okc" data-yes="${i}">Approve</button><button class="mid" data-no="${i}">Refuse</button></span></div>`).join('') || '<div class="empty-box"><b>All clear</b>New requests appear here.</div>'}</div>`;
+  const decide = async (x, approve) => {
+    let note = '';
+    if (!approve) { note = prompt(x.kind === 'payroll' ? 'What needs changing? (it goes back to the Human manager)' : 'Why is it refused?'); if (!note) return; }
+    try { await sapi('/api/ops/approve', { method: 'POST', body: { kind: x.kind, id: x.id, approve, note } }); await toApproveView(el, { onCount }); say($('#taMsg', el), approve ? 'Approved. Finance can pay it now.' : 'Refused.'); }
+    catch (e) { say($('#taMsg', el), e.message, 'bad'); }
+  };
+  $$('[data-yes]', el).forEach(b => b.onclick = () => decide(d.items[Number(b.dataset.yes)], true));
+  $$('[data-no]', el).forEach(b => b.onclick = () => decide(d.items[Number(b.dataset.no)], false));
+}
+
+// ── Buying drinks: the Manager asks, finance checks the limits, a director approves ──
+export async function purchasesView(el, stationId) {
+  el.innerHTML = '<div class="loading">Loading…</div>';
+  const d = await sapi(`/api/ops/purchases${stationId ? `?stationId=${encodeURIComponent(stationId)}` : ''}`);
+  const stKey = { requested: 'unpaid', checked: 'part_paid', approved: 'ready', bought: 'paid', refused: 'cancelled' };
+  const low = d.stock.filter(s => s.low);
+  el.innerHTML = `<h1>Buying drinks</h1>
+    ${d.stations.length > 1 ? `<select id="puSt">${d.stations.map(s => `<option value="${esc(s.id)}" ${s.id === d.stationId ? 'selected' : ''}>${esc(s.name)}</option>`).join('')}</select>` : ''}
+    ${low.length ? `<div class="say warn"><b>${low.length} drink${low.length > 1 ? 's are' : ' is'} at or below the minimum</b>${low.map(s => `${esc(s.name)}: ${s.stockNow} (min ${s.min}${s.max ? `, max ${s.max}` : ''})`).join('<br>')}</div>` : ''}
+    ${d.can.ask ? '<button class="big" id="puAsk">Ask to buy drinks</button>' : ''}<div id="puMsg"></div>
+    <h2>Requests</h2>
+    <div class="cards">${d.requests.map(r => `<div class="tcard" style="cursor:default"><span class="row"><span class="t" style="font-size:16px">${esc(r.stationName)} · ${money(r.estTotalPesewas)}</span>${st(stKey[r.status], r.statusLabel)}</span>
+      <span>${r.lines.map(l => `<b>${l.qty} ×</b> ${esc(l.name)} <small class="muted">(had ${l.stockNow}${l.max ? `, max ${l.max}` : ''}${l.receivedQty ? `, ${l.receivedQty} arrived` : ''})</small>`).join('<br>')}</span>
+      <span class="sub">Asked by ${esc(r.requestedByName)}${r.note ? `: ${esc(r.note)}` : ''}${r.checkedByName ? ` · checked by ${esc(r.checkedByName)}${r.checkNote ? ` (${esc(r.checkNote)})` : ''}` : ''}${r.decidedByName && r.status !== 'refused' ? ` · approved by ${esc(r.decidedByName)}` : ''}${r.refusedNote ? ` · refused: ${esc(r.refusedNote)}` : ''}</span>
+      ${r.status === 'requested' && d.can.check ? `<span class="btn-row"><button class="mid okc" data-chk="${esc(r.id)}">Check</button></span>` : ''}
+      ${r.status === 'approved' && d.can.ask ? '<span class="sub">Bought? Record it on Stock → Add new stock, and pick this purchase.</span>' : ''}</div>`).join('') || '<div class="empty-box"><b>No requests yet</b></div>'}</div>
+    <details class="fold"><summary>Stock now against the limits</summary><div class="lines-list">${d.stock.map(s => `<div class="ln"><span>${esc(s.name)}${s.low ? ` ${st('unpaid', 'Low')}` : ''}<br><small class="muted">min ${s.min || '—'} · max ${s.max || '—'}</small></span><span>${s.stockNow}</span></div>`).join('')}</div></details>`;
+  $('#puSt', el) && ($('#puSt', el).onchange = e => purchasesView(el, e.target.value));
+  $('#puAsk', el) && ($('#puAsk', el).onclick = () => {
+    const { box, close } = sheet(`<h2>Ask to buy drinks</h2><p class="muted" style="margin:0">Filled in: enough to bring low drinks up to the maximum. Finance checks it, then a director approves the money.</p>
+      <div class="lines-list">${d.stock.map(s => `<div class="ln" style="align-items:center"><span>${esc(s.name)}<br><small class="muted">has ${s.stockNow}${s.max ? ` · max ${s.max}` : ''}${s.costPesewas ? ` · ${money(s.costPesewas)} each` : ''}</small></span><input data-q="${esc(s.productId)}" inputmode="numeric" style="width:80px;text-align:center" value="${s.low && s.suggestQty ? s.suggestQty : ''}" aria-label="How many ${esc(s.name)}"></div>`).join('')}</div>
+      <div class="sfield"><label for="puN">Note (optional)</label><input id="puN" maxlength="300"></div><div id="puM"></div><button class="big" id="puGo">Send to finance</button><button class="big ghost" data-close>Cancel</button>`, { label: 'Ask to buy drinks' });
+    $('#puGo', box).onclick = async () => {
+      const lines = $$('[data-q]', box).map(i => ({ productId: i.dataset.q, qty: Number(i.value || 0) })).filter(l => l.qty > 0);
+      try { await busy($('#puGo', box), () => sapi('/api/ops/purchases', { method: 'POST', body: { stationId: d.stationId, lines, note: $('#puN', box).value } })); close(); purchasesView(el, d.stationId); } catch (e) { say($('#puM', box), e.message, 'bad'); }
+    };
+  });
+  $$('[data-chk]', el).forEach(b => b.onclick = () => {
+    const r = d.requests.find(x => x.id === b.dataset.chk);
+    const { box, close } = sheet(`<h2>Check the purchase</h2><p class="muted" style="margin:0">Change the numbers if needed. Above the maximum needs a reason.</p>
+      <div class="lines-list">${r.lines.map(l => `<div class="ln" style="align-items:center"><span>${esc(l.name)}<br><small class="muted">has ${l.stockNow} · min ${l.min || '—'} · max ${l.max || '—'}</small></span><input data-cq="${esc(l.productId)}" inputmode="numeric" style="width:80px;text-align:center" value="${l.qty}"></div>`).join('')}</div>
+      <div class="sfield"><label for="ckN">Note (needed above the maximum, or to refuse)</label><input id="ckN" maxlength="300"></div><div id="ckM"></div>
+      <button class="big" id="ckOk">Approve and send to the directors</button><button class="big ghost" id="ckNo">Refuse</button><button class="big ghost" data-close>Cancel</button>`, { label: 'Check purchase' });
+    const send = approve => busy($(approve ? '#ckOk' : '#ckNo', box), () => sapi('/api/ops/purchases/check', { method: 'POST', body: { id: r.id, approve, note: $('#ckN', box).value, lines: $$('[data-cq]', box).map(i => ({ productId: i.dataset.cq, qty: Number(i.value || 0) })) } }))
+      .then(() => { close(); purchasesView(el, d.stationId); }).catch(e => say($('#ckM', box), e.message, 'bad'));
+    $('#ckOk', box).onclick = () => send(true); $('#ckNo', box).onclick = () => send(false);
+  });
+}
+
+// ── Cash from the staff to the Manager, after they count it ──
+export async function cashReceiveView(el) {
+  el.innerHTML = '<div class="loading">Loading…</div>';
+  const { sessions } = await sapi('/api/ops/cash/all');
+  const waiting = sessions.filter(s => s.status !== 'open' && !s.receivedAt), open = sessions.filter(s => s.status === 'open' && s.expectedPesewas), done = sessions.filter(s => s.receivedAt);
+  el.innerHTML = `<h1>Cash from the staff</h1>
+    <div class="cards">${waiting.map(s => `<div class="tcard" style="cursor:default"><span class="row"><span class="t" style="font-size:16px">${esc(s.name)}</span><span class="amt">${money(s.countedPesewas)}</span></span>
+      <span class="sub">Counted at ${when(s.closedAt)}${s.differencePesewas ? ` · ${money(Math.abs(s.differencePesewas))} ${s.differencePesewas < 0 ? 'less' : 'more'} than expected: ${esc(s.explanation)}` : ''}</span>
+      <span class="btn-row"><button class="mid okc" data-rcv="${esc(s.id)}">Received</button></span></div>`).join('') || '<p class="muted">No cash waiting to be handed over.</p>'}</div>
+    ${open.length ? `<h2>Not counted yet</h2><div class="lines-list">${open.map(s => `<div class="ln"><span>${esc(s.name)}</span><span>${money(s.expectedPesewas)} expected</span></div>`).join('')}</div>` : ''}
+    ${done.length ? `<h2>Received tonight</h2><div class="lines-list">${done.map(s => `<div class="ln"><span>${esc(s.name)} <small class="muted">by ${esc(s.receivedByName)}${s.receivedNote ? `: ${esc(s.receivedNote)}` : ''}</small></span><span>${money(s.receivedPesewas)}</span></div>`).join('')}</div>` : ''}<div id="crMsg"></div>`;
+  $$('[data-rcv]', el).forEach(b => b.onclick = () => {
+    const s = sessions.find(x => x.id === b.dataset.rcv);
+    const { box, close } = sheet(`<h2>Cash from ${esc(s.name)}</h2>${moneyField('crA', 'Cash you received (GHS)', String(s.countedPesewas / 100), `They counted ${money(s.countedPesewas)}.`)}
+      <div class="sfield"><label for="crN">Note (needed if it’s different)</label><input id="crN" maxlength="300"></div><div id="crM"></div><button class="big" id="crGo">Confirm received</button><button class="big ghost" data-close>Cancel</button>`, { label: 'Receive cash' });
+    $('#crGo', box).onclick = async () => { try { await busy($('#crGo', box), () => sapi('/api/ops/cash/receive', { method: 'POST', body: { id: s.id, receivedPesewas: ghsIn($('#crA', box).value), note: $('#crN', box).value } })); close(); cashReceiveView(el); } catch (e) { say($('#crM', box), e.message, 'bad'); } };
+  });
+}
+
+// ── Staff feedback and complaints: the Human manager (what was sent to them); the directors (all) ──
+export async function feedbackInboxView(el) {
+  el.innerHTML = '<div class="loading">Loading…</div>';
+  const d = await sapi('/api/ops/feedback');
+  el.innerHTML = `<h1>Staff feedback</h1><p class="lead" style="margin:0">${d.open} waiting for an answer.</p>
+    <div class="cards">${d.feedback.map(f => `<div class="tcard" style="cursor:default"><span class="row"><span class="t" style="font-size:15px">${esc(f.kindLabel)} · ${esc(f.fromName)}${f.fromRole ? ` <small class="muted">${esc(f.fromRole)}</small>` : ''}</span><span class="sub">to ${esc(f.toLabel.toLowerCase())} · ${when(f.at)}</span></span>
+      <span>${esc(f.text)}</span>
+      ${f.reply ? `<span class="say good" style="margin:0"><b>${esc(f.replyByName)} answered</b>${esc(f.reply)}</span>` : `<span class="btn-row"><button class="mid" data-ans="${esc(f.id)}">Answer</button></span>`}</div>`).join('') || '<div class="empty-box"><b>Nothing yet</b>What staff send shows here.</div>'}</div>`;
+  $$('[data-ans]', el).forEach(b => b.onclick = () => {
+    const { box, close } = sheet(`<h2>Answer</h2><div class="sfield"><label for="faT">Your answer (they see it on their page)</label><textarea id="faT" rows="4" maxlength="1000"></textarea></div>
+      <div id="faM"></div><button class="big" id="faGo">Send answer</button><button class="big ghost" data-close>Cancel</button>`, { label: 'Answer' });
+    $('#faGo', box).onclick = async () => { try { await busy($('#faGo', box), () => sapi('/api/ops/feedback/reply', { method: 'POST', body: { id: b.dataset.ans, reply: $('#faT', box).value } })); close(); feedbackInboxView(el); } catch (e) { say($('#faM', box), e.message, 'bad'); } };
+  });
 }
 
 // ── End-of-day reports ──

@@ -14,7 +14,7 @@ function seed(store) {
   store.seed('installment_plans', 'MEM-OVER0-PAID0', { eventName: 'Sat', buyerName: 'Yaw', buyerPhone: '0501231234', totalPesewas: 10000, paidPesewas: 12000, overpaidPesewas: 2000, status: 'completed' });
   store.seed('pending_checkouts', 'ref-done', { kind: 'ticket', amountPesewas: 999, refundStatus: 'refunded' });
 }
-const call = async (env, method, path, body, claims = { role: 'director' }) => {
+const call = async (env, method, path, body, claims = { role: 'superAdmin' }) => {
   const r = await worker.fetch(new Request(`https://api.test${path}`, { method, headers: { Authorization: `Bearer ${await idToken(claims, { uid: 'mgr-1' })}` }, body: body ? JSON.stringify(body) : undefined }), env);
   return { status: r.status, data: await r.json() };
 };

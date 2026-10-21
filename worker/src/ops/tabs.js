@@ -13,15 +13,18 @@
 // Prices are copied onto the round when it's sent, so a menu price change never moves a bill.
 // Stock leaves the bar once, when the bar hands the round to the waiter (stock_moves 'issue');
 // drinks the waiter brings back come back in ('return_in') once the bar confirms them.
+// Nothing is sold past zero: every order is checked against what's left at the bar (stockError).
+// Quick sale: one go, no table: drinks + Cash or MoMo. From a waiter it goes to the bar like any
+// order and the waiter confirms they got the drinks; from the bar it's served and closed at once.
 import { getDoc, setDoc, queryWhere, batchGet, commitTx, updateWrite, foundFields, withTransaction, listDocs } from '../lib/firestore.js';
 import { now, id, clean, normalizePhone, maskPhone, paymentRef, validEmail } from '../lib/util.js';
 import { requireRole, uidOf } from '../lib/auth.js';
 import { sendSms, siteUrl } from '../lib/notify.js';
 import { FORBIDDEN, bizDate, who, audit, closedError, ghs, int } from './common.js';
-import { addMoves } from './stock.js';
+import { addMoves, stockError } from './stock.js';
 
 export const BOSS = ['superAdmin', 'director', 'manager'];
-export const WAITERS = [...BOSS, 'waitStaff'];
+export const WAITERS = [...BOSS, 'waitStaff', 'eventManager'];             // the Event manager serves tables too
 export const BAR_HANDS = [...BOSS, 'barStaff'];
 export const CASH_TAKERS = [...BOSS, 'cashier'];
 const MAX_LINES = 20, MAX_QTY = 30;
@@ -51,7 +54,7 @@ async function roundsOf(env, tabId) { return (await queryWhere(env, 'rounds', [{
 const tabView = (t, rounds, { full = true } = {}) => {
   const bill = billOf(t, rounds);
   return {
-    id: t.id, number: t.number, label: `Tab ${t.number}`, businessDate: t.businessDate, table: t.table || '', customerName: t.customerName || '', customerPhoneHint: t.customerPhone ? maskPhone(t.customerPhone) : '',
+    id: t.id, number: t.number, label: `Tab ${t.number}`, quick: !!t.quick, businessDate: t.businessDate, table: t.table || '', customerName: t.customerName || '', customerPhoneHint: t.customerPhone ? maskPhone(t.customerPhone) : '',
     waiterUid: t.waiterUid, waiterName: t.waiterName, stationId: t.stationId, stationName: t.stationName, status: t.status, payStatus: bill.status, payLabel: PAY_LABEL[bill.status],
     bill, payments: (t.payments || []).map(p => ({ method: p.method, label: METHOD_LABEL[p.method] || p.method, amountPesewas: p.amountPesewas, at: p.at, byName: p.byName || '', momoRef: p.momoRef || '' })),
     openRounds: rounds.filter(r => !['delivered', 'cancelled'].includes(r.status)).length,
@@ -59,7 +62,7 @@ const tabView = (t, rounds, { full = true } = {}) => {
     createdAt: t.createdAt,
   };
 };
-export const ROUND_LABEL = { waiting: 'Sent to bar', preparing: 'Bar is making it', ready: 'Ready at the bar', taken: 'You took it: the bar must confirm', handed: 'Bar handed it to you', received: 'With you', delivered: 'Delivered', cancelled: 'Cancelled' };
+export const ROUND_LABEL = { waiting: 'Sent to bar', preparing: 'Bar is making it', ready: 'Ready at the bar', taken: 'You took it: the bar must confirm', handed: 'Bar gave it to you: tap “I got them”', received: 'With you', delivered: 'Delivered', cancelled: 'Cancelled' };
 const roundView = r => ({ id: r.id, tabId: r.tabId, tabNumber: r.tabNumber, table: r.table || '', status: r.status, statusLabel: ROUND_LABEL[r.status], waiterUid: r.waiterUid, waiterName: r.waiterName, stationId: r.stationId,
   lines: r.lines.map(l => ({ lineId: l.lineId, productId: l.productId, name: l.name, qty: l.qty, unitPesewas: l.unitPesewas, returnedQty: l.returnedQty || 0, brokenQty: l.brokenQty || 0, compQty: l.compQty || 0, returnPending: l.returnPending || 0 })),
   note: r.note || '', createdAt: r.createdAt, handedAt: r.handedAt || '', handedByName: r.handedByName || '', takenAt: r.takenAt || '', takenByName: r.takenByName || '', takenConfirmed: !!r.takenConfirmedAt, cancelReason: r.cancelReason || '' });
@@ -77,6 +80,10 @@ export async function openTab(env, b, user) {
   if (!table && !walkIn) return { error: 'Pick a table, or tap “Walk-in”.' };
   const phone = b?.customerPhone ? normalizePhone(b.customerPhone) : '';
   if (b?.customerPhone && !phone) return { error: 'That phone number doesn’t look right. Use a Ghana number, or leave it blank.' };
+  // Who brought the table (a 10% commission on a deal over GHS 3,000; see commission.js).
+  const dealName = clean(b?.broughtByName, 60), dealPhone = b?.broughtByPhone ? normalizePhone(b.broughtByPhone) : '';
+  if (b?.broughtByPhone && !dealPhone) return { error: 'The phone of the person who brought the table doesn’t look right, or leave it blank.' };
+  const broughtBy = dealName ? { name: dealName, phone: dealPhone, setBy: uidOf(user), setByName: user.name || '', at: now() } : null;
   const tabId = id();
   const number = await withTransaction(env, async tx => {
     const key = `tabs_${date}`, got = foundFields(await batchGet(env, [`counters/${key}`], tx), `/counters/${key}`);
@@ -84,7 +91,7 @@ export async function openTab(env, b, user) {
     await commitTx(env, [
       updateWrite(env, 'counters', key, { n }),
       updateWrite(env, 'tabs', tabId, { number: n, businessDate: date, stationId: st.id, stationName: st.fields.name, table: walkIn ? 'Walk-in' : table, customerName: clean(b.customerName, 60), customerPhone: phone,
-        waiterUid: uidOf(user), waiterName: user.name || '', status: 'open', billToken: id(), payments: [], discounts: [], createdAt: now() }),
+        waiterUid: uidOf(user), waiterName: user.name || '', status: 'open', billToken: id(), payments: [], discounts: [], createdAt: now(), broughtBy }),
     ], tx);
     return n;
   });
@@ -93,8 +100,8 @@ export async function openTab(env, b, user) {
 }
 
 export async function myTabs(env, user, { all = false } = {}) {
-  if (!requireRole(user, [...WAITERS, 'cashier'])) return FORBIDDEN;
-  const everyone = all && requireRole(user, [...BOSS, 'cashier']);
+  if (!requireRole(user, [...WAITERS, 'cashier', 'hrManager', 'eventManager'])) return FORBIDDEN;
+  const everyone = all && requireRole(user, [...BOSS, 'cashier', 'hrManager', 'eventManager']);
   const open = await queryWhere(env, 'tabs', everyone ? [{ field: 'status', value: 'open' }] : [{ field: 'status', value: 'open' }, { field: 'waiterUid', value: uidOf(user) }]);
   const today = (await queryWhere(env, 'tabs', [{ field: 'businessDate', value: bizDate() }])).filter(t => t.fields.status !== 'open' && (everyone || t.fields.waiterUid === uidOf(user)));
   const out = [];
@@ -105,7 +112,7 @@ export async function myTabs(env, user, { all = false } = {}) {
 export async function getTab(env, user, tabId) {
   const t = await getDoc(env, 'tabs', String(tabId || ''));
   if (!t) return { error: 'Tab not found.', status: 404 };
-  if (!mineOrBoss(user, t.fields) && !requireRole(user, ['cashier', 'finance', 'barStaff'])) return FORBIDDEN;
+  if (!mineOrBoss(user, t.fields) && !requireRole(user, ['cashier', 'finance', 'barStaff', 'hrManager', 'eventManager'])) return FORBIDDEN;
   const view = tabView({ id: t.id, ...t.fields }, await roundsOf(env, t.id));
   view.billUrl = siteUrl(env, `/bill.html?t=${t.fields.billToken}`);
   return { tab: view };
@@ -130,6 +137,7 @@ export async function addRound(env, b, user) {
     if (same) same.qty += x.qty;
     else lines.push({ lineId: id().slice(0, 12), productId: x.productId, name: p.fields.name, unitPesewas: Number(p.fields.pricePesewas), qty: x.qty, returnedQty: 0, brokenQty: 0, compQty: 0, returnPending: 0 });
   }
+  const short = await stockError(env, t.fields.stationId, lines); if (short) return { error: short };
   const rid = id();
   await setDoc(env, 'rounds', rid, { tabId: t.id, tabNumber: t.fields.number, businessDate: bizDate(), stationId: t.fields.stationId, waiterUid: t.fields.waiterUid, waiterName: t.fields.waiterName, table: t.fields.table, lines, status: 'waiting', note: clean(b.note, 120), createdAt: now(), sentBy: uidOf(user) });
   return { id: rid, totalPesewas: lines.reduce((n, l) => n + l.qty * l.unitPesewas, 0) };
@@ -139,6 +147,20 @@ export async function addRound(env, b, user) {
 export async function waiterRound(env, b, user) {
   if (!requireRole(user, WAITERS)) return FORBIDDEN;
   const rid = String(b?.roundId || ''), action = b?.action;
+  const res = await stepRound(env, b, user, rid, action);
+  // A quick sale is finished once it's paid and the waiter has the drinks.
+  if (!res.error && action === 'delivered' && res.tabId) await closeQuickIfDone(env, res.tabId, user);
+  delete res.tabId;
+  return res;
+}
+async function closeQuickIfDone(env, tabId, user) {
+  const t = await getDoc(env, 'tabs', tabId);
+  if (!t || !t.fields.quick || t.fields.status !== 'open') return;
+  const rounds = await roundsOf(env, tabId), bill = billOf(t.fields, rounds);
+  if (bill.balancePesewas > 0 || rounds.some(r => !['delivered', 'cancelled'].includes(r.status))) return;
+  await setDoc(env, 'tabs', tabId, { ...t.fields, status: 'closed', closedAt: now(), closedByName: user.name || '' });
+}
+async function stepRound(env, b, user, rid, action) {
   return withTransaction(env, async tx => {
     const r = foundFields(await batchGet(env, [`rounds/${rid}`], tx), `/rounds/${rid}`);
     if (!r) return { error: 'Order not found.', status: 404 };
@@ -161,7 +183,7 @@ export async function waiterRound(env, b, user) {
       if (!['handed', 'received'].includes(f.status)) return { error: f.status === 'delivered' ? 'Already delivered.' : 'Collect it from the bar first.' };
       next = { ...f, status: 'delivered', receivedAt: f.receivedAt || at, deliveredAt: at };
     } else if (action === 'broken' || action === 'return') {
-      if (!['handed', 'received', 'delivered'].includes(f.status) || (action === 'return' && f.status === 'delivered')) return { error: action === 'return' ? 'Only drinks you haven’t delivered can go back to the bar.' : 'Only drinks you’ve collected can be recorded as broken.' };
+      if (!['handed', 'received', 'delivered'].includes(f.status)) return { error: action === 'return' ? 'Only drinks you got from the bar can go back to it.' : 'Only drinks you’ve collected can be recorded as broken.' };
       const qty = int(b.qty), line = f.lines.find(l => l.lineId === b.lineId);
       if (!line) return { error: 'Pick the drink.' };
       const left = line.qty - (line.returnedQty || 0) - (line.brokenQty || 0) - (line.compQty || 0) - (line.returnPending || 0);
@@ -170,7 +192,7 @@ export async function waiterRound(env, b, user) {
       next = { ...f, lines, ...(action === 'broken' ? { brokenAt: at } : { returnRequestedAt: at }) };
     } else return { error: 'Unknown action.' };
     await commitTx(env, [updateWrite(env, 'rounds', rid, next), updateWrite(env, 'audit_logs', id(), { action: `ROUND_${action.toUpperCase()}`, actorUid: uidOf(user), actorName: byName, roundId: rid, tabId: f.tabId, timestamp: at })], tx);
-    return { status: next.status };
+    return { status: next.status, tabId: f.tabId };
   });
 }
 
@@ -235,9 +257,10 @@ export async function barRound(env, b, user) {
 
 // ── Money ──
 async function staffRecord(env, user) { return (await getDoc(env, 'users', uidOf(user)))?.fields || {}; }
-// Waiters record what their tables paid them; cashiers and managers too; anyone else only if a
-// manager ticked "Can collect cash" on their staff record.
-export async function canTakeCash(env, user) { return requireRole(user, [...CASH_TAKERS, 'waitStaff']) || (await staffRecord(env, user)).canCollectCash === true; }
+// Waiters and bartenders record what customers paid them; cashiers and managers too; anyone else
+// only if a manager ticked "Can collect cash" on their staff record.
+export const PAY_TAKERS = [...CASH_TAKERS, 'waitStaff', 'barStaff', 'eventManager'];
+export async function canTakeCash(env, user) { return requireRole(user, PAY_TAKERS) || (await staffRecord(env, user)).canCollectCash === true; }
 export const METHOD_LABEL = { cash: 'Cash', momo: 'MoMo (to the club’s number)', digital: 'MoMo / card (paid on the bill link)' };
 
 // "Customer paid": cash (into this person's cash bag for the night) or MoMo sent straight to the
@@ -248,18 +271,25 @@ export async function recordPayment(env, b, user) {
   return method === 'momo' ? recordMomo(env, b, user) : recordCash(env, b, user);
 }
 
-async function recordMomo(env, b, user) {
-  if (!(await canTakeCash(env, user))) return { error: 'Your job doesn’t include recording payments. Send the customer to the cashier.', status: 403 };
-  const amount = int(b?.amountPesewas);
-  if (!(amount >= 100)) return { error: 'Enter the amount (at least GHS 1).' };
+// The MoMo transaction ID (from the customer's MoMo text): needed, and only once a night.
+async function momoCheck(env, b, date) {
   const ref = String(b?.momoRef || '').toUpperCase().replace(/[^A-Z0-9.]/g, '').slice(0, 40);
   if (ref.length < 6) return { error: 'Enter the MoMo transaction ID from the customer’s MoMo text (at least 6 letters or numbers).' };
   const from = b?.momoFrom ? normalizePhone(b.momoFrom) : '';
   if (b?.momoFrom && !from) return { error: 'That MoMo number doesn’t look right, or leave it blank.' };
-  const date = bizDate(), closed = await closedError(env, date); if (closed) return closed;
   const tonight = await queryWhere(env, 'tabs', [{ field: 'businessDate', value: date }]);
   const dup = tonight.find(t => (t.fields.payments || []).some(p => p.method === 'momo' && p.momoRef === ref));
   if (dup) return { error: `That MoMo transaction ID is already recorded (Tab ${dup.fields.number}). Check the ID.` };
+  return { ref, from };
+}
+
+async function recordMomo(env, b, user) {
+  if (!(await canTakeCash(env, user))) return { error: 'Your job doesn’t include recording payments. Send the customer to the cashier.', status: 403 };
+  const amount = int(b?.amountPesewas);
+  if (!(amount >= 100)) return { error: 'Enter the amount (at least GHS 1).' };
+  const date = bizDate(), closed = await closedError(env, date); if (closed) return closed;
+  const m = await momoCheck(env, b, date); if (m.error) return m;
+  const { ref, from } = m;
   const tabId = String(b?.tabId || '');
   return withTransaction(env, async tx => {
     const t = foundFields(await batchGet(env, [`tabs/${tabId}`], tx), `/tabs/${tabId}`);
@@ -277,20 +307,27 @@ async function recordMomo(env, b, user) {
   });
 }
 
+// This person's cash bag for the night. Waiters, bartenders and managers start at GHS 0; a
+// cashier opens theirs by counting a float first.
+async function cashBag(env, user, date) {
+  const sid = `${date}__${uidOf(user)}`;
+  let session = await getDoc(env, 'cash_sessions', sid);
+  if (!session) {
+    if (requireRole(user, ['cashier'])) return { error: 'Open your cash shift first (count your float).', code: 'no_session' };
+    await setDoc(env, 'cash_sessions', sid, { date, uid: uidOf(user), name: user.name || '', role: user.role, floatPesewas: 0, status: 'open', openedAt: now(), payments: [], movements: [] });
+    session = await getDoc(env, 'cash_sessions', sid);
+  }
+  if (session.fields.status !== 'open') return { error: 'You already handed in your cash for tonight. Ask a manager.' };
+  return { sid };
+}
+
 export async function recordCash(env, b, user) {
   if (!(await canTakeCash(env, user))) return { error: 'Your job doesn’t include taking cash. Send the customer to the cashier.', status: 403 };
   const amount = int(b?.amountPesewas);
   if (!(amount >= 100)) return { error: 'Enter the cash amount (at least GHS 1).' };
   const date = bizDate();
-  const sid = `${date}__${uidOf(user)}`;
-  let session = await getDoc(env, 'cash_sessions', sid);
-  if (!session) {
-    if (requireRole(user, ['cashier'])) return { error: 'Open your cash shift first (count your float).', code: 'no_session' };
-    // Waiters and managers allowed to take cash: their cash bag starts at GHS 0.
-    await setDoc(env, 'cash_sessions', sid, { date, uid: uidOf(user), name: user.name || '', role: user.role, floatPesewas: 0, status: 'open', openedAt: now(), payments: [], movements: [] });
-    session = await getDoc(env, 'cash_sessions', sid);
-  }
-  if (session.fields.status !== 'open') return { error: 'Your cash shift is closed. Ask a manager.' };
+  const cs = await cashBag(env, user, date); if (cs.error) return cs;
+  const { sid } = cs;
   const tabId = String(b?.tabId || '');
   return withTransaction(env, async tx => {
     const got = await batchGet(env, [`tabs/${tabId}`, `cash_sessions/${sid}`], tx);
@@ -308,6 +345,65 @@ export async function recordCash(env, b, user) {
     ], tx);
     return { recorded: true, balancePesewas: bill.balancePesewas - amount, receiptId: payId };
   });
+}
+
+// ── Quick sale ──
+// { lines: [{productId, qty}], method: cash|momo, momoRef?, momoFrom?, stationId?, fromBar? }
+// A waiter: the drinks go to the bar as an order, already paid; the waiter taps "I got them" and the
+// sale closes itself. The bar (fromBar): served over the counter, out of stock and closed at once.
+export async function quickSale(env, b, user) {
+  const fromBar = b?.fromBar === true;
+  if (!requireRole(user, fromBar ? BAR_HANDS : WAITERS)) return FORBIDDEN;
+  if (!(await canTakeCash(env, user))) return { error: 'Your job doesn’t include taking payments. Ask a manager.', status: 403 };
+  const date = bizDate(), closed = await closedError(env, date); if (closed) return closed;
+  const stations = (await listDocs(env, 'bar_stations')).sort((a, c) => a.fields.name.localeCompare(c.fields.name));
+  const st = stations.find(x => x.id === b?.stationId) || stations[0];
+  if (!st) return { error: 'No bar is set up yet. Ask a manager (Setup → Bar orders).' };
+  const want = (Array.isArray(b?.lines) ? b.lines : []).map(x => ({ productId: String(x?.productId || ''), qty: int(x?.qty) })).filter(x => x.productId && x.qty > 0);
+  if (!want.length) return { error: 'Pick at least one drink.' };
+  if (want.length > MAX_LINES || want.some(x => x.qty > MAX_QTY)) return { error: `Up to ${MAX_QTY} of each drink in one sale.` };
+  const got = await batchGet(env, want.map(x => `menu_items/${x.productId}`));
+  const lines = [];
+  for (const x of want) {
+    const p = foundFields(got, `/menu_items/${x.productId}`);
+    if (!p || p.fields.available === false || !(Number(p.fields.pricePesewas) > 0)) return { error: `${p?.fields?.name || 'A drink you picked'} isn’t available. Take it off.` };
+    const same = lines.find(l => l.productId === x.productId);
+    if (same) same.qty += x.qty;
+    else lines.push({ lineId: id().slice(0, 12), productId: x.productId, name: p.fields.name, unitPesewas: Number(p.fields.pricePesewas), qty: x.qty, returnedQty: 0, brokenQty: 0, compQty: 0, returnPending: 0 });
+  }
+  const short = await stockError(env, st.id, lines); if (short) return { error: short };
+  const total = lines.reduce((n, l) => n + l.qty * l.unitPesewas, 0);
+  const method = b?.method === 'momo' ? 'momo' : 'cash';
+  // The customer's phone (optional): so their spending tonight adds up under one name.
+  const custPhone = b?.customerPhone ? normalizePhone(b.customerPhone) : '';
+  if (b?.customerPhone && !custPhone) return { error: 'That customer phone number doesn’t look right, or leave it blank.' };
+  let momo = null, bag = null;
+  if (method === 'momo') { momo = await momoCheck(env, b, date); if (momo.error) return momo; }
+  else { bag = await cashBag(env, user, date); if (bag.error) return bag; }
+  const tabId = id(), rid = id(), payId = id(), at = now(), uid = uidOf(user), byName = user.name || '';
+  const pay = { id: payId, method, amountPesewas: total, at, businessDate: date, by: uid, byName, ...(momo ? { momoRef: momo.ref, momoFrom: momo.from } : { sessionId: bag.sid }) };
+  const round = { tabId, businessDate: date, stationId: st.id, waiterUid: uid, waiterName: byName, table: 'Quick sale', lines, note: '', createdAt: at, sentBy: uid, quick: true,
+    ...(fromBar ? { status: 'delivered', handedAt: at, handedBy: uid, handedByName: byName, receivedAt: at, deliveredAt: at, soldAtBar: true } : { status: 'waiting' }) };
+  const number = await withTransaction(env, async tx => {
+    const key = `tabs_${date}`, paths = [`counters/${key}`, ...(bag ? [`cash_sessions/${bag.sid}`] : [])];
+    const res = await batchGet(env, paths, tx);
+    const n = Number(foundFields(res, `/counters/${key}`)?.fields?.n || 0) + 1;
+    const writes = [
+      updateWrite(env, 'counters', key, { n }),
+      updateWrite(env, 'tabs', tabId, { number: n, businessDate: date, stationId: st.id, stationName: st.fields.name, table: 'Quick sale', customerName: clean(b?.customerName, 60), customerPhone: custPhone || (momo?.from || ''), quick: true, soldAtBar: fromBar,
+        waiterUid: uid, waiterName: byName, status: fromBar ? 'closed' : 'open', ...(fromBar ? { closedAt: at, closedByName: byName } : {}), billToken: id(), payments: [pay], discounts: [], createdAt: at }),
+      updateWrite(env, 'rounds', rid, { ...round, tabNumber: n }),
+      updateWrite(env, 'audit_logs', id(), { action: method === 'momo' ? 'QUICK_SALE_MOMO' : 'QUICK_SALE_CASH', actorUid: uid, actorName: byName, tabId, amountPesewas: total, fromBar, ...(momo ? { momoRef: momo.ref } : {}), timestamp: at }),
+    ];
+    if (bag) {
+      const s = foundFields(res, `/cash_sessions/${bag.sid}`);
+      writes.push(updateWrite(env, 'cash_sessions', bag.sid, { ...s.fields, payments: [...(s.fields.payments || []), { id: payId, tabId, tabNumber: n, amountPesewas: total, at }] }));
+    }
+    await commitTx(env, writes, tx);
+    return n;
+  });
+  if (fromBar) await addMoves(env, lines.map(l => ({ productId: l.productId, productName: l.name, stationId: st.id, qty: -l.qty, kind: 'issue', ref: rid, tabId, quickSale: true, businessDate: date })), user);
+  return { id: tabId, number, label: `Tab ${number}`, roundId: rid, totalPesewas: total, method };
 }
 
 export async function closeTab(env, b, user) {

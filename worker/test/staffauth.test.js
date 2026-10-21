@@ -19,8 +19,9 @@ const lastPin = (store, phone) => /PIN: (\d{4,6})/.exec(store.sms.filter(s => s.
 function setup() {
   const { store, env } = createMockEnv();
   env.PUBLIC_SITE_URL = 'https://memories.test';
-  store.seed('users', 'mgr1', { name: 'Akos Manager', phone: '0240000001', role: 'manager' });
-  return { store, env, MGR: { claims: { role: 'manager' }, uid: 'mgr1' } };
+  // The Human manager looks after the staff accounts.
+  store.seed('users', 'mgr1', { name: 'Akos Manager', phone: '0240000001', role: 'hrManager' });
+  return { store, env, MGR: { claims: { role: 'hrManager' }, uid: 'mgr1' } };
 }
 async function addWaiter(ctx, phone = '0245550101') {
   return call(ctx.env, 'POST', '/api/admin/people/add', { ...ctx.MGR, body: { name: 'Efua Mensah', phone, role: 'waitStaff' } });
@@ -99,7 +100,15 @@ test('managers can add floor staff but not directors or finance; directors can; 
   assert.match((await call(ctx.env, 'POST', '/api/admin/people/add', { ...ctx.MGR, body: { name: 'Dup', phone: '0245550104', role: 'barStaff' } })).data.error, /already uses that phone/);
   const list = await call(ctx.env, 'GET', '/api/admin/people', ctx.MGR);
   assert.ok(list.data.staff.some(s => s.name === 'Fin Officer' && s.hasPin && s.pinStarter));
-  assert.ok(!list.data.roles.some(r => ['director', 'finance', 'superAdmin'].includes(r.id)), 'a manager is only offered roles they may give');
+  assert.ok(!list.data.roles.some(r => ['director', 'finance', 'superAdmin', 'manager', 'hrManager', 'organiser'].includes(r.id)), 'the Human manager is only offered the staff jobs');
+  assert.ok(['dj', 'mc', 'security'].every(r => list.data.roles.some(x => x.id === r)), 'including DJs and MCs');
+  // The Manager (money and stock) no longer adds staff; the Event manager adds organisers only.
+  assert.equal((await call(ctx.env, 'POST', '/api/admin/people/add', { claims: { role: 'manager' }, body: { name: 'W', phone: '0245550107', role: 'waitStaff' } })).status, 403);
+  assert.equal((await call(ctx.env, 'POST', '/api/admin/people/add', { claims: { role: 'eventManager' }, body: { name: 'W', phone: '0245550108', role: 'waitStaff' } })).status, 403);
+  const org = await call(ctx.env, 'POST', '/api/admin/people/add', { claims: { role: 'eventManager' }, body: { name: 'Promo Org', phone: '0245550109', role: 'organiser' } });
+  assert.equal(org.status, 200, org.data.error);
+  const evl = await call(ctx.env, 'GET', '/api/admin/people', { claims: { role: 'eventManager' } });
+  assert.ok(evl.data.staff.length && evl.data.staff.every(s => s.role === 'organiser'), 'the Event manager sees organisers only');
 });
 
 test('"Text PINs to everyone": staff without a PIN get one; staff with a PIN, without a phone, or above the manager are left alone', async () => {

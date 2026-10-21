@@ -16,6 +16,8 @@ import * as promos from './promos.js';
 import * as staffauth from './staffauth.js';
 import { opsRoute } from './ops/router.js';
 import { publicBill, startBillPayment } from './ops/tabs.js';
+import { guestNight } from './ops/payments.js';
+import { leaveReview } from './ops/reviews.js';
 import { reconcilePayments, health } from './reconcile.js';
 import * as Sentry from '@sentry/cloudflare';
 import { sentryOptions, reportError, routeGroup, isCritical, clientError, securitySignal } from './lib/monitor.js';
@@ -118,6 +120,13 @@ async function route(req, env, ctx) {
   // ── Scan to order (guests at the bar) ──
   if (m === 'GET' && p === '/api/guest/menu') { if (await throttled(req, env, 'menu', 'standard')) return tooMany(req, env); return reply(req, env, await bar.guestMenu(env, u.searchParams.get('station'))); }
   if (m === 'POST' && p === '/api/guest/counter/checkout') { if (await throttled(req, env, 'checkout', 'standard')) return tooMany(req, env); return reply(req, env, await bar.counterCheckout(env, await body(req))); }
+  // A customer's review (no sign-in; rate limited).
+  if (m === 'POST' && p === '/api/guest/review') { if (await throttled(req, env, 'review', 'strict')) return tooMany(req, env); return reply(req, env, await leaveReview(env, await body(req))); }
+  // A QR customer's night: everything paid tonight from their phone (their order id is the key).
+  if (m === 'GET' && p.startsWith('/api/guest/counter-night/')) {
+    if (await throttled(req, env, 'counter-poll', 'standard')) return tooMany(req, env);
+    const n = await guestNight(env, last(p)); return n ? ok(req, env, n) : fail(req, env, 'Order not found.', 404);
+  }
   if (m === 'GET' && p.startsWith('/api/guest/counter/')) {
     if (await throttled(req, env, 'counter-poll', 'standard')) return tooMany(req, env);
     const o = await bar.guestOrder(env, last(p), r => fulfill(env, r)); return o ? ok(req, env, o) : fail(req, env, 'Order not found.', 404);

@@ -7,34 +7,45 @@ import { getDoc } from './firestore.js';
 //                only role that can make admins
 //   director     the club's directors: money and reports (the night's sales, ticket money,
 //                refunds, end-of-day reports), plus adding managers and finance
-//   manager      runs the night: drinks, tables, money expected and received, approvals, closing
-//                the night, staff. No technical areas (site, nights, settings)
+//   manager      the Manager: procurement and purchases, sales, stock and the counts, cash from the
+//                staff, customers, approvals, closing the night. No technical areas
+//   hrManager    the Human manager: the floor and customers (tables, reviews, complaints) and the
+//                people: staff accounts, members, salaries, bonuses, deductions, loans, notices,
+//                feedback and performance reviews
 //   finance      prices, stock, money, reports and the end-of-day report
-//   eventManager nights, tickets, tables, promos, bar setup
+//   eventManager the Event manager: nights, tickets, tables, promos, bar setup, organiser
+//                accounts, table service and discounts
+//   dj, mc       entertainment: their own page (notices, team messages, pay, feedback)
 //   doorStaff    front office: tickets, entry, table bookings and arrivals, customer issues
 //   security     entry checks and incidents
 //   barStaff     bartender: the bar queue, handovers, wastage, the stock count
 //   waitStaff    waiters and waitresses: their tables, tabs, rounds and report
 //   cashier      money received: cash payments, the cash shift
 //   organiser    an outside organiser: their own nights
-export const STAFF_ROLES = ['superAdmin', 'director', 'manager', 'finance', 'eventManager', 'doorStaff', 'security', 'barStaff', 'waitStaff', 'cashier', 'organiser'];
+export const STAFF_ROLES = ['superAdmin', 'director', 'manager', 'hrManager', 'finance', 'eventManager', 'doorStaff', 'security', 'barStaff', 'waitStaff', 'cashier', 'dj', 'mc', 'organiser'];
+export const MANAGERS = ['manager', 'hrManager', 'eventManager'];
 export const ADMIN = ['superAdmin'];                                           // site settings, system status
 export const CMS = ['superAdmin', 'eventManager'];                             // run the site: nights, tickets, promos, bar setup
-export const TICKET_MONEY = ['superAdmin', 'director', 'eventManager'];        // ticket sales and payments (read)
-export const MONEY = ['superAdmin', 'director'];                               // refunds, pay in bits, SMS, members, attendance
+export const TICKET_MONEY = ['superAdmin', 'eventManager'];                    // ticket sales and payments (read); not the director's
+export const MONEY = ['superAdmin'];                                           // refunds, pay in bits, SMS, members, attendance (the ticket side; not the director's)
 export const DOOR = ['superAdmin', 'director', 'manager', 'eventManager', 'doorStaff', 'security', 'organiser'];
 export const STOCK = ['superAdmin', 'director', 'manager', 'finance'];         // products, prices, stock received, reviews
 export const REPORTS = ['superAdmin', 'director', 'manager', 'finance'];       // today's sales, staff reports, end of day
-export const STAFF_ADMIN = ['superAdmin', 'director', 'manager'];              // add, change and remove staff
-// Who may give which role: only a super admin makes admins; directors add managers and finance.
+export const MEMBERS = ['superAdmin', 'director', ...MANAGERS];                // members, passes and attendance
+export const STAFF_ADMIN = ['superAdmin', 'director', 'hrManager', 'eventManager']; // add, change and remove staff (see canAssign)
+export const CUSTOMER_CARE = ['superAdmin', 'director', 'manager', 'hrManager']; // customers: payments tonight, top customers, reviews
+// Who may give which role: only a super admin makes admins; directors add managers and finance; the
+// Human manager adds the staff; the Event manager adds organisers.
+export const HR_ROLES = ['doorStaff', 'security', 'barStaff', 'waitStaff', 'cashier', 'dj', 'mc'];
 export function canAssign(actorRole, role) {
   if (actorRole === 'superAdmin') return STAFF_ROLES.includes(role);
   if (actorRole === 'director') return STAFF_ROLES.includes(role) && role !== 'superAdmin';
-  if (actorRole === 'manager') return STAFF_ROLES.includes(role) && !['superAdmin', 'director', 'manager', 'finance'].includes(role);
+  if (actorRole === 'hrManager') return HR_ROLES.includes(role);
+  if (actorRole === 'eventManager') return role === 'organiser';
   return false;
 }
 // Longer PINs for the roles that control money, stock or staff.
-export const pinLength = role => (['superAdmin', 'director', 'manager', 'finance'].includes(role) ? 6 : 4);
+export const pinLength = role => (['superAdmin', 'director', 'manager', 'hrManager', 'finance'].includes(role) ? 6 : 4);
 
 // The staff record is the authority on the role, so a change or removal applies on the very next
 // request (a sign-in token lasts up to an hour). Records are cached for a few seconds per Worker.

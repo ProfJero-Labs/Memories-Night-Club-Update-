@@ -10,21 +10,22 @@ import { uploadImage } from './firebase.js';
 
 // The control room is the administrator's (everything technical), the events manager's (nights,
 // tickets, promos, bar setup) and the directors' (money and reports). Managers use night.html.
-const ADMIN = ['superAdmin'], CMS = ['superAdmin', 'eventManager'], TICKET_MONEY = ['superAdmin', 'director', 'eventManager'], MONEY = ['superAdmin', 'director'];
-const user = await requireStaff(['superAdmin', 'director', 'eventManager']);
+const ADMIN = ['superAdmin'], CMS = ['superAdmin', 'eventManager'], TICKET_MONEY = ['superAdmin', 'eventManager'], MONEY = ['superAdmin'], MEMBERS = ['superAdmin', 'director', 'manager', 'hrManager', 'eventManager'];
+// The managers and directors come here for members and attendance only (each sees just those tabs).
+const user = await requireStaff(['superAdmin', 'eventManager', 'director', 'manager', 'hrManager']);
 staffHeader(user, 'Control room');
 const can = roles => roles.includes(user.role);
 // The night itself (sales, closing, approvals, drinks, stock) is on night.html for managers and
 // directors; here it stays for the administrator only.
 const REPORTS = ['superAdmin'], BOSS = ['superAdmin'];
 const TABS = [
-  ['today', 'Today’s sales', REPORTS], ['closing', 'Close the night', BOSS], ['approvals', 'Approvals', REPORTS], ['eod', 'End-of-day reports', MONEY],
+  ['today', 'Today’s sales', REPORTS], ['closing', 'Close the night', [...BOSS, 'eventManager']], ['approvals', 'Approvals', [...REPORTS, 'eventManager']], ['eod', 'End-of-day reports', MONEY],
   ['products', 'Drinks & prices', REPORTS], ['stock', 'Stock', REPORTS],
   ['overview', 'Tickets & nights', TICKET_MONEY], ['nights', 'Nights', CMS], ['payments', 'Payments', TICKET_MONEY], ['bookings', 'Orders', TICKET_MONEY], ['requests', 'Event requests', CMS],
-  ['system', 'System', ADMIN], ['members', 'Members', MONEY], ['attendance', 'Attendance', MONEY], ['bits', 'Pay in bits', MONEY], ['refunds', 'Refunds', MONEY], ['counter', 'Bar orders', CMS], ['bar', 'Table bottles', CMS], ['settings', 'Site settings', ADMIN], ['staff', 'Staff', MONEY],
+  ['system', 'System', ADMIN], ['members', 'Members', MEMBERS], ['attendance', 'Attendance', MEMBERS], ['bits', 'Pay in bits', MONEY], ['refunds', 'Refunds', MONEY], ['counter', 'Bar orders', CMS], ['bar', 'Table bottles', CMS], ['settings', 'Site settings', ADMIN], ['staff', can(['eventManager']) ? 'Organisers' : 'Staff', ['superAdmin', 'eventManager']],
 ].filter(t => can(t[2]));
 // Five places, not ten: related tabs sit together behind one button, with their own row underneath.
-const GROUPS = [['tonight', can(CMS) ? 'Tonight' : 'Tickets', ['today', 'closing', 'approvals', 'overview', 'system']], ['nights', 'Nights', ['nights', 'requests']], ['money', 'Money', ['eod', 'payments', 'bookings', 'bits', 'refunds']], ['people', 'People', ['staff', 'members', 'attendance']], ['setup', 'Setup', ['products', 'stock', 'counter', 'bar', 'settings']]]
+const GROUPS = [['tonight', can(CMS) ? 'Tonight' : 'Tickets', ['today', 'overview', 'closing', 'approvals', 'system']], ['nights', 'Nights', ['nights', 'requests']], ['money', 'Money', ['eod', 'payments', 'bookings', 'bits', 'refunds']], ['people', 'People', ['staff', 'members', 'attendance']], ['setup', 'Setup', ['products', 'stock', 'counter', 'bar', 'settings']]]
   .map(([k, l, tabs]) => [k, l, tabs.filter(t => TABS.some(x => x[0] === t))]).filter(([, , tabs]) => tabs.length);
 const groupOf = tab => GROUPS.find(g => g[2].includes(tab)) || GROUPS[0];
 const panel = $('#panel');
@@ -90,10 +91,10 @@ let rendering = Promise.resolve();
 
 // ── The night's operations (shared with finance.html: lib/ops-views.js) ──
 const today = () => OV.salesView(panel);
-const closing = () => OV.closingView(panel, undefined, { canClose: can(BOSS) });
+const closing = () => OV.closingView(panel, undefined, { canClose: true }); // the server says who may close (the Manager, or whoever accepted the handover)
 const approvals = () => OV.approvalsView(panel);
 const eod = arg => (arg ? OV.eodView(panel, arg, { canSignOff: can(['superAdmin', 'director']) }) : OV.eodListView(panel, { canSignOff: can(['superAdmin', 'director']) }));
-const products = async () => { panel.innerHTML = '<div id="pr"></div><div id="ch" style="margin-top:24px"></div>'; await OV.productsView($('#pr')); await OV.changesView($('#ch')); };
+const products = async () => { panel.innerHTML = '<div id="pr"></div><div id="ch" style="margin-top:24px"></div>'; await OV.productsView($('#pr'), { canEdit: user.role === 'superAdmin' }); await OV.changesView($('#ch')); };
 const stock = () => OV.stockAdminView(panel);
 
 // ── Overview ──

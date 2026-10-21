@@ -26,7 +26,7 @@ async function load(note = '') {
     <p><span class="st ${esc(b.status)}">${esc(b.statusLabel)}</span></p>
     ${!paid && b.balancePesewas >= 100 && b.status !== 'written_off' ? `<div class="field"><label for="ph">Your MoMo number (optional, for the receipt)</label><input id="ph" type="tel" inputmode="tel" placeholder="024 123 4567"></div>
       <button class="big" id="pay">Pay now · ${money(b.balancePesewas)}</button><p class="foot-small" style="margin:0">MoMo or card, by Paystack. Your waiter sees it the moment it’s confirmed.</p>` : ''}
-    ${paid ? '<div class="say good"><b>Thank you!</b>This page is your receipt. Show it to your waiter if they ask.</div><button class="big ghost" id="save">Save receipt</button>' : ''}`;
+    ${paid ? '<div class="say good"><b>Thank you!</b>This page is your receipt. Show it to your waiter if they ask.</div><button class="big ghost" id="save">Save receipt</button><a class="big" href="review.html?s=bill" style="text-align:center;text-decoration:none">How was your night? Rate us</a>' : ''}`;
   $('#save') && ($('#save').onclick = () => print());
   $('#pay') && ($('#pay').onclick = async () => {
     const btn = $('#pay'); btn.disabled = true; btn.textContent = 'Opening payment…';

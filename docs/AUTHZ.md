@@ -70,19 +70,39 @@ removal applies at once. Each row is covered by `worker/test/staffauth.test.js` 
 | `POST /api/staff-auth/sign-in`, `/send-pin` | Public, rate limited per address and per phone; PIN lockout after 5 and 10 wrong; a texted PIN lasts 30 minutes and never replaces the old one until used |
 | `GET /api/ops/me`, `POST /api/ops/change-pin` | Any staff (their own) |
 | `GET/POST /api/admin/people`, `/people/add`, `/update`, `/reset-pin`, `/send-pins`, `/remove` | System admin, director, manager. Managers can't give or change director, manager, finance or admin; directors can't make admins; nobody changes their own job |
-| `POST /api/ops/tabs/open`, `/round`, `/round-action`, `/close`, `/text-bill` | Waiters (their own tabs), manager, director, admin |
-| `POST /api/ops/tabs/cash` | Cashier, manager, director, admin, and staff marked "can collect cash" |
+| `POST /api/ops/tabs/open`, `/round`, `/round-action`, `/close`, `/text-bill` | Waiters and the Event manager (their own tabs), manager, director, admin |
+| `POST /api/ops/tabs/cash`, `/tabs/pay` | Cashier, waiters, bartenders, manager, director, admin, and staff marked "can collect cash" |
 | `GET /api/ops/bar/rounds`, `POST /api/ops/bar/round` | Bartender, manager, director, admin |
 | `GET /api/ops/products` | Waiters, bar, cashier, finance, managers (costs only for manager, director, finance, admin) |
-| `POST /api/ops/products` (price, cost) | Manager, director, finance, admin |
-| `POST /api/ops/products/available`, `/stock/received`, `/stock/transfer`, `/stock/waste`, `/stock/count` | Bartender, manager, director, finance, admin |
+| `POST /api/ops/products` (selling price and cost price, both required) | Finance, admin |
+| `POST /api/ops/products/available`, `/stock/transfer`, `/stock/waste`, `/stock/count` | Bartender, manager, director, finance, admin |
+| `POST /api/ops/stock/received` | Finance, director, admin: a purchase, in stock at once. Manager: waits for the bar to confirm. Bartender: waits for finance or a manager |
+| `GET /api/ops/stock/deliveries`, `POST /api/ops/stock/delivery` (confirm or refuse) | Bartender, manager, director, finance, admin; never your own; the bar's needs finance or a manager |
+| `GET /api/ops/stock/to-explain` | Manager, director, finance, admin. `POST /api/ops/stock/explain`: manager, director, admin |
+| `POST /api/ops/quick-sale` | Waiters; from the bar (`fromBar`): bartender, manager, director, admin |
+| `GET /api/ops/money`, `/payments`, `/budget` | Manager, director, finance, admin |
+| `POST /api/ops/expenses`, `/expenses/remove` | Manager, director, finance, admin (taking one off: finance, director, admin, or whoever added it) |
+| `POST /api/ops/budget`, `/bills`, `/bills/pay`, `/bills/remove`, `/bills/copy` | Finance, admin |
+| `GET /api/ops/commissions` | Manager, director, finance, admin. `POST /commissions/assign`: the same. `POST /commissions/pay`: finance, admin |
+| `GET/POST /api/admin/people…` | Directors (anyone but an admin), the Human manager (staff jobs: front office, security, bar, floor, cashier, DJ, MC), the Event manager (organisers only). The Manager no longer adds staff. A director's `sharePct`: system admin only |
+| `GET /api/admin/members…`, `/attendance` | System admin, directors, Manager, Human manager, Event manager |
+| `GET /api/ops/notices`, `/board`, `/feedback/mine`, `/my-pay`, `/reviews/mine`; `POST /board`, `/feedback`, `/perf/reply` | Every staff member (their own). Notices: managers and directors post |
+| `GET /api/ops/feedback`, `POST /feedback/reply` | Human manager (what was sent to them), directors (all) |
+| `GET /api/ops/payroll` | Directors, Human manager, finance. `POST /pay/details`, `/pay/item`, `/loans`, `/payroll/submit`: Human manager. `POST /loans/pay`, `/payroll/pay`: finance, after a director approves |
+| `GET /api/ops/to-approve`, `POST /api/ops/approve` | Directors (either one): salaries, loans, bills, commission payouts, purchases, expenses above the budget's limit |
+| `GET/POST /api/ops/purchases` | Ask: Manager, directors. `POST /purchases/check`: finance |
+| `POST /api/ops/cash/receive` | Manager, directors (not your own cash) |
+| `GET /api/ops/reviews`, `/payments` | Manager, Human manager, directors. `POST /reviews/handle`: Manager, Human manager |
+| `GET/POST /api/ops/perf` | Human manager reviews the staff; directors review the managers (the Human manager too) and read all |
+| `POST /api/guest/review` | Public, rate limited |
+| `GET /api/guest/counter-night/:orderId` | A QR customer: everything paid tonight from the phone that paid that order |
 | `POST /api/ops/stock/review`, `GET /api/ops/changes` | Manager, director, finance, admin (not your own count) |
 | `POST /api/ops/cash/open`, `/move`, `/close`, `GET /api/ops/cash` | Whoever takes cash (their own shift); refunds and payouts become approvals |
 | `POST /api/ops/cash/review`, `GET /api/ops/cash/all` | Manager, director, finance, admin (not your own) |
 | `POST /api/ops/approvals/request` | Depends on the kind (waiters ask for free drinks, discounts, write-offs) |
 | `POST /api/ops/approvals/decide` | Free drink, discount: manager, director, admin. Write-off, cash out: also finance. Count correction: manager, director, finance, admin. Never your own request |
 | `GET /api/ops/sales`, `/closing`, `/eod`, `/eod/list`, `/finance-contact` | Manager, director, finance, admin |
-| `POST /api/ops/close-night` | Manager, director, admin |
+| `POST /api/ops/close-night` | The Manager (not the directors), or the Human manager / Event manager who accepted the Manager's handover that night; admin. `POST /close-night/hand-over`: the Manager. `POST /close-night/accept`: Human manager, Event manager |
 | `POST /api/ops/eod/sign-off` | Finance, director, admin; not the person who closed the night |
 | `GET/POST /api/ops/tables`, `/incidents`, `/front-report` | Front office, security (no report), managers; waiters and bar see tables and tick bottles served |
 | `GET /api/guest/bill/:token`, `POST /api/guest/bill/:token/pay` | The customer's bill link: read and pay only; prices from the Worker |
@@ -93,7 +113,7 @@ removal applies at once. Each row is covered by `worker/test/staffauth.test.js` 
 |---|---|---|
 | The site: nights, tickets, promos, draws, bar setup, comps, event requests, uploads | System admin, events manager | `/api/admin/events…`, `/ticket-types`, `/table-packages`, `/bottles`, `/comps`, `/raffles`, `/requests`, `/promos`, `/bar/setup`; Storage uploads |
 | Site settings, system health | System admin | `/api/admin/settings`, `/api/admin/system` |
-| Ticket money (read) | System admin, director, events manager | `/api/admin/overview`, `/orders`, `/payments`, `/events` (list), `/settlements` (list) |
-| Money: refunds, pay in bits, SMS, members, attendance, organiser settlements | System admin, director | `/api/admin/refunds…`, `/installments…`, `/sms…`, `/members…`, `/attendance`, `/settlements` |
+| Ticket money (read) | System admin, events manager (not the director) | `/api/admin/overview`, `/orders`, `/payments`, `/events` (list), `/settlements` (list) |
+| Money: refunds, pay in bits, SMS, members, attendance, organiser settlements | System admin (not the director: the ticket side) | `/api/admin/refunds…`, `/installments…`, `/sms…`, `/members…`, `/attendance`, `/settlements` |
 | The night: sales, tables, approvals, closing, drinks & prices, stock, staff | System admin, director, manager (finance for reports and stock) | `/api/ops/*`, `/api/admin/people*` |
 

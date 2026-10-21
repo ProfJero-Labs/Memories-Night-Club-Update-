@@ -64,6 +64,6 @@ test('the overview shows a 7-day checkout funnel: started, paid, left at Paystac
   store.seed('pending_checkouts', 'd', { status: 'pending', createdAt: ago(45) });
   store.seed('pending_checkouts', 'e', { status: 'pending', createdAt: ago(2) });
   store.seed('pending_checkouts', 'old', { status: 'issued', createdAt: ago(8 * 1440) });
-  const d = await adminOverview(env, { role: 'director' });
+  const d = await adminOverview(env, { role: 'eventManager' });
   assert.deepEqual(d.funnel, { started: 5, paid: 2, failed: 1, abandoned: 1, waiting: 1 });
 });

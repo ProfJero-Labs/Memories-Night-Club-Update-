@@ -23,7 +23,7 @@
 //   member_entries/{id}   memberId, name, type, department, at, by, method pass|code, night
 import { getDoc, setDoc, createDoc, deleteDoc, listDocs, queryWhere, queryRecent } from './lib/firestore.js';
 import { now, id, clean, normalizePhone, maskPhone, firstName, sixDigits, sha256Hex, nightKey } from './lib/util.js';
-import { requireRole, MONEY, STAFF_ROLES, uidOf } from './lib/auth.js';
+import { requireRole, MEMBERS, STAFF_ROLES, uidOf } from './lib/auth.js';
 import { sendSms, siteUrl } from './lib/notify.js';
 import { securitySignal } from './lib/monitor.js';
 
@@ -36,7 +36,7 @@ const STEPS_ACCEPTED = 2;           // and is accepted for the current and the 2
 const GATE_TTL_MS = 5 * 60_000, GATE_TRIES = 5;
 const ACTIVATE_TTL_MS = 48 * 3600_000;
 const MAX_PASSES = 3;               // phones per member; a 4th retires the oldest
-const ROLE_DEPT = { superAdmin: 'Management', director: 'Directors', manager: 'Management', eventManager: 'Events', doorStaff: 'Door', barStaff: 'Bar', waitStaff: 'Floor (waitstaff)', organiser: 'Organiser' };
+const ROLE_DEPT = { superAdmin: 'Management', director: 'Directors', manager: 'Management', hrManager: 'Management', finance: 'Finance', eventManager: 'Events', security: 'Security', cashier: 'Cash', dj: 'Entertainment', mc: 'Entertainment', doorStaff: 'Door', barStaff: 'Bar', waitStaff: 'Floor (waitstaff)', organiser: 'Organiser' };
 const audit = (env, user, action, data) => setDoc(env, 'audit_logs', id(), { action, actorUid: uidOf(user), ...data, timestamp: now() });
 
 // ── Validity ──
@@ -63,7 +63,7 @@ async function memberByStaff(env, uid) {
 
 // ── Control room: People ──
 export async function listMembers(env, user) {
-  if (!requireRole(user, MONEY)) return FORBIDDEN;
+  if (!requireRole(user, MEMBERS)) return FORBIDDEN;
   const [docs, staff] = await Promise.all([listDocs(env, 'members'), listDocs(env, 'users')]);
   const emails = new Map(staff.map(s => [s.id, s.fields.email]));
   return {
@@ -74,7 +74,7 @@ export async function listMembers(env, user) {
 }
 
 export async function upsertMember(env, b, user) {
-  if (!requireRole(user, MONEY)) return FORBIDDEN;
+  if (!requireRole(user, MEMBERS)) return FORBIDDEN;
   const name = clean(b?.name, 80), phone = normalizePhone(b?.phone);
   const type = MEMBER_TYPES.includes(b?.type) ? b.type : 'member';
   const status = b?.status === 'suspended' ? 'suspended' : 'active';
@@ -135,7 +135,7 @@ export async function suspendStaffMember(env, uid) {
 // Their attendance history stays (it's the club's HR record). A staff account stays a staff account:
 // it shows again under "Staff accounts without a membership" until its role is removed.
 export async function deleteMember(env, b, user) {
-  if (!requireRole(user, MONEY)) return FORBIDDEN;
+  if (!requireRole(user, MEMBERS)) return FORBIDDEN;
   const m = await getDoc(env, 'members', String(b?.id || ''));
   if (!m) return { error: 'Member not found.', status: 404 };
   await revokePasses(env, m.id);
@@ -153,7 +153,7 @@ async function revokePasses(env, memberId) {
 
 // HR attendance: verified gate entries, newest first, for the last `days`.
 export async function attendance(env, { days = 30, memberId } = {}, user) {
-  if (!requireRole(user, MONEY)) return FORBIDDEN;
+  if (!requireRole(user, MEMBERS)) return FORBIDDEN;
   const d = Math.min(366, Math.max(1, Number(days) || 30));
   let entries = (await queryRecent(env, 'member_entries', 'at', new Date(Date.now() - d * 864e5), 5000)).map(e => ({ id: e.id, ...e.fields }));
   if (memberId) entries = entries.filter(e => e.memberId === memberId);
@@ -175,7 +175,7 @@ export async function attendance(env, { days = 30, memberId } = {}, user) {
 const CROCK = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';
 const activationCode = () => Array.from(crypto.getRandomValues(new Uint8Array(10)), x => CROCK[x & 31]).join('');
 export async function createActivation(env, b, user) {
-  if (!requireRole(user, MONEY)) return FORBIDDEN;
+  if (!requireRole(user, MEMBERS)) return FORBIDDEN;
   const m = await getDoc(env, 'members', String(b?.id || ''));
   if (!m) return { error: 'Member not found.', status: 404 };
   const st = standing(m.fields); if (!st.ok) return { error: 'Reactivate this membership first.' };
@@ -334,7 +334,7 @@ export async function doorConfirmCode(env, user, { phone, code }, ip) {
 
 // Older staff accounts with no membership yet: make them members in one go (those with a phone).
 export async function linkAllStaff(env, user) {
-  if (!requireRole(user, MONEY)) return FORBIDDEN;
+  if (!requireRole(user, MEMBERS)) return FORBIDDEN;
   const [docs, staff] = await Promise.all([listDocs(env, 'members'), listDocs(env, 'users')]);
   let made = 0, noPhone = 0;
   for (const s of staff) {

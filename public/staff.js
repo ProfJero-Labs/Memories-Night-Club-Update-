@@ -4,9 +4,9 @@ import { onUser, idToken, signOutUser } from './firebase.js';
 import { api, esc, CREDIT } from './app.js';
 
 export const roleOf = claims => (claims?.admin === true ? 'superAdmin' : claims?.role || '');
-export const ROLE_LABEL = { superAdmin: 'System admin', director: 'Director', manager: 'Manager', finance: 'Finance officer', eventManager: 'Events manager', doorStaff: 'Front office', security: 'Security', barStaff: 'Bartender', waitStaff: 'Waiter / waitress', cashier: 'Cashier', organiser: 'Organiser' };
+export const ROLE_LABEL = { superAdmin: 'System admin', director: 'Director', manager: 'Manager', hrManager: 'Human manager', finance: 'Finance officer', eventManager: 'Event manager', doorStaff: 'Front office', security: 'Security', barStaff: 'Bartender', waitStaff: 'Waiter / waitress', cashier: 'Cashier', dj: 'DJ', mc: 'MC', organiser: 'Organiser' };
 // Each job opens on its own screen.
-const HOMES = { manager: 'night.html', director: 'night.html', organiser: 'organiser.html', doorStaff: 'checkin.html', security: 'checkin.html', barStaff: 'bar.html', waitStaff: 'waiter.html', cashier: 'cashier.html', finance: 'finance.html' };
+const HOMES = { manager: 'night.html', director: 'night.html', hrManager: 'hr.html', organiser: 'organiser.html', doorStaff: 'checkin.html', security: 'checkin.html', barStaff: 'bar.html', waitStaff: 'waiter.html', cashier: 'cashier.html', finance: 'finance.html', dj: 'me.html', mc: 'me.html' };
 export const home = role => HOMES[role] || 'admin.html';
 // Resolves with the signed-in staff user (role and name from their staff record), or sends them on.
 export function requireStaff(allowed) {
@@ -36,6 +36,9 @@ export function staffHeader(user, title) {
     <div class="acct"><button type="button" id="acctBtn" aria-haspopup="true" aria-expanded="false"><span>${esc(who.split(/\s+/)[0])}</span> ▾</button>
       <div class="acct-menu" id="acctMenu" hidden role="menu">
         <p class="acct-who"><b>${esc(who)}</b><span>${esc(ROLE_LABEL[user.role] || user.role)}</span></p>
+        ${user.role !== 'organiser' ? '<a role="menuitem" class="acct-link" href="me.html">My page: notices, messages, my pay</a>' : ''}
+        ${!['dj', 'mc', 'organiser'].includes(user.role) && !location.pathname.endsWith(home(user.role)) ? `<a role="menuitem" class="acct-link" href="${home(user.role)}">My work screen</a>` : ''}
+        ${user.role === 'eventManager' && !location.pathname.endsWith('waiter.html') ? '<a role="menuitem" class="acct-link" href="waiter.html">Serve tables (like a waiter)</a>' : ''}
         <button type="button" role="menuitem" id="myPass">My pass (for the gate)</button>
         <button type="button" role="menuitem" id="changePin">Change my PIN</button>
         <button type="button" role="menuitem" data-install hidden>Install the app</button>
