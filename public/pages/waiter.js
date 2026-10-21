@@ -41,8 +41,9 @@ async function tabsList() {
   $('#newTab').onclick = newTab;
   $('#quick').onclick = () => { location.hash = 'quick'; };
   const flash = sessionStorage.getItem('waiter-flash'); if (flash) { sessionStorage.removeItem('waiter-flash'); say($('#msg'), flash); }
-  stop = every(6000, async () => {
+  stop = every(6000, async alive => {
     const { tabs } = await sapi('/api/ops/tabs');
+    if (!alive()) return;
     const open = tabs.filter(t => t.status === 'open'), done = tabs.filter(t => t.status !== 'open');
     nav.setDot('tabs', open.length || 0);
     $('#list').innerHTML = (open.length ? open.map(card).join('') : '<div class="empty-box"><b>No open tables</b>Tap “Open a table” when a table or customer orders.</div>')
@@ -88,8 +89,10 @@ async function newTab() {
 async function tabView(id) {
   app.innerHTML = '<div class="loading">Loading…</div>';
   let t;
-  const draw = async () => {
-    t = (await sapi(`/api/ops/tab?id=${encodeURIComponent(id)}`)).tab;
+  const draw = async (alive = () => true) => {
+    const fresh = (await sapi(`/api/ops/tab?id=${encodeURIComponent(id)}`)).tab;
+    if (!alive()) return;
+    t = fresh;
     const b = t.bill, delivered = t.rounds.every(r => ['delivered', 'cancelled'].includes(r.status));
     app.innerHTML = `<button class="link" data-back style="justify-self:start">← My tables</button>
       <div class="row" style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap"><h1>${esc(t.label)} · ${esc(t.table)}</h1>${st(t.payStatus, t.payLabel)}</div>
@@ -119,7 +122,7 @@ async function tabView(id) {
     $('#close') && ($('#close').onclick = async () => { try { await sapi('/api/ops/tabs/close', { method: 'POST', body: { tabId: t.id } }); location.hash = 'tabs'; } catch (e) { say($('#msg'), e.message, 'bad'); } });
     $$('[data-act]').forEach(btn => btn.onclick = () => roundAct(btn.dataset.r, btn.dataset.act, t));
   };
-  stop = every(5000, () => draw().catch(fail));
+  stop = every(5000, alive => draw(alive).catch(e => alive() && fail(e)));
 }
 const roundCard = r => {
   const back = r.lines.some(l => l.returnPending);
@@ -285,8 +288,9 @@ async function quickSale(stationId) {
 // ── Bookings tonight ──
 async function bookings() {
   app.innerHTML = '<h1>Bookings tonight</h1><p class="lead">Tables booked online, and the bottles they already paid for. Tick when served.</p><div id="msg"></div><div class="cards" id="list"><div class="loading">Loading…</div></div>';
-  stop = every(15000, async () => {
+  stop = every(15000, async alive => {
     const { tables } = await sapi('/api/ops/tables');
+    if (!alive()) return;
     $('#list').innerHTML = tables.map(t => `<div class="tcard ${t.bottlesServed ? 'done' : t.arrived ? 'warn' : ''}" style="cursor:default">
       <span class="row"><span class="t">${esc(t.tableNumber ? `Table ${t.tableNumber}` : t.packageName)}</span><span class="sub">${t.arrived ? `Arrived ${when(t.arrivedAt)}` : 'Not here yet'}</span></span>
       <span class="sub">${esc(t.name)} · ${esc(t.packageName)}${t.capacity ? ` · up to ${t.capacity}` : ''}</span>

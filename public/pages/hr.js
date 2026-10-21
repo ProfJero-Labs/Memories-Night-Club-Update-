@@ -34,21 +34,22 @@ async function route() {
     if (key === 'payments') { app.innerHTML = `${back('Floor', 'floor')}<div id="pv"></div>`; bindBack(); return await paymentsView($('#pv')); }
     if (key === 'feedback') { app.innerHTML = '<div id="fv"></div>'; return await feedbackInboxView($('#fv')); }
     if (key === 'perf') return await people.perfView(app, arg);
-    stop = every(10000, () => floor().catch(fail));
+    stop = every(10000, alive => floor(alive).catch(e => alive() && fail(e)));
   } catch (e) { fail(e); }
 }
 addEventListener('hashchange', route);
 
 // ── Floor: tables open now, what needs approving ──
-async function floor() {
+async function floor(alive = () => true) {
   const { tabs } = await sapi('/api/ops/tabs?all=1');
+  if (!alive()) return;
   const open = tabs.filter(t => t.status === 'open' && !t.quick);
   app.innerHTML = `<h1>Floor</h1><p class="lead" style="margin:0">${open.length} table${open.length === 1 ? '' : 's'} open · ${money(open.reduce((n, t) => n + t.bill.balancePesewas, 0))} still to pay</p>
     <div class="pos-tables">${open.map(t => `<div class="pos-row"><span class="where">${esc(t.table === 'Walk-in' ? 'No table' : `Table ${t.table}`)}<small>${esc(t.label)} · ${esc(t.waiterName.split(' ')[0])}${t.customerName ? ` · ${esc(t.customerName)}` : ''}</small></span><span class="amt">${money(t.bill.balancePesewas || t.bill.totalPesewas)}${st(t.payStatus, t.payLabel)}</span></div>`).join('') || '<p class="muted">No tables open.</p>'}</div>
     <div class="btn-row"><button class="big ghost" data-goto="payments">Payments tonight</button><button class="big ghost" data-goto="customers">Top customers</button></div>
     <div id="ap"></div>`;
   bindBack();
-  await approvalsView($('#ap'));
+  if (alive()) await approvalsView($('#ap'));
 }
 
 function more() {

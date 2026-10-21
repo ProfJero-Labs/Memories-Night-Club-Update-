@@ -45,8 +45,9 @@ async function notices() {
 async function messages() {
   app.innerHTML = '<h1>Messages</h1><div id="post"></div><div id="list" class="cards"><div class="loading">Loading…</div></div>';
   let drawnPost = false;
-  stop = every(10000, async () => {
+  stop = every(10000, async alive => {
     const d = await sapi('/api/ops/board');
+    if (!alive()) return;
     if (!drawnPost) {
       drawnPost = true;
       const teams = d.teams ? Object.entries(d.teams) : d.myTeam ? [[d.myTeam, d.myTeamLabel]] : [];

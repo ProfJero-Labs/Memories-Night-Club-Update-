@@ -39,7 +39,7 @@ async function route() {
   nav.setActive(navItems.some(([k2]) => k2 === key) ? key : key === 'report' ? 'reports' : 'more');
   scrollTo(0, 0);
   try {
-    if (key === 'tables') { stop = every(10000, () => tables().catch(fail)); return; }
+    if (key === 'tables') { stop = every(10000, alive => tables(alive).catch(e => alive() && fail(e))); return; }
     if (key === 'staff') { app.innerHTML = `${back()}<div id="sv"></div>`; bindBack(); return await staffView($('#sv'), user); }
     if (key === 'reports') { app.innerHTML = `<div id="rv"></div>`; return await eodListView($('#rv'), { canSignOff: director }); }
     if (key === 'report' && arg) { app.innerHTML = `${back('Reports', 'reports')}<div id="rv"></div>`; bindBack(); return await eodView($('#rv'), arg, { canSignOff: director }); }
@@ -60,7 +60,7 @@ async function route() {
     if (key === 'cash') { app.innerHTML = `${back()}<div id="crv"></div>`; bindBack(); return await cashReceiveView($('#crv')); }
     if (key === 'stock') { app.innerHTML = `${back()}<div id="kv"></div>`; bindBack(); return await stockAdminView($('#kv'), undefined, undefined, { role: user.role }); }
     if (key === 'money') { app.innerHTML = `${director ? '' : back()}<div id="mv"></div>`; bindBack(); return await moneyView($('#mv')); }
-    stop = every(10000, () => tonight().catch(fail));
+    stop = every(10000, alive => tonight(alive).catch(e => alive() && fail(e)));
   } catch (e) { fail(e); }
 }
 addEventListener('hashchange', route);
@@ -71,8 +71,9 @@ addEventListener('hashchange', route);
 let flash = null;
 const flashNote = (text, kind = 'good') => { flash = { text, kind, at: Date.now() }; say($('#msg'), text, kind); };
 const note = flashNote;
-async function tonight() {
+async function tonight(alive = () => location.hash.slice(1).split('/')[0] in { '': 1, tonight: 1 }) {
   const [s, a, t, ex] = await Promise.all([sapi('/api/ops/sales'), sapi('/api/ops/approvals'), sapi('/api/ops/tabs?all=1'), sapi('/api/ops/stock/to-explain').catch(() => ({ counts: [] }))]);
+  if (!alive()) return;
   const x = s.totals, waiting = a.approvals.filter(p => p.canDecide), toExplain = ex.counts || [];
   const open = t.tabs.filter(tb => tb.status === 'open');
   const closed = s.night.status === 'closed';
@@ -121,8 +122,9 @@ const tableRow = tb => `<button type="button" class="pos-row" data-tab="${esc(tb
   <span class="amt">${money(tb.bill.balancePesewas || tb.bill.totalPesewas)}${st(tb.payStatus, tb.bill.balancePesewas ? (tb.bill.paidPesewas ? 'part paid' : 'unpaid') : tb.bill.totalPesewas ? 'paid' : 'empty')}</span></button>`;
 function bindRows() { $$('[data-tab]', app).forEach(b => b.onclick = () => tableSheet(b.dataset.tab)); }
 
-async function tables() {
+async function tables(alive = () => true) {
   const { tabs } = await sapi('/api/ops/tabs?all=1');
+  if (!alive()) return;
   const open = tabs.filter(t => t.status === 'open'), done = tabs.filter(t => t.status !== 'open');
   const owed = open.reduce((n, t) => n + t.bill.balancePesewas, 0);
   app.innerHTML = `<h1>Tables</h1><p class="lead">${open.length} open · ${money(owed)} still to pay</p>
