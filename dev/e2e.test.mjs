@@ -1,7 +1,7 @@
 // End-to-end journeys in a real browser (Chromium via Playwright) against the real Worker code,
 // served by dev/server.mjs with in-memory Firestore and a fake Paystack.
 //   node --test dev/e2e.test.mjs
-import { test, before, after } from 'node:test';
+import { test, before, after, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 process.env.PORT ||= '8799';
@@ -11,9 +11,14 @@ const base = `http://localhost:${process.env.PORT}`;
 let browser;
 before(async () => { browser = await chromium.launch({ executablePath: process.env.PLAYWRIGHT_CHROMIUM_PATH || '/opt/pw-browsers/chromium' }); });
 after(async () => { await browser.close(); setTimeout(() => process.exit(0), 50); });
+// Each test closes the pages it opened, so staff screens left open (they check the server every few
+// seconds) don't pile up and slow the server down for the tests after them.
+const opened = [];
+afterEach(async () => { for (const ctx of opened.splice(0)) await ctx.close().catch(() => {}); });
 
 async function phone(width = 390) {
   const ctx = await browser.newContext({ viewport: { width, height: 844 }, hasTouch: true });
+  opened.push(ctx);
   // Fonts come from Google in production; offline they fall back, which is fine for behaviour tests.
   await ctx.route(/fonts\.(googleapis|gstatic)\.com/, r => r.abort());
   const page = await ctx.newPage();
