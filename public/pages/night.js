@@ -66,6 +66,11 @@ async function route() {
 addEventListener('hashchange', route);
 
 // ── Tonight: the money, what needs you, close ──
+// Tonight redraws itself (every 10 seconds, and after each action), so a confirmation is kept for a
+// few seconds and shown again after each redraw instead of vanishing with it.
+let flash = null;
+const flashNote = (text, kind = 'good') => { flash = { text, kind, at: Date.now() }; say($('#msg'), text, kind); };
+const note = flashNote;
 async function tonight() {
   const [s, a, t, ex] = await Promise.all([sapi('/api/ops/sales'), sapi('/api/ops/approvals'), sapi('/api/ops/tabs?all=1'), sapi('/api/ops/stock/to-explain').catch(() => ({ counts: [] }))]);
   const x = s.totals, waiting = a.approvals.filter(p => p.canDecide), toExplain = ex.counts || [];
@@ -96,14 +101,15 @@ async function tonight() {
     ${closed ? `<div class="say good"><b>The night is closed</b>The report is under ${director ? 'Reports' : 'More → Past nights'}.</div>` : '<button class="big" id="toClose">Close the night</button>'}
   </div>`;
   bindRows();
+  if (flash && Date.now() - flash.at < 8000) say($('#msg'), flash.text, flash.kind);
   $('#toClose') && ($('#toClose').onclick = () => { location.hash = 'close'; });
-  $$('[data-explain]', app).forEach(b => b.onclick = () => explainSheet(toExplain[Number(b.dataset.explain)], () => { say($('#msg'), 'Explanation saved. Finance can see it.'); tonight().catch(fail); }));
-  $('#addExp').onclick = async () => { const m = await sapi('/api/ops/money?period=today').catch(() => null); expenseSheet(m, r => say($('#msg'), r?.needsApproval ? 'Saved. It’s above the limit, so it waits for a director.' : 'Expense saved.')); };
+  $$('[data-explain]', app).forEach(b => b.onclick = () => explainSheet(toExplain[Number(b.dataset.explain)], () => { note('Explanation saved. Finance can see it.'); tonight().catch(fail); }));
+  $('#addExp').onclick = async () => { const m = await sapi('/api/ops/money?period=today').catch(() => null); expenseSheet(m, r => note(r?.needsApproval ? 'Saved. It’s above the limit, so it waits for a director.' : 'Expense saved.')); };
   $$('[data-goto]', app).forEach(b => b.onclick = () => { location.hash = b.dataset.goto; });
   const decide = async (id, approve) => {
     const note = approve ? '' : prompt('Why refuse? (optional)') ?? null; if (note === null) return;
-    try { await sapi('/api/ops/approvals/decide', { method: 'POST', body: { id, approve, note } }); say($('#msg'), approve ? 'Approved.' : 'Refused.'); tonight().catch(fail); }
-    catch (e) { say($('#msg'), e.message, 'bad'); }
+    try { await sapi('/api/ops/approvals/decide', { method: 'POST', body: { id, approve, note } }); flashNote(approve ? 'Approved.' : 'Refused.'); tonight().catch(fail); }
+    catch (e) { flashNote(e.message, 'bad'); }
   };
   $$('[data-yes]', app).forEach(b => b.onclick = () => decide(b.dataset.yes, true));
   $$('[data-no]', app).forEach(b => b.onclick = () => decide(b.dataset.no, false));
