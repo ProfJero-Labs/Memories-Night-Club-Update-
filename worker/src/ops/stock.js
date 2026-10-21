@@ -15,10 +15,15 @@
 // closing = opening + received + transfers in + returns − issued − waste − transfers out.
 // A submitted count is locked; a correction is an approval (ops/approvals.js) and keeps the original.
 //
-// New stock takes two people: stock_deliveries/{id} is recorded (finance, a manager, or the bar) and
-// only counts once someone else confirms it arrived: the bar confirms what finance or a manager
-// recorded; finance or a manager confirms what the bar recorded. Only then is the 'received' move
-// written. Who recorded it, who confirmed it, and any difference in the number are kept.
+// New stock: stock_deliveries/{id}, with what it cost.
+//   Finance records a drink purchase (the manager buys and brings the drinks): it is the bar's stock
+//   at once. During the night the manager adds stock: finance sees it, and the bar confirms it
+//   arrived before it counts. Stock the bar records needs finance or a manager to confirm.
+// Who recorded it, who confirmed it, and any difference in the number are kept.
+//
+// The bar's count when it opens (Friday, Saturday): compared with what the system says is left.
+// A difference never stops sales; it is flagged for the manager to explain (the manager has the
+// keys), and from then on the bar sells from what it actually counted.
 //
 // Nothing sells past zero: stockLeft() is what should be in the bar minus what's already ordered
 // but not yet handed over. Waiter orders, quick sales and QR orders are refused when it runs out.
@@ -96,22 +101,34 @@ export async function addMoves(env, moves, user) {
 async function product(env, productId) { const p = await getDoc(env, 'menu_items', String(productId || '')); return p ? { id: p.id, ...p.fields } : null; }
 async function station(env, stationId) { const s = await getDoc(env, 'bar_stations', String(stationId || '')); return s ? { id: s.id, ...s.fields } : null; }
 
+export const PURCHASERS = ['finance', 'director', 'superAdmin'];   // their purchases count at once
 export async function recordReceived(env, b, user) {
   if (!requireRole(user, STOCK_HANDS)) return FORBIDDEN;
   const [p, st] = await Promise.all([product(env, b?.productId), station(env, b?.stationId)]);
   if (!p) return { error: 'Pick the drink.' }; if (!st) return { error: 'Pick the bar it went to.' };
-  const qty = int(b.qty); if (!(qty >= 1 && qty <= 10000)) return { error: 'How many arrived? A whole number.' };
+  const qty = int(b.qty); if (!(qty >= 1 && qty <= 10000)) return { error: 'How many? A whole number.' };
   const closed = await closedError(env, bizDate()); if (closed) return closed;
-  const unitCost = b.unitCostPesewas === '' || b.unitCostPesewas == null ? null : int(b.unitCostPesewas);
-  const did = id(), byBar = !requireRole(user, STOCK);
-  await setDoc(env, 'stock_deliveries', did, { productId: p.id, productName: p.name, stationId: st.id, stationName: st.name, qty, supplier: clean(b.supplier, 80), reference: clean(b.reference, 60),
-    unitCostPesewas: unitCost >= 0 ? unitCost : null, note: clean(b.note, 200), status: 'pending', byBar, recordedBy: uidOf(user), recordedByName: user.name || '', recordedRole: user.role, recordedAt: now() });
-  await logChange(env, user, { kind: 'stock', refId: p.id, refName: p.name, field: `new stock recorded for ${st.name} (waiting to be confirmed)`, from: null, to: qty, note: [clean(b.supplier, 80), clean(b.reference, 60)].filter(Boolean).join(' · ') });
-  await audit(env, user, 'STOCK_DELIVERY_RECORDED', { deliveryId: did, productId: p.id, stationId: st.id, qty });
-  return { recorded: true, pending: true, id: did, confirmBy: byBar ? 'finance or a manager' : 'the bar' };
+  const auto = requireRole(user, PURCHASERS), byBar = !requireRole(user, STOCK);
+  // What it cost: the total paid (or the price of one). Needed for a purchase finance records.
+  const total = b.totalCostPesewas === '' || b.totalCostPesewas == null ? null : int(b.totalCostPesewas);
+  const unit = b.unitCostPesewas === '' || b.unitCostPesewas == null ? null : int(b.unitCostPesewas);
+  if ((total != null && !(total >= 0)) || (unit != null && !(unit >= 0))) return { error: 'The amount paid must be a number.' };
+  const totalCost = total ?? (unit != null ? unit * qty : null);
+  if (auto && totalCost == null) return { error: 'Enter the total amount paid for these drinks.' };
+  const did = id(), at = now(), byName = user.name || '';
+  const rec = { productId: p.id, productName: p.name, stationId: st.id, stationName: st.name, qty, supplier: clean(b.supplier, 80), reference: clean(b.reference, 60),
+    totalCostPesewas: totalCost, unitCostPesewas: totalCost == null ? null : Math.round(totalCost / qty), note: clean(b.note, 200), businessDate: bizDate(),
+    status: auto ? 'confirmed' : 'pending', purchase: auto, byBar, recordedBy: uidOf(user), recordedByName: byName, recordedRole: user.role, recordedAt: at,
+    ...(auto ? { confirmedQty: qty, confirmedBy: uidOf(user), confirmedByName: byName, confirmedAt: at } : {}) };
+  await setDoc(env, 'stock_deliveries', did, rec);
+  if (auto) await addMoves(env, [{ productId: p.id, productName: p.name, stationId: st.id, qty, kind: 'received', supplier: rec.supplier, reference: rec.reference, unitCostPesewas: rec.unitCostPesewas, note: rec.note, deliveryId: did, purchase: true }], user);
+  await logChange(env, user, { kind: 'stock', refId: p.id, refName: p.name, field: auto ? `drinks bought for ${st.name}` : `new stock recorded for ${st.name} (waiting to be confirmed)`, from: null, to: qty, note: [rec.supplier, rec.reference, totalCost != null ? `paid GHS ${totalCost / 100}` : ''].filter(Boolean).join(' · ') });
+  await audit(env, user, auto ? 'STOCK_PURCHASE_RECORDED' : 'STOCK_DELIVERY_RECORDED', { deliveryId: did, productId: p.id, stationId: st.id, qty, totalCostPesewas: totalCost });
+  return { recorded: true, pending: !auto, id: did, confirmBy: auto ? null : byBar ? 'finance or a manager' : 'the bar' };
 }
 
 const deliveryView = d => ({ id: d.id, productId: d.fields.productId, productName: d.fields.productName, stationId: d.fields.stationId, stationName: d.fields.stationName, qty: d.fields.qty, confirmedQty: d.fields.confirmedQty ?? null,
+  purchase: !!d.fields.purchase, totalCostPesewas: d.fields.totalCostPesewas ?? null, recordedRole: d.fields.recordedRole || '',
   supplier: d.fields.supplier || '', reference: d.fields.reference || '', status: d.fields.status, byBar: !!d.fields.byBar, recordedByName: d.fields.recordedByName || '', recordedAt: d.fields.recordedAt,
   confirmedByName: d.fields.confirmedByName || '', confirmedAt: d.fields.confirmedAt || '', note: d.fields.note || '', confirmNote: d.fields.confirmNote || '' });
 // Who may confirm: never the person who recorded it; what the bar recorded needs finance or a manager.
@@ -192,7 +209,9 @@ function openingFor(stationId, date, counts, moves) {
   const sumMoves = keep => moves.filter(m => keep(String(m.fields.businessDate || ''))).reduce((acc, m) => ({ ...acc, [m.fields.productId]: (acc[m.fields.productId] || 0) + Number(m.fields.qty || 0) }), {});
   const plus = (a, b) => { const o = { ...a }; for (const [k, v] of Object.entries(b)) o[k] = (o[k] || 0) + v; return o; };
   const own = counts.find(c => c.fields.date === date && c.fields.kind === 'opening');
-  if (own) return { source: 'opening_count', counts: Object.fromEntries(own.fields.lines.map(l => [l.productId, Number(l.counted)])), countedBy: own.fields.byName };
+  // The bar's opening count is the truth from then on. `base` takes off what was recorded tonight
+  // before the count (it is in the count already), so nothing is added twice.
+  if (own) return { source: 'opening_count', counts: Object.fromEntries(own.fields.lines.map(l => [l.productId, Number(l.base ?? l.counted)])), countedBy: own.fields.byName };
   const closing = counts.filter(c => c.fields.kind === 'closing' && c.fields.date < date).sort((a, b) => b.fields.date.localeCompare(a.fields.date))[0];
   if (closing) {
     const c = closing.fields, use = c.corrected || c;
@@ -231,7 +250,9 @@ export async function stockSheet(env, { stationId, date }, user) {
   if (!st) return { error: 'Pick the bar.' };
   const { opening, closing, rows } = await sheetFor(env, st, d);
   const pendingNew = (await queryWhere(env, 'stock_deliveries', [{ field: 'stationId', value: st.id }, { field: 'status', value: 'pending' }])).length;
+  const oc = await getDoc(env, 'stock_counts', `${d}__${st.id}__opening`);
   return {
+    openingCount: oc ? countView(oc.fields) : null,
     station: { id: st.id, name: st.name }, date: d, opening: { source: opening.source, fromDate: opening.fromDate || null },
     closing: closing ? { status: closing.fields.status, byName: closing.fields.byName, at: closing.fields.at, reviewedByName: closing.fields.reviewedByName || '', corrected: !!closing.fields.corrected } : null,
     rows, reasons: COUNT_REASONS, wasteReasons: WASTE_REASONS, pendingDeliveries: pendingNew,
@@ -283,19 +304,47 @@ export async function submitCount(env, b, user) {
   const sheet = await stockSheet(env, { stationId: b?.stationId, date: d }, user); if (sheet.error) return sheet;
   const docId = `${d}__${sheet.station.id}__${kind}`;
   if (await getDoc(env, 'stock_counts', docId)) return { error: kind === 'closing' ? 'The closing count for this bar is already in. To change it, ask a manager for a correction.' : 'This bar already has an opening count for tonight.' };
-  if (kind === 'opening' && !['none', 'earlier_moves'].includes(sheet.opening.source)) return { error: 'Tonight’s opening stock comes from the last closing count. Count it again at closing.' };
   const given = new Map((Array.isArray(b.lines) ? b.lines : []).map(l => [String(l.productId), l]));
   const lines = [];
   for (const r of sheet.rows) {
     const l = given.get(r.productId), n = int(l?.counted);
     if (!(n >= 0)) return { error: `Enter the count for ${r.name} (0 if there are none).` };
-    const diff = n - (kind === 'closing' ? r.expected : n);
+    const diff = n - r.expected;
     if (kind === 'closing' && diff !== 0 && !COUNT_REASONS[l.reason]) return { error: `${r.name}: ${Math.abs(diff)} ${diff < 0 ? 'fewer' : 'more'} than expected. Pick a reason.` };
-    lines.push({ productId: r.productId, name: r.name, counted: n, ...(kind === 'closing' ? { expected: r.expected, difference: diff, reason: diff ? l.reason : '', note: clean(l.note, 200) } : {}) });
+    // Opening: what the bar found against what the system says should be there. The manager explains
+    // any difference; the bar doesn't have to.
+    lines.push({ productId: r.productId, name: r.name, counted: n, expected: r.expected, difference: diff,
+      ...(kind === 'closing' ? { reason: diff ? l.reason : '', note: clean(l.note, 200) } : { base: n - (r.expected - r.opening), note: clean(l?.note, 200) }) });
   }
   await setDoc(env, 'stock_counts', docId, { date: d, stationId: sheet.station.id, stationName: sheet.station.name, kind, lines, status: 'submitted', ...who(user), at: now() });
   await audit(env, user, kind === 'closing' ? 'STOCK_CLOSING_COUNTED' : 'STOCK_OPENING_COUNTED', { stationId: sheet.station.id, date: d, differences: lines.filter(l => l.difference).length });
   return { submitted: true, differences: lines.filter(l => l.difference).map(l => ({ name: l.name, difference: l.difference })) };
+}
+
+const countView = c => ({ kind: c.kind, byName: c.byName, at: c.at, stationId: c.stationId, stationName: c.stationName, date: c.date,
+  differences: (c.lines || []).filter(l => l.difference).map(l => ({ name: l.name, expected: l.expected, counted: l.counted, difference: l.difference })),
+  explanation: c.managerExplanation || '', explainedByName: c.explainedByName || '', explainedAt: c.explainedAt || '' });
+const EXPLAINERS = ['superAdmin', 'director', 'manager'];
+
+// Opening counts that came out different and the manager hasn't explained yet (the last 3 weeks).
+export async function countsToExplain(env, user) {
+  if (!requireRole(user, [...STOCK])) return FORBIDDEN;
+  const recent = await queryRecent(env, 'stock_counts', 'at', new Date(Date.now() - 21 * 864e5), 200);
+  const rows = recent.map(d => d.fields).filter(c => c.kind === 'opening' && (c.lines || []).some(l => l.difference)).map(countView);
+  return { counts: rows.filter(c => !c.explanation), explained: rows.filter(c => c.explanation).slice(0, 20), canExplain: !!requireRole(user, EXPLAINERS) };
+}
+
+// The manager explains why the bar found a different number when it opened. Kept with the count.
+export async function explainCount(env, b, user) {
+  if (!requireRole(user, EXPLAINERS)) return { error: 'The manager explains stock differences.', status: 403 };
+  const d = dateOr(b?.date), docId = `${d}__${String(b?.stationId || '')}__opening`;
+  const c = await getDoc(env, 'stock_counts', docId);
+  if (!c) return { error: 'That count isn’t in.', status: 404 };
+  const note = clean(b?.note, 500);
+  if (!note) return { error: 'Explain what happened to the stock.' };
+  await setDoc(env, 'stock_counts', docId, { ...c.fields, managerExplanation: note, explainedBy: uidOf(user), explainedByName: user.name || '', explainedAt: now() });
+  await audit(env, user, 'STOCK_DIFFERENCE_EXPLAINED', { docId });
+  return { explained: true };
 }
 
 // Manager or finance looks at a submitted count (not the person who counted it).

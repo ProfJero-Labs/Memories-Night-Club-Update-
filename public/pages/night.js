@@ -2,20 +2,22 @@
 // received, still owed, how it was paid), what needs them (approvals), the tables, and closing the
 // night. Everything else is behind "More", shown only when tapped. The technical side (the site,
 // nights, settings) is the administrator's, in the control room.
-//   Manager:  Tonight · Tables · Staff · More (drinks & prices, stock, full sales, past nights)
-//   Director: Tonight · Tables · Reports · More (+ staff, ticket money, members & attendance)
+//   Manager:  Tonight · Tables · Staff · More (money & expenses, drinks & prices, stock, full sales, past nights)
+//   Director: Tonight · Money · Reports · More (tables, staff, ticket money, members & attendance)
+// "Needs you" on Tonight: approvals, and stock differences the bar found when it opened (the
+// manager explains them). The manager adds expenses from Tonight; the director sees Money.
 import { $, $$, esc } from '../app.js';
 import { requireStaff, staffHeader, sapi } from '../staff.js';
 import { bottomNav, sheet, say, st, every, money, when } from '../lib/ops-ui.js';
-import { salesView, closingView, approvalsView, productsView, stockAdminView, eodListView, eodView } from '../lib/ops-views.js';
+import { salesView, closingView, approvalsView, productsView, stockAdminView, eodListView, eodView, moneyView, expenseSheet, explainSheet } from '../lib/ops-views.js';
 import { staffView } from '../lib/staff-view.js';
 
 const user = await requireStaff(['manager', 'director', 'superAdmin']);
 const director = user.role !== 'manager';
 staffHeader(user, 'Tonight');
 const app = $('#app');
-const third = director ? ['reports', 'Reports'] : ['staff', 'Staff'];
-const nav = bottomNav([['tonight', 'Tonight'], ['tables', 'Tables'], third, ['more', 'More']], k => { if (k === 'more') more(); else location.hash = k; });
+const navItems = director ? [['tonight', 'Tonight'], ['money', 'Money'], ['reports', 'Reports'], ['more', 'More']] : [['tonight', 'Tonight'], ['tables', 'Tables'], ['staff', 'Staff'], ['more', 'More']];
+const nav = bottomNav(navItems, k => { if (k === 'more') more(); else location.hash = k; });
 let stop = null;
 const fail = e => { app.innerHTML = `<div class="say bad" role="alert"><b>Couldn’t load</b>${esc(e.message)}</div><button class="big ghost" id="retry">Try again</button>`; $('#retry').onclick = route; };
 const back = (label = 'Tonight', to = 'tonight') => `<button class="link" data-goto="${to}" style="justify-self:start">← ${esc(label)}</button>`;
@@ -25,7 +27,7 @@ async function route() {
   if (stop) { stop(); stop = null; }
   const [k, arg] = location.hash.slice(1).split('/');
   const key = k || 'tonight';
-  nav.setActive(['tonight', 'tables', 'staff', 'reports'].includes(key) ? key : key === 'report' ? 'reports' : 'more');
+  nav.setActive(navItems.some(([k2]) => k2 === key) ? key : key === 'report' ? 'reports' : 'more');
   scrollTo(0, 0);
   try {
     if (key === 'tables') { stop = every(10000, () => tables().catch(fail)); return; }
@@ -36,7 +38,8 @@ async function route() {
     if (key === 'approvals') { app.innerHTML = `${back()}<div id="av"></div>`; bindBack(); return await approvalsView($('#av')); }
     if (key === 'sales') { app.innerHTML = `${back()}<div id="sv"></div>`; bindBack(); return await salesView($('#sv')); }
     if (key === 'prices') { app.innerHTML = `${back()}<div id="pv"></div>`; bindBack(); return await productsView($('#pv')); }
-    if (key === 'stock') { app.innerHTML = `${back()}<div id="kv"></div>`; bindBack(); return await stockAdminView($('#kv')); }
+    if (key === 'stock') { app.innerHTML = `${back()}<div id="kv"></div>`; bindBack(); return await stockAdminView($('#kv'), undefined, undefined, { role: user.role }); }
+    if (key === 'money') { app.innerHTML = `${director ? '' : back()}<div id="mv"></div>`; bindBack(); return await moneyView($('#mv')); }
     stop = every(10000, () => tonight().catch(fail));
   } catch (e) { fail(e); }
 }
@@ -44,11 +47,11 @@ addEventListener('hashchange', route);
 
 // ── Tonight: the money, what needs you, close ──
 async function tonight() {
-  const [s, a, t] = await Promise.all([sapi('/api/ops/sales'), sapi('/api/ops/approvals'), sapi('/api/ops/tabs?all=1')]);
-  const x = s.totals, waiting = a.approvals.filter(p => p.canDecide);
+  const [s, a, t, ex] = await Promise.all([sapi('/api/ops/sales'), sapi('/api/ops/approvals'), sapi('/api/ops/tabs?all=1'), sapi('/api/ops/stock/to-explain').catch(() => ({ counts: [] }))]);
+  const x = s.totals, waiting = a.approvals.filter(p => p.canDecide), toExplain = ex.counts || [];
   const open = t.tabs.filter(tb => tb.status === 'open');
   const closed = s.night.status === 'closed';
-  nav.setDot('tonight', waiting.length);
+  nav.setDot('tonight', waiting.length + toExplain.length);
   app.innerHTML = `<div class="pos">
     <p class="kicker">${esc(new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'Africa/Accra' }))}${closed ? ' · closed' : ''}</p>
     <div class="pos-money">
@@ -58,16 +61,22 @@ async function tonight() {
       <p class="how">Cash ${money(x.cashPesewas)} · MoMo ${money((x.momoPesewas || 0))} · Paid on phone ${money(x.digitalPesewas)}</p>
     </div>
     <div id="msg"></div>
+    ${toExplain.length ? `<section class="pos-need"><h2>Stock to explain <span class="count">${toExplain.length}</span></h2>
+      ${toExplain.map((c, i) => `<div class="need"><div><b>${esc(c.stationName)}: the bar found a different number</b><span>${c.differences.map(d => `${esc(d.name)} ${Math.abs(d.difference)} ${d.difference < 0 ? 'fewer' : 'more'}`).join(' · ')}</span><small>${esc(c.byName)} counted when the bar opened · ${esc(c.date)}</small></div>
+        <div class="need-btns"><button class="mid" data-explain="${i}">Explain</button></div></div>`).join('')}</section>` : ''}
     ${waiting.length ? `<section class="pos-need"><h2>Needs you <span class="count">${waiting.length}</span></h2>
       ${waiting.map(p => `<div class="need"><div><b>${esc(p.label)}</b><span>${esc(p.summary)}</span><small>${esc(p.requestedByName)} · “${esc(p.reason)}”</small></div>
         <div class="need-btns"><button class="mid okc" data-yes="${esc(p.id)}" aria-label="Approve">✓</button><button class="mid" data-no="${esc(p.id)}" aria-label="Refuse">✗</button></div></div>`).join('')}</section>` : ''}
     <section><div class="pos-head"><h2>Tables</h2><span class="muted">${open.length} open</span></div>
       <div class="pos-tables">${open.slice(0, 8).map(tableRow).join('') || '<p class="muted">No open tables.</p>'}</div>
       ${open.length > 8 ? `<button class="link" data-goto="tables">See all ${open.length} tables →</button>` : ''}</section>
+    <button class="big ghost" id="addExp">Add an expense</button>
     ${closed ? `<div class="say good"><b>The night is closed</b>The report is under ${director ? 'Reports' : 'More → Past nights'}.</div>` : '<button class="big" id="toClose">Close the night</button>'}
   </div>`;
   bindRows();
   $('#toClose') && ($('#toClose').onclick = () => { location.hash = 'close'; });
+  $$('[data-explain]', app).forEach(b => b.onclick = () => explainSheet(toExplain[Number(b.dataset.explain)], () => { say($('#msg'), 'Explanation saved. Finance can see it.'); tonight().catch(fail); }));
+  $('#addExp').onclick = async () => { const m = await sapi('/api/ops/money?period=today').catch(() => null); expenseSheet(m, () => say($('#msg'), 'Expense saved.')); };
   $$('[data-goto]', app).forEach(b => b.onclick = () => { location.hash = b.dataset.goto; });
   const decide = async (id, approve) => {
     const note = approve ? '' : prompt('Why refuse? (optional)') ?? null; if (note === null) return;
@@ -112,6 +121,7 @@ async function tableSheet(id) {
 // ── More: everything else, only when asked for ──
 function more() {
   const items = [
+    ...(director ? [['tables', 'Tables', 'Open tables and what they owe']] : [['money', 'Money', 'Money in, money out, profit; expenses']]),
     ['sales', 'Tonight in detail', 'By waiter, by bar, by drink'],
     ['approvals', 'Approvals', 'Everything asked tonight'],
     ['prices', 'Drinks & prices', 'Add a drink, change a price'],

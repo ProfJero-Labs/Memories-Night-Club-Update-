@@ -27,9 +27,10 @@ function setup() {
 }
 const ok = (r, what) => { assert.ok(r.status === 200, `${what}: ${r.status} ${r.data.error || ''}`); return r.data; };
 const left = async (ctx, pid = 'beer') => ok(await ctx.call('GET', '/api/ops/products?stationId=main', { who: ctx.W1 }), 'products').products.find(p => p.id === pid).left;
-async function addStock(ctx, qty, by = ctx.F1, confirmBy = ctx.B1) {
-  const d = ok(await ctx.call('POST', '/api/ops/stock/received', { who: by, body: { stationId: 'main', productId: 'beer', qty, supplier: 'Guinness Ghana' } }), 'record stock');
-  ok(await ctx.call('POST', '/api/ops/stock/delivery', { who: confirmBy, body: { id: d.id, action: 'confirm' } }), 'confirm stock');
+// Finance records a drink purchase: it's the bar's stock at once.
+async function addStock(ctx, qty) {
+  const d = ok(await ctx.call('POST', '/api/ops/stock/received', { who: ctx.F1, body: { stationId: 'main', productId: 'beer', qty, totalCostPesewas: qty * 1200, supplier: 'Guinness Ghana' } }), 'purchase');
+  assert.equal(d.pending, false);
 }
 
 test('no stock: the waiter, the bar and the QR menu can’t sell it; QR is refused before any payment starts', async () => {
@@ -59,35 +60,65 @@ test('only what’s left: orders not yet handed over hold their drinks; QR refus
   assert.equal(ctx.store.paystackInits.length, 0);
 });
 
-test('new stock takes two people: finance records, the bar confirms; the bar records, finance or a manager confirms', async () => {
+test('drink purchases by finance count at once (with what was paid); the manager’s stock during the night is confirmed by the bar; the bar’s by finance or a manager', async () => {
   const ctx = setup();
-  const d = ok(await ctx.call('POST', '/api/ops/stock/received', { who: ctx.F1, body: { stationId: 'main', productId: 'beer', qty: 24, supplier: 'Guinness Ghana', reference: 'INV-88' } }), 'finance records');
-  assert.equal(d.pending, true);
-  assert.equal(await left(ctx), 0, 'not counted until confirmed');
-  assert.equal((await ctx.call('POST', '/api/ops/stock/delivery', { who: ctx.F1, body: { id: d.id, action: 'confirm' } })).status, 403, 'not by the person who recorded it');
-  const list = ok(await ctx.call('GET', '/api/ops/stock/deliveries?stationId=main', { who: ctx.B1 }), 'bar sees it');
-  assert.deepEqual([list.forMe, list.deliveries[0].recordedByName, list.deliveries[0].canConfirm], [1, 'Esi Finance', true]);
-  // The bar counted 22, not 24: allowed, with a note, and both numbers stay on record.
-  assert.match((await ctx.call('POST', '/api/ops/stock/delivery', { who: ctx.B1, body: { id: d.id, action: 'confirm', qty: 22 } })).data.error, /24 were recorded but you counted 22/);
-  ok(await ctx.call('POST', '/api/ops/stock/delivery', { who: ctx.B1, body: { id: d.id, action: 'confirm', qty: 22, note: 'Two short in the crate' } }), 'bar confirms 22');
-  assert.equal(await left(ctx), 22);
+  assert.match((await ctx.call('POST', '/api/ops/stock/received', { who: ctx.F1, body: { stationId: 'main', productId: 'beer', qty: 24 } })).data.error, /total amount paid/);
+  const buy = ok(await ctx.call('POST', '/api/ops/stock/received', { who: ctx.F1, body: { stationId: 'main', productId: 'beer', qty: 24, totalCostPesewas: 28800, supplier: 'Guinness Ghana', reference: 'INV-88' } }), 'finance purchase');
+  assert.equal(buy.pending, false);
+  assert.equal(await left(ctx), 24, 'in the bar’s stock straight away');
+  assert.deepEqual([ctx.store.get('stock_deliveries', buy.id).fields.unitCostPesewas, ctx.store.get('stock_deliveries', buy.id).fields.status], [1200, 'confirmed']);
+
+  // The manager brings more during the party: finance sees it, the bar confirms it.
+  const d = ok(await ctx.call('POST', '/api/ops/stock/received', { who: ctx.M1, body: { stationId: 'main', productId: 'beer', qty: 12, totalCostPesewas: 14400 } }), 'manager adds');
+  assert.deepEqual([d.pending, d.confirmBy], [true, 'the bar']);
+  assert.equal(await left(ctx), 24, 'not counted until the bar confirms');
+  const fin = ok(await ctx.call('GET', '/api/ops/stock/deliveries?stationId=main', { who: ctx.F1 }), 'finance sees it');
+  assert.equal(fin.deliveries.find(x => x.id === d.id).recordedByName, 'Akos Manager');
+  assert.equal((await ctx.call('POST', '/api/ops/stock/delivery', { who: ctx.M1, body: { id: d.id, action: 'confirm' } })).status, 403, 'not by the person who recorded it');
+  const bar = ok(await ctx.call('GET', '/api/ops/stock/deliveries?stationId=main', { who: ctx.B1 }), 'bar sees it');
+  assert.equal(bar.forMe, 1);
+  // The bar counted 10, not 12: allowed, with a note, and both numbers stay on record.
+  assert.match((await ctx.call('POST', '/api/ops/stock/delivery', { who: ctx.B1, body: { id: d.id, action: 'confirm', qty: 10 } })).data.error, /12 were recorded but you counted 10/);
+  ok(await ctx.call('POST', '/api/ops/stock/delivery', { who: ctx.B1, body: { id: d.id, action: 'confirm', qty: 10, note: 'Two short in the crate' } }), 'bar confirms 10');
+  assert.equal(await left(ctx), 34);
   const rec = ctx.store.get('stock_deliveries', d.id).fields;
-  assert.deepEqual([rec.qty, rec.confirmedQty, rec.recordedByName, rec.confirmedByName], [24, 22, 'Esi Finance', 'Ama Bartender']);
-  assert.match((await ctx.call('POST', '/api/ops/stock/delivery', { who: ctx.B1, body: { id: d.id, action: 'confirm' } })).data.error, /Already confirmed/);
+  assert.deepEqual([rec.qty, rec.confirmedQty, rec.recordedByName, rec.confirmedByName], [12, 10, 'Akos Manager', 'Ama Bartender']);
 
   // The bar records it: another bartender can't confirm it, a manager can.
   const d2 = ok(await ctx.call('POST', '/api/ops/stock/received', { who: ctx.B1, body: { stationId: 'main', productId: 'beer', qty: 6 } }), 'bar records');
   assert.equal(d2.confirmBy, 'finance or a manager');
   assert.equal((await ctx.call('POST', '/api/ops/stock/delivery', { who: ctx.B2, body: { id: d2.id, action: 'confirm' } })).status, 403);
   ok(await ctx.call('POST', '/api/ops/stock/delivery', { who: ctx.M1, body: { id: d2.id, action: 'confirm' } }), 'manager confirms');
-  assert.equal(await left(ctx), 28);
-
+  assert.equal(await left(ctx), 40);
   // Didn't arrive: refused with a reason, and nothing is added.
   const d3 = ok(await ctx.call('POST', '/api/ops/stock/received', { who: ctx.M1, body: { stationId: 'main', productId: 'beer', qty: 12 } }), 'manager records');
   assert.match((await ctx.call('POST', '/api/ops/stock/delivery', { who: ctx.B1, body: { id: d3.id, action: 'reject' } })).data.error, /Say what happened/);
   ok(await ctx.call('POST', '/api/ops/stock/delivery', { who: ctx.B1, body: { id: d3.id, action: 'reject', note: 'Never came' } }), 'refused');
-  assert.equal(await left(ctx), 28);
+  assert.equal(await left(ctx), 40);
   assert.equal((await ctx.call('POST', '/api/ops/stock/received', { who: ctx.W1, body: { stationId: 'main', productId: 'beer', qty: 5 } })).status, 403, 'waiters can’t add stock');
+});
+
+test('the bar counts when it opens: a difference is flagged for the manager to explain, sales go on, and the bar sells from what it counted', async () => {
+  const ctx = setup();
+  await addStock(ctx, 30);
+  // Before the bar counts, sales already work.
+  ok(await ctx.call('POST', '/api/ops/quick-sale', { who: ctx.B1, body: { fromBar: true, lines: [{ productId: 'beer', qty: 2 }], method: 'cash' } }), 'sale before the count');
+  assert.equal(await left(ctx), 28);
+  const r = ok(await ctx.call('POST', '/api/ops/stock/count', { who: ctx.B1, body: { stationId: 'main', kind: 'opening', lines: [{ productId: 'beer', counted: 25 }] } }), 'opening count');
+  assert.deepEqual(r.differences, [{ name: 'Club beer', difference: -3 }]);
+  assert.equal(await left(ctx), 25, 'what the bar found');
+  ok(await ctx.call('POST', '/api/ops/quick-sale', { who: ctx.B1, body: { fromBar: true, lines: [{ productId: 'beer', qty: 1 }], method: 'cash' } }), 'sales go on');
+  assert.equal(await left(ctx), 24);
+  assert.match((await ctx.call('POST', '/api/ops/stock/count', { who: ctx.B1, body: { stationId: 'main', kind: 'opening', lines: [{ productId: 'beer', counted: 25 }] } })).data.error, /already has an opening count/);
+  // The manager is asked to explain; finance sees it.
+  const todo = ok(await ctx.call('GET', '/api/ops/stock/to-explain', { who: ctx.M1 }), 'to explain');
+  assert.deepEqual([todo.counts.length, todo.counts[0].differences[0].difference, todo.canExplain], [1, -3, true]);
+  assert.equal(ok(await ctx.call('GET', '/api/ops/stock/to-explain', { who: ctx.F1 }), 'finance').canExplain, false);
+  assert.equal((await ctx.call('POST', '/api/ops/stock/explain', { who: ctx.B1, body: { stationId: 'main', date: todo.counts[0].date, note: 'x' } })).status, 403);
+  assert.match((await ctx.call('POST', '/api/ops/stock/explain', { who: ctx.M1, body: { stationId: 'main', date: todo.counts[0].date } })).data.error, /Explain/);
+  ok(await ctx.call('POST', '/api/ops/stock/explain', { who: ctx.M1, body: { stationId: 'main', date: todo.counts[0].date, note: 'Three given to the DJ on Thursday' } }), 'explained');
+  const after = ok(await ctx.call('GET', '/api/ops/stock/to-explain', { who: ctx.F1 }), 'after');
+  assert.deepEqual([after.counts.length, after.explained[0].explanation, after.explained[0].explainedByName], [0, 'Three given to the DJ on Thursday', 'Akos Manager']);
 });
 
 test('stock added on an earlier night with no count since still counts tonight', async () => {

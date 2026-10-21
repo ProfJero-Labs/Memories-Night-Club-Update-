@@ -104,7 +104,8 @@ async function stockView() {
   nav.setDot('stock', dl?.forMe || 0);
   const pend = (dl?.deliveries || []).filter(x => x.status === 'pending');
   el.innerHTML = `<h2 style="margin:0">${esc(s.station.name)}: stock now</h2>
-    ${s.opening.source === 'none' ? '<div class="say warn"><b>No opening count yet</b>Count what’s in the bar now, so tonight’s numbers are right.</div><button class="big" id="openCount">Count opening stock</button>' : `<p class="lead">Started from ${s.opening.source === 'last_closing' ? `the closing count of ${esc(s.opening.fromDate)}` : 'tonight’s opening count'}.</p>`}
+    ${s.openingCount ? `<div class="say ${s.openingCount.differences.length ? 'warn' : 'good'}"><b>You counted at ${when(s.openingCount.at)} (${esc(s.openingCount.byName)})</b>${s.openingCount.differences.length ? `${s.openingCount.differences.map(x => `${esc(x.name)}: found ${x.counted}, system said ${x.expected}`).join('<br>')}<br>${s.openingCount.explanation ? `Manager: ${esc(s.openingCount.explanation)}` : 'The manager has been asked to explain.'}` : 'Everything matched the system.'}</div>`
+      : '<div class="say warn"><b>Count the stock you met</b>Count every bottle when you arrive. You can sell before you finish: the count is checked against the system when you submit it.</div><button class="big" id="openCount">Count the stock I met</button>'}
     ${pend.length ? `<div class="say warn"><b>New stock to confirm</b>Count it when it reaches the bar. It only adds to the bar’s stock once confirmed.
       ${pend.map(x => `<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-top:8px"><span><b>${x.qty} × ${esc(x.productName)}</b><br><small>From ${esc(x.recordedByName)} · ${when(x.recordedAt)}${x.supplier ? ` · ${esc(x.supplier)}` : ''}</small></span>
         ${x.canConfirm ? `<span class="btn-row"><button class="mid okc" data-dl="${esc(x.id)}" data-q="${x.qty}">Got ${x.qty}</button><button class="mid" data-dlx="${esc(x.id)}" data-q="${x.qty}">Different number</button></span>` : '<small>Waiting for finance or a manager to confirm</small>'}</div>`).join('')}</div>` : ''}
@@ -167,7 +168,7 @@ async function countView() {
 function countForm(s, kind) {
   const el = kind === 'closing' ? views.count : views.stock;
   el.innerHTML = `<h2 style="margin:0">${kind === 'closing' ? 'Closing count' : 'Opening count'} · ${esc(s.station.name)}</h2>
-    <p class="lead">Count every bottle and can in the bar. Enter what you count. ${kind === 'closing' ? 'The system shows any difference straight away.' : ''}</p>
+    <p class="lead">Count every bottle and can in the bar. Enter what you count. The system shows any difference straight away.${kind === 'opening' ? ' You don’t need to explain differences now: the manager does.' : ''}</p>
     <form id="cf" novalidate><div class="lines-list">${s.rows.map(r => `<div class="ln" data-p="${esc(r.productId)}" style="flex-wrap:wrap;align-items:center"><span style="flex:1;min-width:140px"><b>${esc(r.name)}</b><br><small data-diff></small></span>
       <input data-n inputmode="numeric" aria-label="${esc(r.name)} counted" style="width:90px;font-size:20px;text-align:center" autocomplete="off">
       <select data-r hidden aria-label="Why" style="flex-basis:100%;margin-top:6px"><option value="">Why is it different?</option>${Object.entries(s.reasons).map(([k, v]) => `<option value="${k}">${esc(v)}</option>`).join('')}</select>
@@ -177,17 +178,17 @@ function countForm(s, kind) {
   $$('[data-p]', el).forEach(row => {
     const r = rows.get(row.dataset.p), n = $('[data-n]', row);
     n.oninput = () => {
-      if (kind !== 'closing' || n.value === '') { $('[data-diff]', row).textContent = ''; return; }
+      if (n.value === '') { $('[data-diff]', row).textContent = ''; return; }
       const d = Number(n.value) - r.expected, bad = d !== 0;
       $('[data-diff]', row).innerHTML = bad ? `<span class="${d < 0 ? 'diff-neg' : 'diff-pos'}">${Math.abs(d)} ${d < 0 ? 'fewer' : 'more'} than expected (${r.expected})</span>` : 'Matches';
-      $('[data-r]', row).hidden = !bad; $('[data-note]', row).hidden = !bad;
+      $('[data-r]', row).hidden = !bad || kind !== 'closing'; $('[data-note]', row).hidden = !bad;
     };
   });
   $('#cf', el).onsubmit = async ev => {
     ev.preventDefault();
     const lines = $$('[data-p]', el).map(row => ({ productId: row.dataset.p, counted: $('[data-n]', row).value === '' ? null : Number($('[data-n]', row).value), reason: $('[data-r]', row).value, note: $('[data-note]', row).value }));
-    if (!confirm(kind === 'closing' ? 'Submit the closing count? You can’t change it after (a manager can approve a correction).' : 'Save the opening count?')) return;
-    try { const r = await busy($('#cfGo', el), () => sapi('/api/ops/stock/count', { method: 'POST', body: { stationId: s.station.id, kind, lines } }), 'Submitting…'); top(r.differences?.length ? `Count submitted with ${r.differences.length} difference${r.differences.length > 1 ? 's' : ''}. The manager will review.` : 'Count submitted. Everything matched.'); kind === 'closing' ? countView() : stockView(); }
+    if (!confirm(kind === 'closing' ? 'Submit the closing count? You can’t change it after (a manager can approve a correction).' : 'Submit the count of the stock you met? You can’t change it after.')) return;
+    try { const r = await busy($('#cfGo', el), () => sapi('/api/ops/stock/count', { method: 'POST', body: { stationId: s.station.id, kind, lines } }), 'Submitting…'); top(r.differences?.length ? `Count submitted with ${r.differences.length} difference${r.differences.length > 1 ? 's' : ''}. The manager ${kind === 'opening' ? 'will explain' : 'will review'}.` : 'Count submitted. Everything matched.'); kind === 'closing' ? countView() : stockView(); }
     catch (e) { say($('#cfMsg', el), e.message, 'bad'); }
   };
 }

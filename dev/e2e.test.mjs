@@ -814,15 +814,36 @@ test('waiter and bar: open a table with the customer’s phone, “I took them�
   assert.deepEqual([...w.errors, ...bar.errors], []);
 });
 
-test('stock and quick sales: finance records new stock, the bar confirms it; the bar sells for cash; a waiter’s quick sale is collected and closes itself', async () => {
+test('stock, money and quick sales: finance buys drinks (in stock at once), the manager adds stock the bar confirms, the bar’s count is explained by the manager, an expense, the director’s money; the bar sells for cash; a waiter’s quick sale closes itself', async () => {
   const fin = await phone(390); await signInAs(fin, 'finance@dev'); await fin.waitForURL(/finance\.html/);
   await fin.click('[data-k="stock"]'); await fin.click('#rcv');
-  await fin.selectOption('#rvP', 'dev-m-stout'); await fin.fill('#rvQ', '12'); await fin.fill('#rvS', 'Guinness Ghana'); await fin.click('#rvGo');
-  await fin.locator('#app').getByText('Waiting for the bar to confirm').waitFor();
+  await fin.selectOption('#rvP', 'dev-m-stout'); await fin.fill('#rvQ', '12'); await fin.fill('#rvC', '300'); await fin.fill('#rvS', 'Guinness Ghana'); await fin.click('#rvGo');
+  await fin.locator('#stMsg').getByText(/in the bar’s stock/).waitFor();
+  assert.equal(docs('stock_moves').filter(m => m.purchase && m.productId === 'dev-m-stout' && m.qty === 12).length, 1, 'a purchase is stock at once');
+  // During the party the manager adds stock: the bar confirms it.
+  const mgr = await phone(390); await signInAs(mgr, 'manager@dev'); await mgr.waitForURL(/night\.html/);
+  await mgr.goto(`${base}/night.html#stock`); await mgr.click('#rcv');
+  await mgr.selectOption('#rvP', 'dev-m-water'); await mgr.fill('#rvQ', '6'); await mgr.click('#rvGo');
+  await mgr.locator('#app').getByText('Waiting for the bar to confirm').waitFor();
   const bar = await phone(390); await signInAs(bar, 'bar@dev'); await bar.waitForURL(/bar\.html/);
   await bar.click('[data-k="stock"]'); await bar.locator('#vStock').getByText('New stock to confirm').waitFor();
   await bar.click('#vStock [data-dl]'); await bar.locator('#msgTop').getByText(/Confirmed/).waitFor();
-  assert.equal(docs('stock_moves').filter(m => m.deliveryId && m.productId === 'dev-m-stout' && m.qty === 12).length, 1, 'counts once confirmed');
+  // The bar counts the stock it met: one beer short. Sales aren't held up; the manager explains.
+  await bar.click('#openCount'); await bar.waitForSelector('#vStock #cf');
+  for (const row of await bar.locator('#vStock [data-p]').all()) {
+    const want = await row.evaluate(el => el.dataset.p);
+    const sheet = docs('stock_moves').filter(m => m.productId === want && m.stationId === 'dev-main-bar').reduce((n, m) => n + m.qty, 0);
+    await row.locator('[data-n]').fill(String(want === 'dev-m-beer' ? sheet - 1 : sheet));
+  }
+  bar.once('dialog', d => d.accept()); await bar.click('#cfGo'); await bar.locator('#msgTop').getByText(/1 difference\. The manager will explain/).waitFor();
+  await mgr.goto(`${base}/night.html#tonight`); await mgr.locator('[data-explain]').click();
+  await mgr.fill('#xpWhy', 'One given to the DJ on Thursday'); await mgr.click('#xpGo'); await mgr.locator('#msg').getByText(/Explanation saved/).waitFor();
+  await mgr.click('#addExp'); await mgr.selectOption('#exCat', 'dj'); await mgr.fill('#exDesc', 'DJ Kofi'); await mgr.fill('#exAmt', '200'); await mgr.click('#exGo');
+  await mgr.locator('#msg').getByText('Expense saved.').waitFor();
+  // The director: just the money.
+  const dir = await phone(390); await signInAs(dir, 'director@dev'); await dir.waitForURL(/night\.html/);
+  await dir.click('[data-k="money"]'); await dir.locator('.pos-money').getByText('Money out').waitFor();
+  assert.match(await dir.textContent('#app'), /DJ Kofi/); assert.match(await dir.textContent('#app'), /Drinks bought/);
   // The bar sells over the counter, for cash; a finished drink can't be picked.
   await bar.click('[data-k="sell"]'); await bar.waitForSelector('#vSell [data-p="dev-m-beer"]');
   assert.equal(await bar.locator('#vSell [data-p="dev-m-flute"]').count(), 0);
@@ -840,7 +861,7 @@ test('stock and quick sales: finance records new stock, the bar confirms it; the
   await w.locator('.tcard').filter({ hasText: 'Quick sale' }).first().click();
   await w.locator('[data-act="delivered"]').waitFor({ timeout: 10000 }); await w.click('[data-act="delivered"]');
   await w.locator('.say').getByText('Closed').waitFor({ timeout: 10000 });
-  assert.deepEqual([...fin.errors, ...bar.errors, ...w.errors], []);
+  assert.deepEqual([...fin.errors, ...mgr.errors, ...dir.errors, ...bar.errors, ...w.errors], []);
 });
 
 test('sign-in: an email typed in the phone box goes to the email form', async () => {

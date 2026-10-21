@@ -32,16 +32,29 @@ training.
 
 | Job | Opens on | Does |
 |---|---|---|
-| Waiter / waitress | **Tables** | Open a table (number or walk-in, customer's name and phone), add drinks, send to the bar, *I took them from the bar*, follow each order, *Send invoice (SMS)*, *Show bill (QR)*, *Customer paid* (cash or MoMo), close, *Bookings*, *My report* |
-| Bartender | **Bar** | Waiter orders (Start → Ready → Hand to the waiter), confirm drinks a waiter took (*Confirm* / *Not taken*), *Handed over tonight*, drinks coming back, app (QR) orders, Stock (deliveries, broken, move to another bar, mark a drink finished), Count (closing count) |
+| Waiter / waitress | **Tables** | *Quick sale* (drinks → Cash or MoMo), *Open a table* (number or no table, customer's name and phone), add drinks, *I got them* when the bar hands them over, *Send invoice (SMS)*, *Show bill (QR)*, *Customer paid* (cash or MoMo), close, *Bookings*, *My report* (sold, cash, MoMo, hand in my cash, submit) |
+| Bartender | **Bar** | Waiter orders (Start → Ready → Hand to the waiter), confirm drinks a waiter took, drinks coming back, app (QR) orders; **Sell** (quick sale over the counter for cash or MoMo, my sales tonight, hand in my cash, my report); Stock (*Count the stock I met* when the bar opens, confirm new stock the manager added, record new stock, broken, move to another bar, mark a drink finished); Count (closing count) |
 | Cashier | **Cashier** | Find a bill, record cash, receipts; My cash: open with the float, put cash in the safe, refund or pay out (manager approves), count the cash at the end |
 | Front office | **Door** | Entrance (scan tickets, search), staff and members (code in their app, or *let in by name* if their phone is dead), Tables (arrivals, table number, people), Issues, end-of-night Report |
 | Security | **Door** | Entrance and Issues only |
-| Manager | **Tonight** (a simple till screen) | Tonight: money expected, received and still owed (cash, MoMo, paid on phone), *Needs you* (approve or refuse with one tap), the tables, *Close the night*. Bottom: Tonight · Tables · Staff · More. *More*: tonight in detail, approvals, drinks & prices, stock, past nights. No technical areas. |
-| Director | **Tonight**, plus **Reports** | The same Tonight and Tables, *Reports* (end-of-day, sign off). *More* adds staff, **ticket money** (control room: tickets sold, payments, orders, pay in bits, refunds) and members & attendance. |
+| Manager | **Tonight** (a simple till screen) | Tonight: money expected, received and still owed (cash, MoMo, paid on phone), *Stock to explain* (the bar found a different number when it opened), *Needs you* (approve or refuse with one tap), the tables, *Add an expense*, *Close the night*. Bottom: Tonight · Tables · Staff · More. *More*: money, tonight in detail, approvals, drinks & prices, stock (add new stock during the night), past nights. No technical areas. |
+| Director | **Tonight**, plus **Money** | Tonight, **Money** (money in, money out, profit, for tonight, this week or this month; drinks sold against what they cost; expenses), *Reports* (end-of-day, sign off). *More* adds tables, staff, **ticket money** and members & attendance. |
 | System admin | **Control room** | Everything technical: the site, nights, tickets, promos, settings, system health, bar setup, and every report. |
-| Finance officer | **Finance** | Today, Check (staff reports, cash and stock differences, approvals), Stock (received, counts), Reports (end of day, sign off, print, CSV), Prices (and who changed what) |
+| Finance officer | **Finance** | Today, **Money** (in, out, profit; add expenses), Stock (*Record drinks bought*, stock the manager added, the bar's counts and the manager's explanations; drinks, prices and costs), Check (staff reports, cash, approvals), Reports (end of day, sign off, print, CSV) |
 | Events manager | Control room | Nights, tickets, tables, promos, bar setup (no money reports) |
+
+## Quick sale (waiter or bar)
+
+- **Bar → Sell**: pick the drinks → the customer pays → **Cash received** or **MoMo received**
+  (with the MoMo transaction ID). Serve the drinks. Done: it's out of the bar's stock and in the
+  bartender's sales and cash.
+- **Waiter → Quick sale**: same, then the order goes to the bar. When the bar hands it over the
+  waiter taps **I got them** and the sale closes by itself.
+- A drink that has run out at the bar shows as *finished* and can't be picked, for waiters, the bar
+  and the QR menu. The QR menu refuses before the customer pays, so nobody pays for a drink the
+  bar doesn't have.
+- End of shift (waiter: My report; bar: Sell): **Hand in my cash** (count it; a difference needs a
+  reason) and **Submit my report**.
 
 ## A customer orders from a waiter (no QR)
 
@@ -53,8 +66,8 @@ training.
      **I took them from the bar**. The bar sees "Efua says they took Tab 3" and taps **Confirm**
      (the drinks leave the stock) or **Not taken** (back on the list). Nothing leaves the stock
      until the bar confirms. **Handed over tonight** lists every order that left the bar.
-3. Waiter: **I have them** → **Delivered**. Drinks not taken: **Send back to bar** (the bar taps
-   *Got them back*). Broken: **Broken** (off the bill, shows in the waiter's report).
+3. Waiter: **I got them ✓** (one tap). Drinks the customer didn't take: **Send back to bar** (the
+   bar taps *Got them back*). Broken: **Broken** (off the bill, shows in the waiter's report).
 4. **Show bill to customer**: the customer scans the QR (or gets the link by text), sees every
    drink and pays with **Pay now** (MoMo or card on Paystack). It shows as paid only once Paystack
    confirms it on the server. If drinks are added while they pay, the new drinks stay owed.
@@ -84,13 +97,34 @@ training.
 - **Drinks & prices** (manager, finance): name, group, unit, selling price, cost, low-stock warning,
   counted at the bar or not, on sale. New orders use the current price; a bill keeps the price it
   was sent with. Every change records who, when, the old value and the new value (*Who changed what*).
-- **Stock received**, **moved between bars**, **broken**: recorded by the bar or by the manager or
-  finance. Nothing in the stock records is ever deleted.
+- **Drinks bought** (finance): the manager buys the drinks and brings them in; finance records each
+  purchase (drink, how many, total paid, supplier, receipt). It is the bar's stock straight away,
+  and the cost goes into the money report.
+- **New stock during the night** (manager): recorded on Stock; finance sees it, and the bartender
+  taps **Got 12** (or *Different number*, with what happened) before it counts. Stock a bartender
+  records needs finance or a manager to confirm. Nobody confirms their own.
+- **Moved between bars**, **broken**: recorded by the bar, the manager or finance. Nothing in the
+  stock records is ever deleted.
 - **Expected stock** = opening + received + moved in + returned − handed out − broken − moved out.
-  The opening comes from the last closing count (or a first opening count on the very first night).
+  Stock carries on from night to night even without a count.
+- **When the bar opens (Friday, Saturday):** the bartender taps **Count the stock I met** and enters
+  what's there. Sales don't wait for it. Any difference against the system ("3 fewer Club beer") is
+  flagged on the manager's Tonight screen; the manager explains it (the manager holds the keys) and
+  finance sees the explanation. From the count on, the bar sells from what it actually found.
+- **Nothing sells past zero**: what's left = expected stock − orders at the bar not yet handed over.
 - **Closing count:** the bar types what it counts; any difference shows straight away ("3 fewer than
   expected") and needs a reason. A submitted count is locked; a correction needs approval from
   someone else, and the first count is kept.
+
+## Money and expenses
+
+- **Expenses** (manager or finance): what for (staff pay, DJ and artists, rent, light and water,
+  fuel, security, cleaning, repairs, adverts, ice and supplies, transport, other), details, amount,
+  paid with, which night. A mistake is *taken off* with a reason and stays on record, crossed out.
+- **Money** (director, manager, finance) for tonight, this week or this month:
+  **Money in** = drinks paid for + the club's share of tickets and tables; **Money out** = drinks
+  bought + expenses; **Profit** = in − out. Drinks also show *sold*, *what they cost us* (from each
+  drink's cost price) and *made on drinks*. Drinks with no cost price are listed so finance can add it.
 
 ## Cash
 

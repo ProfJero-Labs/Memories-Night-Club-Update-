@@ -6,6 +6,7 @@ import * as cash from './cash.js';
 import * as approvals from './approvals.js';
 import * as front from './frontoffice.js';
 import * as closing from './closing.js';
+import * as money from './money.js';
 
 export async function opsRoute(m, p, u, b, env, user) {
   const q = k => u.searchParams.get(k) || undefined;
@@ -14,6 +15,7 @@ export async function opsRoute(m, p, u, b, env, user) {
       case '/api/ops/products': return stock.listProducts(env, user, { stationId: q('stationId') });
       case '/api/ops/stock': return stock.stockSheet(env, { stationId: q('stationId'), date: q('date') }, user);
       case '/api/ops/changes': return stock.changeLog(env, user);
+      case '/api/ops/stock/to-explain': return stock.countsToExplain(env, user);
       case '/api/ops/stock/deliveries': return stock.listDeliveries(env, user, { stationId: q('stationId') });
       case '/api/ops/tabs': return tabs.myTabs(env, user, { all: q('all') === '1' });
       case '/api/ops/tabs/find': return tabs.findTabs(env, user, q('q'));
@@ -31,6 +33,7 @@ export async function opsRoute(m, p, u, b, env, user) {
       case '/api/ops/eod': return closing.eodReport(env, user, { date: q('date') });
       case '/api/ops/eod/list': return closing.listEod(env, user);
       case '/api/ops/finance-contact': return closing.financeContact(env, user);
+      case '/api/ops/money': return money.moneyReport(env, user, { period: q('period'), from: q('from'), to: q('to') });
     }
     return undefined;
   }
@@ -39,6 +42,7 @@ export async function opsRoute(m, p, u, b, env, user) {
     case '/api/ops/products': return stock.saveProduct(env, b, user);
     case '/api/ops/products/available': return stock.setAvailable(env, b, user);
     case '/api/ops/stock/received': return stock.recordReceived(env, b, user);
+    case '/api/ops/stock/explain': return stock.explainCount(env, b, user);
     case '/api/ops/stock/delivery': return stock.decideDelivery(env, b, user);
     case '/api/ops/quick-sale': return tabs.quickSale(env, b, user);
     case '/api/ops/stock/transfer': return stock.recordTransfer(env, b, user);
@@ -67,6 +71,8 @@ export async function opsRoute(m, p, u, b, env, user) {
     case '/api/ops/close-night': return closing.closeNight(env, b, user);
     case '/api/ops/eod/sign-off': return closing.financeSignOff(env, b, user);
     case '/api/ops/finance-contact': return closing.financeContact(env, user, b || {});
+    case '/api/ops/expenses': return money.addExpense(env, b, user);
+    case '/api/ops/expenses/remove': return money.removeExpense(env, b, user);
   }
   return undefined;
 }
