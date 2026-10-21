@@ -10,14 +10,14 @@
 //   Money out = drinks bought (purchases recorded with what was paid) + expenses
 //   Profit    = money in − money out
 // Plus drinks on their own: what was sold, what those drinks cost the club, and the difference.
-import { setDoc, getDoc, queryRecent, listDocs } from '../lib/firestore.js';
+import { setDoc, getDoc, queryRecent, listDocs, queryWhere } from '../lib/firestore.js';
 import { now, id, clean, nightKey } from '../lib/util.js';
 import { requireRole, uidOf, REPORTS } from '../lib/auth.js';
 import { FORBIDDEN, bizDate, isDate, audit, int, ghs } from './common.js';
 import { billOf } from './tabs.js';
 
 export const EXPENSE_HANDS = ['superAdmin', 'director', 'manager', 'finance'];
-export const EXPENSE_CATEGORIES = { staff: 'Staff pay', dj: 'DJ and artists', rent: 'Rent', power: 'Light and water', fuel: 'Fuel / generator', security: 'Security', cleaning: 'Cleaning', repairs: 'Repairs', marketing: 'Adverts and promotion', supplies: 'Ice, cups and supplies', transport: 'Transport', commission: 'Commissions', other: 'Other' };
+export const EXPENSE_CATEGORIES = { staff: 'Staff pay', dj: 'DJ and artists', rent: 'Rent', power: 'Light and water', fuel: 'Fuel / generator', security: 'Security', cleaning: 'Cleaning', repairs: 'Repairs', marketing: 'Adverts and promotion', supplies: 'Ice, cups and supplies', transport: 'Transport', commission: 'Commissions', loans: 'Staff loans', other: 'Other' };
 const PAID_WITH = { cash: 'Cash', momo: 'MoMo', bank: 'Bank' };
 const sum = (arr, f) => arr.reduce((n, x) => n + Number(f(x) || 0), 0);
 const DAY = 864e5;
@@ -115,11 +115,16 @@ export async function moneyReport(env, user, q = {}) {
   for (const d of buys) day(d.businessDate || nightKey(d.recordedAt)).outPesewas += buyCost(d);
   for (const e of live) day(e.date).outPesewas += e.amountPesewas;
 
+  // The directors' shares of the profit (e.g. 35% and 65%), and the one reading it.
+  const owners = (await queryWhere(env, 'users', [{ field: 'role', value: 'director' }])).filter(d => !d.fields.removed && Number(d.fields.sharePct) > 0)
+    .map(d => ({ uid: d.id, name: d.fields.name || 'Director', pct: Number(d.fields.sharePct), profitPesewas: Math.round((moneyIn - moneyOut) * Number(d.fields.sharePct) / 100) })).sort((a, b) => b.pct - a.pct);
+  const mine = owners.find(o => o.uid === uidOf(user));
   const byCat = new Map();
   for (const e of live) byCat.set(e.category, (byCat.get(e.category) || 0) + e.amountPesewas);
   return {
     period: p, categories: EXPENSE_CATEGORIES, paidWith: PAID_WITH, canAddExpense: !!requireRole(user, EXPENSE_HANDS),
     totals: { inPesewas: moneyIn, outPesewas: moneyOut, profitPesewas: moneyIn - moneyOut },
+    owners: owners.map(({ uid, ...o }) => o), myShare: mine ? { pct: mine.pct, profitPesewas: mine.profitPesewas } : null,
     moneyIn: [
       { key: 'drinks', label: 'Drinks (bar and waiters)', amountPesewas: drinksPaid },
       { key: 'tables', label: `Tables (${tables.length} booked, club’s share)`, amountPesewas: sum(tables, share) },

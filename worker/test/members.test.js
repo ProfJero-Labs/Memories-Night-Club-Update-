@@ -14,8 +14,8 @@ async function call(env, method, path, { body, claims, uid } = {}) {
   const r = await worker.fetch(new Request(`https://api.test${path}`, { method, headers, body: body ? JSON.stringify(body) : undefined }), env);
   return { status: r.status, text: await r.clone().text(), data: await r.json().catch(() => ({})) };
 }
-// Members and attendance are the administrator's (the ticket side); managers and directors run the night.
-const MANAGER = { role: 'superAdmin' }, DOOR = { role: 'doorStaff' };
+// Members and attendance: the three managers and the directors (and the administrator).
+const MANAGER = { role: 'manager' }, DOOR = { role: 'doorStaff' };
 const step = () => Math.floor(Date.now() / 1000 / 30);
 const qr = async (pass, s = step()) => `MP1.${pass.passId}.${s}.${await passSig(pass.secret, pass.passId, s)}`;
 async function addKofi(env) {
@@ -171,7 +171,8 @@ test('new roles: a director runs People like a manager; a waitress works the bar
     const m = store.list('members').find(x => x.fields.staffUid === inv.data.uid);
     assert.equal(m.fields.type, 'staff'); assert.equal(m.fields.department, dept);
   }
-  assert.equal((await call(env, 'GET', '/api/admin/members', { claims: { role: 'director' } })).status, 403, 'members are the ticket side: not the director’s');
+  for (const role of ['director', 'manager', 'hrManager', 'eventManager']) assert.equal((await call(env, 'GET', '/api/admin/members', { claims: { role } })).status, 200, `${role} manages members`);
+  assert.equal((await call(env, 'GET', '/api/admin/members', { claims: { role: 'finance' } })).status, 403);
   assert.equal((await call(env, 'GET', '/api/admin/members', { claims: { role: 'superAdmin' } })).status, 200);
   assert.equal((await call(env, 'GET', '/api/admin/members', { claims: { role: 'waitStaff' } })).status, 403);
   assert.equal((await call(env, 'GET', '/api/bar/queue', { claims: { role: 'waitStaff' } })).status, 200);

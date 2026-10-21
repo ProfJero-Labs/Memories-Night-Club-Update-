@@ -47,6 +47,10 @@ export function seed(store, origin) {
     ['finance@dev', 'uid-finance', { role: 'finance', admin: false }, 'Dev Finance', '0200000010'],
     ['security@dev', 'uid-security', { role: 'security', admin: false }, 'Dev Security', '0200000011'],
     ['director@dev', 'uid-director', { role: 'director', admin: false }, 'Dev Director', '0200000012'],
+    ['hr@dev', 'uid-hr', { role: 'hrManager', admin: false }, 'Dev Human Manager', '0200000013'],
+    ['director2@dev', 'uid-director2', { role: 'director', admin: false }, 'Dev Director Two', '0200000014'],
+    ['events@dev', 'uid-events', { role: 'eventManager', admin: false }, 'Dev Event Manager', '0200000015'],
+    ['dj@dev', 'uid-dj', { role: 'dj', admin: false }, 'Dev DJ', '0200000016'],
     ['guest@dev', 'uid-guest', {}, 'Guest', ''],
   ];
   store.claims = {};
@@ -55,8 +59,8 @@ export function seed(store, origin) {
   const hashes = { 4: pinHash('2580'), 6: pinHash('258025') };
   for (const [email, uid, claims, name, phone] of staff) {
     store.authUsers.push({ email, localId: uid }); store.claims[uid] = claims;
-    const long = ['superAdmin', 'director', 'manager', 'finance'].includes(claims.role);
-    if (claims.role) store.seed('users', uid, { email, role: claims.role, admin: claims.admin === true, name, phone, pinSalt: salt, pinHash: hashes[long ? 6 : 4], pinSetAt: new Date().toISOString() });
+    const long = ['superAdmin', 'director', 'manager', 'hrManager', 'finance'].includes(claims.role);
+    if (claims.role) store.seed('users', uid, { email, role: claims.role, admin: claims.admin === true, name, phone, pinSalt: salt, pinHash: hashes[long ? 6 : 4], pinSetAt: new Date().toISOString(), ...({ 'uid-director': { sharePct: 35 }, 'uid-director2': { sharePct: 65 } }[uid] || {}) });
   }
   // Every staff account is a member (no ticket at the gate). Organiser A's, linked to their sign-in:
   store.seed('members', 'dev-mem-orga', { name: 'Ama Organiser', phone: '0245552020', type: 'staff', status: 'active', validUntil: '', staffUid: 'uid-org-a', department: 'Events', position: 'Organiser', staffNo: '', notes: '', createdAt: new Date().toISOString() });

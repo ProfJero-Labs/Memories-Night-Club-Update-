@@ -11,8 +11,9 @@ import { FORBIDDEN, bizDate, who, audit, int, ghs } from './common.js';
 
 const BOSS = ['superAdmin', 'director', 'manager'];
 // Who may approve which kind.
-const APPROVERS = { comp: BOSS, discount: BOSS, write_off: [...BOSS, 'finance'], cash_out: [...BOSS, 'finance'], count_correction: STOCK };
-const REQUESTERS = { comp: [...BOSS, 'waitStaff', 'barStaff'], discount: [...BOSS, 'waitStaff', 'cashier'], write_off: [...BOSS, 'waitStaff', 'cashier'], cash_out: [...BOSS, 'cashier', 'waitStaff', 'finance'], count_correction: [...STOCK, 'barStaff'] };
+// The Human manager is on the floor (free drinks, discounts); the Event manager can give discounts.
+const APPROVERS = { comp: [...BOSS, 'hrManager'], discount: [...BOSS, 'hrManager', 'eventManager'], write_off: [...BOSS, 'finance'], cash_out: [...BOSS, 'finance'], count_correction: STOCK };
+const REQUESTERS = { comp: [...BOSS, 'hrManager', 'waitStaff', 'barStaff'], discount: [...BOSS, 'hrManager', 'eventManager', 'waitStaff', 'cashier'], write_off: [...BOSS, 'waitStaff', 'cashier'], cash_out: [...BOSS, 'cashier', 'waitStaff', 'finance'], count_correction: [...STOCK, 'barStaff'] };
 export const APPROVAL_LABEL = { comp: 'Free drink', discount: 'Discount', write_off: 'Unpaid tab written off', cash_out: 'Cash out', count_correction: 'Stock count correction' };
 
 async function roundsOf(env, tabId) { return (await queryWhere(env, 'rounds', [{ field: 'tabId', value: tabId }])).map(r => ({ id: r.id, ...r.fields })); }
@@ -54,7 +55,7 @@ export async function requestApproval(env, b, user) {
 }
 
 export async function listApprovals(env, user, { status = 'pending' } = {}) {
-  if (!requireRole(user, [...BOSS, 'finance', ...STOCK])) return FORBIDDEN;
+  if (!requireRole(user, [...BOSS, 'finance', ...STOCK, 'hrManager', 'eventManager'])) return FORBIDDEN;
   const rows = (await queryWhere(env, 'approvals', [{ field: 'status', value: status === 'pending' ? 'pending' : status }])).map(a => ({ id: a.id, ...a.fields, label: APPROVAL_LABEL[a.fields.kind],
     canDecide: requireRole(user, APPROVERS[a.fields.kind]) && a.fields.requestedBy !== uidOf(user) }));
   return { approvals: rows.sort((a, b) => String(b.requestedAt).localeCompare(String(a.requestedAt))).slice(0, 200) };

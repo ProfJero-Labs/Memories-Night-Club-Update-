@@ -33,7 +33,7 @@ async function myNight() {
     <p class="foot-small" style="text-align:center">Everything paid tonight from ${esc(n.phoneHint)}.</p>
     ${n.items.map(i => `<div class="summary"><div class="r"><span><b>${esc(new Date(i.at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', timeZone: 'Africa/Accra' }))}</b> · ${esc(i.where)} · ${esc(i.how)}</span></div>
       ${i.lines.map(l => `<div class="r"><span>${l.qty} × ${esc(l.name)}</span></div>`).join('')}<div class="r t"><span>${i.leftPesewas ? `Still to pay ${money(i.leftPesewas)}` : 'Total'}</span><span>${money(i.totalPesewas)}</span></div></div>`).join('') || msg('Nothing yet tonight.')}
-    <a class="btn red" href="${esc(again())}">Back to the menu</a>`;
+    <div class="row-actions"><a class="btn red" href="${esc(again())}">Back to the menu</a><a class="btn" href="review.html?s=qr">Rate your night</a></div>`;
 }
 const msg = (t, k = '') => `<div class="notice ${k}" role="status">${esc(t)}</div>`;
 const dock = (sum, label, fn) => {
@@ -60,7 +60,7 @@ function showOrder(orderId) {
       timer = setTimeout(poll, 8000); return;
     }
     store.set('mem-bar-order', null);
-    if (o.status === 'delivered') { app.innerHTML = `${msg('Collected. Enjoy!', 'ok')}<div class="row-actions"><a class="btn red" href="${esc(again())}">Order again</a><a class="btn" href="receipt.html?code=${esc(o.receiptCode)}">Receipt</a></div>`; return; }
+    if (o.status === 'delivered') { app.innerHTML = `${msg('Collected. Enjoy!', 'ok')}<div class="row-actions"><a class="btn red" href="${esc(again())}">Order again</a><a class="btn" href="review.html?s=qr">Rate your night</a><a class="btn" href="receipt.html?code=${esc(o.receiptCode)}">Receipt</a></div>`; return; }
     if (o.status === 'payment_failed') { app.innerHTML = `${msg('Payment didn’t go through. Nothing was taken.', 'bad')}<div class="row-actions"><a class="btn red" href="${esc(again())}">Try again</a></div>`; return; }
     if (o.status === 'refund_due' || o.status === 'refunded') { app.innerHTML = `${msg(o.status === 'refunded' ? 'You’ve been refunded for this order.' : 'The bar couldn’t make your order. You’re owed a refund: staff will sort it. Keep this page, or the receipt.', 'bad')}${o.receiptCode ? `<a class="btn" href="receipt.html?code=${esc(o.receiptCode)}">Receipt</a>` : ''}`; return; }
     app.innerHTML = `${msg('This order was cancelled. Nothing was taken.')}<a class="btn red" href="${esc(again())}">Start again</a>`;

@@ -58,6 +58,12 @@ test('a table over GHS 3,000 earns 10% for whoever brought it; the director sees
 
   // Finance pays Kojo: both deals marked paid, one expense of GHS 900 under Commissions.
   assert.equal((await ctx.call('POST', '/api/ops/commissions/pay', { who: ctx.D1, body: { month, key: c.people[0].key } })).status, 403, 'the director looks; finance pays');
+  assert.match((await ctx.call('POST', '/api/ops/commissions/pay', { who: ctx.F1, body: { month, key: c.people[0].key } })).data.error, /director must approve/);
+  ok(await ctx.call('POST', '/api/ops/commissions/request', { who: ctx.F1, body: { month, key: c.people[0].key } }), 'finance asks');
+  const todo = ok(await ctx.call('GET', '/api/ops/to-approve', { who: ctx.D1 }), 'director list');
+  const item = todo.items.find(i => i.kind === 'commission');
+  assert.equal(item.amountPesewas, 90000);
+  ok(await ctx.call('POST', '/api/ops/approve', { who: ctx.D1, body: { kind: 'commission', id: item.id, approve: true } }), 'director approves');
   const paid = ok(await ctx.call('POST', '/api/ops/commissions/pay', { who: ctx.F1, body: { month, key: c.people[0].key, paidWith: 'momo' } }), 'pay');
   assert.deepEqual([paid.amountPesewas, paid.deals], [90000, 2]);
   assert.match((await ctx.call('POST', '/api/ops/commissions/pay', { who: ctx.F1, body: { month, key: c.people[0].key } })).data.error, /Nothing is owed/);

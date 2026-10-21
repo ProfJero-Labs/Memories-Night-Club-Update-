@@ -12,7 +12,7 @@
 // key), and sees everything paid tonight from that phone.
 import { getDoc, queryWhere, queryRecent, listDocs } from '../lib/firestore.js';
 import { normalizePhone, maskPhone, nightKey } from '../lib/util.js';
-import { requireRole, REPORTS } from '../lib/auth.js';
+import { requireRole, CUSTOMER_CARE } from '../lib/auth.js';
 import { FORBIDDEN, bizDate, dateOr } from './common.js';
 import { billOf } from './tabs.js';
 
@@ -51,7 +51,7 @@ function paymentsOf({ tabs, qr, name, stationName }) {
 }
 
 export async function nightPayments(env, user, { date } = {}) {
-  if (!requireRole(user, REPORTS)) return FORBIDDEN;
+  if (!requireRole(user, CUSTOMER_CARE)) return FORBIDDEN;
   const d = dateOr(date), data = await night(env, d), payments = paymentsOf(data);
   // Who spent the most: what they bought tonight (a table's bill, a quick sale, a QR order).
   const people = new Map(); let noPhone = 0;

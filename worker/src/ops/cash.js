@@ -19,6 +19,7 @@ export function cashFigures(s) {
     countedPesewas: s.countedPesewas ?? null, differencePesewas: s.countedPesewas == null ? null : s.countedPesewas - expected };
 }
 const view = (id, s) => ({ id, date: s.date, uid: s.uid, name: s.name, role: s.role, status: s.status, openedAt: s.openedAt, closedAt: s.closedAt || null, explanation: s.explanation || '', reviewedByName: s.reviewedByName || '',
+  receivedPesewas: s.receivedPesewas ?? null, receivedByName: s.receivedByName || '', receivedAt: s.receivedAt || '', receivedNote: s.receivedNote || '',
   movements: s.movements || [], payments: (s.payments || []).slice(-50), ...cashFigures(s) });
 
 export async function openCash(env, b, user) {
@@ -74,6 +75,25 @@ export async function cashSessions(env, user, { date } = {}) {
   if (!requireRole(user, REPORTS)) return FORBIDDEN;
   const d = dateOr(date);
   return { sessions: (await queryWhere(env, 'cash_sessions', [{ field: 'date', value: d }])).map(s => view(s.id, s.fields)).sort((a, b) => a.name.localeCompare(b.name)) };
+}
+
+// The cash goes to the Manager after the count: the Manager counts what was handed over and
+// confirms it. A difference from what the person counted needs a note, and stays on record.
+export const CASH_RECEIVERS = ['superAdmin', 'director', 'manager'];
+export async function receiveCash(env, b, user) {
+  if (!requireRole(user, CASH_RECEIVERS)) return { error: 'The Manager receives the cash.', status: 403 };
+  const s = await getDoc(env, 'cash_sessions', String(b?.id || ''));
+  if (!s) return { error: 'Cash shift not found.', status: 404 };
+  if (s.fields.uid === uidOf(user)) return { error: 'Someone else must receive your own cash.' };
+  if (s.fields.status === 'open') return { error: `${s.fields.name} hasn’t counted their cash yet.` };
+  if (s.fields.receivedAt) return { error: `Already received by ${s.fields.receivedByName}.` };
+  const got = int(b?.receivedPesewas);
+  if (!(got >= 0)) return { error: 'Enter the cash you received.' };
+  const note = clean(b?.note, 300), counted = Number(s.fields.countedPesewas || 0);
+  if (got !== counted && !note) return { error: `${s.fields.name} counted ${ghs(counted)}; you have ${ghs(got)}. Say what happened.`, code: 'needs_note' };
+  await setDoc(env, 'cash_sessions', s.id, { ...s.fields, receivedPesewas: got, receivedBy: uidOf(user), receivedByName: user.name || '', receivedAt: now(), receivedNote: note });
+  await audit(env, user, 'CASH_RECEIVED', { sessionId: s.id, countedPesewas: counted, receivedPesewas: got });
+  return { received: true, differencePesewas: got - counted };
 }
 
 export async function reviewCash(env, b, user) {

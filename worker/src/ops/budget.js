@@ -6,6 +6,7 @@
 //                      payments [{ id, amountPesewas, date, paidWith, byName, at, expenseId }],
 //                      createdByName, removed (with a reason; never deleted)
 //
+// Every bill needs a director's approval (either director) before finance can pay it.
 // Paying a bill records it as an expense too (so it counts in Money out), except a drinks supplier
 // bill: those drinks were already counted when finance recorded them as bought.
 // Finance (and the system admin) set these; the director, the manager and finance can see them.
@@ -14,6 +15,7 @@ import { now, id, clean, nightKey } from '../lib/util.js';
 import { requireRole, uidOf, REPORTS } from '../lib/auth.js';
 import { FORBIDDEN, bizDate, isDate, audit, int } from './common.js';
 import { EXPENSE_CATEGORIES } from './money.js';
+import { payrollSummary } from './payroll.js';
 
 export const BUDGET_SETTERS = ['finance', 'superAdmin'];
 export const BILL_CATEGORIES = { supplier: 'Drinks supplier (owed)', ...EXPENSE_CATEGORIES };
@@ -30,10 +32,10 @@ const notFinance = { error: 'Only the finance officer sets the budget and the bi
 const paidOf = b => sum(b.payments || [], p => p.amountPesewas);
 function billView(d, today) {
   const f = d.fields, paid = paidOf(f), left = Math.max(0, f.amountPesewas - paid);
-  const state = f.removed ? 'removed' : !left ? 'paid' : f.dueDate < today ? 'overdue' : paid ? 'part_paid' : 'due';
+  const state = f.removed ? 'removed' : !left ? 'paid' : !f.approvedAt ? 'awaiting_approval' : f.dueDate < today ? 'overdue' : paid ? 'part_paid' : 'due';
   return { id: d.id, month: f.month, payee: f.payee, description: f.description || '', category: f.category, categoryLabel: BILL_CATEGORIES[f.category] || f.category, amountPesewas: f.amountPesewas, dueDate: f.dueDate,
     paidPesewas: paid, leftPesewas: f.removed ? 0 : left, state, payments: (f.payments || []).map(p => ({ amountPesewas: p.amountPesewas, date: p.date, paidWith: PAID_WITH[p.paidWith] || '', byName: p.byName })),
-    createdByName: f.createdByName || '', removedReason: f.removedReason || '' };
+    createdByName: f.createdByName || '', removedReason: f.removedReason || '', approved: !!f.approvedAt, approvedByName: f.approvedByName || '', overdue: !f.removed && left > 0 && f.dueDate < today, decisionNote: f.decisionNote || '' };
 }
 
 // The month: budget against what's been spent, and the bills (due, overdue, paid).
@@ -55,14 +57,16 @@ export async function monthBudget(env, user, { month } = {}) {
     .map(l => ({ ...l, leftPesewas: l.budgetPesewas - l.spentPesewas, over: l.budgetPesewas > 0 && l.spentPesewas > l.budgetPesewas, unplanned: !l.budgetPesewas && l.spentPesewas > 0 }))
     .sort((a, b) => b.budgetPesewas - a.budgetPesewas || b.spentPesewas - a.spentPesewas);
   const bills = billDocs.map(d => billView(d, today)).sort((a, b) => a.dueDate.localeCompare(b.dueDate));
+  // Salaries this month (the Human manager's payroll): shown with the bills, and in what's still to pay.
+  const salaries = await payrollSummary(env, m);
   const live = bills.filter(b => b.state !== 'removed');
   return {
     month: m, label: new Date(`${m}-15T12:00:00Z`).toLocaleDateString('en-GB', { month: 'long', year: 'numeric' }), prev: shiftMonth(m, -1), next: shiftMonth(m, 1), today,
     canEdit: !!requireRole(user, BUDGET_SETTERS), categories: BUDGET_CATEGORIES, billCategories: BILL_CATEGORIES,
     budget: { lines, totalPesewas: sum(lines, l => l.budgetPesewas), spentPesewas: sum(lines, l => l.spentPesewas), setByName: bud?.fields?.setByName || '', note: bud?.fields?.note || '' },
-    bills, totals: { billsPesewas: sum(live, b => b.amountPesewas), paidPesewas: sum(live, b => b.paidPesewas), duePesewas: sum(live, b => b.leftPesewas),
-      overduePesewas: sum(live.filter(b => b.state === 'overdue'), b => b.leftPesewas), overdue: live.filter(b => b.state === 'overdue').length,
-      dueSoon: live.filter(b => b.leftPesewas && b.state !== 'overdue' && b.dueDate <= new Date(Date.now() + 7 * 864e5).toISOString().slice(0, 10)).length },
+    bills, salaries, totals: { billsPesewas: sum(live, b => b.amountPesewas) + salaries.netPesewas, paidPesewas: sum(live, b => b.paidPesewas) + salaries.paidPesewas, duePesewas: sum(live, b => b.leftPesewas) + salaries.netPesewas - salaries.paidPesewas,
+      overduePesewas: sum(live.filter(b => b.overdue), b => b.leftPesewas), overdue: live.filter(b => b.overdue).length, awaitingApproval: live.filter(b => b.state === 'awaiting_approval').length,
+      dueSoon: live.filter(b => b.leftPesewas && !b.overdue && b.dueDate <= new Date(Date.now() + 7 * 864e5).toISOString().slice(0, 10)).length },
   };
 }
 
@@ -103,6 +107,7 @@ export async function payBill(env, b, user) {
   if (f.removed) return { error: 'This bill was taken off.' };
   const left = f.amountPesewas - paidOf(f);
   if (left <= 0) return { error: 'This bill is already paid.' };
+  if (!f.approvedAt) return { error: 'A director must approve this bill before it’s paid.' };
   const amount = b?.amountPesewas == null || b.amountPesewas === '' ? left : int(b.amountPesewas);
   if (!(amount >= 100)) return { error: 'Enter the amount paid (at least GHS 1).' };
   if (amount > left) return { error: `Only ${(left / 100).toLocaleString('en-GH')} cedis is left to pay on this bill.` };
@@ -116,6 +121,19 @@ export async function payBill(env, b, user) {
   await setDoc(env, 'bills', d.id, { ...f, payments: [...(f.payments || []), { id: id(), amountPesewas: amount, date, paidWith, by: uidOf(user), byName: user.name || '', at, expenseId }] });
   await audit(env, user, 'BILL_PAID', { billId: d.id, amountPesewas: amount, expenseId });
   return { paid: true, leftPesewas: left - amount };
+}
+
+export async function decideBill(env, bid, approve, note, user) {
+  if (!requireRole(user, ['superAdmin', 'director'])) return { error: 'A director approves payments.', status: 403 };
+  const d = await getDoc(env, 'bills', String(bid || '')); if (!d) return { error: 'Bill not found.', status: 404 };
+  if (d.fields.removed || d.fields.approvedAt) return { error: 'This bill has already been decided.' };
+  if (approve) await setDoc(env, 'bills', d.id, { ...d.fields, approvedAt: now(), approvedBy: uidOf(user), approvedByName: user.name || '', decisionNote: clean(note, 200) });
+  else {
+    if (!clean(note, 200)) return { error: 'Say why it isn’t approved.' };
+    await setDoc(env, 'bills', d.id, { ...d.fields, removed: true, removedReason: `Not approved: ${clean(note, 200)}`, removedByName: user.name || '', removedAt: now() });
+  }
+  await audit(env, user, approve ? 'BILL_APPROVED' : 'BILL_REFUSED', { billId: d.id });
+  return { decided: true };
 }
 
 export async function removeBill(env, b, user) {

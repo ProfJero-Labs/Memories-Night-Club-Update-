@@ -42,7 +42,7 @@ async function buyTicket(page, { name, line, event = 'dev-afro', type }) {
 }
 
 // Staff sign in with phone + PIN (dev seed: 2580, or 258025 for managers, directors, finance, admin).
-const STAFF = { 'admin@dev': ['0200000001', '258025'], 'manager@dev': ['0200000002', '258025'], 'door@dev': ['0200000003', '2580'], 'bar@dev': ['0200000004', '2580'], 'orga@dev': ['0245552020', '2580'], 'orgb@dev': ['0200000006', '2580'], 'waiter@dev': ['0200000007', '2580'], 'waiter2@dev': ['0200000008', '2580'], 'cashier@dev': ['0200000009', '2580'], 'finance@dev': ['0200000010', '258025'], 'security@dev': ['0200000011', '2580'], 'director@dev': ['0200000012', '258025'] };
+const STAFF = { 'admin@dev': ['0200000001', '258025'], 'manager@dev': ['0200000002', '258025'], 'door@dev': ['0200000003', '2580'], 'bar@dev': ['0200000004', '2580'], 'orga@dev': ['0245552020', '2580'], 'orgb@dev': ['0200000006', '2580'], 'waiter@dev': ['0200000007', '2580'], 'waiter2@dev': ['0200000008', '2580'], 'cashier@dev': ['0200000009', '2580'], 'finance@dev': ['0200000010', '258025'], 'security@dev': ['0200000011', '2580'], 'director@dev': ['0200000012', '258025'], 'hr@dev': ['0200000013', '258025'], 'director2@dev': ['0200000014', '258025'], 'events@dev': ['0200000015', '2580'], 'dj@dev': ['0200000016', '2580'] };
 async function signInAs(page, email) {
   if (!/login\.html/.test(page.url())) await page.goto(`${base}/login.html`);
   await page.waitForSelector('#pinForm');
@@ -381,7 +381,8 @@ test('control room: refunds owed are listed and can be marked refunded with a no
   store.seed('pending_checkouts', 'e2e-refund', { kind: 'ticket', eventName: 'Afrobeats Friday', buyerName: 'Refund Me', buyerPhone: '0247778888', amountPesewas: 15000, status: 'failed', error: 'sold_out_after_payment', refundStatus: 'manual_required', createdAt: new Date().toISOString() });
   // Refunds are the ticket side: the system admin's, not the director's.
   const dir = await phone(390); await signInAs(dir, 'director@dev'); await dir.waitForURL(/night\.html/);
-  await dir.goto(`${base}/admin.html`); await dir.waitForURL(/night\.html/);
+  await dir.goto(`${base}/admin.html`); await dir.waitForURL(/admin\.html#members/); // members only
+  assert.equal(await dir.locator('text=Refunds').count(), 0);
   const admin = await phone(1280);
   await signInAs(admin, 'admin@dev'); await admin.waitForURL(/admin\.html/); await openTab(admin, 'refunds');
   const row = admin.locator('tr', { hasText: 'Refund Me' });
@@ -741,12 +742,12 @@ test('promos: the control room starts an automatic promo and a code promo; guest
   for (const p of store.list('promos')) store.seed('promos', p.id, { ...p.fields, active: false });
 });
 
-test('staff sign-in: a manager adds a waitress; her PIN is texted and shown to the manager; she signs in with it straight away, stays signed in the next day, can change it; forgot PIN texts a new one', async () => {
+test('staff sign-in: the Human manager adds a waitress; her PIN is texted and shown to them; she signs in with it straight away, stays signed in the next day, can change it; forgot PIN texts a new one', async () => {
   const mgr = await phone(390);
-  await signInAs(mgr, 'manager@dev'); await mgr.waitForURL(/night\.html/);
+  await signInAs(mgr, 'hr@dev'); await mgr.waitForURL(/hr\.html/);
   await mgr.click('.bnav [data-k="staff"]'); await mgr.waitForSelector('#aRole');
   assert.equal(await mgr.$eval('#aRole', e => e.value), '', 'no job is pre-selected');
-  assert.ok(!(await mgr.$$eval('#aRole option', os => os.map(o => o.value))).some(v => ['superAdmin', 'director', 'finance'].includes(v)), 'a manager can’t give admin, director or finance');
+  assert.ok(!(await mgr.$$eval('#aRole option', os => os.map(o => o.value))).some(v => ['superAdmin', 'director', 'finance', 'manager', 'hrManager'].includes(v)), 'the Human manager adds the staff, not managers, directors or finance');
   await mgr.fill('#aName', 'Abena Waitress'); await mgr.fill('#aPhone', '024 777 1001'); await mgr.selectOption('#aRole', 'waitStaff'); await mgr.click('#aBtn');
   await mgr.locator('.pincards').getByText(/Texted to 024\*\*\*1001/).waitFor();
   const sms = store.sms.filter(x => x.to === '0247771001').at(-1).message;
@@ -886,6 +887,36 @@ test('stock, money and quick sales: finance buys drinks (in stock at once), the 
   assert.deepEqual([...fin.errors, ...mgr.errors, ...dir.errors, ...bar.errors, ...w.errors, ...g.errors], []);
 });
 
+test('people: the Human manager sets the DJ’s pay and a bonus and sends the month; a director approves; finance pays; the DJ sees the payslip, a notice and a team message', async () => {
+  const hr = await phone(390); await signInAs(hr, 'hr@dev'); await hr.waitForURL(/hr\.html/);
+  await hr.click('.bnav [data-k="pay"]'); await hr.waitForSelector('[data-set="uid-dj"]');
+  await hr.click('[data-set="uid-dj"]'); await hr.fill('#sdS', '1500'); await hr.fill('#sdN', '024 455 5666'); await hr.fill('#sdNm', 'Dev DJ'); await hr.click('#sdGo');
+  await hr.locator('#app').getByText(/MoMo 024\*\*\*5666/).first().waitFor();
+  await hr.click('#pBonus'); await hr.selectOption('#piU', 'uid-dj'); await hr.fill('#piA', '200'); await hr.fill('#piR', 'Packed Saturday'); await hr.click('#piGo');
+  await hr.locator('#app').getByText('GHS 1,700').first().waitFor();
+  hr.once('dialog', d => d.accept()); await hr.click('#pSend');
+  await hr.locator('#app').getByText(/Waiting for a director/i).first().waitFor();
+  // Notices from the Human manager.
+  await hr.goto(`${base}/me.html#notices`); await hr.locator('summary', { hasText: 'Post a notice' }).click();
+  await hr.fill('#nT', 'Staff meeting Friday 6pm'); await hr.click('#nGo'); await hr.locator('.tcard').getByText('Staff meeting Friday 6pm').waitFor();
+  // Either director approves.
+  const d2 = await phone(390); await signInAs(d2, 'director2@dev'); await d2.waitForURL(/night\.html/);
+  await d2.click('.bnav [data-k="approve"]'); await d2.locator('.tcard', { hasText: 'Salaries for' }).locator('[data-yes]').click();
+  await d2.locator('#taMsg').getByText(/Approved/).waitFor();
+  await d2.goto(`${base}/night.html#money`); await d2.locator('#app').getByText(/Your share \(65%\)/).waitFor();
+  // Finance pays; the DJ is texted and sees the payslip.
+  const fin = await phone(390); await signInAs(fin, 'finance@dev'); await fin.waitForURL(/finance\.html/);
+  await fin.click('.bnav [data-k="pay"]'); await fin.locator('a[href="#salaries"]').click();
+  await fin.click('#pPayAll'); await fin.click('#ppGo'); await fin.locator('#app').getByText('Paid').first().waitFor();
+  assert.match(store.sms.filter(x => x.to === '0200000016').at(-1).message, /Your pay for .*GHS 1,700/s);
+  const dj = await phone(360); await signInAs(dj, 'dj@dev'); await dj.waitForURL(/me\.html/);
+  await dj.locator('.tcard').getByText('Staff meeting Friday 6pm').waitFor();
+  await dj.click('.bnav [data-k="pay"]'); await dj.locator('summary', { hasText: /GHS 1,700/ }).waitFor();
+  await dj.click('.bnav [data-k="messages"]'); await dj.waitForSelector('#mT');
+  await dj.fill('#mT', 'Who has the aux cable?'); await dj.click('#mGo'); await dj.locator('.tcard').getByText('Who has the aux cable?').waitFor();
+  assert.deepEqual([...hr.errors, ...d2.errors, ...fin.errors, ...dj.errors], []);
+});
+
 test('sign-in: an email typed in the phone box goes to the email form', async () => {
   const p = await phone(360);
   await p.goto(`${base}/login.html`); await p.waitForSelector('#pinForm');
@@ -953,7 +984,8 @@ test('a night at the bar: tab without QR → bar → delivered → the customer 
   assert.match(await mgr.textContent('.pos-money'), /Received/); assert.match(await mgr.textContent('.pos-money'), /Still owed/);
   assert.equal(await mgr.locator('.bnav button').count(), 4, 'four buttons, nothing else');
   assert.equal(await mgr.locator('text=Site settings').count(), 0);
-  await mgr.goto(`${base}/admin.html`); await mgr.waitForURL(/night\.html/); // the control room isn't theirs
+  await mgr.goto(`${base}/admin.html`); await mgr.waitForURL(/admin\.html#members/); // only members and attendance there
+  assert.equal(await mgr.locator('text=Site settings').count(), 0); await mgr.goto(`${base}/night.html`);
   await mgr.locator('#toClose').click(); await mgr.waitForSelector('#closeGo');
   assert.match(await mgr.textContent('#app'), /2 less than expected/);
   mgr.on('dialog', d => d.accept());

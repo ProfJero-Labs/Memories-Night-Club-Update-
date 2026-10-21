@@ -37,8 +37,11 @@ training.
 | Cashier | **Cashier** | Find a bill, record cash, receipts; My cash: open with the float, put cash in the safe, refund or pay out (manager approves), count the cash at the end |
 | Front office | **Door** | Entrance (scan tickets, search), staff and members (code in their app, or *let in by name* if their phone is dead), Tables (arrivals, table number, people), Issues, end-of-night Report |
 | Security | **Door** | Entrance and Issues only |
-| Manager | **Tonight** (a simple till screen) | Tonight: money expected, received and still owed (cash, MoMo, paid on phone), *Stock to explain* (the bar found a different number when it opened), *Needs you* (approve or refuse with one tap), the tables, *Add an expense*, *Close the night*. Bottom: Tonight · Tables · Staff · More. *More*: money, tonight in detail, approvals, drinks & prices, stock (add new stock during the night), past nights. No technical areas. |
-| Director | **Tonight**, plus **Money** | Tonight, **Money** (money in, money out, profit, for tonight, this week or this month; drinks sold against what they cost; expenses), *Reports* (end-of-day, sign off). Nothing from the ticket side (tickets, refunds, pay in bits, members) and no control room. **Commissions** (who is owed for bringing big tables). **Bills and budget** (set by finance): what's due this month, paid, overdue; budget against spending. *More* adds tables and staff. |
+| Manager | **Tonight** | Purchases (*Buying drinks*: ask for what to buy), sales, stock and counts (explains differences), **cash from the staff** (receives each person's counted cash), customers (reviews, top customers), approvals, closing the night. Bottom: Tonight · Tables · Customers · More. Members. |
+| Human manager | **Human manager** (hr.html) | The floor (open tables, free drinks and discounts) and the people: **staff accounts** (adds, changes, removes; texts PINs), members and attendance, **salaries** and payment details, bonuses, deductions, **loans**, the month's payroll (sends it to the directors), notices, **staff feedback**, **performance reviews**, customer reviews and complaints. |
+| Event manager | **Control room** | Nights, tickets, prices, promotions, bookings, **organiser accounts**, table service, **discounts** (approves them), members. |
+| Director (two) | **Tonight**, **Money**, **To approve** | **Approves every payment** (salaries, loans, bills, commissions, drinks purchases); either director can approve. Money shows money in, out, profit and **their own share** (e.g. 35% / 65%, set by the system admin). More: reports, salaries, bills and budget, commissions, customer reviews, staff feedback, performance reviews, tables, staff, members. Nothing from the ticket side. |
+| DJ, MC (and every staff member) | **My page** (me.html) | Notices, the team message board, **My pay** (salary, payslips, loans), feedback or complaints (to the Human manager or the directors, anonymous if they like), their performance reviews. Everyone else opens it from the name menu. |
 | System admin | **Control room** | Everything technical: the site, nights, tickets, promos, settings, system health, bar setup, and every report. |
 | Finance officer | **Finance** | Today, **Money** (in, out, profit; add expenses), Stock (*Record drinks bought*, stock the manager added, the bar's counts and the manager's explanations; drinks, prices and costs), Check (staff reports, cash, approvals), Reports (end of day, sign off, print, CSV) |
 | Events manager | Control room | Nights, tickets, tables, promos, bar setup (no money reports) |
@@ -154,6 +157,15 @@ training.
 - **The director** sees, month by month: what's still to pay out, what's been paid, who is owed, and
   every deal (sold for how much, served by whom, brought by whom).
 
+## Customer reviews
+
+- After paying (the bill link, the QR receipt, *My night*), customers are asked **How was your
+  night?** (1–5 stars, a comment, a name and phone if they want a call back), then shown the club's
+  Instagram, Facebook and TikTok to follow. The review page is `review.html` (a table card can link
+  to `review.html?s=table`).
+- A low rating (1–2) is a complaint: the Manager or the Human manager follows it up and notes what
+  was done. The directors read every review, with the average per night.
+
 ## Payments tonight and top customers (manager, director, finance)
 
 - **Tonight → Payments tonight**: every payment, newest first: time, amount, how it was paid, who
@@ -166,10 +178,28 @@ training.
   everything paid tonight from their phone. The menu has a search box that forgives spelling
   mistakes ("henikin" finds Heineken; "coke" finds Coca-Cola).
 
+## Payments need a director (any director)
+
+- **Salaries**: fixed monthly. The Human manager sets each person's salary and how they're paid
+  (MoMo or bank), adds bonuses and deductions during the month, and **sends the month** to the
+  directors. A director approves (or sends it back with what to change); finance pays each person;
+  they get a text and their payslip on My page. It shows in Money out (Staff pay).
+- **Loans**: the Human manager records it (amount, what for, how much comes off each salary); a
+  director approves; finance pays it out (Staff loans); the repayment comes off each month's pay.
+- **Bills** (finance) and **commissions** (finance or a manager asks): a director approves; then
+  finance pays.
+- **Buying drinks**: the Manager asks (the screen shows each drink's stock against its minimum and
+  maximum, and suggests how many); finance checks it (above the maximum needs a reason); a director
+  approves the money; the Manager buys it and records it on Stock against that purchase; the bar
+  confirms it arrived.
+- Directors see all of it on **To approve**; finance sees what's ready on **To pay**.
+
 ## Cash
 
 - Cashier opens the shift with the **float**. Cash taken is added automatically from the bills.
 - **Expected cash** = float + cash taken + float added − put in the safe − refunds − payouts.
+- At the end: count the cash (waiters and bartenders: *Hand in my cash*). The cash then goes to the
+  **Manager**, who confirms what they received (*Cash from the staff*); a difference needs a note.
 - At the end: count the cash. Any difference needs an explanation. The system never changes the
   figures to make them match. A manager or finance marks the count reviewed (not the same person).
 

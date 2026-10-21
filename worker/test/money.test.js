@@ -55,3 +55,25 @@ test('money in, money out, profit: drinks bought and sold, table bookings (ticke
   assert.deepEqual([m2.expenses.find(x => x.id === e.id).removed, m2.expenses.find(x => x.id === e.id).removedReason], [true, 'Entered twice']);
   assert.equal((await ctx.call('GET', '/api/ops/money', { who: ctx.W1 })).status, 403, 'waiters don’t see the club’s money');
 });
+
+test('two directors (35% and 65%): each sees the profit and their own share; only the system admin sets shares', async () => {
+  const { store, env } = createMockEnv();
+  store.seed('users', 'd1', { name: 'Nana Director', role: 'director', phone: '0240000101', sharePct: 0 });
+  store.seed('users', 'd2', { name: 'Kwame Director', role: 'director', phone: '0240000102' });
+  store.seed('users', 'f1', { name: 'Esi Finance', role: 'finance', phone: '0240000103' });
+  let n = 0;
+  const call = async (method, path, who, body) => {
+    const r = await worker.fetch(new Request(`https://api.test${path}`, { method, headers: { 'Content-Type': 'application/json', 'CF-Connecting-IP': `10.81.0.${++n}`, Authorization: `Bearer ${await idToken({ role: who.role }, { uid: who.uid })}` }, body: body ? JSON.stringify(body) : undefined }), env);
+    return { status: r.status, data: JSON.parse((await r.text()) || '{}') };
+  };
+  const ADMIN = { uid: 'adm', role: 'superAdmin' }, D1 = { uid: 'd1', role: 'director' }, D2 = { uid: 'd2', role: 'director' }, F1 = { uid: 'f1', role: 'finance' };
+  assert.equal((await call('POST', '/api/admin/people/update', D1, { uid: 'd1', sharePct: 100 })).status, 403, 'a director can’t set shares');
+  assert.equal((await call('POST', '/api/admin/people/update', ADMIN, { uid: 'd1', sharePct: 35 })).status, 200);
+  assert.match((await call('POST', '/api/admin/people/update', ADMIN, { uid: 'd2', sharePct: 70 })).data.error, /more than 100/);
+  assert.equal((await call('POST', '/api/admin/people/update', ADMIN, { uid: 'd2', sharePct: 65 })).status, 200);
+  assert.equal((await call('POST', '/api/ops/expenses', F1, { category: 'rent', description: 'Rent', amountPesewas: 100000 })).status, 200);
+  const m1 = (await call('GET', '/api/ops/money?period=today', D1)).data, m2 = (await call('GET', '/api/ops/money?period=today', D2)).data;
+  assert.deepEqual(m1.owners.map(o => [o.name, o.pct, o.profitPesewas]), [['Kwame Director', 65, -65000], ['Nana Director', 35, -35000]]);
+  assert.deepEqual([m1.myShare.pct, m1.myShare.profitPesewas, m2.myShare.pct], [35, -35000, 65]);
+  assert.equal((await call('GET', '/api/ops/money?period=today', F1)).data.myShare, null);
+});

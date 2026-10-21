@@ -100,8 +100,8 @@ export async function openTab(env, b, user) {
 }
 
 export async function myTabs(env, user, { all = false } = {}) {
-  if (!requireRole(user, [...WAITERS, 'cashier'])) return FORBIDDEN;
-  const everyone = all && requireRole(user, [...BOSS, 'cashier']);
+  if (!requireRole(user, [...WAITERS, 'cashier', 'hrManager', 'eventManager'])) return FORBIDDEN;
+  const everyone = all && requireRole(user, [...BOSS, 'cashier', 'hrManager', 'eventManager']);
   const open = await queryWhere(env, 'tabs', everyone ? [{ field: 'status', value: 'open' }] : [{ field: 'status', value: 'open' }, { field: 'waiterUid', value: uidOf(user) }]);
   const today = (await queryWhere(env, 'tabs', [{ field: 'businessDate', value: bizDate() }])).filter(t => t.fields.status !== 'open' && (everyone || t.fields.waiterUid === uidOf(user)));
   const out = [];
@@ -112,7 +112,7 @@ export async function myTabs(env, user, { all = false } = {}) {
 export async function getTab(env, user, tabId) {
   const t = await getDoc(env, 'tabs', String(tabId || ''));
   if (!t) return { error: 'Tab not found.', status: 404 };
-  if (!mineOrBoss(user, t.fields) && !requireRole(user, ['cashier', 'finance', 'barStaff'])) return FORBIDDEN;
+  if (!mineOrBoss(user, t.fields) && !requireRole(user, ['cashier', 'finance', 'barStaff', 'hrManager', 'eventManager'])) return FORBIDDEN;
   const view = tabView({ id: t.id, ...t.fields }, await roundsOf(env, t.id));
   view.billUrl = siteUrl(env, `/bill.html?t=${t.fields.billToken}`);
   return { tab: view };

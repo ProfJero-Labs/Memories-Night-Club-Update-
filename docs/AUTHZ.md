@@ -84,6 +84,17 @@ removal applies at once. Each row is covered by `worker/test/staffauth.test.js` 
 | `POST /api/ops/expenses`, `/expenses/remove` | Manager, director, finance, admin (taking one off: finance, director, admin, or whoever added it) |
 | `POST /api/ops/budget`, `/bills`, `/bills/pay`, `/bills/remove`, `/bills/copy` | Finance, admin |
 | `GET /api/ops/commissions` | Manager, director, finance, admin. `POST /commissions/assign`: the same. `POST /commissions/pay`: finance, admin |
+| `GET/POST /api/admin/people…` | Directors (anyone but an admin), the Human manager (staff jobs: front office, security, bar, floor, cashier, DJ, MC), the Event manager (organisers only). The Manager no longer adds staff. A director's `sharePct`: system admin only |
+| `GET /api/admin/members…`, `/attendance` | System admin, directors, Manager, Human manager, Event manager |
+| `GET /api/ops/notices`, `/board`, `/feedback/mine`, `/my-pay`, `/reviews/mine`; `POST /board`, `/feedback`, `/perf/reply` | Every staff member (their own). Notices: managers and directors post |
+| `GET /api/ops/feedback`, `POST /feedback/reply` | Human manager (what was sent to them), directors (all) |
+| `GET /api/ops/payroll` | Directors, Human manager, finance. `POST /pay/details`, `/pay/item`, `/loans`, `/payroll/submit`: Human manager. `POST /loans/pay`, `/payroll/pay`: finance, after a director approves |
+| `GET /api/ops/to-approve`, `POST /api/ops/approve` | Directors (either one): salaries, loans, bills, commission payouts, purchases |
+| `GET/POST /api/ops/purchases` | Ask: Manager, directors. `POST /purchases/check`: finance |
+| `POST /api/ops/cash/receive` | Manager, directors (not your own cash) |
+| `GET /api/ops/reviews`, `/payments` | Manager, Human manager, directors. `POST /reviews/handle`: Manager, Human manager |
+| `GET/POST /api/ops/perf` | Human manager writes; directors read |
+| `POST /api/guest/review` | Public, rate limited |
 | `GET /api/guest/counter-night/:orderId` | A QR customer: everything paid tonight from the phone that paid that order |
 | `POST /api/ops/stock/review`, `GET /api/ops/changes` | Manager, director, finance, admin (not your own count) |
 | `POST /api/ops/cash/open`, `/move`, `/close`, `GET /api/ops/cash` | Whoever takes cash (their own shift); refunds and payouts become approvals |

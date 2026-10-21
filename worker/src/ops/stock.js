@@ -31,6 +31,7 @@ import { getDoc, setDoc, queryWhere, listDocs, queryRecent, batchGet, commitTx, 
 import { now, id, clean } from '../lib/util.js';
 import { requireRole, STOCK, uidOf } from '../lib/auth.js';
 import { FORBIDDEN, bizDate, dateOr, who, audit, logChange, closedError, int } from './common.js';
+import { approvedPurchase, notePurchaseReceived } from './purchases.js';
 
 export const STOCK_HANDS = [...STOCK, 'barStaff'];           // may record deliveries, transfers, breakages, counts
 const MENU_READERS = [...STOCK, 'barStaff', 'waitStaff', 'cashier', 'eventManager'];
@@ -41,7 +42,7 @@ export const COUNT_REASONS = { not_recorded: 'Sold or given but not recorded', b
 const productView = (d, withCost) => ({
   id: d.id, name: d.fields.name, category: d.fields.category || 'Drinks', unit: d.fields.unit || 'bottle',
   pricePesewas: Number(d.fields.pricePesewas || 0), available: d.fields.available !== false, tracked: d.fields.tracked !== false,
-  lowStock: Number(d.fields.lowStock || 0), sortOrder: d.fields.sortOrder ?? 0,
+  lowStock: Number(d.fields.lowStock || 0), maxStock: Number(d.fields.maxStock || 0), sortOrder: d.fields.sortOrder ?? 0,
   ...(withCost ? { costPesewas: Number(d.fields.costPesewas || 0), updatedByName: d.fields.updatedByName || '', updatedAt: d.fields.updatedAt || '' } : {}),
 });
 const sortProducts = (a, b) => a.category.localeCompare(b.category) || a.sortOrder - b.sortOrder || a.name.localeCompare(b.name);
@@ -68,17 +69,20 @@ export async function saveProduct(env, b, user) {
   if (!(cost >= 0)) return { error: 'Add the cost price: what the club pays for one.' };
   const low = b?.lowStock === '' || b?.lowStock == null ? 0 : int(b.lowStock);
   if (!(low >= 0)) return { error: 'The low-stock warning is a number of units (or blank).' };
+  const max = b?.maxStock === '' || b?.maxStock == null ? 0 : int(b.maxStock);
+  if (!(max >= 0)) return { error: 'The most to hold is a number of units (or blank).' };
+  if (max && max < low) return { error: 'The most to hold can’t be below the minimum.' };
   const existing = b?.id ? await getDoc(env, 'menu_items', String(b.id)) : null;
   if (b?.id && !existing) return { error: 'Product not found.', status: 404 };
   const pid = existing?.id || id(), old = existing?.fields || {};
   const fields = {
     ...old, name, category: clean(b.category, 30) || 'Drinks', unit: UNITS.includes(b.unit) ? b.unit : (old.unit || 'bottle'),
-    pricePesewas: price, costPesewas: cost, lowStock: low, tracked: b.tracked !== false, available: b.available !== false, sortOrder: int(b.sortOrder) || 0,
+    pricePesewas: price, costPesewas: cost, lowStock: low, maxStock: max, tracked: b.tracked !== false, available: b.available !== false, sortOrder: int(b.sortOrder) || 0,
     updatedAt: now(), updatedBy: uidOf(user), updatedByName: user.name || '', createdAt: old.createdAt || now(),
   };
   await setDoc(env, 'menu_items', pid, fields);
   // Who changed what: the old value and the new value, for every field that matters.
-  const watch = [['pricePesewas', 'price'], ['costPesewas', 'cost'], ['lowStock', 'low stock warning'], ['available', 'on sale'], ['name', 'name']];
+  const watch = [['pricePesewas', 'price'], ['costPesewas', 'cost'], ['lowStock', 'minimum stock'], ['maxStock', 'maximum stock'], ['available', 'on sale'], ['name', 'name']];
   for (const [k, label] of watch) if (!existing || old[k] !== fields[k]) await logChange(env, user, { kind: existing ? 'product' : 'product_added', refId: pid, refName: name, field: label, from: existing ? old[k] ?? null : null, to: fields[k] });
   await audit(env, user, existing ? 'PRODUCT_UPDATED' : 'PRODUCT_ADDED', { productId: pid, name, pricePesewas: price });
   return { id: pid };
@@ -112,6 +116,13 @@ export async function recordReceived(env, b, user) {
   const qty = int(b.qty); if (!(qty >= 1 && qty <= 10000)) return { error: 'How many? A whole number.' };
   const closed = await closedError(env, bizDate()); if (closed) return closed;
   const auto = requireRole(user, PURCHASERS), byBar = !requireRole(user, STOCK);
+  // Bought against an approved purchase request (the Manager buys what finance and a director approved).
+  const purchaseId = b?.purchaseId ? String(b.purchaseId) : '';
+  if (purchaseId) {
+    const pr = await approvedPurchase(env, purchaseId);
+    if (!pr) return { error: 'That purchase isn’t approved yet.' };
+    if (!pr.fields.lines.some(l => l.productId === p.id)) return { error: `${p.name} isn’t on that purchase.` };
+  }
   // What it cost: the total paid (or the price of one). Needed for a purchase finance records.
   const total = b.totalCostPesewas === '' || b.totalCostPesewas == null ? null : int(b.totalCostPesewas);
   const unit = b.unitCostPesewas === '' || b.unitCostPesewas == null ? null : int(b.unitCostPesewas);
@@ -120,10 +131,11 @@ export async function recordReceived(env, b, user) {
   if (auto && totalCost == null) return { error: 'Enter the total amount paid for these drinks.' };
   const did = id(), at = now(), byName = user.name || '';
   const rec = { productId: p.id, productName: p.name, stationId: st.id, stationName: st.name, qty, supplier: clean(b.supplier, 80), reference: clean(b.reference, 60),
-    totalCostPesewas: totalCost, unitCostPesewas: totalCost == null ? null : Math.round(totalCost / qty), note: clean(b.note, 200), businessDate: bizDate(),
+    totalCostPesewas: totalCost, unitCostPesewas: totalCost == null ? null : Math.round(totalCost / qty), note: clean(b.note, 200), businessDate: bizDate(), purchaseId,
     status: auto ? 'confirmed' : 'pending', purchase: auto, byBar, recordedBy: uidOf(user), recordedByName: byName, recordedRole: user.role, recordedAt: at,
     ...(auto ? { confirmedQty: qty, confirmedBy: uidOf(user), confirmedByName: byName, confirmedAt: at } : {}) };
   await setDoc(env, 'stock_deliveries', did, rec);
+  if (purchaseId) await notePurchaseReceived(env, purchaseId, p.id, qty);
   if (auto) await addMoves(env, [{ productId: p.id, productName: p.name, stationId: st.id, qty, kind: 'received', supplier: rec.supplier, reference: rec.reference, unitCostPesewas: rec.unitCostPesewas, note: rec.note, deliveryId: did, purchase: true }], user);
   await logChange(env, user, { kind: 'stock', refId: p.id, refName: p.name, field: auto ? `drinks bought for ${st.name}` : `new stock recorded for ${st.name} (waiting to be confirmed)`, from: null, to: qty, note: [rec.supplier, rec.reference, totalCost != null ? `paid GHS ${totalCost / 100}` : ''].filter(Boolean).join(' · ') });
   await audit(env, user, auto ? 'STOCK_PURCHASE_RECORDED' : 'STOCK_DELIVERY_RECORDED', { deliveryId: did, productId: p.id, stationId: st.id, qty, totalCostPesewas: totalCost });

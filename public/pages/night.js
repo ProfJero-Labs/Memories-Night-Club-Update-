@@ -2,9 +2,12 @@
 // received, still owed, how it was paid), what needs them (approvals), the tables, and closing the
 // night. Everything else is behind "More", shown only when tapped. The technical side (the site,
 // nights, settings) is the administrator's, in the control room.
-//   Manager:  Tonight · Tables · Staff · More (money & expenses, drinks & prices, stock, full sales, past nights)
-//   Director: Tonight · Money (with bills, budget and commissions) · Reports · More (tables, staff).
-//             Nothing from the ticket side (tickets, refunds, pay in bits, members): not the director's.
+//   Manager:  Tonight · Tables · Customers · More (buying drinks, cash from the staff, money and
+//             expenses, stock, drinks & prices, payments, commissions, members, past nights)
+//   Director: Tonight · Money (their share, bills, budget, commissions) · To approve (every payment:
+//             salaries, loans, bills, commissions, purchases; either director) · More (reports,
+//             salaries, customer reviews, staff feedback, performance, tables, staff, members).
+//             Nothing from the ticket side (tickets, refunds, pay in bits).
 // Tonight also opens Payments tonight (every payment, tap for what was bought, who served, how it
 // was paid) and Top customers.
 // "Needs you" on Tonight: approvals, and stock differences the bar found when it opened (the
@@ -12,14 +15,17 @@
 import { $, $$, esc } from '../app.js';
 import { requireStaff, staffHeader, sapi } from '../staff.js';
 import { bottomNav, sheet, say, st, every, money, when } from '../lib/ops-ui.js';
-import { salesView, closingView, approvalsView, productsView, stockAdminView, eodListView, eodView, moneyView, expenseSheet, explainSheet, budgetView, paymentsView, commissionsView } from '../lib/ops-views.js';
+import { salesView, closingView, approvalsView, productsView, stockAdminView, eodListView, eodView, moneyView, expenseSheet, explainSheet, budgetView, paymentsView, commissionsView, toApproveView, purchasesView, cashReceiveView, feedbackInboxView } from '../lib/ops-views.js';
+import { payView, reviewsView, perfView } from '../lib/people-views.js';
 import { staffView } from '../lib/staff-view.js';
 
 const user = await requireStaff(['manager', 'director', 'superAdmin']);
 const director = user.role !== 'manager';
 staffHeader(user, 'Tonight');
 const app = $('#app');
-const navItems = director ? [['tonight', 'Tonight'], ['money', 'Money'], ['reports', 'Reports'], ['more', 'More']] : [['tonight', 'Tonight'], ['tables', 'Tables'], ['staff', 'Staff'], ['more', 'More']];
+const navItems = director ? [['tonight', 'Tonight'], ['money', 'Money'], ['approve', 'To approve'], ['more', 'More']] : [['tonight', 'Tonight'], ['tables', 'Tables'], ['customers', 'Customers'], ['more', 'More']];
+// The directors see how many payments wait for them, wherever they are.
+if (director) sapi('/api/ops/to-approve').then(d => nav.setDot('approve', d.items.length)).catch(() => {});
 const nav = bottomNav(navItems, k => { if (k === 'more') more(); else location.hash = k; });
 let stop = null;
 const fail = e => { app.innerHTML = `<div class="say bad" role="alert"><b>Couldn’t load</b>${esc(e.message)}</div><button class="big ghost" id="retry">Try again</button>`; $('#retry').onclick = route; };
@@ -43,7 +49,15 @@ async function route() {
     if (key === 'prices') { app.innerHTML = `${back()}<div id="pv"></div>`; bindBack(); return await productsView($('#pv'), { canEdit: user.role === 'superAdmin' }); }
     if (key === 'commissions') { app.innerHTML = `${back('Money', 'money')}<div id="cv2"></div>`; bindBack(); return await commissionsView($('#cv2')); }
     if (key === 'budget') { app.innerHTML = `${back('Money', 'money')}<div id="bv"></div>`; bindBack(); return await budgetView($('#bv')); }
-    if (key === 'payments' || key === 'customers') { app.innerHTML = `${back()}<div id="yv"></div>`; bindBack(); return await paymentsView($('#yv'), { tab: key }); }
+    if (key === 'payments') { app.innerHTML = `${back()}<div id="yv"></div>`; bindBack(); return await paymentsView($('#yv'), { tab: key }); }
+    if (key === 'customers') { app.innerHTML = `${director ? back() : ''}<div id="rv2"></div><div id="yv" style="margin-top:20px"></div>`; bindBack(); await reviewsView($('#rv2')).catch(() => {}); return await paymentsView($('#yv'), { tab: 'customers' }); }
+    if (key === 'approve') { app.innerHTML = '<div id="tav"></div>'; return await toApproveView($('#tav'), { onCount: n => nav.setDot('approve', n) }); }
+    if (key === 'salaries') { app.innerHTML = `${back('Money', 'money')}<div id="slv"></div>`; bindBack(); return await payView($('#slv'), arg); }
+    if (key === 'reviews') { app.innerHTML = `${back()}<div id="rvv"></div>`; bindBack(); return await reviewsView($('#rvv')); }
+    if (key === 'feedback') { app.innerHTML = `${back()}<div id="fbv"></div>`; bindBack(); return await feedbackInboxView($('#fbv')); }
+    if (key === 'perf') { app.innerHTML = `${back()}<div id="pfv"></div>`; bindBack(); return await perfView($('#pfv'), arg); }
+    if (key === 'purchases') { app.innerHTML = `${back()}<div id="puv"></div>`; bindBack(); return await purchasesView($('#puv')); }
+    if (key === 'cash') { app.innerHTML = `${back()}<div id="crv"></div>`; bindBack(); return await cashReceiveView($('#crv')); }
     if (key === 'stock') { app.innerHTML = `${back()}<div id="kv"></div>`; bindBack(); return await stockAdminView($('#kv'), undefined, undefined, { role: user.role }); }
     if (key === 'money') { app.innerHTML = `${director ? '' : back()}<div id="mv"></div>`; bindBack(); return await moneyView($('#mv')); }
     stop = every(10000, () => tonight().catch(fail));
@@ -73,7 +87,8 @@ async function tonight() {
     ${waiting.length ? `<section class="pos-need"><h2>Needs you <span class="count">${waiting.length}</span></h2>
       ${waiting.map(p => `<div class="need"><div><b>${esc(p.label)}</b><span>${esc(p.summary)}</span><small>${esc(p.requestedByName)} · “${esc(p.reason)}”</small></div>
         <div class="need-btns"><button class="mid okc" data-yes="${esc(p.id)}" aria-label="Approve">✓</button><button class="mid" data-no="${esc(p.id)}" aria-label="Refuse">✗</button></div></div>`).join('')}</section>` : ''}
-    <div class="btn-row"><button class="big ghost" data-goto="payments">Payments tonight</button><button class="big ghost" data-goto="customers">Top customers</button></div>
+    <div class="btn-row"><button class="big ghost" data-goto="payments">Payments tonight</button><button class="big ghost" data-goto="customers">${director ? 'Customers' : 'Top customers'}</button></div>
+    ${director ? '' : '<div class="btn-row"><button class="big ghost" data-goto="cash">Cash from the staff</button><button class="big ghost" data-goto="purchases">Buying drinks</button></div>'}
     <section><div class="pos-head"><h2>Tables</h2><span class="muted">${open.length} open</span></div>
       <div class="pos-tables">${open.slice(0, 8).map(tableRow).join('') || '<p class="muted">No open tables.</p>'}</div>
       ${open.length > 8 ? `<button class="link" data-goto="tables">See all ${open.length} tables →</button>` : ''}</section>
@@ -127,16 +142,31 @@ async function tableSheet(id) {
 
 // ── More: everything else, only when asked for ──
 function more() {
-  const items = [
-    ...(director ? [['tables', 'Tables', 'Open tables and what they owe']] : [['money', 'Money', 'Money in, money out, profit; expenses']]),
-    ['sales', 'Tonight in detail', 'By waiter, by bar, by drink'],
-    ['approvals', 'Approvals', 'Everything asked tonight'],
+  const items = director ? [
+    ['reports', 'End-of-day reports', 'Each night, signed off'],
+    ['salaries', 'Salaries and loans', 'What staff are paid, set by the Human manager'],
     ['budget', 'Bills and budget', 'What’s due this month, set by finance'],
     ['commissions', 'Commissions', '10% on tables over GHS 3,000: who is owed'],
-    ['prices', 'Drinks & prices', 'Prices and costs (finance sets them)'],
-    ['stock', 'Stock', 'Deliveries, counts, differences'],
-    ...(director ? [['staff', 'Staff', 'Add people, send PINs']] : [['reports', 'Past nights', 'End-of-day reports']]),
+    ['reviews', 'Customer reviews', 'What customers say'],
+    ['feedback', 'Staff feedback', 'Complaints and ideas from the staff'],
+    ['perf', 'Performance reviews', 'Each staff member, every month'],
+    ['tables', 'Tables', 'Open tables and what they owe'],
+    ['sales', 'Tonight in detail', 'By waiter, by bar, by drink'],
+    ['staff', 'Staff', 'Add people, send PINs'],
+    ['@admin.html#members', 'Members', 'Members and passes'],
     ...(user.role === 'superAdmin' ? [['@admin.html', 'Control room', 'Site, nights, settings']] : []),
+  ] : [
+    ['purchases', 'Buying drinks', 'Ask for what to buy; finance and a director approve'],
+    ['cash', 'Cash from the staff', 'Receive each person’s counted cash'],
+    ['money', 'Money', 'Money in, money out, profit; expenses'],
+    ['stock', 'Stock', 'New stock, counts, differences'],
+    ['payments', 'Payments tonight', 'Every payment, with details'],
+    ['approvals', 'Approvals', 'Everything asked tonight'],
+    ['sales', 'Tonight in detail', 'By waiter, by bar, by drink'],
+    ['commissions', 'Commissions', 'Who brought the big tables'],
+    ['prices', 'Drinks & prices', 'Prices and costs (finance sets them)'],
+    ['@admin.html#members', 'Members', 'Members and passes'],
+    ['reports', 'Past nights', 'End-of-day reports'],
   ];
   const { box, close } = sheet(`<h2>More</h2><div class="more-list">${items.map(([k, l, sub]) => `<button type="button" data-more="${esc(k)}"><b>${esc(l)}</b><span>${esc(sub)}</span></button>`).join('')}</div>
     <button class="big ghost" data-close>Close</button>`, { label: 'More' });

@@ -42,6 +42,12 @@ test('finance sets the month: budget, bills due (salaries, rent, a supplier owed
   assert.equal(b.canEdit, false);
   assert.deepEqual([b.budget.totalPesewas, b.totals.billsPesewas, b.totals.duePesewas, b.totals.overdue], [1600000, 1250000, 1250000, past < nightKey(new Date()) ? 1 : 0]);
 
+  // Every payment needs a director first; either director can approve.
+  assert.match((await ctx.call('POST', '/api/ops/bills/pay', { who: ctx.F1, body: { id: sal.id, amountPesewas: 400000 } })).data.error, /director must approve/);
+  const todo = ok(await ctx.call('GET', '/api/ops/to-approve', { who: ctx.D1 }), 'to approve');
+  assert.equal(todo.items.filter(i => i.kind === 'bill').length, 3);
+  assert.equal((await ctx.call('POST', '/api/ops/approve', { who: ctx.F1, body: { kind: 'bill', id: sal.id, approve: true } })).status, 403, 'finance can’t approve');
+  for (const bid of [sal.id, sup.id]) ok(await ctx.call('POST', '/api/ops/approve', { who: ctx.D1, body: { kind: 'bill', id: bid, approve: true } }), 'director approves');
   // Pay half the salaries now: an expense (Money out); the supplier bill isn't (the drinks were counted when bought).
   ok(await ctx.call('POST', '/api/ops/bills/pay', { who: ctx.F1, body: { id: sal.id, amountPesewas: 400000, paidWith: 'bank' } }), 'half salaries');
   assert.match((await ctx.call('POST', '/api/ops/bills/pay', { who: ctx.F1, body: { id: sal.id, amountPesewas: 500000 } })).data.error, /Only 4,?000 cedis/);
