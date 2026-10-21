@@ -38,6 +38,7 @@ export function staffHeader(user, title) {
         <p class="acct-who"><b>${esc(who)}</b><span>${esc(ROLE_LABEL[user.role] || user.role)}</span></p>
         ${user.role !== 'organiser' ? '<a role="menuitem" class="acct-link" href="me.html">My page: notices, messages, my pay</a>' : ''}
         ${!['dj', 'mc', 'organiser'].includes(user.role) && !location.pathname.endsWith(home(user.role)) ? `<a role="menuitem" class="acct-link" href="${home(user.role)}">My work screen</a>` : ''}
+        ${user.role === 'eventManager' && !location.pathname.endsWith('waiter.html') ? '<a role="menuitem" class="acct-link" href="waiter.html">Serve tables (like a waiter)</a>' : ''}
         <button type="button" role="menuitem" id="myPass">My pass (for the gate)</button>
         <button type="button" role="menuitem" id="changePin">Change my PIN</button>
         <button type="button" role="menuitem" data-install hidden>Install the app</button>

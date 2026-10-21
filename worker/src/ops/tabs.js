@@ -24,7 +24,7 @@ import { FORBIDDEN, bizDate, who, audit, closedError, ghs, int } from './common.
 import { addMoves, stockError } from './stock.js';
 
 export const BOSS = ['superAdmin', 'director', 'manager'];
-export const WAITERS = [...BOSS, 'waitStaff'];
+export const WAITERS = [...BOSS, 'waitStaff', 'eventManager'];             // the Event manager serves tables too
 export const BAR_HANDS = [...BOSS, 'barStaff'];
 export const CASH_TAKERS = [...BOSS, 'cashier'];
 const MAX_LINES = 20, MAX_QTY = 30;
@@ -259,7 +259,7 @@ export async function barRound(env, b, user) {
 async function staffRecord(env, user) { return (await getDoc(env, 'users', uidOf(user)))?.fields || {}; }
 // Waiters and bartenders record what customers paid them; cashiers and managers too; anyone else
 // only if a manager ticked "Can collect cash" on their staff record.
-export const PAY_TAKERS = [...CASH_TAKERS, 'waitStaff', 'barStaff'];
+export const PAY_TAKERS = [...CASH_TAKERS, 'waitStaff', 'barStaff', 'eventManager'];
 export async function canTakeCash(env, user) { return requireRole(user, PAY_TAKERS) || (await staffRecord(env, user)).canCollectCash === true; }
 export const METHOD_LABEL = { cash: 'Cash', momo: 'MoMo (to the club’s number)', digital: 'MoMo / card (paid on the bill link)' };
 

@@ -104,7 +104,7 @@ export async function perfView(el, month) {
   const d = await sapi(`/api/ops/perf${month ? `?month=${month}` : ''}`);
   el.innerHTML = `<h1 style="margin:0">Performance reviews</h1>${monthBar(d.month, d.label)}<p class="lead" style="margin:0">${d.done} of ${d.staff.length} reviewed.</p>
     <div class="lines-list">${d.staff.map(s => `<div class="ln"><span><b>${esc(s.name)}</b> <small class="muted">${esc(s.roleName)}</small>${s.review ? `<br><small class="muted">${s.review.scores.map(x => `${esc(x.label)} ${x.score}`).join(' · ')}</small>${s.review.comment ? `<br><small>${esc(s.review.comment)}</small>` : ''}${s.review.reply ? `<br><small class="muted">Their reply: ${esc(s.review.reply)}</small>` : ''}` : ''}</span>
-      <span>${s.review ? `<b>${s.review.overall}/5</b>` : '—'}${d.canWrite ? `<br><button class="sbtn" data-rev="${esc(s.uid)}">${s.review ? 'Change' : 'Review'}</button>` : ''}</span></div>`).join('')}</div>`;
+      <span>${s.review ? `<b>${s.review.overall}/5</b>` : '—'}${s.canWrite ? `<br><button class="sbtn" data-rev="${esc(s.uid)}">${s.review ? 'Change' : 'Review'}</button>` : ''}</span></div>`).join('')}</div>`;
   $$('[data-mon]', el).forEach(b => b.onclick = () => perfView(el, b.dataset.mon));
   $$('[data-rev]', el).forEach(b => b.onclick = () => {
     const s = d.staff.find(x => x.uid === b.dataset.rev), cur = Object.fromEntries((s.review?.scores || []).map(x => [x.key, x.score]));

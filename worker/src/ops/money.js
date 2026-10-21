@@ -3,6 +3,10 @@
 //   expenses/{id}  date (the night it belongs to), category, description, amountPesewas, paidWith
 //                  cash|momo|bank, recordedBy(Name), createdAt; removed (with a reason) is kept, never
 //                  deleted. The manager and finance record them.
+//                  approval pending|refused: an expense above the limit finance sets in the month's
+//                  budget waits for a director (and doesn't count until approved). No limit set: every
+//                  expense waits. Expenses written by an approved payment (bills, salaries, loans,
+//                  commissions) carry no approval field and count at once.
 //
 // The money report, for tonight, this week or this month:
 //   Money in  = drinks paid for (waiters, bar, QR) + the club's share of table bookings
@@ -32,11 +36,30 @@ export async function addExpense(env, b, user) {
   if (!description) return { error: 'Say what it was, e.g. “DJ Kofi, Saturday”.' };
   const date = isDate(b?.date) ? b.date : bizDate();
   if (date > bizDate()) return { error: 'That date is in the future.' };
-  const eid = id();
+  const eid = id(), limit = await expenseLimit(env, date.slice(0, 7));
+  const needsApproval = limit == null || amount > limit;
   await setDoc(env, 'expenses', eid, { date, category: b.category, description, amountPesewas: amount, paidWith: PAID_WITH[b?.paidWith] ? b.paidWith : 'cash',
-    receipt: clean(b?.receipt, 60), recordedBy: uidOf(user), recordedByName: user.name || '', recordedRole: user.role, createdAt: now(), removed: false });
-  await audit(env, user, 'EXPENSE_ADDED', { expenseId: eid, amountPesewas: amount, category: b.category, date });
-  return { id: eid };
+    receipt: clean(b?.receipt, 60), recordedBy: uidOf(user), recordedByName: user.name || '', recordedRole: user.role, createdAt: now(), removed: false, ...(needsApproval ? { approval: 'pending' } : {}) });
+  await audit(env, user, 'EXPENSE_ADDED', { expenseId: eid, amountPesewas: amount, category: b.category, date, needsApproval });
+  return { id: eid, needsApproval, limitPesewas: limit };
+}
+
+// The limit finance set in the month's budget (or the last budget that has one); null if none yet.
+export async function expenseLimit(env, month) {
+  const own = await getDoc(env, 'budgets', month);
+  if (own?.fields?.expenseLimitPesewas != null) return Number(own.fields.expenseLimitPesewas);
+  const all = (await listDocs(env, 'budgets')).filter(d => d.id < month && d.fields.expenseLimitPesewas != null).sort((a, b) => b.id.localeCompare(a.id));
+  return all[0] ? Number(all[0].fields.expenseLimitPesewas) : null;
+}
+export const counts = e => !e.removed && !['pending', 'refused'].includes(e.approval);
+export async function decideExpense(env, eid, approve, note, user) {
+  if (!requireRole(user, ['superAdmin', 'director'])) return { error: 'A director approves payments.', status: 403 };
+  const e = await getDoc(env, 'expenses', String(eid || '')); if (!e) return { error: 'Expense not found.', status: 404 };
+  if (e.fields.approval !== 'pending') return { error: 'Already decided.' };
+  if (!approve && !clean(note, 200)) return { error: 'Say why it isn’t approved.' };
+  await setDoc(env, 'expenses', e.id, { ...e.fields, approval: approve ? 'approved' : 'refused', decidedBy: uidOf(user), decidedByName: user.name || '', decidedAt: now(), decisionNote: clean(note, 200) });
+  await audit(env, user, approve ? 'EXPENSE_APPROVED' : 'EXPENSE_REFUSED', { expenseId: e.id });
+  return { decided: true };
 }
 
 // Taken off (a mistake): kept on record with who and why. Finance, the director, or whoever added it.
@@ -82,7 +105,7 @@ export async function moneyReport(env, user, q = {}) {
   const orders = ordersRaw.map(o => ({ id: o.id, ...o.fields })).filter(o => o.status === 'confirmed' && o.kind === 'table' && Number(o.amountPesewas) > 0 && inRange(nightKey(o.createdAt)));
   const buys = buysRaw.map(d => ({ id: d.id, ...d.fields })).filter(d => d.status === 'confirmed' && inRange(d.businessDate || nightKey(d.recordedAt)));
   const expenses = expRaw.map(e => ({ id: e.id, ...e.fields })).filter(e => inRange(e.date));
-  const live = expenses.filter(e => !e.removed);
+  const live = expenses.filter(counts), waiting = expenses.filter(e => !e.removed && e.approval === 'pending');
 
   // Drinks: money received (cash, MoMo, phone payments) and what was sold.
   const pays = tabs.flatMap(t => (t.payments || []).map(p => ({ ...p, date: t.businessDate })));
@@ -123,7 +146,7 @@ export async function moneyReport(env, user, q = {}) {
   for (const e of live) byCat.set(e.category, (byCat.get(e.category) || 0) + e.amountPesewas);
   return {
     period: p, categories: EXPENSE_CATEGORIES, paidWith: PAID_WITH, canAddExpense: !!requireRole(user, EXPENSE_HANDS),
-    totals: { inPesewas: moneyIn, outPesewas: moneyOut, profitPesewas: moneyIn - moneyOut },
+    totals: { inPesewas: moneyIn, outPesewas: moneyOut, profitPesewas: moneyIn - moneyOut, waitingPesewas: waiting.reduce((n, e) => n + Number(e.amountPesewas), 0), waiting: waiting.length },
     owners: owners.map(({ uid, ...o }) => o), myShare: mine ? { pct: mine.pct, profitPesewas: mine.profitPesewas } : null,
     moneyIn: [
       { key: 'drinks', label: 'Drinks (bar and waiters)', amountPesewas: drinksPaid },
@@ -135,7 +158,7 @@ export async function moneyReport(env, user, q = {}) {
     ],
     drinks: { soldPesewas: drinksSold, costPesewas: drinksCost, profitPesewas: drinksSold - drinksCost, paidPesewas: drinksPaid, unpaidPesewas: sum(tabs.filter(t => t.status !== 'written_off'), t => t.bill.balancePesewas), rows: drinkRows.slice(0, 40), missingCost: noCost },
     purchases: buys.sort((a, b) => String(b.recordedAt).localeCompare(String(a.recordedAt))).slice(0, 50).map(d => ({ id: d.id, date: d.businessDate || nightKey(d.recordedAt), productName: d.productName, qty: d.confirmedQty ?? d.qty, costPesewas: buyCost(d), recordedByName: d.recordedByName, supplier: d.supplier || '' })),
-    expenses: expenses.sort((a, b) => b.date.localeCompare(a.date) || String(b.createdAt).localeCompare(String(a.createdAt))).slice(0, 100).map(e => ({ id: e.id, date: e.date, category: e.category, categoryLabel: EXPENSE_CATEGORIES[e.category] || e.category, description: e.description, amountPesewas: e.amountPesewas, paidWith: PAID_WITH[e.paidWith] || '', recordedByName: e.recordedByName, removed: !!e.removed, removedReason: e.removedReason || '', removedByName: e.removedByName || '', canRemove: !e.removed && (e.recordedBy === uidOf(user) || !!requireRole(user, ['finance', 'director', 'superAdmin'])) })),
+    expenses: expenses.sort((a, b) => b.date.localeCompare(a.date) || String(b.createdAt).localeCompare(String(a.createdAt))).slice(0, 100).map(e => ({ id: e.id, date: e.date, category: e.category, categoryLabel: EXPENSE_CATEGORIES[e.category] || e.category, description: e.description, amountPesewas: e.amountPesewas, paidWith: PAID_WITH[e.paidWith] || '', recordedByName: e.recordedByName, removed: !!e.removed, approval: e.approval || '', decisionNote: e.decisionNote || '', decidedByName: e.decidedByName || '', removedReason: e.removedReason || '', removedByName: e.removedByName || '', canRemove: !e.removed && (e.recordedBy === uidOf(user) || !!requireRole(user, ['finance', 'director', 'superAdmin'])) })),
     byNight: [...days.values()].filter(d => d.inPesewas || d.outPesewas).map(d => ({ ...d, profitPesewas: d.inPesewas - d.outPesewas })).sort((a, b) => b.date.localeCompare(a.date)),
     summary: `${p.label}: ${ghs(moneyIn)} in, ${ghs(moneyOut)} out, ${moneyIn - moneyOut >= 0 ? `${ghs(moneyIn - moneyOut)} profit` : `${ghs(moneyOut - moneyIn)} loss`}.`,
   };

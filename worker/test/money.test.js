@@ -34,6 +34,8 @@ test('money in, money out, profit: drinks bought and sold, table bookings (ticke
   ctx.store.seed('orders', 'o1', { kind: 'table', status: 'confirmed', quantity: 1, amountPesewas: 10000, shares: { memoriesSharePesewas: 7000 }, createdAt: new Date().toISOString() });
   ctx.store.seed('orders', 't1', { kind: 'ticket', status: 'confirmed', quantity: 2, amountPesewas: 20000, shares: { memoriesSharePesewas: 14000 }, createdAt: new Date().toISOString() });
 
+  // Finance sets how much one expense can be without a director (GHS 500).
+  ok(await ctx.call('POST', '/api/ops/budget', { who: ctx.F1, body: { month: new Date().toISOString().slice(0, 7), lines: {}, expenseLimitPesewas: 50000 } }), 'limit');
   assert.equal((await ctx.call('POST', '/api/ops/expenses', { who: ctx.W1, body: { category: 'dj', description: 'DJ', amountPesewas: 20000 } })).status, 403, 'waiters don’t record expenses');
   assert.match((await ctx.call('POST', '/api/ops/expenses', { who: ctx.M1, body: { category: 'dj', amountPesewas: 20000 } })).data.error, /Say what it was/);
   const e = ok(await ctx.call('POST', '/api/ops/expenses', { who: ctx.M1, body: { category: 'dj', description: 'DJ Kofi, Saturday', amountPesewas: 20000, paidWith: 'momo' } }), 'manager adds');
@@ -71,9 +73,40 @@ test('two directors (35% and 65%): each sees the profit and their own share; onl
   assert.equal((await call('POST', '/api/admin/people/update', ADMIN, { uid: 'd1', sharePct: 35 })).status, 200);
   assert.match((await call('POST', '/api/admin/people/update', ADMIN, { uid: 'd2', sharePct: 70 })).data.error, /more than 100/);
   assert.equal((await call('POST', '/api/admin/people/update', ADMIN, { uid: 'd2', sharePct: 65 })).status, 200);
+  assert.equal((await call('POST', '/api/ops/budget', F1, { month: new Date().toISOString().slice(0, 7), lines: {}, expenseLimitPesewas: 200000 })).status, 200);
   assert.equal((await call('POST', '/api/ops/expenses', F1, { category: 'rent', description: 'Rent', amountPesewas: 100000 })).status, 200);
   const m1 = (await call('GET', '/api/ops/money?period=today', D1)).data, m2 = (await call('GET', '/api/ops/money?period=today', D2)).data;
   assert.deepEqual(m1.owners.map(o => [o.name, o.pct, o.profitPesewas]), [['Kwame Director', 65, -65000], ['Nana Director', 35, -35000]]);
   assert.deepEqual([m1.myShare.pct, m1.myShare.profitPesewas, m2.myShare.pct], [35, -35000, 65]);
   assert.equal((await call('GET', '/api/ops/money?period=today', F1)).data.myShare, null);
+});
+
+test('the expense limit finance sets in the budget: at or under it counts at once; above it waits for a director; no limit set, every expense waits', async () => {
+  const { store, env } = createMockEnv();
+  for (const [uid, name, role] of [['m1', 'Akos Manager', 'manager'], ['f1', 'Esi Finance', 'finance'], ['d1', 'Nana Director', 'director']]) store.seed('users', uid, { name, role, phone: `024000020${uid.slice(1)}` });
+  let n = 0;
+  const call = async (method, path, who, body) => {
+    const r = await worker.fetch(new Request(`https://api.test${path}`, { method, headers: { 'Content-Type': 'application/json', 'CF-Connecting-IP': `10.82.0.${++n}`, Authorization: `Bearer ${await idToken({ role: who.role }, { uid: who.uid })}` }, body: body ? JSON.stringify(body) : undefined }), env);
+    return { status: r.status, data: JSON.parse((await r.text()) || '{}') };
+  };
+  const M1 = { uid: 'm1', role: 'manager' }, F1 = { uid: 'f1', role: 'finance' }, D1 = { uid: 'd1', role: 'director' };
+  const month = new Date().toISOString().slice(0, 7);
+  const first = (await call('POST', '/api/ops/expenses', M1, { category: 'supplies', description: 'Ice', amountPesewas: 5000 })).data;
+  assert.equal(first.needsApproval, true, 'no limit yet: a director approves');
+  assert.equal((await call('POST', '/api/ops/budget', M1, { month, lines: {}, expenseLimitPesewas: 30000 })).status, 403, 'finance sets the limit');
+  assert.equal((await call('POST', '/api/ops/budget', F1, { month, lines: {}, expenseLimitPesewas: 30000 })).status, 200);
+  assert.equal((await call('POST', '/api/ops/expenses', M1, { category: 'supplies', description: 'Ice', amountPesewas: 30000 })).data.needsApproval, false, 'at the limit: counts at once');
+  const big = (await call('POST', '/api/ops/expenses', M1, { category: 'repairs', description: 'Generator repair', amountPesewas: 90000 })).data;
+  assert.equal(big.needsApproval, true);
+  let m = (await call('GET', '/api/ops/money?period=today', D1)).data;
+  assert.deepEqual([m.totals.outPesewas, m.totals.waiting, m.totals.waitingPesewas], [30000, 2, 95000], 'waiting expenses don’t count yet');
+  const todo = (await call('GET', '/api/ops/to-approve', D1)).data.items.filter(i => i.kind === 'expense');
+  assert.equal(todo.length, 2);
+  assert.equal((await call('POST', '/api/ops/approve', D1, { kind: 'expense', id: big.id, approve: true })).status, 200);
+  assert.match((await call('POST', '/api/ops/approve', D1, { kind: 'expense', id: first.id, approve: false })).data.error, /Say why/);
+  assert.equal((await call('POST', '/api/ops/approve', D1, { kind: 'expense', id: first.id, approve: false, note: 'Ice is in the bar budget' })).status, 200);
+  m = (await call('GET', '/api/ops/money?period=today', D1)).data;
+  assert.deepEqual([m.totals.outPesewas, m.totals.waiting], [120000, 0]);
+  assert.equal(m.expenses.find(e => e.id === first.id).approval, 'refused');
+  assert.equal((await call('GET', `/api/ops/budget?month=${month}`, D1)).data.budget.limitInForcePesewas, 30000);
 });

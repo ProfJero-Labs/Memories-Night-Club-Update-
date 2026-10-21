@@ -55,7 +55,10 @@ export async function handleReview(env, b, user) {
 
 // ── Staff performance reviews (monthly) ──
 export const PERF_SCORES = { punctual: 'On time and present', attitude: 'Attitude and teamwork', customers: 'Care for customers', work: 'Quality of work', rules: 'Follows the rules' };
-const PERF_HR = ['superAdmin', 'hrManager'], PERF_SEE = ['superAdmin', 'director', 'hrManager'];
+const PERF_HR = ['superAdmin', 'hrManager', 'director'], PERF_SEE = ['superAdmin', 'director', 'hrManager'];
+// The Human manager reviews the staff; the directors review the managers (the Human manager too).
+const MANAGERS_ = ['manager', 'hrManager', 'eventManager', 'finance'];
+const mayReview = (user, role) => requireRole(user, ['superAdmin', 'director']) || (user.role === 'hrManager' && !MANAGERS_.includes(role));
 const isMonth = m => /^\d{4}-(0[1-9]|1[0-2])$/.test(String(m || ''));
 const monthLabel = m => new Date(`${m}-15T12:00:00Z`).toLocaleDateString('en-GB', { month: 'long', year: 'numeric' });
 const perfView = (d, f) => ({ id: d, uid: f.uid, name: f.name, roleName: ROLE_NAMES[f.role] || '', month: f.month, label: monthLabel(f.month), scores: Object.entries(PERF_SCORES).map(([k, label]) => ({ key: k, label, score: f.scores?.[k] || 0 })),
@@ -67,7 +70,7 @@ export async function perfReviews(env, user, { month } = {}) {
   const [users, done] = await Promise.all([listDocs(env, 'users'), queryWhere(env, 'perf_reviews', [{ field: 'month', value: m }])]);
   const byUid = Object.fromEntries(done.map(d => [d.fields.uid, perfView(d.id, d.fields)]));
   const staff = users.filter(u => !u.fields.removed && STAFF_ROLES.includes(u.fields.role) && !['organiser', 'superAdmin', 'director'].includes(u.fields.role) && u.fields.admin !== true)
-    .map(u => ({ uid: u.id, name: u.fields.name || '', roleName: ROLE_NAMES[u.fields.role] || '', review: byUid[u.id] || null })).sort((a, b) => a.name.localeCompare(b.name));
+    .map(u => ({ uid: u.id, name: u.fields.name || '', roleName: ROLE_NAMES[u.fields.role] || '', review: byUid[u.id] || null, canWrite: u.id !== uidOf(user) && !!mayReview(user, u.fields.role) })).sort((a, b) => a.name.localeCompare(b.name));
   return { month: m, label: monthLabel(m), scores: PERF_SCORES, staff, done: staff.filter(s => s.review).length, canWrite: !!requireRole(user, PERF_HR) };
 }
 
@@ -76,6 +79,7 @@ export async function writePerf(env, b, user) {
   const m = isMonth(b?.month) ? b.month : bizDate().slice(0, 7), u = await getDoc(env, 'users', String(b?.uid || ''));
   if (!u || u.fields.removed) return { error: 'Staff member not found.', status: 404 };
   if (u.id === uidOf(user)) return { error: 'A director reviews you, not yourself.' };
+  if (!mayReview(user, u.fields.role)) return { error: 'A director reviews the managers.', status: 403 };
   const scores = {};
   for (const k of Object.keys(PERF_SCORES)) { const s = int(b?.scores?.[k]); if (!(s >= 1 && s <= 5)) return { error: `Score “${PERF_SCORES[k]}” from 1 to 5.` }; scores[k] = s; }
   const overall = Math.round(sum(Object.values(scores), x => x) / Object.keys(scores).length * 10) / 10;

@@ -181,6 +181,7 @@ export async function moneyView(el, period = 'today') {
     </div>
     ${due ? `<a class="pos-row" href="#budget" style="text-decoration:none"><span class="where">Bills this month<small>${due.totals.overdue ? `${due.totals.overdue} overdue · ` : ''}${money(due.totals.paidPesewas)} paid of ${money(due.totals.billsPesewas)}</small></span><span class="amt">${money(due.totals.duePesewas)}<small style="display:block">still to pay</small></span></a>` : ''}
     ${com ? `<a class="pos-row" href="#commissions" style="text-decoration:none"><span class="where">Commissions this month<small>${com.ratePct}% on tables over ${money(com.overPesewas)}${com.totals.unassigned ? ` · ${com.totals.unassigned} not named yet` : ''}</small></span><span class="amt">${money(com.totals.owedPesewas)}<small style="display:block">to pay out</small></span></a>` : ''}
+    ${t.waiting ? `<div class="say warn"><b>${t.waiting} expense${t.waiting > 1 ? 's' : ''} waiting for a director: ${money(t.waitingPesewas)}</b>Not counted until approved.</div>` : ''}
     ${m.canAddExpense ? '<button class="big" id="addExp">Add an expense</button>' : ''}<div id="mMsg"></div>
     ${m.owners?.length ? `<h2>Directors’ shares</h2><div class="lines-list">${m.owners.map(o => `<div class="ln"><span>${esc(o.name)} <small class="muted">${o.pct}%</small></span><span>${o.profitPesewas < 0 ? '−' : ''}${money(Math.abs(o.profitPesewas))}</span></div>`).join('')}</div>` : ''}
     <h2>Money in</h2><div class="lines-list">${rows(m.moneyIn)}<div class="ln total"><span>Total</span><span>${money(t.inPesewas)}</span></div></div>
@@ -195,11 +196,11 @@ export async function moneyView(el, period = 'today') {
     ${m.byNight.length > 1 ? `<details class="fold"><summary>Night by night</summary><div class="tbl-wrap"><table class="tbl"><thead><tr><th>Night</th><th class="num">In</th><th class="num">Out</th><th class="num">Profit</th></tr></thead><tbody>
       ${m.byNight.map(r => `<tr><td>${esc(dayName(r.date))}</td><td class="num">${money(r.inPesewas)}</td><td class="num">${money(r.outPesewas)}</td><td class="num">${r.profitPesewas < 0 ? '−' : ''}${money(Math.abs(r.profitPesewas))}</td></tr>`).join('')}</tbody></table></div></details>` : ''}
     <details class="fold" ${m.expenses.length ? 'open' : ''}><summary>Expenses (${m.expenses.filter(e => !e.removed).length})</summary>
-      ${m.expenses.length ? `<div class="lines-list">${m.expenses.map(e => `<div class="ln" style="${e.removed ? 'opacity:.55' : ''}"><span><b>${esc(e.description)}</b><br><small class="muted">${esc(e.categoryLabel)} · ${esc(dayName(e.date))} · ${esc(e.paidWith)} · ${esc(e.recordedByName)}${e.removed ? ` · taken off by ${esc(e.removedByName)}: ${esc(e.removedReason)}` : ''}</small></span>
+      ${m.expenses.length ? `<div class="lines-list">${m.expenses.map(e => `<div class="ln" style="${e.removed ? 'opacity:.55' : ''}"><span><b>${esc(e.description)}</b><br><small class="muted">${esc(e.categoryLabel)} · ${esc(dayName(e.date))} · ${esc(e.paidWith)} · ${esc(e.recordedByName)}${e.removed ? ` · taken off by ${esc(e.removedByName)}: ${esc(e.removedReason)}` : ''}${e.approval === 'pending' ? ' · <b>waiting for a director</b>' : e.approval === 'refused' ? ` · <b>refused by ${esc(e.decidedByName)}</b>: ${esc(e.decisionNote)}` : ''}</small></span>
         <span>${e.removed ? `<s>${money(e.amountPesewas)}</s>` : money(e.amountPesewas)}${e.canRemove ? `<br><button class="sbtn" data-rmexp="${esc(e.id)}">Take off</button>` : ''}</span></div>`).join('')}</div>` : '<p class="muted">No expenses recorded.</p>'}</details>
     ${m.purchases.length ? `<details class="fold"><summary>Drinks bought (${m.purchases.length})</summary><div class="lines-list">${m.purchases.map(x => `<div class="ln"><span><b>${x.qty} × ${esc(x.productName)}</b><br><small class="muted">${esc(dayName(x.date))} · ${esc(x.recordedByName)}${x.supplier ? ` · ${esc(x.supplier)}` : ''}</small></span><span>${money(x.costPesewas)}</span></div>`).join('')}</div></details>` : ''}`;
   $$('[data-per]', el).forEach(b => b.onclick = () => moneyView(el, b.dataset.per));
-  $('#addExp', el) && ($('#addExp', el).onclick = () => expenseSheet(m, () => moneyView(el, m.period.key)));
+  $('#addExp', el) && ($('#addExp', el).onclick = () => expenseSheet(m, async r => { await moneyView(el, m.period.key); say($('#mMsg', el), r?.needsApproval ? 'Saved. It’s above the limit, so it waits for a director.' : 'Expense saved.'); }));
   $$('[data-rmexp]', el).forEach(b => b.onclick = () => {
     const { box, close } = sheet(`<h2>Take off this expense</h2><p class="muted" style="margin:0">It stays on record, crossed out.</p>
       <div class="sfield"><label for="rxWhy">Why</label><input id="rxWhy" maxlength="200" placeholder="e.g. entered twice"></div><div id="rxMsg"></div>
@@ -220,8 +221,8 @@ export function expenseSheet(m, done) {
     <div id="exMsg"></div><button class="big" id="exGo">Save expense</button><button class="big ghost" data-close>Cancel</button>`, { label: 'Add an expense' });
   $('#exGo', box).onclick = async () => {
     try {
-      await busy($('#exGo', box), () => sapi('/api/ops/expenses', { method: 'POST', body: { category: $('#exCat', box).value, description: $('#exDesc', box).value, amountPesewas: ghsIn($('#exAmt', box).value), paidWith: $('#exPaid', box).value, date: $('#exDate', box).value } }));
-      close(); done?.();
+      const r = await busy($('#exGo', box), () => sapi('/api/ops/expenses', { method: 'POST', body: { category: $('#exCat', box).value, description: $('#exDesc', box).value, amountPesewas: ghsIn($('#exAmt', box).value), paidWith: $('#exPaid', box).value, date: $('#exDate', box).value } }));
+      close(); done?.(r);
     } catch (e) { say($('#exMsg', box), e.message, 'bad'); }
   };
 }
@@ -260,6 +261,7 @@ export async function budgetView(el, month) {
     ${b.bills.length ? `<div class="lines-list">${b.bills.map(x => `<div class="ln" style="${x.state === 'removed' ? 'opacity:.5' : ''}"><span><b>${esc(x.payee)}</b>${x.description ? ` · ${esc(x.description)}` : ''}<br><small class="muted">${esc(x.categoryLabel)} · due ${esc(dayName(x.dueDate))}${x.paidPesewas && x.state !== 'paid' ? ` · ${money(x.paidPesewas)} paid` : ''}${x.removedReason ? ` · ${esc(x.removedReason)}` : ''}</small><br>${st(...stateLabel[x.state])}</span>
       <span>${money(x.state === 'paid' ? x.amountPesewas : x.leftPesewas || x.amountPesewas)}${b.canEdit && x.leftPesewas && x.approved ? `<br><button class="sbtn" data-pay="${esc(x.id)}">Pay</button>` : ''}${b.canEdit && x.leftPesewas && !x.approved ? '<br><small class="muted">A director approves first</small>' : ''}${b.canEdit && x.leftPesewas && !x.paidPesewas ? `<br><button class="sbtn" data-rmb="${esc(x.id)}">Take off</button>` : ''}</span></div>`).join('')}</div>` : `<p class="muted">No bills for ${esc(b.label)}${b.canEdit ? ' yet. Add salaries, rent, suppliers owed…' : '.'}</p>`}
     <h2>Budget against spending</h2>
+    <p class="muted" style="margin:0">${bud.limitInForcePesewas != null ? `Expenses over ${money(bud.limitInForcePesewas)} wait for a director.` : 'No expense limit set yet: every expense waits for a director.'}</p>
     ${bud.lines.length ? `<div class="tbl-wrap"><table class="tbl"><thead><tr><th>For</th><th class="num">Budget</th><th class="num">Spent</th><th class="num">Left</th></tr></thead><tbody>
       ${bud.lines.map(l => `<tr><td>${esc(l.label)}${l.over ? ` ${st('cancelled', 'Over budget')}` : l.unplanned ? ` ${st('unpaid', 'Not in the budget')}` : ''}</td><td class="num">${l.budgetPesewas ? money(l.budgetPesewas) : '—'}</td><td class="num">${money(l.spentPesewas)}</td><td class="num">${l.budgetPesewas ? `${l.leftPesewas < 0 ? '−' : ''}${money(Math.abs(l.leftPesewas))}` : '—'}</td></tr>`).join('')}
       <tr><td><b>Total</b></td><td class="num"><b>${money(bud.totalPesewas)}</b></td><td class="num"><b>${money(bud.spentPesewas)}</b></td><td class="num"><b>${money(bud.totalPesewas - bud.spentPesewas)}</b></td></tr></tbody></table></div>${bud.setByName ? `<p class="muted" style="margin:0">Budget set by ${esc(bud.setByName)}.${bud.note ? ` ${esc(bud.note)}` : ''}</p>` : ''}` : `<p class="muted">No budget for ${esc(b.label)}${b.canEdit ? ' yet.' : '.'}</p>`}`;
@@ -280,12 +282,13 @@ export async function budgetView(el, month) {
   $('#bBud', el).onclick = () => {
     const have = Object.fromEntries(bud.lines.map(l => [l.category, l.budgetPesewas]));
     const { box, close } = sheet(`<h2>Budget for ${esc(b.label)}</h2><p class="muted" style="margin:0">How much the club plans to spend on each. Leave blank what doesn’t apply.</p>
+      ${moneyField('bg_limit', 'Most one expense can be without a director (GHS)', bud.expenseLimitPesewas != null ? String(bud.expenseLimitPesewas / 100) : '', 'Above this, an expense waits for a director. Blank: every expense waits.')}
       ${Object.entries(b.categories).map(([k, v]) => moneyField(`bg_${k}`, v, have[k] ? String(have[k] / 100) : '')).join('')}
       <div class="sfield"><label for="bgN">Note (optional)</label><input id="bgN" maxlength="300" value="${esc(bud.note)}"></div>
       <div id="bgM"></div><button class="big" id="bgGo">Save budget</button><button class="big ghost" data-close>Cancel</button>`, { label: 'Budget' });
     $('#bgGo', box).onclick = async () => {
       const lines = Object.fromEntries(Object.keys(b.categories).map(k => [k, $(`#bg_${k}`, box).value === '' ? '' : ghsIn($(`#bg_${k}`, box).value)]));
-      try { await busy($('#bgGo', box), () => sapi('/api/ops/budget', { method: 'POST', body: { month: b.month, lines, note: $('#bgN', box).value } })); close(); again(); } catch (e) { say($('#bgM', box), e.message, 'bad'); }
+      try { await busy($('#bgGo', box), () => sapi('/api/ops/budget', { method: 'POST', body: { month: b.month, lines, note: $('#bgN', box).value, expenseLimitPesewas: $('#bg_limit', box).value === '' ? '' : ghsIn($('#bg_limit', box).value) } })); close(); again(); } catch (e) { say($('#bgM', box), e.message, 'bad'); }
     };
   };
   $('#bCopy', el).onclick = async () => {
@@ -385,7 +388,7 @@ export async function toApproveView(el, { onCount } = {}) {
   el.innerHTML = '<div class="loading">Loading…</div>';
   const d = await sapi('/api/ops/to-approve');
   onCount?.(d.items.length);
-  const KIND = { payroll: 'Salaries', loan: 'Staff loan', bill: 'Bill', commission: 'Commission', purchase: 'Drinks to buy' };
+  const KIND = { payroll: 'Salaries', loan: 'Staff loan', bill: 'Bill', commission: 'Commission', purchase: 'Drinks to buy', expense: 'Expense' };
   el.innerHTML = `<h1>To approve</h1><p class="lead" style="margin:0">${d.items.length ? `${d.items.length} waiting · ${money(d.totalPesewas)}. Finance pays only what a director approves.` : 'Nothing waiting. Finance pays only what a director approves.'}</p>
     <div id="taMsg"></div>
     <div class="cards">${d.items.map((x, i) => `<div class="tcard" style="cursor:default"><span class="row"><span class="t" style="font-size:16px">${esc(x.title)}</span><span class="amt">${money(x.amountPesewas)}</span></span>

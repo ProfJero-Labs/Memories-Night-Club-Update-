@@ -842,7 +842,7 @@ test('stock, money and quick sales: finance buys drinks (in stock at once), the 
   await mgr.goto(`${base}/night.html#tonight`); await mgr.locator('[data-explain]').click();
   await mgr.fill('#xpWhy', 'One given to the DJ on Thursday'); await mgr.click('#xpGo'); await mgr.locator('#msg').getByText(/Explanation saved/).waitFor();
   await mgr.click('#addExp'); await mgr.selectOption('#exCat', 'dj'); await mgr.fill('#exDesc', 'DJ Kofi'); await mgr.fill('#exAmt', '200'); await mgr.click('#exGo');
-  await mgr.locator('#msg').getByText('Expense saved.').waitFor();
+  await mgr.locator('#msg').getByText(/waits for a director/).waitFor(); // no expense limit set yet
   // The director: just the money.
   const dir = await phone(390); await signInAs(dir, 'director@dev'); await dir.waitForURL(/night\.html/);
   await dir.click('[data-k="money"]'); await dir.locator('.pos-money').getByText('Money out').waitFor();

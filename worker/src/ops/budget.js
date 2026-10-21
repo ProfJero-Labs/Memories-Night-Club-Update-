@@ -14,7 +14,7 @@ import { getDoc, setDoc, queryWhere, queryRecent } from '../lib/firestore.js';
 import { now, id, clean, nightKey } from '../lib/util.js';
 import { requireRole, uidOf, REPORTS } from '../lib/auth.js';
 import { FORBIDDEN, bizDate, isDate, audit, int } from './common.js';
-import { EXPENSE_CATEGORIES } from './money.js';
+import { EXPENSE_CATEGORIES, counts, expenseLimit } from './money.js';
 import { payrollSummary } from './payroll.js';
 
 export const BUDGET_SETTERS = ['finance', 'superAdmin'];
@@ -49,7 +49,7 @@ export async function monthBudget(env, user, { month } = {}) {
   ]);
   const inMonth = d => d >= from && d <= to;
   const spent = {};
-  for (const e of exp.map(x => x.fields).filter(e => !e.removed && inMonth(e.date))) spent[e.category] = (spent[e.category] || 0) + Number(e.amountPesewas);
+  for (const e of exp.map(x => x.fields).filter(e => counts(e) && inMonth(e.date))) spent[e.category] = (spent[e.category] || 0) + Number(e.amountPesewas);
   spent.drinks = sum(buys.map(x => x.fields).filter(d => d.status === 'confirmed' && inMonth(d.businessDate || nightKey(d.recordedAt))), d => d.totalCostPesewas ?? (d.unitCostPesewas != null ? d.unitCostPesewas * (d.confirmedQty ?? d.qty) : 0));
   const planned = bud?.fields?.lines || {};
   const cats = [...new Set([...Object.keys(planned), ...Object.keys(spent).filter(k => spent[k])])];
@@ -63,7 +63,8 @@ export async function monthBudget(env, user, { month } = {}) {
   return {
     month: m, label: new Date(`${m}-15T12:00:00Z`).toLocaleDateString('en-GB', { month: 'long', year: 'numeric' }), prev: shiftMonth(m, -1), next: shiftMonth(m, 1), today,
     canEdit: !!requireRole(user, BUDGET_SETTERS), categories: BUDGET_CATEGORIES, billCategories: BILL_CATEGORIES,
-    budget: { lines, totalPesewas: sum(lines, l => l.budgetPesewas), spentPesewas: sum(lines, l => l.spentPesewas), setByName: bud?.fields?.setByName || '', note: bud?.fields?.note || '' },
+    budget: { lines, totalPesewas: sum(lines, l => l.budgetPesewas), spentPesewas: sum(lines, l => l.spentPesewas), setByName: bud?.fields?.setByName || '', note: bud?.fields?.note || '',
+      expenseLimitPesewas: bud?.fields?.expenseLimitPesewas ?? null, limitInForcePesewas: await expenseLimit(env, m) },
     bills, salaries, totals: { billsPesewas: sum(live, b => b.amountPesewas) + salaries.netPesewas, paidPesewas: sum(live, b => b.paidPesewas) + salaries.paidPesewas, duePesewas: sum(live, b => b.leftPesewas) + salaries.netPesewas - salaries.paidPesewas,
       overduePesewas: sum(live.filter(b => b.overdue), b => b.leftPesewas), overdue: live.filter(b => b.overdue).length, awaitingApproval: live.filter(b => b.state === 'awaiting_approval').length,
       dueSoon: live.filter(b => b.leftPesewas && !b.overdue && b.dueDate <= new Date(Date.now() + 7 * 864e5).toISOString().slice(0, 10)).length },
@@ -79,7 +80,10 @@ export async function setBudget(env, b, user) {
     const n = int(v); if (!(n >= 0)) return { error: `${BUDGET_CATEGORIES[k]}: enter an amount, or leave it blank.` };
     if (n) lines[k] = n;
   }
-  await setDoc(env, 'budgets', m, { month: m, lines, note: clean(b?.note, 300), setBy: uidOf(user), setByName: user.name || '', setAt: now() });
+  // The most one expense can be without a director's approval (the manager and finance record expenses).
+  const limit = b?.expenseLimitPesewas === '' || b?.expenseLimitPesewas == null ? null : int(b.expenseLimitPesewas);
+  if (limit != null && !(limit >= 0)) return { error: 'The expense limit is an amount (or blank).' };
+  await setDoc(env, 'budgets', m, { month: m, lines, note: clean(b?.note, 300), ...(limit != null ? { expenseLimitPesewas: limit } : {}), setBy: uidOf(user), setByName: user.name || '', setAt: now() });
   await audit(env, user, 'BUDGET_SET', { month: m, totalPesewas: sum(Object.values(lines), x => x) });
   return { saved: true };
 }

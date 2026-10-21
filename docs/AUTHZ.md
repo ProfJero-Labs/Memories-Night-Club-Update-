@@ -70,7 +70,7 @@ removal applies at once. Each row is covered by `worker/test/staffauth.test.js` 
 | `POST /api/staff-auth/sign-in`, `/send-pin` | Public, rate limited per address and per phone; PIN lockout after 5 and 10 wrong; a texted PIN lasts 30 minutes and never replaces the old one until used |
 | `GET /api/ops/me`, `POST /api/ops/change-pin` | Any staff (their own) |
 | `GET/POST /api/admin/people`, `/people/add`, `/update`, `/reset-pin`, `/send-pins`, `/remove` | System admin, director, manager. Managers can't give or change director, manager, finance or admin; directors can't make admins; nobody changes their own job |
-| `POST /api/ops/tabs/open`, `/round`, `/round-action`, `/close`, `/text-bill` | Waiters (their own tabs), manager, director, admin |
+| `POST /api/ops/tabs/open`, `/round`, `/round-action`, `/close`, `/text-bill` | Waiters and the Event manager (their own tabs), manager, director, admin |
 | `POST /api/ops/tabs/cash`, `/tabs/pay` | Cashier, waiters, bartenders, manager, director, admin, and staff marked "can collect cash" |
 | `GET /api/ops/bar/rounds`, `POST /api/ops/bar/round` | Bartender, manager, director, admin |
 | `GET /api/ops/products` | Waiters, bar, cashier, finance, managers (costs only for manager, director, finance, admin) |
@@ -89,11 +89,11 @@ removal applies at once. Each row is covered by `worker/test/staffauth.test.js` 
 | `GET /api/ops/notices`, `/board`, `/feedback/mine`, `/my-pay`, `/reviews/mine`; `POST /board`, `/feedback`, `/perf/reply` | Every staff member (their own). Notices: managers and directors post |
 | `GET /api/ops/feedback`, `POST /feedback/reply` | Human manager (what was sent to them), directors (all) |
 | `GET /api/ops/payroll` | Directors, Human manager, finance. `POST /pay/details`, `/pay/item`, `/loans`, `/payroll/submit`: Human manager. `POST /loans/pay`, `/payroll/pay`: finance, after a director approves |
-| `GET /api/ops/to-approve`, `POST /api/ops/approve` | Directors (either one): salaries, loans, bills, commission payouts, purchases |
+| `GET /api/ops/to-approve`, `POST /api/ops/approve` | Directors (either one): salaries, loans, bills, commission payouts, purchases, expenses above the budget's limit |
 | `GET/POST /api/ops/purchases` | Ask: Manager, directors. `POST /purchases/check`: finance |
 | `POST /api/ops/cash/receive` | Manager, directors (not your own cash) |
 | `GET /api/ops/reviews`, `/payments` | Manager, Human manager, directors. `POST /reviews/handle`: Manager, Human manager |
-| `GET/POST /api/ops/perf` | Human manager writes; directors read |
+| `GET/POST /api/ops/perf` | Human manager reviews the staff; directors review the managers (the Human manager too) and read all |
 | `POST /api/guest/review` | Public, rate limited |
 | `GET /api/guest/counter-night/:orderId` | A QR customer: everything paid tonight from the phone that paid that order |
 | `POST /api/ops/stock/review`, `GET /api/ops/changes` | Manager, director, finance, admin (not your own count) |

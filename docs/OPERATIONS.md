@@ -39,7 +39,7 @@ training.
 | Security | **Door** | Entrance and Issues only |
 | Manager | **Tonight** | Purchases (*Buying drinks*: ask for what to buy), sales, stock and counts (explains differences), **cash from the staff** (receives each person's counted cash), customers (reviews, top customers), approvals, closing the night. Bottom: Tonight · Tables · Customers · More. Members. |
 | Human manager | **Human manager** (hr.html) | The floor (open tables, free drinks and discounts) and the people: **staff accounts** (adds, changes, removes; texts PINs), members and attendance, **salaries** and payment details, bonuses, deductions, **loans**, the month's payroll (sends it to the directors), notices, **staff feedback**, **performance reviews**, customer reviews and complaints. |
-| Event manager | **Control room** | Nights, tickets, prices, promotions, bookings, **organiser accounts**, table service, **discounts** (approves them), members. |
+| Event manager | **Control room** | Nights, tickets, prices, promotions, bookings, **organiser accounts**, table service, **discounts** (approves them), members. **Serves tables like a waiter** (name menu → *Serve tables*): opens a table, sends drinks, takes cash or MoMo, closes it. |
 | Director (two) | **Tonight**, **Money**, **To approve** | **Approves every payment** (salaries, loans, bills, commissions, drinks purchases); either director can approve. Money shows money in, out, profit and **their own share** (e.g. 35% / 65%, set by the system admin). More: reports, salaries, bills and budget, commissions, customer reviews, staff feedback, performance reviews, tables, staff, members. Nothing from the ticket side. |
 | DJ, MC (and every staff member) | **My page** (me.html) | Notices, the team message board, **My pay** (salary, payslips, loans), feedback or complaints (to the Human manager or the directors, anonymous if they like), their performance reviews. Everyone else opens it from the name menu. |
 | System admin | **Control room** | Everything technical: the site, nights, tickets, promos, settings, system health, bar setup, and every report. |
@@ -192,6 +192,12 @@ training.
   maximum, and suggests how many); finance checks it (above the maximum needs a reason); a director
   approves the money; the Manager buys it and records it on Stock against that purchase; the bar
   confirms it arrived.
+- **Expenses** (manager or finance, on the night): finance sets in the month's budget **the most one
+  expense can be without a director**. At or under it, it counts at once; above it, it waits on
+  **To approve** and doesn't count in Money out until a director approves. No limit set yet: every
+  expense waits.
+- **Performance reviews**: the Human manager reviews the staff; the directors review the managers,
+  the Human manager included.
 - Directors see all of it on **To approve**; finance sees what's ready on **To pay**.
 
 ## Cash

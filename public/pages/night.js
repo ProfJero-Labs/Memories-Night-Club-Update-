@@ -98,7 +98,7 @@ async function tonight() {
   bindRows();
   $('#toClose') && ($('#toClose').onclick = () => { location.hash = 'close'; });
   $$('[data-explain]', app).forEach(b => b.onclick = () => explainSheet(toExplain[Number(b.dataset.explain)], () => { say($('#msg'), 'Explanation saved. Finance can see it.'); tonight().catch(fail); }));
-  $('#addExp').onclick = async () => { const m = await sapi('/api/ops/money?period=today').catch(() => null); expenseSheet(m, () => say($('#msg'), 'Expense saved.')); };
+  $('#addExp').onclick = async () => { const m = await sapi('/api/ops/money?period=today').catch(() => null); expenseSheet(m, r => say($('#msg'), r?.needsApproval ? 'Saved. It’s above the limit, so it waits for a director.' : 'Expense saved.')); };
   $$('[data-goto]', app).forEach(b => b.onclick = () => { location.hash = b.dataset.goto; });
   const decide = async (id, approve) => {
     const note = approve ? '' : prompt('Why refuse? (optional)') ?? null; if (note === null) return;

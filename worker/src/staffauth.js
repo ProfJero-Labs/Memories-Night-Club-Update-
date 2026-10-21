@@ -138,7 +138,7 @@ export async function changeMyPin(env, user, { current, pin }) {
 export async function whoAmI(env, user) {
   const rec = await getDoc(env, 'users', uidOf(user));
   const f = rec?.fields || {}, role = user.role;
-  return { uid: uidOf(user), name: f.name || user.name || '', phoneHint: f.phone ? maskPhone(f.phone) : '', role, roleName: ROLE_NAMES[role] || role, pinLength: pinLength(role), hasPin: !!f.pinHash, pinStarter: f.pinStarter === true, canCollectCash: f.canCollectCash === true || ['cashier', 'manager', 'director', 'superAdmin', 'waitStaff', 'barStaff'].includes(role), team: teamOf(role) };
+  return { uid: uidOf(user), name: f.name || user.name || '', phoneHint: f.phone ? maskPhone(f.phone) : '', role, roleName: ROLE_NAMES[role] || role, pinLength: pinLength(role), hasPin: !!f.pinHash, pinStarter: f.pinStarter === true, canCollectCash: f.canCollectCash === true || ['cashier', 'manager', 'director', 'superAdmin', 'waitStaff', 'barStaff', 'eventManager'].includes(role), team: teamOf(role) };
 }
 
 // ── Managers look after staff ──

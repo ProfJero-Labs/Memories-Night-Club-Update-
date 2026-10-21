@@ -122,5 +122,22 @@ test('customer reviews (no sign-in): the directors read them, the Manager or Hum
   const mine = ok(await ctx.call('GET', '/api/ops/reviews/mine', { who: ctx.DJ }), 'dj reads');
   assert.deepEqual([mine.reviews[0].overall, mine.reviews[0].comment], [4.4, 'Great energy. Watch the volume after 3am.']);
   ok(await ctx.call('POST', '/api/ops/perf/reply', { who: ctx.DJ, body: { id: mine.reviews[0].id, reply: 'Thank you, noted.' } }), 'reply');
-  assert.equal(ok(await ctx.call('GET', `/api/ops/perf?month=${month}`, { who: ctx.D1 }), 'director sees').done, 1);
+  // The directors review the Human manager; the Human manager can't review the managers.
+  assert.equal((await ctx.call('POST', '/api/ops/perf', { who: ctx.HR, body: { uid: 'm1', month, scores: { punctual: 5, attitude: 5, customers: 5, work: 5, rules: 5 } } })).status, 403);
+  ok(await ctx.call('POST', '/api/ops/perf', { who: ctx.D1, body: { uid: 'hr', month, scores: { punctual: 5, attitude: 5, customers: 4, work: 4, rules: 5 }, comment: 'Good month.' } }), 'director reviews the Human manager');
+  assert.equal(ok(await ctx.call('GET', '/api/ops/reviews/mine', { who: ctx.HR }), 'hr reads').reviews[0].byName, 'Nana Director');
+  assert.equal(ok(await ctx.call('GET', `/api/ops/perf?month=${month}`, { who: ctx.D1 }), 'director sees').done, 2, 'the DJ and the Human manager');
+});
+
+test('the Event manager serves a table like a waiter: opens it, sends drinks, takes the cash', async () => {
+  const ctx = setup();
+  ctx.store.seed('users', 'ev', { name: 'Yaa Events', role: 'eventManager', phone: '0240000299' });
+  const EV = { uid: 'ev', role: 'eventManager' };
+  const tab = ok(await ctx.call('POST', '/api/ops/tabs/open', { who: EV, body: { table: 'VIP 2', customerName: 'Birthday group' } }), 'open');
+  const r = ok(await ctx.call('POST', '/api/ops/tabs/round', { who: EV, body: { tabId: tab.id, lines: [{ productId: 'beer', qty: 2 }] } }), 'drinks');
+  ok(await ctx.call('POST', '/api/ops/bar/round', { who: ctx.B1, body: { roundId: r.id, action: 'hand' } }), 'bar');
+  ok(await ctx.call('POST', '/api/ops/tabs/round-action', { who: EV, body: { roundId: r.id, action: 'delivered' } }), 'got them');
+  ok(await ctx.call('POST', '/api/ops/tabs/pay', { who: EV, body: { tabId: tab.id, method: 'cash', amountPesewas: 5000 } }), 'cash');
+  ok(await ctx.call('POST', '/api/ops/tabs/close', { who: EV, body: { tabId: tab.id } }), 'close');
+  assert.equal(ok(await ctx.call('GET', '/api/ops/my-report', { who: EV }), 'report').figures.cashCollectedPesewas, 5000);
 });

@@ -10,7 +10,7 @@ import { qrSvg } from '../ticket-art.js';
 import { sheet, say, st, every, bottomNav, busy, ghsIn, moneyField, money, when } from '../lib/ops-ui.js';
 import { drinkPicker, paySheet, handInCash } from '../lib/sell.js';
 
-const user = await requireStaff(['waitStaff', 'superAdmin', 'director', 'manager']);
+const user = await requireStaff(['waitStaff', 'eventManager', 'superAdmin', 'director', 'manager']);
 staffHeader(user, 'Tables');
 const app = $('#app');
 const canCash = user.me?.canCollectCash === true;

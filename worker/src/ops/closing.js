@@ -66,7 +66,7 @@ export function waiterFigures(uid, data) {
   };
 }
 // Waiters and bartenders (their quick sales and cash) both have one.
-const REPORTERS = ['waitStaff', 'barStaff', ...BOSS];
+const REPORTERS = ['waitStaff', 'barStaff', 'eventManager', ...BOSS];
 export async function myReport(env, user, { date } = {}) {
   if (!requireRole(user, REPORTERS)) return FORBIDDEN;
   const d = dateOr(date), data = await nightData(env, d);
