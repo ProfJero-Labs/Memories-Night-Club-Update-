@@ -7,7 +7,7 @@
 //                                 approvals (manager, finance), versions (corrections keep the original)
 //   shifts/{date}                 status open | closed (closed nights are locked; see common.js)
 import { getDoc, setDoc, queryWhere, listDocs } from '../lib/firestore.js';
-import { now, clean, nightKey, normalizePhone } from '../lib/util.js';
+import { now, id, clean, nightKey, normalizePhone } from '../lib/util.js';
 import { requireRole, uidOf, REPORTS } from '../lib/auth.js';
 import { sendEmail, sendSms, siteUrl } from '../lib/notify.js';
 import { FORBIDDEN, bizDate, dateOr, audit, nightState, ghs } from './common.js';
@@ -168,8 +168,43 @@ function salesFrom(data) {
 }
 
 // ── The close: what's done, what isn't ──
+// ── Who closes the night ──
+// The Manager closes it. Not the directors. If the Manager can't be there, they hand it over (with a
+// note); the Human manager or the Event manager accepts, and closing that night is then theirs.
+//   shifts/{date}.handover { byName, at, note, acceptedBy, acceptedByName, acceptedAt }
+const STAND_INS = ['hrManager', 'eventManager'];
+export function canCloseNight(user, state) {
+  if (requireRole(user, ['superAdmin'])) return true;
+  if (user.role === 'manager') return true;
+  return !!state?.handover?.acceptedBy && state.handover.acceptedBy === uidOf(user);
+}
+export async function handOverClosing(env, b, user) {
+  if (user?.role !== 'manager' && !requireRole(user, ['superAdmin'])) return { error: 'The Manager hands over closing.', status: 403 };
+  const d = dateOr(b?.date), state = await nightState(env, d);
+  if (state.status === 'closed') return { error: 'This night is already closed.' };
+  const note = clean(b?.note, 300);
+  if (!note) return { error: 'Say why you can’t close tonight, e.g. “Family emergency, left at 1am”.' };
+  await setDoc(env, 'shifts', d, { ...state, status: state.status || 'open', handover: { by: uidOf(user), byName: user.name || '', at: now(), note } });
+  // The other managers are told at once: a text, and a notice to the managers on My page.
+  const standIns = (await listDocs(env, 'users')).filter(u => STAND_INS.includes(u.fields.role) && !u.fields.removed && u.fields.phone);
+  for (const u of standIns) await sendSms(env, u.fields.phone, `MEMORIES\n${user.name || 'The Manager'} can't close tonight (${note}). Can you? Open the closing screen and tap "I'll close tonight".`);
+  await setDoc(env, 'notices', id(), { title: `${user.name || 'The Manager'} can’t close tonight`, body: `${note} The Human manager or the Event manager: open Close the night and tap “I’ll close tonight”.`, team: 'managers', by: uidOf(user), byName: user.name || '', byRole: user.role, at: now(), removed: false });
+  await audit(env, user, 'CLOSING_HANDED_OVER', { date: d, told: standIns.length });
+  return { handedOver: true, told: standIns.map(u => u.fields.name) };
+}
+export async function acceptClosing(env, b, user) {
+  if (!requireRole(user, STAND_INS)) return { error: 'The Human manager or the Event manager takes over closing.', status: 403 };
+  const d = dateOr(b?.date), state = await nightState(env, d);
+  if (state.status === 'closed') return { error: 'This night is already closed.' };
+  if (!state.handover) return { error: 'The Manager hasn’t handed over closing tonight.' };
+  if (state.handover.acceptedBy) return { error: state.handover.acceptedBy === uidOf(user) ? 'You’re already closing tonight.' : `${state.handover.acceptedByName} is already closing tonight.` };
+  await setDoc(env, 'shifts', d, { ...state, handover: { ...state.handover, acceptedBy: uidOf(user), acceptedByName: user.name || '', acceptedAt: now() } });
+  await audit(env, user, 'CLOSING_ACCEPTED', { date: d });
+  return { accepted: true };
+}
+
 export async function closingStatus(env, user, { date } = {}) {
-  if (!requireRole(user, [...REPORTS])) return FORBIDDEN;
+  if (!requireRole(user, [...REPORTS, ...STAND_INS])) return FORBIDDEN;
   const d = dateOr(date), data = await nightData(env, d);
   const waiterIds = [...new Set([...data.tabs.map(t => t.waiterUid), ...data.rounds.map(r => r.waiterUid)])];
   const waiters = waiterIds.map(uid => {
@@ -196,14 +231,19 @@ export async function closingStatus(env, user, { date } = {}) {
     { key: 'finance', label: 'Finance receives the report', done: !!eod?.fields?.sent, detail: eod ? (eod.fields.sent ? `Sent to ${eod.fields.sentTo}` : eod.fields.sendNote) : 'Prepared when the night is closed' },
     { key: 'signoff', label: 'Final sign-off', done: !!eod?.fields?.financeApprovedAt, detail: eod?.fields?.financeApprovedAt ? `Finance: ${eod.fields.financeApprovedByName}` : 'Waiting' },
   ];
-  return { date: d, night: await nightState(env, d), steps, waiters, bars, cash, frontOffice: front ? { name: front.name, at: front.submittedAt, note: front.explanation, figures: front.figures } : null, pendingApprovals: data.approvals.filter(a => a.businessDate === d).length };
+  const night = await nightState(env, d), h = night.handover || null;
+  const closer = { handover: h ? { byName: h.byName, at: h.at, note: h.note, acceptedByName: h.acceptedByName || '', acceptedAt: h.acceptedAt || '' } : null,
+    canClose: canCloseNight(user, night), canHandOver: (user.role === 'manager' || requireRole(user, ['superAdmin'])) && !h && night.status !== 'closed',
+    canAccept: !!h && !h.acceptedBy && requireRole(user, STAND_INS) && night.status !== 'closed' };
+  return { date: d, night, closer, steps, waiters, bars, cash, frontOffice: front ? { name: front.name, at: front.submittedAt, note: front.explanation, figures: front.figures } : null, pendingApprovals: data.approvals.filter(a => a.businessDate === d).length };
 }
 
 // The manager closes the night: the end-of-day report is prepared, saved and sent to finance.
 export async function closeNight(env, b, user) {
-  if (!requireRole(user, BOSS)) return FORBIDDEN;
+  if (!requireRole(user, [...BOSS, ...STAND_INS])) return FORBIDDEN;
   const d = dateOr(b?.date);
   const state = await nightState(env, d);
+  if (!canCloseNight(user, state)) return { error: requireRole(user, ['director']) ? 'The Manager closes the night, not the directors.' : 'Only the Manager closes the night, or whoever accepted it when the Manager handed it over.', status: 403 };
   if (state.status === 'closed') return { error: 'This night is already closed.' };
   if (d === bizDate() && new Date().getUTCHours() >= 12 && b.confirmEarly !== true) return { error: 'The night isn’t over yet. Close it after the last customers leave.', code: 'early' };
   const status = await closingStatus(env, user, { date: d });

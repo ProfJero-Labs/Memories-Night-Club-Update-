@@ -91,6 +91,8 @@ export async function opsRoute(m, p, u, b, env, user) {
     case '/api/ops/my-report': return closing.submitMyReport(env, b, user);
     case '/api/ops/front-report': return closing.submitFrontOffice(env, b, user);
     case '/api/ops/close-night': return closing.closeNight(env, b, user);
+    case '/api/ops/close-night/hand-over': return closing.handOverClosing(env, b, user);
+    case '/api/ops/close-night/accept': return closing.acceptClosing(env, b, user);
     case '/api/ops/eod/sign-off': return closing.financeSignOff(env, b, user);
     case '/api/ops/finance-contact': return closing.financeContact(env, user, b || {});
     case '/api/ops/expenses': return money.addExpense(env, b, user);

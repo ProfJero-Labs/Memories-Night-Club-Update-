@@ -141,3 +141,31 @@ test('the Event manager serves a table like a waiter: opens it, sends drinks, ta
   ok(await ctx.call('POST', '/api/ops/tabs/close', { who: EV, body: { tabId: tab.id } }), 'close');
   assert.equal(ok(await ctx.call('GET', '/api/ops/my-report', { who: EV }), 'report').figures.cashCollectedPesewas, 5000);
 });
+
+test('closing the night: the Manager closes it, not a director; if the Manager can’t, they hand it over and the Human manager or Event manager who accepts closes it', async () => {
+  const ctx = setup();
+  ctx.store.seed('users', 'ev', { name: 'Yaa Events', role: 'eventManager', phone: '0240000299' });
+  const EV = { uid: 'ev', role: 'eventManager' };
+  const close = who => ctx.call('POST', '/api/ops/close-night', { who, body: { confirmEarly: true, closeAnyway: true } });
+  assert.match((await close(ctx.D1)).data.error, /The Manager closes the night, not the directors/);
+  assert.equal((await close(ctx.HR)).status, 403, 'not without a handover');
+  let st = ok(await ctx.call('GET', '/api/ops/closing', { who: ctx.D1 }), 'director looks');
+  assert.deepEqual([st.closer.canClose, st.closer.handover], [false, null]);
+  // The Manager can't be there tonight: hands over with a reason.
+  assert.equal((await ctx.call('POST', '/api/ops/close-night/hand-over', { who: ctx.HR, body: { note: 'x' } })).status, 403);
+  assert.match((await ctx.call('POST', '/api/ops/close-night/hand-over', { who: ctx.M1, body: {} })).data.error, /Say why/);
+  const ho = ok(await ctx.call('POST', '/api/ops/close-night/hand-over', { who: ctx.M1, body: { note: 'Family emergency, left at 1am' } }), 'handed over');
+  assert.deepEqual(ho.told.sort(), ['Abena HR', 'Yaa Events'], 'the other managers are texted');
+  assert.match(ctx.store.sms.at(-1).message, /can't close tonight \(Family emergency/);
+  assert.equal(ok(await ctx.call('GET', '/api/ops/notices', { who: ctx.HR }), 'notice').notices[0].title, 'Akos Manager can’t close tonight');
+  st = ok(await ctx.call('GET', '/api/ops/closing', { who: ctx.HR }), 'hr sees it');
+  assert.deepEqual([st.closer.handover.note, st.closer.canAccept, st.closer.canClose], ['Family emergency, left at 1am', true, false]);
+  assert.equal((await ctx.call('POST', '/api/ops/close-night/accept', { who: ctx.D1, body: {} })).status, 403, 'a director doesn’t take it');
+  ok(await ctx.call('POST', '/api/ops/close-night/accept', { who: EV, body: {} }), 'the Event manager accepts');
+  assert.match((await ctx.call('POST', '/api/ops/close-night/accept', { who: ctx.HR, body: {} })).data.error, /Yaa Events is already closing/);
+  assert.equal((await close(ctx.HR)).status, 403, 'only the one who accepted');
+  const done = ok(await close(EV), 'the Event manager closes');
+  assert.equal(done.closed, true);
+  st = ok(await ctx.call('GET', '/api/ops/closing', { who: ctx.D1 }), 'after');
+  assert.deepEqual([st.night.status, st.night.closedByName, st.closer.handover.acceptedByName], ['closed', 'Yaa Events', 'Yaa Events']);
+});
