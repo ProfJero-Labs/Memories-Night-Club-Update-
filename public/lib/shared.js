@@ -129,3 +129,60 @@ export function pickPromo(promos, ticketTypeId, unit, qty) {
   }
   return best;
 }
+
+// ── Forgiving drink search (the QR menu) ──
+// Small mistakes are pardoned: "henikin" finds Heineken, "hennesy" Hennessy, "star bear" Star Beer,
+// "guiness" Guinness, "smirnof" Smirnoff. Every word typed must match a word of the name or group:
+// as its start, inside it, by its consonants ("hnkn" = Heineken), or within one or two typos.
+// Returns a score (0 = no match; higher = better) so the best matches can come first.
+const searchNorm = s => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, ' ').trim();
+const skeleton = w => w.replace(/[aeiouy]/g, '').replace(/(.)\1+/g, '$1');
+function editDistance(a, b, max) {
+  if (Math.abs(a.length - b.length) > max) return max + 1;
+  let prev = Array.from({ length: b.length + 1 }, (_, i) => i);
+  for (let i = 1; i <= a.length; i++) {
+    const cur = [i]; let best = i;
+    for (let j = 1; j <= b.length; j++) {
+      cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+      if (i > 1 && j > 1 && a[i - 1] === b[j - 2] && a[i - 2] === b[j - 1]) cur[j] = Math.min(cur[j], prev[j - 2] + 1);
+      best = Math.min(best, cur[j]);
+    }
+    if (best > max) return max + 1;
+    prev.splice(0, prev.length, ...cur);
+  }
+  return prev[b.length];
+}
+function wordScore(q, w) {
+  if (w.startsWith(q)) return 4;
+  if (q.length >= 3 && w.includes(q)) return 3;
+  if (q.length < 3) return 0;
+  const tol = q.length <= 4 ? 1 : 2;
+  if (editDistance(q, w, tol) <= tol || editDistance(q, w.slice(0, q.length), tol - (q.length <= 5 ? 0 : 1)) <= tol - (q.length <= 5 ? 0 : 1)) return 2;
+  const sq = skeleton(q), sw = skeleton(w);
+  if (sq.length >= 2 && (sq === sw || (sq.length >= 3 && sw.startsWith(sq)) || (sq.length >= 4 && editDistance(sq, sw, 1) <= 1))) return 1;
+  return 0;
+}
+// Names people call drinks by. Add more here as the bar hears them.
+const DRINK_NICKNAMES = { coke: 'coca cola', jd: 'jack daniels', henny: 'hennessy', jw: 'johnnie walker', mineral: 'water', minerals: 'soft drinks', malt: 'malta' };
+// Looser: any one word typed matches (for when nothing matches every word, e.g. "guiness stout"
+// on a menu that only has "Stout").
+export function drinkMatchAny(query, ...fields) {
+  return Math.max(0, ...searchNorm(query).split(' ').filter(Boolean).map(w => drinkMatch(w, ...fields)));
+}
+export function drinkMatch(query, ...fields) {
+  const norm = searchNorm(query);
+  const alias = DRINK_NICKNAMES[norm];
+  if (alias && norm !== alias) { const a = drinkMatch(alias, ...fields); if (a) return a; }
+  const words = norm.split(' ').filter(Boolean);
+  if (!words.length) return 1;
+  const hay = searchNorm(fields.join(' ')).split(' ').filter(Boolean);
+  const joined = hay.join('');
+  let score = 0;
+  for (const q of words) {
+    let best = Math.max(0, ...hay.map(w => wordScore(q, w)));
+    if (!best && q.length >= 4 && joined.includes(q)) best = 2;   // "starbeer"
+    if (!best) return 0;
+    score += best;
+  }
+  return score;
+}

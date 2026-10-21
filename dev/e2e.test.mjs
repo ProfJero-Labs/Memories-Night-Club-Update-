@@ -861,7 +861,24 @@ test('stock, money and quick sales: finance buys drinks (in stock at once), the 
   await w.locator('.tcard').filter({ hasText: 'Quick sale' }).first().click();
   await w.locator('[data-act="delivered"]').waitFor({ timeout: 10000 }); await w.click('[data-act="delivered"]');
   await w.locator('.say').getByText('Closed').waitFor({ timeout: 10000 });
-  assert.deepEqual([...fin.errors, ...mgr.errors, ...dir.errors, ...bar.errors, ...w.errors], []);
+  // Finance adds a bill due this month; the director sees what's still to pay.
+  await fin.goto(`${base}/finance.html#budget`); await fin.click('#bAdd');
+  await fin.fill('#blP', 'Staff salaries'); await fin.selectOption('#blC', 'staff'); await fin.fill('#blA', '8000'); await fin.click('#blGo');
+  await fin.locator('#app').getByText('Staff salaries').waitFor();
+  await dir.goto(`${base}/night.html#money`); await dir.locator('a[href="#budget"]').click();
+  await dir.locator('#app').getByText('Staff salaries').waitFor();
+  assert.equal(await dir.locator('#bAdd').count(), 0, 'the director looks; finance sets');
+  assert.doesNotMatch(await dir.textContent('#app'), /Ticket/);
+  // The manager taps a payment: what was bought, who served, how it was paid.
+  await mgr.goto(`${base}/night.html#payments`); await mgr.locator('[data-pay]').first().click();
+  await mgr.locator('.sheet').getByText('Served by').waitFor(); await mgr.locator('.sheet').getByText('How it was paid').waitFor();
+  await mgr.click('.sheet [data-close]'); await mgr.click('[data-tabv="customers"]'); await mgr.locator('#app').getByText('Top customers tonight').waitFor();
+  // A guest searches the QR menu with a spelling mistake.
+  const g = await phone(360); await g.goto(`${base}/counter.html?s=0123456789abcdef0123456789abcdef`); await g.waitForSelector('#find');
+  await g.fill('#find', 'tequlia'); await g.locator('#menuList').getByText('Tequila shot').waitFor();
+  assert.equal(await g.locator('#menuList .drink').count(), 1);
+  await g.fill('#find', ''); assert.ok(await g.locator('#menuList .drink').count() > 3, 'clearing shows the whole menu');
+  assert.deepEqual([...fin.errors, ...mgr.errors, ...dir.errors, ...bar.errors, ...w.errors, ...g.errors], []);
 });
 
 test('sign-in: an email typed in the phone box goes to the email form', async () => {

@@ -89,7 +89,7 @@ test('3–5: another round on the same tab; part paid in cash at the cashier; a 
   assert.deepEqual([bill.balancePesewas, bill.statusLabel], [2000, 'Part paid']);
   assert.equal((await ctx.call('POST', '/api/ops/tabs/cash', { who: ctx.FO, body: { tabId: tab.id, amountPesewas: 1000 } })).status, 403, 'front office without cash permission can’t take cash');
   // A menu price change never moves a bill already sent.
-  ok(await ctx.call('POST', '/api/ops/products', { who: ctx.F1, body: { id: 'shot', name: 'Tequila shot', category: 'Shots', unit: 'shot', pricePesewas: 5000 } }), 'price change');
+  ok(await ctx.call('POST', '/api/ops/products', { who: ctx.F1, body: { id: 'shot', name: 'Tequila shot', category: 'Shots', unit: 'shot', pricePesewas: 5000, costPesewas: 1500 } }), 'price change');
   bill = ok(await ctx.call('GET', `/api/guest/bill/${token}`), 'bill').bill;
   assert.equal(bill.totalPesewas, 8000);
 });
@@ -169,9 +169,12 @@ test('10, 14: the cashier has less cash than expected (explanation required); a 
   // 14
   assert.equal((await ctx.call('POST', '/api/ops/products', { who: ctx.W1, body: { id: 'beer', name: 'Club beer', pricePesewas: 100 } })).status, 403);
   assert.equal((await ctx.call('POST', '/api/ops/stock/received', { who: ctx.W1, body: { stationId: 'main', productId: 'beer', qty: 99 } })).status, 403);
-  ok(await ctx.call('POST', '/api/ops/products', { who: ctx.M1, body: { id: 'beer', name: 'Club beer', category: 'Beer', unit: 'bottle', pricePesewas: 3000, costPesewas: 1200 } }), 'manager price');
+  // Finance sets prices (and the cost price, needed for the profit); the manager can't.
+  assert.equal((await ctx.call('POST', '/api/ops/products', { who: ctx.M1, body: { id: 'beer', name: 'Club beer', category: 'Beer', unit: 'bottle', pricePesewas: 3000, costPesewas: 1200 } })).status, 403, 'manager can’t set prices');
+  assert.match((await ctx.call('POST', '/api/ops/products', { who: ctx.F1, body: { id: 'beer', name: 'Club beer', category: 'Beer', unit: 'bottle', pricePesewas: 3000 } })).data.error, /cost price/);
+  ok(await ctx.call('POST', '/api/ops/products', { who: ctx.F1, body: { id: 'beer', name: 'Club beer', category: 'Beer', unit: 'bottle', pricePesewas: 3000, costPesewas: 1200 } }), 'finance price');
   const ch = ok(await ctx.call('GET', '/api/ops/changes', { who: ctx.F1 }), 'changes').changes.find(c => c.field === 'price');
-  assert.deepEqual([ch.from, ch.to, ch.byName], [2500, 3000, 'Akos Manager']);
+  assert.deepEqual([ch.from, ch.to, ch.byName], [2500, 3000, 'Esi Finance']);
   assert.equal((await ctx.call('GET', '/api/ops/products', { who: ctx.W1 })).data.products[0].costPesewas, undefined, 'waiters never see costs');
 });
 

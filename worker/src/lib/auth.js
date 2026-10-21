@@ -20,7 +20,7 @@ import { getDoc } from './firestore.js';
 export const STAFF_ROLES = ['superAdmin', 'director', 'manager', 'finance', 'eventManager', 'doorStaff', 'security', 'barStaff', 'waitStaff', 'cashier', 'organiser'];
 export const ADMIN = ['superAdmin'];                                           // site settings, system status
 export const CMS = ['superAdmin', 'eventManager'];                             // run the site: nights, tickets, promos, bar setup
-export const TICKET_MONEY = ['superAdmin', 'director', 'eventManager'];        // ticket sales and payments (read)
+export const TICKET_MONEY = ['superAdmin', 'eventManager'];                    // ticket sales and payments (read); not the director's
 export const MONEY = ['superAdmin', 'director'];                               // refunds, pay in bits, SMS, members, attendance
 export const DOOR = ['superAdmin', 'director', 'manager', 'eventManager', 'doorStaff', 'security', 'organiser'];
 export const STOCK = ['superAdmin', 'director', 'manager', 'finance'];         // products, prices, stock received, reviews

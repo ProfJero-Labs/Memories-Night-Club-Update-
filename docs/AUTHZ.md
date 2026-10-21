@@ -71,11 +71,19 @@ removal applies at once. Each row is covered by `worker/test/staffauth.test.js` 
 | `GET /api/ops/me`, `POST /api/ops/change-pin` | Any staff (their own) |
 | `GET/POST /api/admin/people`, `/people/add`, `/update`, `/reset-pin`, `/send-pins`, `/remove` | System admin, director, manager. Managers can't give or change director, manager, finance or admin; directors can't make admins; nobody changes their own job |
 | `POST /api/ops/tabs/open`, `/round`, `/round-action`, `/close`, `/text-bill` | Waiters (their own tabs), manager, director, admin |
-| `POST /api/ops/tabs/cash` | Cashier, manager, director, admin, and staff marked "can collect cash" |
+| `POST /api/ops/tabs/cash`, `/tabs/pay` | Cashier, waiters, bartenders, manager, director, admin, and staff marked "can collect cash" |
 | `GET /api/ops/bar/rounds`, `POST /api/ops/bar/round` | Bartender, manager, director, admin |
 | `GET /api/ops/products` | Waiters, bar, cashier, finance, managers (costs only for manager, director, finance, admin) |
-| `POST /api/ops/products` (price, cost) | Manager, director, finance, admin |
-| `POST /api/ops/products/available`, `/stock/received`, `/stock/transfer`, `/stock/waste`, `/stock/count` | Bartender, manager, director, finance, admin |
+| `POST /api/ops/products` (selling price and cost price, both required) | Finance, admin |
+| `POST /api/ops/products/available`, `/stock/transfer`, `/stock/waste`, `/stock/count` | Bartender, manager, director, finance, admin |
+| `POST /api/ops/stock/received` | Finance, director, admin: a purchase, in stock at once. Manager: waits for the bar to confirm. Bartender: waits for finance or a manager |
+| `GET /api/ops/stock/deliveries`, `POST /api/ops/stock/delivery` (confirm or refuse) | Bartender, manager, director, finance, admin; never your own; the bar's needs finance or a manager |
+| `GET /api/ops/stock/to-explain` | Manager, director, finance, admin. `POST /api/ops/stock/explain`: manager, director, admin |
+| `POST /api/ops/quick-sale` | Waiters; from the bar (`fromBar`): bartender, manager, director, admin |
+| `GET /api/ops/money`, `/payments`, `/budget` | Manager, director, finance, admin |
+| `POST /api/ops/expenses`, `/expenses/remove` | Manager, director, finance, admin (taking one off: finance, director, admin, or whoever added it) |
+| `POST /api/ops/budget`, `/bills`, `/bills/pay`, `/bills/remove`, `/bills/copy` | Finance, admin |
+| `GET /api/guest/counter-night/:orderId` | A QR customer: everything paid tonight from the phone that paid that order |
 | `POST /api/ops/stock/review`, `GET /api/ops/changes` | Manager, director, finance, admin (not your own count) |
 | `POST /api/ops/cash/open`, `/move`, `/close`, `GET /api/ops/cash` | Whoever takes cash (their own shift); refunds and payouts become approvals |
 | `POST /api/ops/cash/review`, `GET /api/ops/cash/all` | Manager, director, finance, admin (not your own) |
@@ -93,7 +101,7 @@ removal applies at once. Each row is covered by `worker/test/staffauth.test.js` 
 |---|---|---|
 | The site: nights, tickets, promos, draws, bar setup, comps, event requests, uploads | System admin, events manager | `/api/admin/events…`, `/ticket-types`, `/table-packages`, `/bottles`, `/comps`, `/raffles`, `/requests`, `/promos`, `/bar/setup`; Storage uploads |
 | Site settings, system health | System admin | `/api/admin/settings`, `/api/admin/system` |
-| Ticket money (read) | System admin, director, events manager | `/api/admin/overview`, `/orders`, `/payments`, `/events` (list), `/settlements` (list) |
+| Ticket money (read) | System admin, events manager (not the director) | `/api/admin/overview`, `/orders`, `/payments`, `/events` (list), `/settlements` (list) |
 | Money: refunds, pay in bits, SMS, members, attendance, organiser settlements | System admin, director | `/api/admin/refunds…`, `/installments…`, `/sms…`, `/members…`, `/attendance`, `/settlements` |
 | The night: sales, tables, approvals, closing, drinks & prices, stock, staff | System admin, director, manager (finance for reports and stock) | `/api/ops/*`, `/api/admin/people*` |
 

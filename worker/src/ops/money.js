@@ -5,7 +5,8 @@
 //                  deleted. The manager and finance record them.
 //
 // The money report, for tonight, this week or this month:
-//   Money in  = drinks paid for (waiters, bar, QR) + the club's share of tickets and tables
+//   Money in  = drinks paid for (waiters, bar, QR) + the club's share of table bookings
+//               (ticket sales are left out: they're the events side, not the director's)
 //   Money out = drinks bought (purchases recorded with what was paid) + expenses
 //   Profit    = money in − money out
 // Plus drinks on their own: what was sold, what those drinks cost the club, and the difference.
@@ -78,7 +79,7 @@ export async function moneyReport(env, user, q = {}) {
   const tabs = tabsRaw.map(t => ({ id: t.id, ...t.fields })).filter(t => inRange(t.businessDate));
   for (const t of tabs) t.bill = billOf(t, rounds.filter(r => r.tabId === t.id));
   const qr = qrRaw.map(o => ({ id: o.id, ...o.fields })).filter(o => ['paid', 'delivered'].includes(o.status) && o.paidAt && inRange(nightKey(o.paidAt)));
-  const orders = ordersRaw.map(o => ({ id: o.id, ...o.fields })).filter(o => o.status === 'confirmed' && ['ticket', 'table'].includes(o.kind) && Number(o.amountPesewas) > 0 && inRange(nightKey(o.createdAt)));
+  const orders = ordersRaw.map(o => ({ id: o.id, ...o.fields })).filter(o => o.status === 'confirmed' && o.kind === 'table' && Number(o.amountPesewas) > 0 && inRange(nightKey(o.createdAt)));
   const buys = buysRaw.map(d => ({ id: d.id, ...d.fields })).filter(d => d.status === 'confirmed' && inRange(d.businessDate || nightKey(d.recordedAt)));
   const expenses = expRaw.map(e => ({ id: e.id, ...e.fields })).filter(e => inRange(e.date));
   const live = expenses.filter(e => !e.removed);
@@ -97,13 +98,13 @@ export async function moneyReport(env, user, q = {}) {
   const drinksSold = sum(drinkRows, d => d.salesPesewas), drinksCost = sum(drinkRows, d => d.costPesewas);
   const noCost = drinkRows.filter(d => !d.costPesewas).map(d => d.name);
 
-  // Tickets and tables: the club's share (organiser and platform shares are not the club's money).
+  // Table bookings: the club's share (organiser and platform shares are not the club's money).
   const share = o => Number(o.shares?.memoriesSharePesewas ?? o.amountPesewas);
-  const tickets = orders.filter(o => o.kind === 'ticket'), tables = orders.filter(o => o.kind === 'table');
+  const tables = orders;
 
   const buyCost = d => Number(d.totalCostPesewas ?? (d.unitCostPesewas != null ? d.unitCostPesewas * (d.confirmedQty ?? d.qty) : 0));
   const bought = sum(buys, buyCost), spent = sum(live, e => e.amountPesewas);
-  const moneyIn = drinksPaid + sum(tickets, share) + sum(tables, share), moneyOut = bought + spent;
+  const moneyIn = drinksPaid + sum(tables, share), moneyOut = bought + spent;
 
   // Night by night.
   const days = new Map();
@@ -121,7 +122,6 @@ export async function moneyReport(env, user, q = {}) {
     totals: { inPesewas: moneyIn, outPesewas: moneyOut, profitPesewas: moneyIn - moneyOut },
     moneyIn: [
       { key: 'drinks', label: 'Drinks (bar and waiters)', amountPesewas: drinksPaid },
-      { key: 'tickets', label: `Tickets (${sum(tickets, o => o.quantity || 1)} sold, club’s share)`, amountPesewas: sum(tickets, share) },
       { key: 'tables', label: `Tables (${tables.length} booked, club’s share)`, amountPesewas: sum(tables, share) },
     ],
     moneyOut: [

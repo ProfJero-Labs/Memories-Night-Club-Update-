@@ -38,8 +38,8 @@ export function paySheet(totalPesewas, pay, { title = 'Customer pays' } = {}) {
     <div class="seg" role="radiogroup" aria-label="How they paid"><button type="button" class="mid on" data-pm="cash" role="radio" aria-checked="true">Cash</button><button type="button" class="mid" data-pm="momo" role="radio" aria-checked="false">MoMo</button></div>
     <div id="psMomo" hidden>
       <div class="sfield"><label for="psRef">MoMo transaction ID</label><input id="psRef" maxlength="40" autocomplete="off" autocapitalize="characters" placeholder="From the MoMo text, e.g. 51234567890"><span class="hint">Only when you can see the money arrived on the club’s MoMo number.</span></div>
-      <div class="sfield"><label for="psFrom">Paid from number (optional)</label><input id="psFrom" type="tel" inputmode="tel" placeholder="024 123 4567"></div>
     </div>
+    <div class="sfield"><label for="psFrom">Customer’s phone (optional)</label><input id="psFrom" type="tel" inputmode="tel" placeholder="024 123 4567"><span class="hint">So the manager sees what each customer spends tonight. For MoMo, the number it came from.</span></div>
     <p class="muted" id="psHint" style="margin:0">Take ${money(totalPesewas)} and give change. It goes in your cash for tonight.</p>
     <div id="psMsg"></div><button class="big" id="psGo">Cash received</button><button class="big ghost" data-close>Cancel</button>`, { label: title });
   let method = 'cash';
@@ -52,7 +52,8 @@ export function paySheet(totalPesewas, pay, { title = 'Customer pays' } = {}) {
     if (method === 'momo') $('#psRef', box).focus();
   });
   $('#psGo', box).onclick = async () => {
-    const body = { method, ...(method === 'momo' ? { momoRef: $('#psRef', box).value, momoFrom: $('#psFrom', box).value.trim() || undefined } : {}) };
+    const phone = $('#psFrom', box).value.trim() || undefined;
+    const body = { method, customerPhone: phone, ...(method === 'momo' ? { momoRef: $('#psRef', box).value, momoFrom: phone } : {}) };
     try { await busy($('#psGo', box), () => pay(body)); close(); }
     catch (e) { say($('#psMsg', box), e.message, 'bad'); }
   };

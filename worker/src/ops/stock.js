@@ -57,12 +57,15 @@ export async function listProducts(env, user, { stationId } = {}) {
   return { products, stations: stations.map(s => ({ id: s.id, name: s.fields.name })).sort((a, b) => a.name.localeCompare(b.name)), units: UNITS };
 }
 
+// Finance sets the selling price and the cost price (what the club pays for one), so the director
+// can see the profit on every drink.
+export const PRICE_SETTERS = ['finance', 'superAdmin'];
 export async function saveProduct(env, b, user) {
-  if (!requireRole(user, STOCK)) return { error: 'Only a manager or the finance officer can change products and prices.', status: 403 };
-  const name = clean(b?.name, 60), price = int(b?.pricePesewas), cost = b?.costPesewas === '' || b?.costPesewas == null ? 0 : int(b.costPesewas);
+  if (!requireRole(user, PRICE_SETTERS)) return { error: 'Only the finance officer sets drinks and prices.', status: 403 };
+  const name = clean(b?.name, 60), price = int(b?.pricePesewas), cost = b?.costPesewas === '' || b?.costPesewas == null ? NaN : int(b.costPesewas);
   if (!name) return { error: 'Add the drink’s name.' };
   if (!(price >= 100)) return { error: 'Add a selling price of at least GHS 1.' };
-  if (!(cost >= 0)) return { error: 'The cost must be a number (or blank).' };
+  if (!(cost >= 0)) return { error: 'Add the cost price: what the club pays for one.' };
   const low = b?.lowStock === '' || b?.lowStock == null ? 0 : int(b.lowStock);
   if (!(low >= 0)) return { error: 'The low-stock warning is a number of units (or blank).' };
   const existing = b?.id ? await getDoc(env, 'menu_items', String(b.id)) : null;

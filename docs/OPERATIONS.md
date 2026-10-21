@@ -38,7 +38,7 @@ training.
 | Front office | **Door** | Entrance (scan tickets, search), staff and members (code in their app, or *let in by name* if their phone is dead), Tables (arrivals, table number, people), Issues, end-of-night Report |
 | Security | **Door** | Entrance and Issues only |
 | Manager | **Tonight** (a simple till screen) | Tonight: money expected, received and still owed (cash, MoMo, paid on phone), *Stock to explain* (the bar found a different number when it opened), *Needs you* (approve or refuse with one tap), the tables, *Add an expense*, *Close the night*. Bottom: Tonight · Tables · Staff · More. *More*: money, tonight in detail, approvals, drinks & prices, stock (add new stock during the night), past nights. No technical areas. |
-| Director | **Tonight**, plus **Money** | Tonight, **Money** (money in, money out, profit, for tonight, this week or this month; drinks sold against what they cost; expenses), *Reports* (end-of-day, sign off). *More* adds tables, staff, **ticket money** and members & attendance. |
+| Director | **Tonight**, plus **Money** | Tonight, **Money** (money in, money out, profit, for tonight, this week or this month; drinks sold against what they cost; expenses), *Reports* (end-of-day, sign off). No ticket sales. **Bills and budget** (set by finance): what's due this month, paid, overdue; budget against spending. *More* adds tables, staff and members & attendance. |
 | System admin | **Control room** | Everything technical: the site, nights, tickets, promos, settings, system health, bar setup, and every report. |
 | Finance officer | **Finance** | Today, **Money** (in, out, profit; add expenses), Stock (*Record drinks bought*, stock the manager added, the bar's counts and the manager's explanations; drinks, prices and costs), Check (staff reports, cash, approvals), Reports (end of day, sign off, print, CSV) |
 | Events manager | Control room | Nights, tickets, tables, promos, bar setup (no money reports) |
@@ -94,7 +94,8 @@ training.
 
 ## Prices and stock
 
-- **Drinks & prices** (manager, finance): name, group, unit, selling price, cost, low-stock warning,
+- **Drinks & prices** (finance sets them; others look): name, group, unit, selling price, **cost price
+  (required, so the profit can be worked out)**, low-stock warning,
   counted at the bar or not, on sale. New orders use the current price; a bill keeps the price it
   was sent with. Every change records who, when, the old value and the new value (*Who changed what*).
 - **Drinks bought** (finance): the manager buys the drinks and brings them in; finance records each
@@ -125,6 +126,32 @@ training.
   **Money in** = drinks paid for + the club's share of tickets and tables; **Money out** = drinks
   bought + expenses; **Profit** = in − out. Drinks also show *sold*, *what they cost us* (from each
   drink's cost price) and *made on drinks*. Drinks with no cost price are listed so finance can add it.
+
+## Bills and the month's budget (finance)
+
+- **Finance sets them** (Money → *Bills this month*): each bill is who it's owed to (staff salaries,
+  landlord, a drinks supplier…), what for, the amount and the date it must be paid by. **Pay** records
+  all or part of it; the payment counts as an expense in Money out (a drinks supplier bill doesn't:
+  those drinks were counted when finance recorded them as bought). A bill added by mistake is
+  *taken off* with a reason.
+- **The budget**: how much the club plans to spend this month on each thing (drinks, staff pay,
+  rent…), shown against what's actually been spent; over budget is flagged.
+- **Copy last month's bills and budget** starts a new month with the same salaries, rent and so on,
+  unpaid, due on the same day.
+- **The director** sees it all (bills this month, paid, still to pay, overdue, budget against
+  spending) but doesn't change it.
+
+## Payments tonight and top customers (manager, director, finance)
+
+- **Tonight → Payments tonight**: every payment, newest first: time, amount, how it was paid, who
+  served. Tap one for what was bought, who took the payment, who served, the table, the customer and
+  the MoMo reference. A table's payment shows the table's whole bill.
+- **Top customers**: who spent the most tonight, by phone number (the phone on the table or quick
+  sale, the MoMo number that paid, or the QR order's phone). Waiters and the bar can add the
+  customer's phone on a quick sale; sales with no phone are counted but not named.
+- **QR customers** see *My night: what I've spent* on the menu after their first paid order:
+  everything paid tonight from their phone. The menu has a search box that forgives spelling
+  mistakes ("henikin" finds Heineken; "coke" finds Coca-Cola).
 
 ## Cash
 

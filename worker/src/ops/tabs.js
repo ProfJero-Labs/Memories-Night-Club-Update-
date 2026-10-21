@@ -370,6 +370,9 @@ export async function quickSale(env, b, user) {
   const short = await stockError(env, st.id, lines); if (short) return { error: short };
   const total = lines.reduce((n, l) => n + l.qty * l.unitPesewas, 0);
   const method = b?.method === 'momo' ? 'momo' : 'cash';
+  // The customer's phone (optional): so their spending tonight adds up under one name.
+  const custPhone = b?.customerPhone ? normalizePhone(b.customerPhone) : '';
+  if (b?.customerPhone && !custPhone) return { error: 'That customer phone number doesn’t look right, or leave it blank.' };
   let momo = null, bag = null;
   if (method === 'momo') { momo = await momoCheck(env, b, date); if (momo.error) return momo; }
   else { bag = await cashBag(env, user, date); if (bag.error) return bag; }
@@ -383,7 +386,7 @@ export async function quickSale(env, b, user) {
     const n = Number(foundFields(res, `/counters/${key}`)?.fields?.n || 0) + 1;
     const writes = [
       updateWrite(env, 'counters', key, { n }),
-      updateWrite(env, 'tabs', tabId, { number: n, businessDate: date, stationId: st.id, stationName: st.fields.name, table: 'Quick sale', customerName: '', customerPhone: '', quick: true, soldAtBar: fromBar,
+      updateWrite(env, 'tabs', tabId, { number: n, businessDate: date, stationId: st.id, stationName: st.fields.name, table: 'Quick sale', customerName: clean(b?.customerName, 60), customerPhone: custPhone || (momo?.from || ''), quick: true, soldAtBar: fromBar,
         waiterUid: uid, waiterName: byName, status: fromBar ? 'closed' : 'open', ...(fromBar ? { closedAt: at, closedByName: byName } : {}), billToken: id(), payments: [pay], discounts: [], createdAt: at }),
       updateWrite(env, 'rounds', rid, { ...round, tabNumber: n }),
       updateWrite(env, 'audit_logs', id(), { action: method === 'momo' ? 'QUICK_SALE_MOMO' : 'QUICK_SALE_CASH', actorUid: uid, actorName: byName, tabId, amountPesewas: total, fromBar, ...(momo ? { momoRef: momo.ref } : {}), timestamp: at }),

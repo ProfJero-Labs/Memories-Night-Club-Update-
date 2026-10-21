@@ -10,7 +10,7 @@ import { uploadImage } from './firebase.js';
 
 // The control room is the administrator's (everything technical), the events manager's (nights,
 // tickets, promos, bar setup) and the directors' (money and reports). Managers use night.html.
-const ADMIN = ['superAdmin'], CMS = ['superAdmin', 'eventManager'], TICKET_MONEY = ['superAdmin', 'director', 'eventManager'], MONEY = ['superAdmin', 'director'];
+const ADMIN = ['superAdmin'], CMS = ['superAdmin', 'eventManager'], TICKET_MONEY = ['superAdmin', 'eventManager'], MONEY = ['superAdmin', 'director'];
 const user = await requireStaff(['superAdmin', 'director', 'eventManager']);
 staffHeader(user, 'Control room');
 const can = roles => roles.includes(user.role);
@@ -93,7 +93,7 @@ const today = () => OV.salesView(panel);
 const closing = () => OV.closingView(panel, undefined, { canClose: can(BOSS) });
 const approvals = () => OV.approvalsView(panel);
 const eod = arg => (arg ? OV.eodView(panel, arg, { canSignOff: can(['superAdmin', 'director']) }) : OV.eodListView(panel, { canSignOff: can(['superAdmin', 'director']) }));
-const products = async () => { panel.innerHTML = '<div id="pr"></div><div id="ch" style="margin-top:24px"></div>'; await OV.productsView($('#pr')); await OV.changesView($('#ch')); };
+const products = async () => { panel.innerHTML = '<div id="pr"></div><div id="ch" style="margin-top:24px"></div>'; await OV.productsView($('#pr'), { canEdit: user.role === 'superAdmin' }); await OV.changesView($('#ch')); };
 const stock = () => OV.stockAdminView(panel);
 
 // ── Overview ──

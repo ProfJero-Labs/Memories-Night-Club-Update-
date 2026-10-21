@@ -10,7 +10,7 @@ import worker from '../src/index.js';
 // directors see the money; managers run the night only (their routes are under /api/ops/).
 const ALL = ['superAdmin', 'director', 'manager', 'eventManager', 'doorStaff', 'organiser'];
 const CMS = ['superAdmin', 'eventManager'];
-const TICKET_MONEY = ['superAdmin', 'director', 'eventManager'];
+const TICKET_MONEY = ['superAdmin', 'eventManager']; // not the director: tickets are the events side
 const MONEY = ['superAdmin', 'director'];
 const SUPER = ['superAdmin'];
 

@@ -87,3 +87,30 @@ test('a month of nights: every Auto night gets a different design; hand-picked d
   assert.notEqual(nov.get('nov-06'), r.get('oct-02'), 'the starting design moves on each month');
   assert.equal(monthStyles(oct).get('oct-09'), r.get('oct-09'), 'stable: same nights, same designs');
 });
+
+test('drink search pardons small mistakes and finds by any word, but doesn’t match everything', async () => {
+  const { drinkMatch } = await import('../../public/lib/shared.js');
+  const menu = [['Heineken', 'Beer'], ['Star Beer', 'Beer'], ['Guinness Stout', 'Beer'], ['Hennessy VS', 'Spirits'], ['Smirnoff Ice', 'Spirits'], ['Coca-Cola', 'Soft drinks'], ['Moët & Chandon', 'Champagne'], ['Water', 'Soft drinks'], ['Club beer', 'Beer']];
+  const find = q => menu.filter(([n, c]) => drinkMatch(q, n, c) > 0).map(([n]) => n);
+  assert.deepEqual(find('henikin'), ['Heineken']);
+  assert.deepEqual(find('hennesy'), ['Hennessy VS']);
+  assert.deepEqual(find('guiness'), ['Guinness Stout']);
+  assert.deepEqual(find('smirnof'), ['Smirnoff Ice']);
+  assert.deepEqual(find('star bear'), ['Star Beer']);
+  assert.deepEqual(find('starbeer'), ['Star Beer']);
+  assert.deepEqual(find('coke'), ['Coca-Cola']);
+  assert.deepEqual(find('moet'), ['Moët & Chandon'], 'accents don’t matter');
+  assert.deepEqual(find('CHAMPAGNE'), ['Moët & Chandon'], 'by group, any case');
+  assert.deepEqual(find('watter'), ['Water']);
+  assert.ok(find('beer').length >= 4, 'a group finds all its drinks');
+  assert.deepEqual(find('vodka whisky'), [], 'not everything matches');
+  assert.equal(drinkMatch('', 'Heineken'), 1, 'empty search shows everything');
+  assert.ok(drinkMatch('heineken', 'Heineken') > drinkMatch('henikin', 'Heineken'), 'exact first');
+});
+
+test('drink search, looser: when nothing matches every word, any word will do', async () => {
+  const { drinkMatch, drinkMatchAny } = await import('../../public/lib/shared.js');
+  assert.equal(drinkMatch('guiness stout', 'Stout', 'Beer'), 0);
+  assert.ok(drinkMatchAny('guiness stout', 'Stout', 'Beer') > 0);
+  assert.equal(drinkMatchAny('vodka whisky', 'Stout', 'Beer'), 0);
+});

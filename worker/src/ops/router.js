@@ -7,6 +7,8 @@ import * as approvals from './approvals.js';
 import * as front from './frontoffice.js';
 import * as closing from './closing.js';
 import * as money from './money.js';
+import * as budget from './budget.js';
+import * as payments from './payments.js';
 
 export async function opsRoute(m, p, u, b, env, user) {
   const q = k => u.searchParams.get(k) || undefined;
@@ -33,6 +35,8 @@ export async function opsRoute(m, p, u, b, env, user) {
       case '/api/ops/eod': return closing.eodReport(env, user, { date: q('date') });
       case '/api/ops/eod/list': return closing.listEod(env, user);
       case '/api/ops/finance-contact': return closing.financeContact(env, user);
+      case '/api/ops/payments': return payments.nightPayments(env, user, { date: q('date') });
+      case '/api/ops/budget': return budget.monthBudget(env, user, { month: q('month') });
       case '/api/ops/money': return money.moneyReport(env, user, { period: q('period'), from: q('from'), to: q('to') });
     }
     return undefined;
@@ -72,6 +76,11 @@ export async function opsRoute(m, p, u, b, env, user) {
     case '/api/ops/eod/sign-off': return closing.financeSignOff(env, b, user);
     case '/api/ops/finance-contact': return closing.financeContact(env, user, b || {});
     case '/api/ops/expenses': return money.addExpense(env, b, user);
+    case '/api/ops/budget': return budget.setBudget(env, b, user);
+    case '/api/ops/bills': return budget.addBill(env, b, user);
+    case '/api/ops/bills/pay': return budget.payBill(env, b, user);
+    case '/api/ops/bills/remove': return budget.removeBill(env, b, user);
+    case '/api/ops/bills/copy': return budget.copyMonth(env, b, user);
     case '/api/ops/expenses/remove': return money.removeExpense(env, b, user);
   }
   return undefined;

@@ -26,13 +26,13 @@ function setup() {
 const ok = (r, what) => { assert.ok(r.status === 200, `${what}: ${r.status} ${r.data.error || ''}`); return r.data; };
 const amount = (rows, key) => rows.find(r => r.key === key)?.amountPesewas;
 
-test('money in, money out, profit: drinks bought and sold, the club’s ticket share, expenses', async () => {
+test('money in, money out, profit: drinks bought and sold, table bookings (tickets left out), expenses', async () => {
   const ctx = setup();
   ok(await ctx.call('POST', '/api/ops/stock/received', { who: ctx.F1, body: { stationId: 'main', productId: 'beer', qty: 24, totalCostPesewas: 28800 } }), 'finance buys 24 beers for GHS 288');
   ok(await ctx.call('POST', '/api/ops/quick-sale', { who: ctx.B1, body: { fromBar: true, lines: [{ productId: 'beer', qty: 3 }], method: 'cash' } }), 'bar sells 3');
-  // A ticket bought online tonight: GHS 100, of which the club's share is GHS 70.
-  ctx.store.seed('orders', 'o1', { kind: 'ticket', status: 'confirmed', quantity: 1, amountPesewas: 10000, shares: { memoriesSharePesewas: 7000 }, createdAt: new Date().toISOString() });
-  ctx.store.seed('orders', 'comp', { kind: 'ticket', status: 'confirmed', quantity: 1, amountPesewas: 0, createdAt: new Date().toISOString() });
+  // A table booked online tonight: GHS 100, of which the club's share is GHS 70. A ticket is left out.
+  ctx.store.seed('orders', 'o1', { kind: 'table', status: 'confirmed', quantity: 1, amountPesewas: 10000, shares: { memoriesSharePesewas: 7000 }, createdAt: new Date().toISOString() });
+  ctx.store.seed('orders', 't1', { kind: 'ticket', status: 'confirmed', quantity: 2, amountPesewas: 20000, shares: { memoriesSharePesewas: 14000 }, createdAt: new Date().toISOString() });
 
   assert.equal((await ctx.call('POST', '/api/ops/expenses', { who: ctx.W1, body: { category: 'dj', description: 'DJ', amountPesewas: 20000 } })).status, 403, 'waiters don’t record expenses');
   assert.match((await ctx.call('POST', '/api/ops/expenses', { who: ctx.M1, body: { category: 'dj', amountPesewas: 20000 } })).data.error, /Say what it was/);
@@ -40,7 +40,7 @@ test('money in, money out, profit: drinks bought and sold, the club’s ticket s
   ok(await ctx.call('POST', '/api/ops/expenses', { who: ctx.F1, body: { category: 'power', description: 'ECG prepaid', amountPesewas: 5000 } }), 'finance adds');
 
   const m = ok(await ctx.call('GET', '/api/ops/money?period=today', { who: ctx.D1 }), 'director');
-  assert.deepEqual([amount(m.moneyIn, 'drinks'), amount(m.moneyIn, 'tickets'), amount(m.moneyIn, 'tables')], [7500, 7000, 0]);
+  assert.deepEqual([amount(m.moneyIn, 'drinks'), amount(m.moneyIn, 'tables'), amount(m.moneyIn, 'tickets')], [7500, 7000, undefined], 'no tickets');
   assert.deepEqual([amount(m.moneyOut, 'drinks_bought'), amount(m.moneyOut, 'dj'), amount(m.moneyOut, 'power')], [28800, 20000, 5000]);
   assert.deepEqual([m.totals.inPesewas, m.totals.outPesewas, m.totals.profitPesewas], [14500, 53800, -39300]);
   assert.deepEqual([m.drinks.soldPesewas, m.drinks.costPesewas, m.drinks.profitPesewas], [7500, 3600, 3900], '3 beers: sold GHS 75, cost GHS 36');

@@ -3,13 +3,16 @@
 // night. Everything else is behind "More", shown only when tapped. The technical side (the site,
 // nights, settings) is the administrator's, in the control room.
 //   Manager:  Tonight · Tables · Staff · More (money & expenses, drinks & prices, stock, full sales, past nights)
-//   Director: Tonight · Money · Reports · More (tables, staff, ticket money, members & attendance)
+//   Director: Tonight · Money (with bills and budget) · Reports · More (tables, staff, members &
+//             attendance). No ticket sales: those are the events side, not the director's.
+// Tonight also opens Payments tonight (every payment, tap for what was bought, who served, how it
+// was paid) and Top customers.
 // "Needs you" on Tonight: approvals, and stock differences the bar found when it opened (the
 // manager explains them). The manager adds expenses from Tonight; the director sees Money.
 import { $, $$, esc } from '../app.js';
 import { requireStaff, staffHeader, sapi } from '../staff.js';
 import { bottomNav, sheet, say, st, every, money, when } from '../lib/ops-ui.js';
-import { salesView, closingView, approvalsView, productsView, stockAdminView, eodListView, eodView, moneyView, expenseSheet, explainSheet } from '../lib/ops-views.js';
+import { salesView, closingView, approvalsView, productsView, stockAdminView, eodListView, eodView, moneyView, expenseSheet, explainSheet, budgetView, paymentsView } from '../lib/ops-views.js';
 import { staffView } from '../lib/staff-view.js';
 
 const user = await requireStaff(['manager', 'director', 'superAdmin']);
@@ -37,7 +40,9 @@ async function route() {
     if (key === 'close') { app.innerHTML = `${back()}<div id="cv"></div>`; bindBack(); return await closingView($('#cv'), undefined, { canClose: true }); }
     if (key === 'approvals') { app.innerHTML = `${back()}<div id="av"></div>`; bindBack(); return await approvalsView($('#av')); }
     if (key === 'sales') { app.innerHTML = `${back()}<div id="sv"></div>`; bindBack(); return await salesView($('#sv')); }
-    if (key === 'prices') { app.innerHTML = `${back()}<div id="pv"></div>`; bindBack(); return await productsView($('#pv')); }
+    if (key === 'prices') { app.innerHTML = `${back()}<div id="pv"></div>`; bindBack(); return await productsView($('#pv'), { canEdit: user.role === 'superAdmin' }); }
+    if (key === 'budget') { app.innerHTML = `${back('Money', 'money')}<div id="bv"></div>`; bindBack(); return await budgetView($('#bv')); }
+    if (key === 'payments' || key === 'customers') { app.innerHTML = `${back()}<div id="yv"></div>`; bindBack(); return await paymentsView($('#yv'), { tab: key }); }
     if (key === 'stock') { app.innerHTML = `${back()}<div id="kv"></div>`; bindBack(); return await stockAdminView($('#kv'), undefined, undefined, { role: user.role }); }
     if (key === 'money') { app.innerHTML = `${director ? '' : back()}<div id="mv"></div>`; bindBack(); return await moneyView($('#mv')); }
     stop = every(10000, () => tonight().catch(fail));
@@ -67,6 +72,7 @@ async function tonight() {
     ${waiting.length ? `<section class="pos-need"><h2>Needs you <span class="count">${waiting.length}</span></h2>
       ${waiting.map(p => `<div class="need"><div><b>${esc(p.label)}</b><span>${esc(p.summary)}</span><small>${esc(p.requestedByName)} · “${esc(p.reason)}”</small></div>
         <div class="need-btns"><button class="mid okc" data-yes="${esc(p.id)}" aria-label="Approve">✓</button><button class="mid" data-no="${esc(p.id)}" aria-label="Refuse">✗</button></div></div>`).join('')}</section>` : ''}
+    <div class="btn-row"><button class="big ghost" data-goto="payments">Payments tonight</button><button class="big ghost" data-goto="customers">Top customers</button></div>
     <section><div class="pos-head"><h2>Tables</h2><span class="muted">${open.length} open</span></div>
       <div class="pos-tables">${open.slice(0, 8).map(tableRow).join('') || '<p class="muted">No open tables.</p>'}</div>
       ${open.length > 8 ? `<button class="link" data-goto="tables">See all ${open.length} tables →</button>` : ''}</section>
@@ -124,10 +130,11 @@ function more() {
     ...(director ? [['tables', 'Tables', 'Open tables and what they owe']] : [['money', 'Money', 'Money in, money out, profit; expenses']]),
     ['sales', 'Tonight in detail', 'By waiter, by bar, by drink'],
     ['approvals', 'Approvals', 'Everything asked tonight'],
-    ['prices', 'Drinks & prices', 'Add a drink, change a price'],
+    ['budget', 'Bills and budget', 'What’s due this month, set by finance'],
+    ['prices', 'Drinks & prices', 'Prices and costs (finance sets them)'],
     ['stock', 'Stock', 'Deliveries, counts, differences'],
     ...(director ? [['staff', 'Staff', 'Add people, send PINs']] : [['reports', 'Past nights', 'End-of-day reports']]),
-    ...(director ? [['@admin.html#overview', 'Ticket money', 'Tickets sold, payments, refunds'], ['@admin.html#members', 'Members & attendance', 'Who came in, by night']] : []),
+    ...(director ? [['@admin.html#members', 'Members & attendance', 'Who came in, by night']] : []),
     ...(user.role === 'superAdmin' ? [['@admin.html', 'Control room', 'Site, nights, settings']] : []),
   ];
   const { box, close } = sheet(`<h2>More</h2><div class="more-list">${items.map(([k, l, sub]) => `<button type="button" data-more="${esc(k)}"><b>${esc(l)}</b><span>${esc(sub)}</span></button>`).join('')}</div>
