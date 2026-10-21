@@ -386,6 +386,7 @@ test('control room: refunds owed are listed and can be marked refunded with a no
   store.seed('pending_checkouts', 'e2e-refund', { kind: 'ticket', eventName: 'Afrobeats Friday', buyerName: 'Refund Me', buyerPhone: '0247778888', amountPesewas: 15000, status: 'failed', error: 'sold_out_after_payment', refundStatus: 'manual_required', createdAt: new Date().toISOString() });
   // Refunds are the ticket side: the system admin's, not the director's.
   const dir = await phone(390); await signInAs(dir, 'director@dev'); await dir.waitForURL(/night\.html/);
+  await dir.locator('#acctBtn').waitFor(); // signed in and the director's screen is up before moving on
   await dir.goto(`${base}/admin.html`); await dir.waitForFunction(() => location.hash === '#members'); // members only
   assert.equal(await dir.locator('text=Refunds').count(), 0);
   const admin = await phone(1280);
