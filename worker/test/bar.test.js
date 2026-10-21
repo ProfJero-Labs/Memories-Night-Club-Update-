@@ -20,6 +20,8 @@ function setup() {
   store.seed('menu_items', 'beer', { name: 'Club beer', category: 'Beer', pricePesewas: 2500, available: true });
   store.seed('menu_items', 'shot', { name: 'Tequila shot', category: 'Shots', pricePesewas: 3000, available: true });
   store.seed('menu_items', 'gone', { name: 'Champagne flute', category: 'Wine', pricePesewas: 9000, available: false });
+  // Stock in the bar (delivered on an earlier night: it carries forward), so drinks can be sold.
+  for (const pid of ['beer', 'shot', 'gone']) store.seed('stock_moves', `seed-${pid}`, { productId: pid, stationId: 'main', qty: 100, kind: 'received', businessDate: '2000-01-01' });
   return { store, env };
 }
 const BAR = { role: 'barStaff' };

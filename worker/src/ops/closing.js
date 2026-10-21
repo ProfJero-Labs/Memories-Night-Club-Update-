@@ -65,14 +65,16 @@ export function waiterFigures(uid, data) {
     cancelledRounds: data.rounds.filter(r => r.waiterUid === uid && r.status === 'cancelled').length,
   };
 }
+// Waiters and bartenders (their quick sales and cash) both have one.
+const REPORTERS = ['waitStaff', 'barStaff', ...BOSS];
 export async function myReport(env, user, { date } = {}) {
-  if (!requireRole(user, ['waitStaff', ...BOSS])) return FORBIDDEN;
+  if (!requireRole(user, REPORTERS)) return FORBIDDEN;
   const d = dateOr(date), data = await nightData(env, d);
   const sub = data.reports.find(r => r.uid === uidOf(user) && r.kind === 'waiter');
   return { date: d, figures: waiterFigures(uidOf(user), data), submitted: sub ? { at: sub.submittedAt, explanation: sub.explanation, figures: sub.figures } : null };
 }
 export async function submitMyReport(env, b, user) {
-  if (!requireRole(user, ['waitStaff', ...BOSS])) return FORBIDDEN;
+  if (!requireRole(user, REPORTERS)) return FORBIDDEN;
   const d = dateOr(b?.date), rid = `${d}__${uidOf(user)}`;
   if (await getDoc(env, 'staff_reports', rid)) return { error: 'Your report for this night is already in.' };
   const data = await nightData(env, d), fig = waiterFigures(uidOf(user), data);

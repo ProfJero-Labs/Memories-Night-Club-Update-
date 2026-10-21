@@ -87,7 +87,7 @@ test('3–5: another round on the same tab; part paid in cash at the cashier; a 
   ok(await ctx.call('POST', '/api/ops/tabs/cash', { who: ctx.C1, body: { tabId: tab.id, amountPesewas: 1000 } }), 'cash 1000');
   bill = ok(await ctx.call('GET', `/api/guest/bill/${token}`), 'bill').bill;
   assert.deepEqual([bill.balancePesewas, bill.statusLabel], [2000, 'Part paid']);
-  assert.equal((await ctx.call('POST', '/api/ops/tabs/cash', { who: ctx.B1, body: { tabId: tab.id, amountPesewas: 1000 } })).status, 403, 'a bartender without cash permission can’t take cash');
+  assert.equal((await ctx.call('POST', '/api/ops/tabs/cash', { who: ctx.FO, body: { tabId: tab.id, amountPesewas: 1000 } })).status, 403, 'front office without cash permission can’t take cash');
   // A menu price change never moves a bill already sent.
   ok(await ctx.call('POST', '/api/ops/products', { who: ctx.F1, body: { id: 'shot', name: 'Tequila shot', category: 'Shots', unit: 'shot', pricePesewas: 5000 } }), 'price change');
   bill = ok(await ctx.call('GET', `/api/guest/bill/${token}`), 'bill').bill;
@@ -147,6 +147,7 @@ test('9, 15: the bar count is lower than expected ("3 fewer"); a reason is requi
 
 test('10, 14: the cashier has less cash than expected (explanation required); a waiter can’t change a price; every price change records old and new', async () => {
   const ctx = setup();
+  await openingCount(ctx);
   ok(await ctx.call('POST', '/api/ops/cash/open', { who: ctx.C1, body: { floatPesewas: 10000 } }), 'open cash');
   const tab = ok(await ctx.call('POST', '/api/ops/tabs/open', { who: ctx.W1, body: { table: '3' } }), 'open');
   const r = ok(await ctx.call('POST', '/api/ops/tabs/round', { who: ctx.W1, body: { tabId: tab.id, lines: [{ productId: 'beer', qty: 4 }] } }), 'round');
@@ -233,6 +234,7 @@ test('5, 11, 12: an unpaid tab, free drinks by approval, Today’s sales, the gu
 
 test('existing QR self-ordering still works, and its handover takes the drinks out of the bar’s stock', async () => {
   const ctx = setup();
+  await openingCount(ctx);
   const r = await ctx.call('POST', '/api/guest/counter/checkout', { body: { station: 'a'.repeat(32), items: [{ itemId: 'beer', qty: 2 }], phone: '0241234567', clientId: 'a1b2c3d4-0000-4000-8000-000000000001' } });
   assert.equal(r.status, 200, r.data.error);
   const ref = ctx.store.list('pending_checkouts')[0].id;
@@ -272,7 +274,7 @@ test('waiters: invoice by SMS lists every drink; cash and MoMo recorded by the w
   const r2 = ok(await ctx.call('POST', '/api/ops/tabs/round', { who: ctx.W2, body: { tabId: tab2.id, lines: [{ productId: 'beer', qty: 2 }] } }), 'round 2');
   await barMakes(ctx, r2.id);
   assert.match((await ctx.call('POST', '/api/ops/tabs/pay', { who: ctx.W2, body: { tabId: tab2.id, method: 'momo', amountPesewas: 5000, momoRef: '51234567890' } })).data.error, /already recorded \(Tab 1\)/);
-  assert.equal((await ctx.call('POST', '/api/ops/tabs/pay', { who: ctx.B1, body: { tabId: tab2.id, method: 'momo', amountPesewas: 5000, momoRef: '99887766' } })).status, 403, 'a bartender can’t record payments');
+  assert.equal((await ctx.call('POST', '/api/ops/tabs/pay', { who: ctx.FO, body: { tabId: tab2.id, method: 'momo', amountPesewas: 5000, momoRef: '99887766' } })).status, 403, 'front office can’t record payments');
 
   // The invoice now shows what's paid and what's left.
   ok(await ctx.call('POST', '/api/ops/tabs/text-bill', { who: ctx.W1, body: { tabId: tab.id } }), 'invoice again');

@@ -14,7 +14,15 @@
 // Counts: stock_counts/{date}__{stationId}__{opening|closing}: the bar's physical count. Expected
 // closing = opening + received + transfers in + returns − issued − waste − transfers out.
 // A submitted count is locked; a correction is an approval (ops/approvals.js) and keeps the original.
-import { getDoc, setDoc, queryWhere, listDocs, queryRecent } from '../lib/firestore.js';
+//
+// New stock takes two people: stock_deliveries/{id} is recorded (finance, a manager, or the bar) and
+// only counts once someone else confirms it arrived: the bar confirms what finance or a manager
+// recorded; finance or a manager confirms what the bar recorded. Only then is the 'received' move
+// written. Who recorded it, who confirmed it, and any difference in the number are kept.
+//
+// Nothing sells past zero: stockLeft() is what should be in the bar minus what's already ordered
+// but not yet handed over. Waiter orders, quick sales and QR orders are refused when it runs out.
+import { getDoc, setDoc, queryWhere, listDocs, queryRecent, batchGet, commitTx, updateWrite, foundFields, withTransaction } from '../lib/firestore.js';
 import { now, id, clean } from '../lib/util.js';
 import { requireRole, STOCK, uidOf } from '../lib/auth.js';
 import { FORBIDDEN, bizDate, dateOr, who, audit, logChange, closedError, int } from './common.js';
@@ -33,11 +41,15 @@ const productView = (d, withCost) => ({
 });
 const sortProducts = (a, b) => a.category.localeCompare(b.category) || a.sortOrder - b.sortOrder || a.name.localeCompare(b.name);
 
-export async function listProducts(env, user) {
+// With a stationId: each counted drink also says how many are left to sell at that bar (`left`;
+// null for drinks the bar doesn't count).
+export async function listProducts(env, user, { stationId } = {}) {
   if (!requireRole(user, MENU_READERS)) return FORBIDDEN;
   const withCost = requireRole(user, STOCK);
   const [items, stations] = await Promise.all([listDocs(env, 'menu_items'), listDocs(env, 'bar_stations')]);
-  return { products: items.map(d => productView(d, withCost)).sort(sortProducts), stations: stations.map(s => ({ id: s.id, name: s.fields.name })).sort((a, b) => a.name.localeCompare(b.name)), units: UNITS };
+  const left = stationId ? await stockLeft(env, stationId) : null;
+  const products = items.map(d => ({ ...productView(d, withCost), ...(left ? { left: d.id in left ? left[d.id] : null } : {}) })).sort(sortProducts);
+  return { products, stations: stations.map(s => ({ id: s.id, name: s.fields.name })).sort((a, b) => a.name.localeCompare(b.name)), units: UNITS };
 }
 
 export async function saveProduct(env, b, user) {
@@ -91,9 +103,60 @@ export async function recordReceived(env, b, user) {
   const qty = int(b.qty); if (!(qty >= 1 && qty <= 10000)) return { error: 'How many arrived? A whole number.' };
   const closed = await closedError(env, bizDate()); if (closed) return closed;
   const unitCost = b.unitCostPesewas === '' || b.unitCostPesewas == null ? null : int(b.unitCostPesewas);
-  await addMoves(env, [{ productId: p.id, productName: p.name, stationId: st.id, qty, kind: 'received', supplier: clean(b.supplier, 80), reference: clean(b.reference, 60), unitCostPesewas: unitCost >= 0 ? unitCost : null, note: clean(b.note, 200) }], user);
-  await logChange(env, user, { kind: 'stock', refId: p.id, refName: p.name, field: `received at ${st.name}`, from: null, to: qty, note: [clean(b.supplier, 80), clean(b.reference, 60)].filter(Boolean).join(' · ') });
-  return { recorded: true };
+  const did = id(), byBar = !requireRole(user, STOCK);
+  await setDoc(env, 'stock_deliveries', did, { productId: p.id, productName: p.name, stationId: st.id, stationName: st.name, qty, supplier: clean(b.supplier, 80), reference: clean(b.reference, 60),
+    unitCostPesewas: unitCost >= 0 ? unitCost : null, note: clean(b.note, 200), status: 'pending', byBar, recordedBy: uidOf(user), recordedByName: user.name || '', recordedRole: user.role, recordedAt: now() });
+  await logChange(env, user, { kind: 'stock', refId: p.id, refName: p.name, field: `new stock recorded for ${st.name} (waiting to be confirmed)`, from: null, to: qty, note: [clean(b.supplier, 80), clean(b.reference, 60)].filter(Boolean).join(' · ') });
+  await audit(env, user, 'STOCK_DELIVERY_RECORDED', { deliveryId: did, productId: p.id, stationId: st.id, qty });
+  return { recorded: true, pending: true, id: did, confirmBy: byBar ? 'finance or a manager' : 'the bar' };
+}
+
+const deliveryView = d => ({ id: d.id, productId: d.fields.productId, productName: d.fields.productName, stationId: d.fields.stationId, stationName: d.fields.stationName, qty: d.fields.qty, confirmedQty: d.fields.confirmedQty ?? null,
+  supplier: d.fields.supplier || '', reference: d.fields.reference || '', status: d.fields.status, byBar: !!d.fields.byBar, recordedByName: d.fields.recordedByName || '', recordedAt: d.fields.recordedAt,
+  confirmedByName: d.fields.confirmedByName || '', confirmedAt: d.fields.confirmedAt || '', note: d.fields.note || '', confirmNote: d.fields.confirmNote || '' });
+// Who may confirm: never the person who recorded it; what the bar recorded needs finance or a manager.
+const canConfirm = (user, f) => f.recordedBy !== uidOf(user) && (f.byBar ? requireRole(user, STOCK) : requireRole(user, STOCK_HANDS));
+
+// New stock for one bar (or every bar): waiting to be confirmed, and the last week's confirmed or refused.
+export async function listDeliveries(env, user, { stationId } = {}) {
+  if (!requireRole(user, STOCK_HANDS)) return FORBIDDEN;
+  const all = stationId ? await queryWhere(env, 'stock_deliveries', [{ field: 'stationId', value: String(stationId) }]) : await listDocs(env, 'stock_deliveries');
+  const since = Date.now() - 7 * 864e5;
+  const rows = all.filter(d => d.fields.status === 'pending' || new Date(d.fields.confirmedAt || d.fields.recordedAt).getTime() > since)
+    .sort((a, b) => String(b.fields.recordedAt).localeCompare(String(a.fields.recordedAt))).slice(0, 100)
+    .map(d => ({ ...deliveryView(d), canConfirm: d.fields.status === 'pending' && !!canConfirm(user, d.fields) }));
+  return { deliveries: rows, pending: rows.filter(d => d.status === 'pending').length, forMe: rows.filter(d => d.canConfirm).length };
+}
+
+// Confirm what arrived (the number actually there; a different number needs a note), or say it didn't come.
+export async function decideDelivery(env, b, user) {
+  if (!requireRole(user, STOCK_HANDS)) return FORBIDDEN;
+  const did = String(b?.id || '');
+  const res = await withTransaction(env, async tx => {
+    const d = foundFields(await batchGet(env, [`stock_deliveries/${did}`], tx), `/stock_deliveries/${did}`);
+    if (!d) return { error: 'Delivery not found.', status: 404 };
+    const f = d.fields;
+    if (f.status !== 'pending') return { error: f.status === 'confirmed' ? `Already confirmed by ${f.confirmedByName}.` : 'Already marked as not arrived.' };
+    if (f.recordedBy === uidOf(user)) return { error: 'Someone else must confirm stock you recorded.', status: 403 };
+    if (!canConfirm(user, f)) return { error: 'Finance or a manager must confirm stock the bar recorded.', status: 403 };
+    const note = clean(b?.note, 200), at = now();
+    if (b?.action === 'reject') {
+      if (!note) return { error: 'Say what happened, e.g. it didn’t arrive.' };
+      await commitTx(env, [updateWrite(env, 'stock_deliveries', did, { ...f, status: 'rejected', confirmedBy: uidOf(user), confirmedByName: user.name || '', confirmedAt: at, confirmNote: note })], tx);
+      return { rejected: true, f };
+    }
+    const qty = b?.qty == null || b.qty === '' ? f.qty : int(b.qty);
+    if (!(qty >= 0 && qty <= 10000)) return { error: 'How many arrived? A whole number.' };
+    if (qty !== f.qty && !note) return { error: `${f.qty} were recorded but you counted ${qty}. Say what happened.` };
+    await commitTx(env, [updateWrite(env, 'stock_deliveries', did, { ...f, status: 'confirmed', confirmedQty: qty, confirmedBy: uidOf(user), confirmedByName: user.name || '', confirmedAt: at, confirmNote: note })], tx);
+    return { confirmed: true, qty, f };
+  });
+  if (res.error) return res;
+  const { f } = res; delete res.f;
+  if (res.confirmed && res.qty > 0) await addMoves(env, [{ productId: f.productId, productName: f.productName, stationId: f.stationId, qty: res.qty, kind: 'received', supplier: f.supplier || '', reference: f.reference || '', unitCostPesewas: f.unitCostPesewas ?? null, note: f.note || '', deliveryId: did, recordedByName: f.recordedByName }], user);
+  await logChange(env, user, { kind: 'stock', refId: f.productId, refName: f.productName, field: res.confirmed ? `new stock confirmed at ${f.stationName}` : `new stock refused at ${f.stationName}`, from: f.qty, to: res.confirmed ? res.qty : 0, note: clean(b?.note, 200) });
+  await audit(env, user, res.confirmed ? 'STOCK_DELIVERY_CONFIRMED' : 'STOCK_DELIVERY_REJECTED', { deliveryId: did, recordedQty: f.qty, qty: res.qty ?? 0 });
+  return res;
 }
 
 export async function recordTransfer(env, b, user) {
@@ -123,27 +186,32 @@ export async function recordWaste(env, b, user) {
 }
 
 // ── The stock sheet: opening, everything recorded since, expected, and the count if there is one ──
-async function openingFor(env, stationId, date) {
-  const own = await getDoc(env, 'stock_counts', `${date}__${stationId}__opening`);
+// Opening for a night = its own opening count, or else the last closing count before it plus every
+// move recorded on the nights in between (so stock added on a night nobody counted still carries on).
+function openingFor(stationId, date, counts, moves) {
+  const sumMoves = keep => moves.filter(m => keep(String(m.fields.businessDate || ''))).reduce((acc, m) => ({ ...acc, [m.fields.productId]: (acc[m.fields.productId] || 0) + Number(m.fields.qty || 0) }), {});
+  const plus = (a, b) => { const o = { ...a }; for (const [k, v] of Object.entries(b)) o[k] = (o[k] || 0) + v; return o; };
+  const own = counts.find(c => c.fields.date === date && c.fields.kind === 'opening');
   if (own) return { source: 'opening_count', counts: Object.fromEntries(own.fields.lines.map(l => [l.productId, Number(l.counted)])), countedBy: own.fields.byName };
-  const closings = (await queryWhere(env, 'stock_counts', [{ field: 'stationId', value: stationId }, { field: 'kind', value: 'closing' }])).filter(c => c.fields.date < date).sort((a, b) => b.fields.date.localeCompare(a.fields.date));
-  if (closings[0]) {
-    const c = closings[0].fields, use = c.corrected || c;
-    return { source: 'last_closing', fromDate: c.date, counts: Object.fromEntries(use.lines.map(l => [l.productId, Number(l.counted)])) };
+  const closing = counts.filter(c => c.fields.kind === 'closing' && c.fields.date < date).sort((a, b) => b.fields.date.localeCompare(a.fields.date))[0];
+  if (closing) {
+    const c = closing.fields, use = c.corrected || c;
+    return { source: 'last_closing', fromDate: c.date, counts: plus(Object.fromEntries(use.lines.map(l => [l.productId, Number(l.counted)])), sumMoves(d => d > c.date && d < date)) };
   }
-  return { source: 'none', counts: {} };
+  const earlier = sumMoves(d => d < date);
+  return { source: Object.keys(earlier).length ? 'earlier_moves' : 'none', counts: earlier };
 }
 
-export async function stockSheet(env, { stationId, date }, user) {
-  if (!requireRole(user, [...STOCK_HANDS, 'eventManager'])) return FORBIDDEN;
-  const d = dateOr(date), st = await station(env, stationId);
-  if (!st) return { error: 'Pick the bar.' };
-  const [items, moves, opening, closing] = await Promise.all([
-    listDocs(env, 'menu_items'), queryWhere(env, 'stock_moves', [{ field: 'stationId', value: st.id }, { field: 'businessDate', value: d }]),
-    openingFor(env, st.id, d), getDoc(env, 'stock_counts', `${d}__${st.id}__closing`),
+async function sheetFor(env, st, d, { withComps = true } = {}) {
+  const [items, allMoves, counts] = await Promise.all([
+    listDocs(env, 'menu_items'), queryWhere(env, 'stock_moves', [{ field: 'stationId', value: st.id }], { limit: 20000 }),
+    queryWhere(env, 'stock_counts', [{ field: 'stationId', value: st.id }]),
   ]);
-  const comps = (await queryWhere(env, 'rounds', [{ field: 'stationId', value: st.id }, { field: 'businessDate', value: d }]))
-    .flatMap(r => r.fields.lines || []).reduce((m, l) => (l.compQty ? { ...m, [l.productId]: (m[l.productId] || 0) + l.compQty } : m), {});
+  const opening = openingFor(st.id, d, counts, allMoves);
+  const moves = allMoves.filter(m => m.fields.businessDate === d);
+  const closing = counts.find(c => c.fields.date === d && c.fields.kind === 'closing');
+  const comps = withComps ? (await queryWhere(env, 'rounds', [{ field: 'stationId', value: st.id }, { field: 'businessDate', value: d }]))
+    .flatMap(r => r.fields.lines || []).reduce((m, l) => (l.compQty ? { ...m, [l.productId]: (m[l.productId] || 0) + l.compQty } : m), {}) : {};
   const counted = closing ? Object.fromEntries((closing.fields.corrected || closing.fields).lines.map(l => [l.productId, l])) : {};
   const rows = items.filter(i => i.fields.tracked !== false).map(i => {
     const mv = moves.filter(m => m.fields.productId === i.id), sum = k => mv.filter(m => m.fields.kind === k).reduce((n, m) => n + Math.abs(Number(m.fields.qty)), 0);
@@ -154,11 +222,57 @@ export async function stockSheet(env, { stationId, date }, user) {
     r.low = r.lowStock > 0 && (r.counted ?? r.expected) <= r.lowStock;
     return r;
   }).sort((a, b) => a.category.localeCompare(b.category) || a.name.localeCompare(b.name));
+  return { opening, closing, rows };
+}
+
+export async function stockSheet(env, { stationId, date }, user) {
+  if (!requireRole(user, [...STOCK_HANDS, 'eventManager'])) return FORBIDDEN;
+  const d = dateOr(date), st = await station(env, stationId);
+  if (!st) return { error: 'Pick the bar.' };
+  const { opening, closing, rows } = await sheetFor(env, st, d);
+  const pendingNew = (await queryWhere(env, 'stock_deliveries', [{ field: 'stationId', value: st.id }, { field: 'status', value: 'pending' }])).length;
   return {
     station: { id: st.id, name: st.name }, date: d, opening: { source: opening.source, fromDate: opening.fromDate || null },
     closing: closing ? { status: closing.fields.status, byName: closing.fields.byName, at: closing.fields.at, reviewedByName: closing.fields.reviewedByName || '', corrected: !!closing.fields.corrected } : null,
-    rows, reasons: COUNT_REASONS, wasteReasons: WASTE_REASONS,
+    rows, reasons: COUNT_REASONS, wasteReasons: WASTE_REASONS, pendingDeliveries: pendingNew,
   };
+}
+
+// ── What's left to sell at a bar right now ──
+// Should be in the bar (tonight's sheet) minus what's ordered but not handed over yet: waiter orders
+// at the bar, paid QR orders waiting for pickup, and QR orders being paid for (the last 30 minutes).
+// Returns { productId: left } for counted drinks only; drinks not counted (tracked: false) never block.
+export async function stockLeft(env, stationId) {
+  const st = await station(env, stationId);
+  if (!st) return {};
+  const { rows } = await sheetFor(env, st, bizDate(), { withComps: false });
+  const left = Object.fromEntries(rows.map(r => [r.productId, r.expected]));
+  const take = (pid, n) => { if (pid in left) left[pid] -= Number(n || 0); };
+  for (const status of ['waiting', 'preparing', 'ready', 'taken']) {
+    for (const r of await queryWhere(env, 'rounds', [{ field: 'stationId', value: st.id }, { field: 'status', value: status }])) for (const l of r.fields.lines || []) take(l.productId, l.qty);
+  }
+  const fresh = Date.now() - 30 * 60e3;
+  for (const status of ['paid', 'pending_payment']) {
+    for (const o of await queryWhere(env, 'counter_orders', [{ field: 'stationId', value: st.id }, { field: 'status', value: status }])) {
+      if (status === 'pending_payment' && !(new Date(o.fields.createdAt).getTime() > fresh)) continue;
+      for (const l of o.fields.lines || []) take(l.itemId, l.qty);
+    }
+  }
+  for (const k of Object.keys(left)) left[k] = Math.max(0, left[k]);
+  return left;
+}
+
+// Refuses a basket the bar can't fill. want: [{ productId, name, qty }]. Returns an error or null.
+export async function stockError(env, stationId, want, { guest = false } = {}) {
+  const left = await stockLeft(env, stationId);
+  const need = new Map();
+  for (const w of want) need.set(w.productId, { name: w.name, qty: (need.get(w.productId)?.qty || 0) + Number(w.qty) });
+  for (const [pid, w] of need) {
+    if (!(pid in left) || w.qty <= left[pid]) continue;
+    if (!left[pid]) return guest ? `Sorry, ${w.name} is finished. Take it off and try again.` : `${w.name} is finished at this bar. Take it off.`;
+    return guest ? `Sorry, only ${left[pid]} ${w.name} left. Change the number and try again.` : `Only ${left[pid]} ${w.name} left at this bar. Change the number.`;
+  }
+  return null;
 }
 
 // The bar's physical count. Opening: only before the night has an opening. Closing: once; locked.
@@ -169,7 +283,7 @@ export async function submitCount(env, b, user) {
   const sheet = await stockSheet(env, { stationId: b?.stationId, date: d }, user); if (sheet.error) return sheet;
   const docId = `${d}__${sheet.station.id}__${kind}`;
   if (await getDoc(env, 'stock_counts', docId)) return { error: kind === 'closing' ? 'The closing count for this bar is already in. To change it, ask a manager for a correction.' : 'This bar already has an opening count for tonight.' };
-  if (kind === 'opening' && sheet.opening.source !== 'none') return { error: 'Tonight’s opening stock comes from the last closing count. Count it again at closing.' };
+  if (kind === 'opening' && !['none', 'earlier_moves'].includes(sheet.opening.source)) return { error: 'Tonight’s opening stock comes from the last closing count. Count it again at closing.' };
   const given = new Map((Array.isArray(b.lines) ? b.lines : []).map(l => [String(l.productId), l]));
   const lines = [];
   for (const r of sheet.rows) {

@@ -814,6 +814,35 @@ test('waiter and bar: open a table with the customer’s phone, “I took them�
   assert.deepEqual([...w.errors, ...bar.errors], []);
 });
 
+test('stock and quick sales: finance records new stock, the bar confirms it; the bar sells for cash; a waiter’s quick sale is collected and closes itself', async () => {
+  const fin = await phone(390); await signInAs(fin, 'finance@dev'); await fin.waitForURL(/finance\.html/);
+  await fin.click('[data-k="stock"]'); await fin.click('#rcv');
+  await fin.selectOption('#rvP', 'dev-m-stout'); await fin.fill('#rvQ', '12'); await fin.fill('#rvS', 'Guinness Ghana'); await fin.click('#rvGo');
+  await fin.locator('#app').getByText('Waiting for the bar to confirm').waitFor();
+  const bar = await phone(390); await signInAs(bar, 'bar@dev'); await bar.waitForURL(/bar\.html/);
+  await bar.click('[data-k="stock"]'); await bar.locator('#vStock').getByText('New stock to confirm').waitFor();
+  await bar.click('#vStock [data-dl]'); await bar.locator('#msgTop').getByText(/Confirmed/).waitFor();
+  assert.equal(docs('stock_moves').filter(m => m.deliveryId && m.productId === 'dev-m-stout' && m.qty === 12).length, 1, 'counts once confirmed');
+  // The bar sells over the counter, for cash; a finished drink can't be picked.
+  await bar.click('[data-k="sell"]'); await bar.waitForSelector('#vSell [data-p="dev-m-beer"]');
+  assert.equal(await bar.locator('#vSell [data-p="dev-m-flute"]').count(), 0);
+  await bar.click('#vSell [data-p="dev-m-beer"]'); await bar.click('#vSell #send'); await bar.click('#psGo');
+  await bar.locator('#msgTop').getByText(/Cash GHS 25 recorded/).waitFor();
+  assert.ok(docs('tabs').some(t => t.soldAtBar && t.status === 'closed' && t.payments[0].method === 'cash'));
+  await bar.locator('#vSell').getByRole('heading', { name: 'Hand in my cash' }).waitFor();
+  // A waiter's quick sale, by MoMo: the bar hands it over, the waiter taps "I got them", it closes.
+  const w = await phone(360); await signInAs(w, 'waiter2@dev'); await w.waitForURL(/waiter\.html/);
+  await w.click('#quick'); await w.waitForURL(/#quick/); await w.click('[data-p="dev-m-shot"]'); await w.click('#send');
+  await w.click('[data-pm="momo"]'); await w.fill('#psRef', '8812345678'); await w.click('#psGo');
+  await w.waitForURL(/#tabs/); await w.locator('#msg').getByText(/MoMo GHS 30 recorded/).waitFor();
+  await bar.click('[data-k="orders"]');
+  await bar.locator('#rounds .ord').filter({ hasText: 'Quick sale' }).locator('[data-a="hand"]').click();
+  await w.locator('.tcard').filter({ hasText: 'Quick sale' }).first().click();
+  await w.locator('[data-act="delivered"]').waitFor({ timeout: 10000 }); await w.click('[data-act="delivered"]');
+  await w.locator('.say').getByText('Closed').waitFor({ timeout: 10000 });
+  assert.deepEqual([...fin.errors, ...bar.errors, ...w.errors], []);
+});
+
 test('sign-in: an email typed in the phone box goes to the email form', async () => {
   const p = await phone(360);
   await p.goto(`${base}/login.html`); await p.waitForSelector('#pinForm');
@@ -869,7 +898,7 @@ test('a night at the bar: tab without QR → bar → delivered → the customer 
   for (const row of await bar.locator('[data-p]').all()) await row.locator('[data-n]').fill('0');
   const reasons = bar.locator('[data-r]:not([hidden])');
   for (let i = 0; i < await reasons.count(); i++) await reasons.nth(i).selectOption('unknown');
-  bar.once('dialog', d => d.accept()); await bar.click('#cfGo'); await bar.getByText(/Count submitted with 3 differences/).waitFor();
+  bar.once('dialog', d => d.accept()); await bar.click('#cfGo'); await bar.getByText(/Count submitted with \d+ differences/).waitFor();
   await cash.click('[data-k="cash"]'); await cash.fill('#cnt', '108'); await cash.locator('#whyBox').waitFor();
   await cash.fill('#why', 'gave GHS 2 too much change'); cash.once('dialog', d => d.accept()); await cash.click('#cntGo');
   await cash.getByText(/GHS 2 less than expected/).waitFor();

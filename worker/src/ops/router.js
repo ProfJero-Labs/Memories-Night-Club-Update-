@@ -11,9 +11,10 @@ export async function opsRoute(m, p, u, b, env, user) {
   const q = k => u.searchParams.get(k) || undefined;
   if (m === 'GET') {
     switch (p) {
-      case '/api/ops/products': return stock.listProducts(env, user);
+      case '/api/ops/products': return stock.listProducts(env, user, { stationId: q('stationId') });
       case '/api/ops/stock': return stock.stockSheet(env, { stationId: q('stationId'), date: q('date') }, user);
       case '/api/ops/changes': return stock.changeLog(env, user);
+      case '/api/ops/stock/deliveries': return stock.listDeliveries(env, user, { stationId: q('stationId') });
       case '/api/ops/tabs': return tabs.myTabs(env, user, { all: q('all') === '1' });
       case '/api/ops/tabs/find': return tabs.findTabs(env, user, q('q'));
       case '/api/ops/tab': return tabs.getTab(env, user, q('id'));
@@ -38,6 +39,8 @@ export async function opsRoute(m, p, u, b, env, user) {
     case '/api/ops/products': return stock.saveProduct(env, b, user);
     case '/api/ops/products/available': return stock.setAvailable(env, b, user);
     case '/api/ops/stock/received': return stock.recordReceived(env, b, user);
+    case '/api/ops/stock/delivery': return stock.decideDelivery(env, b, user);
+    case '/api/ops/quick-sale': return tabs.quickSale(env, b, user);
     case '/api/ops/stock/transfer': return stock.recordTransfer(env, b, user);
     case '/api/ops/stock/waste': return stock.recordWaste(env, b, user);
     case '/api/ops/stock/count': return stock.submitCount(env, b, user);

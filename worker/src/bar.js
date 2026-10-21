@@ -15,7 +15,7 @@ import { getDoc, setDoc, listDocs, queryWhere, batchGet, commitTx, updateWrite, 
 import { now, id, clean, normalizePhone, money, paymentRef, validEmail } from './lib/util.js';
 import { requireRole, CMS, uidOf } from './lib/auth.js';
 import { sendSms, siteUrl } from './lib/notify.js';
-import { addMoves, saveProduct } from './ops/stock.js';
+import { addMoves, saveProduct, stockLeft, stockError } from './ops/stock.js';
 
 const FORBIDDEN = { error: 'Forbidden.', status: 403 };
 export const BAR = ['superAdmin', 'director', 'manager', 'eventManager', 'barStaff', 'waitStaff'];
@@ -45,7 +45,10 @@ const sortMenu = (a, b) => a.category.localeCompare(b.category) || a.sortOrder -
 export async function guestMenu(env, token) {
   const st = await stationByToken(env, token);
   if (!st) return { error: 'This QR code isn’t ours any more. Order at the bar.', status: 404 };
-  const items = (await listDocs(env, 'menu_items')).map(publicItem).filter(i => i.pricePesewas > 0).sort(sortMenu);
+  // A drink the bar has run out of shows as finished (and can't be ordered: see counterCheckout).
+  const left = await stockLeft(env, st.id);
+  const items = (await listDocs(env, 'menu_items')).map(publicItem).filter(i => i.pricePesewas > 0)
+    .map(i => (i.id in left ? { ...i, available: i.available && left[i.id] > 0, left: left[i.id] } : i)).sort(sortMenu);
   return { station: { name: st.fields.name }, open: st.fields.open !== false && items.some(i => i.available), items };
 }
 
@@ -73,6 +76,9 @@ export async function counterCheckout(env, b) {
     if (!it || it.fields.available === false || !(Number(it.fields.pricePesewas) > 0)) return { error: `${it?.fields?.name || 'A drink you picked'} isn’t available any more.` };
     lines.push({ itemId: x.itemId, name: it.fields.name, qty: x.qty, unitPesewas: Number(it.fields.pricePesewas) });
   }
+  // Checked before any money is taken: the guest is never charged for a drink the bar doesn't have.
+  const short = await stockError(env, st.id, lines.map(l => ({ productId: l.itemId, name: l.name, qty: l.qty })), { guest: true });
+  if (short) return { error: short };
   const totalPesewas = lines.reduce((n, l) => n + l.qty * l.unitPesewas, 0);
   const orderId = id(), reference = paymentRef();
   const spot = cleanSpot(b?.spot);

@@ -63,5 +63,7 @@ export function seed(store, origin) {
   // Scan to order: one bar (QR → /b/0123…cdef) and a short drinks menu. Dev placeholders.
   store.seed('bar_stations', 'dev-main-bar', { name: 'Main bar', token: '0123456789abcdef0123456789abcdef', open: true });
   for (const [id, name, category, pricePesewas, available] of [['dev-m-beer', 'Club beer', 'Beer', 2500, true], ['dev-m-stout', 'Stout', 'Beer', 3000, true], ['dev-m-shot', 'Tequila shot', 'Shots', 3000, true], ['dev-m-cock', 'House cocktail', 'Cocktails', 6000, true], ['dev-m-water', 'Water', 'Soft', 1000, true], ['dev-m-flute', 'Champagne flute', 'Wine', 9000, false]]) store.seed('menu_items', id, { name, category, pricePesewas, available, sortOrder: 0 });
+  // Stock in the main bar, delivered (and confirmed) on an earlier night: drinks with none can't be sold.
+  for (const id of ['dev-m-beer', 'dev-m-stout', 'dev-m-shot', 'dev-m-cock', 'dev-m-water']) store.seed('stock_moves', `dev-stock-${id}`, { productId: id, stationId: 'dev-main-bar', qty: 48, kind: 'received', businessDate: '2026-01-01', byName: 'Dev Finance', at: '2026-01-01T12:00:00.000Z' });
   store.seed('private_event_requests', 'dev-req1', { eventType: 'Birthday', date: nextDow(6, 2).slice(0, 10), guests: 25, name: 'Dev Requester', phone: '0240000000', instagram: '@dev', message: 'Thirtieth. Want the booth.', status: 'NEW', createdAt: new Date().toISOString() });
 }
