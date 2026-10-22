@@ -252,8 +252,7 @@ export async function closeNight(env, b, user) {
   const d = dateOr(b?.date);
   const state = await nightState(env, d);
   if (!canCloseNight(user, state)) return { error: requireRole(user, ['director']) ? 'The Manager closes the night, not the directors.' : 'Only the Manager closes the night, or whoever accepted it when the Manager handed it over.', status: 403 };
-  if (state.status === 'closed') return { error: 'This night is already closed.' };
-  if (d === bizDate() && new Date().getUTCHours() >= 12 && b.confirmEarly !== true) return { error: 'The night isn’t over yet. Close it after the last customers leave.', code: 'early' };
+  // Any time, and again later: each close saves a new version of the report (nothing is locked).
   const status = await closingStatus(env, user, { date: d });
   const missing = status.steps.filter(s => ['waiters', 'bar', 'cash', 'front'].includes(s.key) && !s.done);
   if (missing.length && b.closeAnyway !== true) return { error: `Not done yet: ${missing.map(m => m.label.toLowerCase()).join('; ')}.`, code: 'incomplete', missing: missing.map(m => m.key) };

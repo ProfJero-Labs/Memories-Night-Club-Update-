@@ -55,9 +55,19 @@ async function tabsList() {
     $('#list').innerHTML = (open.length ? open.map(card).join('') : '<div class="empty-box"><b>No open tabs</b>Tap “New tab” when a table or customer orders.</div>')
       + (done.length ? `<details class="fold"><summary>Closed tonight (${done.length})</summary><div class="cards">${done.map(card).join('')}</div></details>` : '');
     $$('[data-tab]').forEach(b => b.onclick = () => { location.hash = `tab/${b.dataset.tab}`; });
+    $$('[data-more]').forEach(b => b.onclick = () => { location.hash = `add/${b.dataset.more}`; });
+    $$('[data-pay]').forEach(b => b.onclick = async () => {
+      try { const { tab } = await busy(b, () => sapi(`/api/ops/tab?id=${encodeURIComponent(b.dataset.pay)}`), 'Opening…'); closeSheet(tab); }
+      catch (e) { say($('#msg'), e.message, 'bad'); }
+    });
   });
 }
-const card = t => `<button class="tcard ${t.status !== 'open' ? 'done' : t.openRounds ? 'warn' : ''}" data-tab="${esc(t.id)}">
+// An open tab on My tables: its two next steps right on it.
+const card = t => t.status !== 'open' || t.quick ? doneCard(t) : `<div class="tcard ${t.openRounds ? 'warn' : ''}" style="cursor:default">
+  <button type="button" class="tcard-open" data-tab="${esc(t.id)}"><span class="row"><span class="t">${esc(t.label)} · ${esc(t.table)}</span><span class="amt">${money(t.bill.balancePesewas || t.bill.totalPesewas)}</span></span>
+  <span class="row"><span class="sub">${t.customerName ? `${esc(t.customerName)} · ` : ''}${t.openRounds ? `${t.openRounds} order${t.openRounds > 1 ? 's' : ''} to collect` : 'All collected'}</span>${st(t.payStatus, t.payLabel)}</span></button>
+  <span class="btn-row"><button type="button" class="mid" data-more="${esc(t.id)}">Add drinks</button><button type="button" class="mid okc" data-pay="${esc(t.id)}" ${t.bill.totalPesewas ? '' : 'disabled'}>Close tab</button></span></div>`;
+const doneCard = t => `<button class="tcard ${t.status !== 'open' ? 'done' : t.openRounds ? 'warn' : ''}" data-tab="${esc(t.id)}">
   <span class="row"><span class="t">${esc(t.label)} · ${esc(t.table)}</span><span class="amt">${money(t.bill.balancePesewas || t.bill.totalPesewas)}</span></span>
   <span class="row"><span class="sub">${t.customerName ? `${esc(t.customerName)} · ` : ''}${t.status !== 'open' ? 'Closed' : t.openRounds ? `${t.openRounds} order${t.openRounds > 1 ? 's' : ''} to collect` : 'Add drinks or close'}</span>${st(t.payStatus, t.payLabel)}</span></button>`;
 
@@ -123,6 +133,8 @@ function closeSheet(t) {
     <div class="btn-row"><button class="big" id="csCash" ${canCash ? '' : 'disabled'}>Cash</button><button class="big" id="csMomo">MoMo</button></div>
     ${canCash ? '' : '<span class="hint">Cash: your job doesn’t include taking cash. Send them to the cashier.</span>'}`}</div>`, { label: 'Close tab' });
   const phone = () => $('#csPhone', box)?.value.trim() || '';
+  // Opened from My tables: just close the panel and refresh the list. From a tab: back to My tables.
+  const backToTables = () => { if (!location.hash.startsWith('#tab/')) { close(); setTimeout(route, 0); } else returnTo('tabs'); };
   const go = async (method, btn) => {
     if (phone() && !normalizePhone(phone())) return say($('#csMsg', box), 'That phone number doesn’t look right.', 'bad');
     try {
@@ -140,14 +152,14 @@ function closeSheet(t) {
   function done(text) {
     $('#csBody', box).innerHTML = `<div class="result ok" role="alert"><h1 class="display">Tab closed</h1><p style="margin:0">${esc(text)}</p></div><button class="big" id="csBack">Back to my tables</button>`;
     navigator.vibrate?.(80);
-    $('#csBack', box).onclick = () => returnTo('tabs'); // closes the panel too
+    $('#csBack', box).onclick = backToTables; // closes the panel too
   }
   async function waitMomo(r) {
     $('#csBody', box).innerHTML = `<div class="result warn" role="status"><h1 class="display">${r.prompt ? 'Approve on your phone' : 'Pay from the text'}</h1><p style="margin:0">${esc(r.message)}</p>
       <div class="qr-big" id="csQr"></div><p class="muted" style="margin:0" id="csWait">Waiting for the payment… The tab closes by itself once paid.</p></div>
       <button class="big ghost" id="csLater">Back to my tables (it closes when paid)</button>`;
     $('#csQr', box).innerHTML = await qrSvg(r.billUrl).catch(() => '');
-    $('#csLater', box).onclick = () => returnTo('tabs');
+    $('#csLater', box).onclick = backToTables;
     const until = Date.now() + 10 * 60e3;
     while (box.isConnected && Date.now() < until) {
       await new Promise(res => setTimeout(res, 3000));

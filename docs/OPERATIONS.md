@@ -124,6 +124,7 @@ Every step is one tap, and the waiter is never stuck on one table.
    - **Return or swap**: on a delivered order. Pick the drink and how many → **Swap** (it goes
      back to the bar and the menu opens for the new drink) or **Just return it**. It comes off the
      bill when the bar taps *Got them back*. **Broken**: off the bill, in the waiter's report.
+   On **My tables** every open tab shows **Add drinks** and **Close tab** right on it.
 5. **Close tab** asks one question: **Cash or MoMo?** (Every order must be collected first, so
    the bill is final.)
    - **Cash** → **Got GHS … cash · close**: it goes in the waiter's cash for the night, the tab
@@ -324,8 +325,12 @@ never in sales, money in or profit.
    reports → *Where the report is sent*). If the email can't be sent, the screen says so: the
    report is always saved in the system.
 7. **Finance** opens it (Finance → Reports), checks it, and signs it off. The person who closed the
-   night can't sign off for finance. A closed night is locked: no new drinks or stock entries for
-   it. An unpaid bill can still be paid later, or written off with approval.
+   night can't sign off for finance.
+
+Closing is for the accounts only. It never stops anyone working: staff can keep opening tabs,
+selling, taking payments and counting stock after it. A night can be closed at any time, and
+closed again later (**Close again and send the updated report**). Each close saves a new version
+of the report.
 
 ## Setting up for live use
 

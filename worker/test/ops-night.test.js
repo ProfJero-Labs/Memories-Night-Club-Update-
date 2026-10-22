@@ -178,7 +178,7 @@ test('10, 14: the cashier has less cash than expected (explanation required); a 
   assert.equal((await ctx.call('GET', '/api/ops/products', { who: ctx.W1 })).data.products[0].costPesewas, undefined, 'waiters never see costs');
 });
 
-test('5, 11, 12: an unpaid tab, free drinks by approval, Today’s sales, the guided close, the end-of-day report to finance, sign-off, and the night locked', async () => {
+test('5, 11, 12: an unpaid tab, free drinks by approval, Today’s sales, the guided close, the end-of-day report to finance, sign-off; closing doesn’t stop anyone and can be done again', async () => {
   const ctx = setup();
   ctx.env.BREVO_API_KEY = 'k'; ctx.env.BREVO_SENDER_EMAIL = 'noreply@memories.test';
   ok(await ctx.call('POST', '/api/ops/finance-contact', { who: ctx.F1, body: { email: 'finance@memories.test' } }), 'finance contact');
@@ -227,8 +227,15 @@ test('5, 11, 12: an unpaid tab, free drinks by approval, Today’s sales, the gu
   assert.deepEqual([eod.report.sales.totals.salesPesewas, eod.report.exceptions.unpaidTabs.length, eod.closedByName], [10500, 1, 'Akos Manager']);
   assert.equal((await ctx.call('POST', '/api/ops/eod/sign-off', { who: ctx.M1, body: {} })).status, 403, 'the closer doesn’t sign off for finance');
   ok(await ctx.call('POST', '/api/ops/eod/sign-off', { who: ctx.F1, body: { note: 'Checked.' } }), 'finance signs off');
-  assert.equal((await ctx.call('POST', '/api/ops/tabs/round', { who: ctx.W2, body: { tabId: unpaid.id, lines: [{ productId: 'beer', qty: 1 }] } })).status, 400, 'closed night: no new drinks on its tabs');
-  assert.equal((await ctx.call('POST', '/api/ops/stock/waste', { who: ctx.B1, body: { stationId: 'main', productId: 'beer', qty: 1, reason: 'broken' } })).status, 409, 'closed night: stock locked');
+  // Closing is for the accounts only: staff keep working (a new drink, a breakage), and closing
+  // again brings the report up to date.
+  ok(await ctx.call('POST', '/api/ops/tabs/round', { who: ctx.W2, body: { tabId: unpaid.id, lines: [{ productId: 'beer', qty: 1 }] } }), 'a drink after closing');
+  ok(await ctx.call('POST', '/api/ops/tabs/open', { who: ctx.W1, body: { table: '20' } }), 'a new tab after closing');
+  ok(await ctx.call('POST', '/api/ops/stock/waste', { who: ctx.B1, body: { stationId: 'main', productId: 'beer', qty: 1, reason: 'broken' } }), 'stock after closing');
+  ok(await ctx.call('POST', '/api/ops/close-night', { who: ctx.M1, body: {} }), 'close again');
+  const again = ok(await ctx.call('GET', '/api/ops/eod', { who: ctx.F1 }), 'eod v2').report;
+  assert.equal(again.report.sales.totals.salesPesewas, 10500 + 2500, 'the updated report has the new drink');
+  assert.equal(again.versions.length, 2);
   // The unpaid tab can still be paid later, or written off with approval.
   const wo = ok(await ctx.call('POST', '/api/ops/approvals/request', { who: ctx.W2, body: { kind: 'write_off', tabId: unpaid.id, reason: 'left without paying' } }), 'write-off request');
   ok(await ctx.call('POST', '/api/ops/approvals/decide', { who: ctx.F1, body: { id: wo.id, approve: true } }), 'write off');
@@ -263,7 +270,7 @@ test('waiters: invoice by SMS lists every drink; cash and MoMo recorded by the w
   assert.equal(sms.to, '0245557070', 'to the phone given when the table was opened');
   assert.match(sms.message, /MEMORIES INVOICE/); assert.match(sms.message, /Tab 1 · Table 7/);
   assert.match(sms.message, /3 x Club beer GHS 75/); assert.match(sms.message, /2 x Tequila shot GHS 60/);
-  assert.match(sms.message, /Total GHS 135/); assert.match(sms.message, /To pay GHS 135/); assert.match(sms.message, /bill\.html\?t=/);
+  assert.match(sms.message, /Total GHS 135/); assert.match(sms.message, /MEMORIES INVOICE/); assert.match(sms.message, /TO PAY GHS 135/); assert.match(sms.message, /bill\.html\?t=/);
 
   // Cash, by the waiter herself (no special permission needed).
   const cash = ok(await ctx.call('POST', '/api/ops/tabs/pay', { who: ctx.W1, body: { tabId: tab.id, method: 'cash', amountPesewas: 5000 } }), 'cash');
@@ -281,7 +288,7 @@ test('waiters: invoice by SMS lists every drink; cash and MoMo recorded by the w
 
   // The invoice now shows what's paid and what's left.
   ok(await ctx.call('POST', '/api/ops/tabs/text-bill', { who: ctx.W1, body: { tabId: tab.id } }), 'invoice again');
-  assert.match(ctx.store.sms.at(-1).message, /Paid GHS 100\nTo pay GHS 35/);
+  assert.match(ctx.store.sms.at(-1).message, /Paid: Cash GHS 50 \(taken by Efua\), MoMo GHS 50 \(taken by Efua\)\nTO PAY GHS 35/);
   const t = ok(await ctx.call('GET', `/api/ops/tab?id=${tab.id}`, { who: ctx.W1 }), 'tab').tab;
   assert.deepEqual(t.payments.map(p => [p.method, p.amountPesewas, p.momoRef]), [['cash', 5000, ''], ['momo', 5000, '51234567890']]);
   const token = new URL(t.billUrl).searchParams.get('t');
@@ -342,7 +349,8 @@ test('the waiter’s tab: order → the bar → “I got them”; close it: cash
   const c = ok(await ctx.call('POST', '/api/ops/tabs/checkout', { who: ctx.W1, body: { tabId: a.tabId, method: 'cash' } }), 'cash close');
   assert.deepEqual([c.closed, c.cashPesewas, c.receiptSent], [true, 8000, true]);
   assert.equal(ctx.store.get('tabs', a.tabId).fields.status, 'closed');
-  assert.match(ctx.store.sms.filter(x => x.to === '0245557070').at(-1).message, /Fully paid/);
+  const rc = ctx.store.sms.filter(x => x.to === '0245557070').at(-1).message;
+  assert.match(rc, /MEMORIES RECEIPT/); assert.match(rc, /Paid: Cash GHS 80 \(taken by Efua\)/); assert.ok(!/INVOICE|TO PAY/.test(rc));
   const bag = ctx.store.list('cash_sessions').find(x => x.fields.uid === 'w1').fields;
   assert.equal(bag.payments.reduce((n, p) => n + p.amountPesewas, 0), 8000, 'in the waiter’s cash');
 

@@ -579,11 +579,15 @@ export function invoiceText(env, tab, bill) {
   const where = tab.table && tab.table !== 'Walk-in' ? `Table ${String(tab.table).replace(/^table\s*/i, '')}` : 'Walk-in';
   const items = bill.lines.slice(0, 8).map(l => `${l.qty} x ${l.name.slice(0, 24)} ${ghs(l.amountPesewas)}`);
   if (bill.lines.length > 8) items.push(`+ ${bill.lines.length - 8} more on the link`);
-  return ['MEMORIES INVOICE', `Tab ${tab.number} · ${where}`, ...items,
+  // Something left to pay: an INVOICE. Nothing left: a RECEIPT, saying how it was paid and who
+  // recorded it, so a customer who hasn't paid can't be told they have without seeing who said so.
+  const how = (tab.payments || []).map(p => `${p.method === 'cash' ? 'Cash' : 'MoMo'} ${ghs(p.amountPesewas)}${p.method === 'digital' ? ' (confirmed by Paystack)' : p.byName ? ` (taken by ${String(p.byName).split(/\s+/)[0]})` : ''}`);
+  const due = bill.balancePesewas > 0;
+  return [due ? 'MEMORIES INVOICE' : 'MEMORIES RECEIPT', `Tab ${tab.number} · ${where}`, ...items,
     ...(bill.discountPesewas ? [`Discount -${ghs(bill.discountPesewas)}`] : []),
-    `Total ${ghs(bill.totalPesewas)}`, ...(bill.paidPesewas ? [`Paid ${ghs(bill.paidPesewas)}`] : []),
-    bill.balancePesewas ? `To pay ${ghs(bill.balancePesewas)}` : 'Fully paid. Thank you!',
-    ...(bill.balancePesewas ? [`Pay with MoMo or card: ${siteUrl(env, `/bill.html?t=${tab.billToken}`)}`] : [])].join('\n');
+    `Total ${ghs(bill.totalPesewas)}`, ...(how.length ? [`Paid: ${how.join(', ')}`] : []),
+    due ? `TO PAY ${ghs(bill.balancePesewas)}` : 'Paid in full. Thank you!',
+    ...(due ? [`Pay with MoMo or card: ${siteUrl(env, `/bill.html?t=${tab.billToken}`)}`] : ['Not right? Tell your waiter or the manager.'])].join('\n');
 }
 
 export async function textBill(env, b, user) {

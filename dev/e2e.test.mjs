@@ -1061,8 +1061,11 @@ test('a night at the bar: tab without QR → bar → delivered → the customer 
   await cash.click('#cGo'); await cash.getByText('Cash recorded').waitFor();
   await cash.click('[data-close]');
   // Paid at the cashier: Close tab just closes it.
-  await w.locator('.pay-now').getByText(/paid/).waitFor({ timeout: 10000 }); await w.click('#close'); await w.click('#csDone');
+  // Close tab right from My tables.
+  await w.locator('.pay-now').getByText(/paid/).waitFor({ timeout: 10000 }); await w.click('.back-btn'); await w.waitForSelector('#newTab');
+  await w.locator('.tcard', { hasText: '12' }).locator('[data-pay]').click(); await w.click('#csDone');
   await w.locator('.sheet').getByText('Tab closed').waitFor(); await w.click('#csBack'); await w.waitForSelector('#newTab');
+  await w.locator('.tcard.done', { hasText: '12' }).first().waitFor({ state: 'attached' });
   // Poor signal: an action that can't reach the server never shows as done.
   await w.click('#newTab'); await w.waitForSelector('#odTable'); await w.fill('#odTable', '14'); await w.click('[data-p="dev-m-water"]');
   await w.context().setOffline(true);
@@ -1101,6 +1104,9 @@ test('a night at the bar: tab without QR → bar → delivered → the customer 
   assert.match(await mgr.textContent('#app'), /2 less than expected/);
   mgr.on('dialog', d => d.accept());
   await mgr.click('#closeGo'); await mgr.getByText(/Night closed/).waitFor({ timeout: 15000 });
+  // Closing is for the accounts: the waiter keeps working after it.
+  await w.click('[data-k="tabs"]'); await w.click('#newTab'); await w.waitForSelector('#odTable'); await w.fill('#odTable', '30'); await w.click('[data-p="dev-m-water"]'); await w.click('#send');
+  await w.locator('#msg').getByText(/Sent to the bar: Tab \d+ · table 30/).waitFor();
   const fin = await phone(390); await signInAs(fin, 'finance@dev'); await fin.waitForURL(/finance\.html/);
   await fin.click('[data-k="reports"]'); await fin.locator('[data-d]').first().click();
   await fin.getByText(/End of day/).waitFor(); assert.match(await fin.textContent('#app'), /GHS 2 less than expected/);
