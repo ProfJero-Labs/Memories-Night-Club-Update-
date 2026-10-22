@@ -24,6 +24,7 @@ import { FORBIDDEN, bizDate, who, audit, closedError, ghs, int } from './common.
 import { addMoves, stockError } from './stock.js';
 import { prepareTip, tipFields, textTip, phoneOf, guestTipPeople } from './tips.js';
 import { paymentAlert } from './alerts.js';
+import { momoPrompt } from '../lib/momo.js';
 
 export const BOSS = ['superAdmin', 'director', 'manager'];
 export const WAITERS = [...BOSS, 'waitStaff', 'eventManager'];             // the Event manager serves tables too
@@ -145,8 +146,8 @@ export async function addRound(env, b, user) {
   return { id: rid, totalPesewas: lines.reduce((n, l) => n + l.qty * l.unitPesewas, 0) };
 }
 
-// The waiter's one step: take the order → it goes to the bar → the customer is texted the invoice
-// with a pay link. A new table is opened with it (a table number, or none: standing at the bar);
+// The waiter's one step: take the order → it goes to the bar (the invoice is texted when the tab
+// is closed; sendInvoice: true texts it now too). A new table is opened with it (a table number, or none: standing at the bar);
 // with tabId the drinks go on that table and the updated invoice is texted again.
 //   { tabId? | table, stationId, customerPhone, customerName }, lines
 export async function takeOrder(env, b, user) {
@@ -170,7 +171,7 @@ export async function takeOrder(env, b, user) {
   }
   const t = await getDoc(env, 'tabs', tabId);
   let invoice = { sent: false, phoneHint: '' };
-  if (t?.fields?.customerPhone) {
+  if (b?.sendInvoice === true && t?.fields?.customerPhone) {
     const bill = billOf(t.fields, await roundsOf(env, t.id));
     invoice = { sent: await sendSms(env, t.fields.customerPhone, invoiceText(env, t.fields, bill)), phoneHint: maskPhone(t.fields.customerPhone) };
   }
@@ -516,6 +517,62 @@ export async function closeTab(env, b, user) {
   return { closed: true };
 }
 
+// Close the tab: the waiter asks "cash or MoMo?".
+//   cash → the waiter takes what's left, the tab closes, and the receipt is texted (if there's a number).
+//   momo → a MoMo prompt goes to the customer's phone and the invoice with its pay link is texted; the
+//          tab closes by itself once Paystack confirms the payment (closeWhenPaid).
+// Drinks must all be collected first ("I got them"), so the bill is final.
+//   { tabId, method: 'cash' | 'momo', phone }
+export async function checkoutTab(env, b, user) {
+  if (!requireRole(user, WAITERS)) return FORBIDDEN;
+  const t = await getDoc(env, 'tabs', String(b?.tabId || ''));
+  if (!t) return { error: 'Tab not found.', status: 404 };
+  if (!mineOrBoss(user, t.fields)) return { error: 'This is another waiter’s tab.', status: 403 };
+  if (t.fields.status !== 'open') return { error: 'This tab is already closed.' };
+  const rounds = await roundsOf(env, t.id);
+  const out = rounds.filter(r => !['delivered', 'cancelled'].includes(r.status));
+  if (out.length) return { error: `${out.length === 1 ? 'One order isn’t' : `${out.length} orders aren’t`} collected yet. Tap “I got them” (or cancel it) first, so the bill is final.` };
+  const phone = b?.phone ? normalizePhone(b.phone) : t.fields.customerPhone || '';
+  if (b?.phone && !phone) return { error: 'That phone number doesn’t look right. Fix it, or leave it empty.' };
+  const fields = { ...t.fields, customerPhone: phone };
+  if (phone !== t.fields.customerPhone) await setDoc(env, 'tabs', t.id, fields);
+  const bill = billOf(fields, rounds);
+  if (b?.method === 'momo') {
+    if (!phone) return { error: 'Type the customer’s MoMo number: the prompt and the invoice go to it.' };
+    if (bill.balancePesewas < 100) return { error: bill.balancePesewas ? 'Less than GHS 1 is left. Take it in cash.' : 'Nothing to pay. Close the tab.' };
+    const reference = paymentRef();
+    const host = new URL(env.PUBLIC_SITE_URL || 'https://memoriesnightclub.com').hostname.replace(/^www\./, '');
+    await setDoc(env, 'pending_checkouts', reference, { reference, kind: 'tab', tabId: t.id, eventName: `Tab ${t.fields.number}`, amountPesewas: bill.balancePesewas, buyerPhone: phone, prompt: true, status: 'pending', createdAt: now(), by: uidOf(user) });
+    await setDoc(env, 'tabs', t.id, { ...fields, closeWhenPaid: true, closeAskedByName: user.name || '' });
+    const prompt = await momoPrompt(env, { phone, amountPesewas: bill.balancePesewas, reference, email: `tab-${phone}@${host}`, metadata: { kind: 'tab', tabId: t.id } });
+    if (!prompt) await setDoc(env, 'pending_checkouts', reference, { reference, kind: 'tab', tabId: t.id, status: 'failed', error: 'prompt_not_sent', failedAt: now() });
+    const sent = await sendSms(env, phone, invoiceText(env, fields, bill));
+    await audit(env, user, 'TAB_CHECKOUT_MOMO', { tabId: t.id, amountPesewas: bill.balancePesewas, prompt });
+    return { method: 'momo', prompt, reference: prompt ? reference : '', invoiceSent: sent, phoneHint: maskPhone(phone), amountPesewas: bill.balancePesewas, billUrl: siteUrl(env, `/bill.html?t=${t.fields.billToken}`),
+      message: prompt ? `A MoMo prompt for ${ghs(bill.balancePesewas)} is on ${maskPhone(phone)}. They approve it, or pay from the invoice text.` : `The invoice is texted to ${maskPhone(phone)}: they pay from its link, or scan the QR.` };
+  }
+  // Cash: what's left, into the waiter's cash for the night; then the tab closes.
+  if (bill.balancePesewas > 0) {
+    const r = await recordPayment(env, { tabId: t.id, method: 'cash', amountPesewas: bill.balancePesewas }, user);
+    if (r.error) return r;
+  }
+  const c = await closeTab(env, { tabId: t.id }, user);
+  if (c.error) return c;
+  let receipt = false;
+  if (phone && bill.totalPesewas) { const fresh = await getDoc(env, 'tabs', t.id); receipt = await sendSms(env, phone, invoiceText(env, fresh.fields, billOf(fresh.fields, rounds))); }
+  return { method: 'cash', closed: true, cashPesewas: bill.balancePesewas, receiptSent: receipt, phoneHint: phone ? maskPhone(phone) : '' };
+}
+
+// After a MoMo payment: a tab the waiter asked to close, now fully paid, closes by itself.
+async function closeIfPaid(env, tabId) {
+  const t = await getDoc(env, 'tabs', tabId);
+  if (!t || t.fields.status !== 'open' || !t.fields.closeWhenPaid) return false;
+  const rounds = await roundsOf(env, tabId), bill = billOf(t.fields, rounds);
+  if (bill.balancePesewas > 0 || rounds.some(r => !['delivered', 'cancelled'].includes(r.status))) return false;
+  await setDoc(env, 'tabs', tabId, { ...t.fields, status: 'closed', closedAt: now(), closedByName: `${t.fields.closeAskedByName || 'Waiter'} (paid by MoMo)` });
+  return true;
+}
+
 // The invoice by text: every drink with its price, the total, what's paid and what's left, and the
 // link to see it and pay with MoMo or card. Long bills list the first drinks and count the rest.
 export function invoiceText(env, tab, bill) {
@@ -618,6 +675,7 @@ export async function issueTabPayment(env, reference, P) {
     return { status: 'issued', kind: 'tab', tabId: P.tabId, tip, fresh: { amountPesewas: pay.amountPesewas, where: `Tab ${t.fields.number}`, byName: t.fields.waiterName || '' } };
   }).then(async r => {
     if (r.tip) await textTip(env, await phoneOf(env, r.tip.to.uid), r.tip, 'digital');
+    r.closed = await closeIfPaid(env, P.tabId).catch(() => false);
     // Paystack confirmed it: the Manager is texted.
     if (r.fresh) await paymentAlert(env, { ...r.fresh, kind: 'digital', tipPesewas: r.tip?.amount || 0 });
     delete r.fresh; return r;

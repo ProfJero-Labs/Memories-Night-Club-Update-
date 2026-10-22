@@ -211,3 +211,7 @@ input:not([type=checkbox]):not([type=radio]), select, textarea { font-size: max(
 .pay-now { display: grid; gap: 10px; padding: 14px; border: 1px solid var(--line-2); background: var(--ink-2); border-radius: 14px; }
 .pay-now > b { font: 400 34px/1 var(--display); }
 .order-top { display: grid; gap: 12px; margin-bottom: 6px; }
+.sale-total { display: flex; justify-content: space-between; align-items: baseline; font: 600 17px var(--sans); border-top: 1px solid var(--line-2); padding-top: 10px; }
+.sale-total b { font: 400 34px/1 var(--display); }
+.qr-big { background: #fff; padding: 16px; justify-self: center; width: min(100%, 300px); }
+.qr-big svg { display: block; width: 100%; height: auto; }

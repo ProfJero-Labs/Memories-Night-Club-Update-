@@ -815,7 +815,7 @@ test('staff sign-in: the Human manager adds a waitress; her PIN is texted and sh
   assert.deepEqual([...mgr.errors, ...w.errors], []);
 });
 
-test('waiter and bar: one screen takes the order (drinks, table, phone) and texts the invoice; “I took them” confirmed by the bar; MoMo recorded with its ID', async () => {
+test('waiter: new tab → the bar → “I got them”; straight back to My tables; swap a drink; close tab → MoMo: a prompt and the invoice, closed once paid', async () => {
   const w = await phone(360); await signInAs(w, 'waiter@dev'); await w.waitForURL(/waiter\.html/);
   await w.click('#newTab'); await w.waitForURL(/#order$/);
   await w.fill('#odTable', '21'); await w.fill('#odPhone', '024 555 2121');
@@ -823,32 +823,38 @@ test('waiter and bar: one screen takes the order (drinks, table, phone) and text
   await w.click('[data-p="dev-m-beer"]'); await w.click('[data-p="dev-m-beer"]');
   assert.equal(await w.inputValue('#odPhone'), '024 555 2121');
   await w.click('#send');
-  await w.waitForURL(/#tab\//);
-  // Sent to the bar and the invoice is already texted: no extra step before they can pay.
-  await w.locator('#msg').getByText(/Invoice texted to 024\*\*\*2121/).waitFor();
-  const first = store.sms.filter(x => x.to === '0245552121').at(-1).message;
-  assert.match(first, /MEMORIES INVOICE/); assert.match(first, /2 x Club beer/); assert.match(first, /To pay GHS/);
-  await w.locator('.pay-now').getByText('GHS 50 to pay').waitFor();
+  // Sent: back on My tables, free to start another tab or a quick sale.
+  await w.waitForURL(/#tabs$/); await w.locator('#msg').getByText(/Sent to the bar: Tab \d+ · table 21/).waitFor();
+  assert.ok(await w.isVisible('#newTab') && await w.isVisible('#quick'));
+  assert.equal(store.sms.filter(x => x.to === '0245552121').length, 0, 'no invoice until the tab is closed');
+  await w.locator('[data-tab]', { hasText: '21' }).first().click(); await w.waitForURL(/#tab\//);
   // The waiter grabs the drinks herself; the bar confirms.
   await w.locator('[data-act="took"]').click(); await w.locator('.tcard').getByText(/the bar must confirm/).waitFor();
   const bar = await phone(390); await signInAs(bar, 'bar@dev'); await bar.waitForURL(/bar\.html/);
   await bar.locator('#taken').getByText(/says they took Tab \d+ \(21\)/).waitFor({ timeout: 10000 });
   await bar.locator('#taken [data-a="confirm_taken"]').click();
   await bar.locator('#msgTop').getByText(/Confirmed/).waitFor();
-  await bar.locator('#handedList summary').click(); await bar.locator('#handedList').getByText('(waiter took them)').waitFor();
   await w.locator('[data-act="delivered"]').waitFor({ timeout: 10000 }); await w.click('[data-act="delivered"]');
-  // Texting it again is one tap (their phone is on the table).
-  const before = store.sms.length;
-  await w.click('#invoice'); await w.locator('#msg').getByText(/Invoice texted to 024\*\*\*2121/).waitFor();
-  assert.equal(store.sms.length, before + 1);
-  // MoMo to the club's number, with its transaction ID.
-  await w.click('#cash'); await w.click('[data-m="momo"]'); await w.click('#tcGo');
-  await w.locator('#tcMsg').getByText(/transaction ID/).waitFor();
-  await w.fill('#tcRef', '7712345678'); await w.click('#tcGo');
-  await w.locator('#msg').getByText(/MoMo recorded\. The table is paid/).waitFor();
+  // The customer wants a shot instead of one beer: one sheet returns it and opens the menu for the new drink.
+  await w.locator('[data-act="return"]').waitFor(); await w.click('[data-act="return"]');
+  await w.click('#plSwap'); await w.waitForURL(/#add\//);
+  await w.locator('h1', { hasText: 'Swap' }).waitFor();
+  await w.click('[data-p="dev-m-shot"]'); await w.click('#send'); await w.waitForURL(/#tabs$/);
+  await bar.locator('[data-back]').first().waitFor({ timeout: 10000 }); await bar.locator('[data-back]').first().click();
+  await bar.locator('#rounds .ord').filter({ hasText: '21' }).locator('[data-a="hand"]').click();
+  await w.locator('[data-tab]', { hasText: '21' }).first().click(); await w.waitForURL(/#tab\//);
+  await w.locator('[data-act="delivered"]').waitFor({ timeout: 10000 }); await w.click('[data-act="delivered"]');
+  await w.locator('.lines-list').getByText('1 × Club beer').waitFor({ timeout: 10000 });
+  // Close tab → MoMo: a prompt on their phone and the invoice by text; it closes itself once paid.
+  await w.click('#close'); await w.click('#csMomo');
+  await w.getByText(/approve on your phone/i).waitFor();
+  const inv = store.sms.filter(x => x.to === '0245552121').at(-1).message;
+  assert.match(inv, /MEMORIES INVOICE/); assert.match(inv, /1 x Club beer/); assert.match(inv, /bill\.html/);
+  await w.locator('.sheet').getByText('Tab closed').waitFor({ timeout: 20000 });
   const tabId = await w.evaluate(() => location.hash.split('/')[1]);
-  assert.deepEqual(docs('tabs').find(t => t.id === tabId).payments.map(p => [p.method, p.momoRef]), [['momo', '7712345678']]);
-  await w.click('#close'); await w.waitForURL(/#tabs/);
+  const tab = docs('tabs').find(t => t.id === tabId);
+  assert.equal(tab.status, 'closed'); assert.deepEqual(tab.payments.map(p => p.method), ['digital']);
+  await w.click('#csBack'); await w.waitForSelector('#newTab'); assert.match(w.url(), /#tabs$/);
   assert.deepEqual([...w.errors, ...bar.errors], []);
 });
 
@@ -1022,6 +1028,7 @@ test('a night at the bar: tab without QR → bar → delivered → the customer 
   await w.click('#newTab'); await w.waitForURL(/#order$/); await w.fill('#odTable', '12');
   await w.click('[data-p="dev-m-beer"]'); await w.click('[data-p="dev-m-beer"]'); await w.click('[data-p="dev-m-shot"]');
   assert.match(await w.textContent('#send'), /3 drinks · GHS 80/); await w.click('#send');
+  await w.waitForURL(/#tabs$/); await w.locator('[data-tab]', { hasText: '12' }).first().click();
   await w.waitForURL(/#tab\//); await w.locator('.tcard').getByText('Sent to bar').waitFor();
   // Bar
   const bar = await phone(390); await signInAs(bar, 'bar@dev'); await bar.waitForURL(/bar\.html/);
@@ -1030,7 +1037,7 @@ test('a night at the bar: tab without QR → bar → delivered → the customer 
   // Waiter delivers; the customer gets the bill
   await w.locator('[data-act="delivered"]').waitFor({ timeout: 10000 }); await w.click('[data-act="delivered"]');
   await w.locator('.tcard').getByText('Delivered').waitFor();
-  await w.click('#showBill'); await w.locator('#sbQr svg').waitFor();
+  await w.click('details.fold summary'); await w.click('#showBill'); await w.locator('#sbQr svg').waitFor();
   const tabId = await w.evaluate(() => location.hash.split('/')[1]);
   const token = docs('tabs').find(t => t.id === tabId).billToken;
   await w.click('[data-close]');
@@ -1044,7 +1051,8 @@ test('a night at the bar: tab without QR → bar → delivered → the customer 
   assert.match(await cust.getAttribute('a:has-text("Order more drinks")', 'href'), /^counter\.html\?s=[0-9a-f]{32}&t=12$/);
   await w.locator('.st').getByText('Paid', { exact: true }).waitFor({ timeout: 10000 });
   // Another round, paid in cash at the cashier
-  await w.click('#add'); await w.waitForURL(/#add\//); await w.click('[data-p="dev-m-water"]'); await w.click('#send'); await w.waitForURL(/#tab\//);
+  await w.click('#add'); await w.waitForURL(/#add\//); await w.click('[data-p="dev-m-water"]'); await w.click('#send'); await w.waitForURL(/#tabs$/);
+  await w.locator('[data-tab]', { hasText: '12' }).first().click(); await w.waitForURL(/#tab\//);
   await bar.locator('#rounds .ord').filter({ hasText: '12' }).locator('[data-a="hand"]').click();
   await w.locator('[data-act="delivered"]').waitFor({ timeout: 10000 }); await w.click('[data-act="delivered"]');
   const cash = await phone(390); await signInAs(cash, 'cashier@dev'); await cash.waitForURL(/cashier\.html/);
@@ -1052,7 +1060,9 @@ test('a night at the bar: tab without QR → bar → delivered → the customer 
   await cash.click('[data-k="bills"]'); await cash.fill('#q', '12'); await cash.locator('[data-id]').first().click();
   await cash.click('#cGo'); await cash.getByText('Cash recorded').waitFor();
   await cash.click('[data-close]');
-  await w.locator('#close').waitFor({ timeout: 10000 }); await w.click('#close'); await w.waitForURL(/#tabs/);
+  // Paid at the cashier: Close tab just closes it.
+  await w.locator('.pay-now').getByText(/paid/).waitFor({ timeout: 10000 }); await w.click('#close'); await w.click('#csDone');
+  await w.locator('.sheet').getByText('Tab closed').waitFor(); await w.click('#csBack'); await w.waitForSelector('#newTab');
   // Poor signal: an action that can't reach the server never shows as done.
   await w.click('#newTab'); await w.waitForSelector('#odTable'); await w.fill('#odTable', '14'); await w.click('[data-p="dev-m-water"]');
   await w.context().setOffline(true);

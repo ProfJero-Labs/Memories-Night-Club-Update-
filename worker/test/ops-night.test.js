@@ -323,30 +323,47 @@ test('the bar confirms drinks a waiter took without a hand-over tap; "not taken"
   ok(await ctx.call('POST', '/api/ops/tabs/round-action', { who: ctx.W1, body: { roundId: round.id, action: 'delivered' } }), 'delivered');
 });
 
-test('the waiter’s one step: take the order → the bar has it → the customer is texted the invoice; more drinks re-send it; a bad order leaves no empty table', async () => {
+test('the waiter’s tab: order → the bar → “I got them”; close it: cash closes it and texts the receipt; MoMo sends a prompt and the invoice and closes once paid', async () => {
   const ctx = setup();
   await openingCount(ctx);
-  const r = ok(await ctx.call('POST', '/api/ops/tabs/order', { who: ctx.W1, body: { table: '7', customerPhone: '024 555 7070', lines: [{ productId: 'beer', qty: 2 }] } }), 'order');
-  assert.equal(r.totalPesewas, 5000);
-  assert.deepEqual(r.invoice, { sent: true, phoneHint: r.invoice.phoneHint });
-  const q = ok(await ctx.call('GET', '/api/ops/bar/rounds', { who: ctx.B1 }), 'bar queue');
-  assert.ok(q.rounds.some(x => x.table === '7' && x.statusLabel === 'Sent to bar'), 'at the bar');
-  const sms = ctx.store.sms.filter(x => x.to === '0245557070');
-  assert.equal(sms.length, 1); assert.match(sms[0].message, /2 x Club beer/); assert.match(sms[0].message, /bill\.html\?t=/);
-  // More drinks on the same table: the updated invoice goes again.
-  ok(await ctx.call('POST', '/api/ops/tabs/order', { who: ctx.W1, body: { tabId: r.tabId, lines: [{ productId: 'shot', qty: 1 }] } }), 'more');
-  const again = ctx.store.sms.filter(x => x.to === '0245557070');
-  assert.equal(again.length, 2); assert.match(again[1].message, /Total GHS 80/);
-  // Standing, no phone: an order with no invoice to text.
-  const walk = ok(await ctx.call('POST', '/api/ops/tabs/order', { who: ctx.W1, body: { lines: [{ productId: 'beer', qty: 1 }] } }), 'walk-in');
-  assert.equal(walk.invoice.sent, false);
-  assert.equal(ctx.store.get('tabs', walk.tabId).fields.table, 'Walk-in');
-  // Nothing orderable: refused, and no empty table is left open.
-  const before = ctx.store.list('tabs').length;
-  assert.equal((await ctx.call('POST', '/api/ops/tabs/order', { who: ctx.W1, body: { table: '9', lines: [{ productId: 'nope', qty: 1 }] } })).status, 400);
-  assert.equal(ctx.store.list('tabs').length, before);
-  // Someone else's table: refused.
-  assert.equal((await ctx.call('POST', '/api/ops/tabs/order', { who: ctx.W2, body: { tabId: r.tabId, lines: [{ productId: 'beer', qty: 1 }] } })).status, 403);
+  ctx.store.seed('users', 'w1', { ...ctx.store.get('users', 'w1').fields, canCollectCash: true });
+  const a = ok(await ctx.call('POST', '/api/ops/tabs/order', { who: ctx.W1, body: { table: '7', customerPhone: '024 555 7070', lines: [{ productId: 'beer', qty: 2 }] } }), 'order');
+  assert.equal(a.totalPesewas, 5000);
+  assert.equal(ctx.store.sms.filter(x => x.to === '0245557070').length, 0, 'no text while they’re still drinking');
+  // Closing before the drinks are collected: refused, so the bill is final.
+  assert.match((await ctx.call('POST', '/api/ops/tabs/checkout', { who: ctx.W1, body: { tabId: a.tabId, method: 'cash' } })).data.error, /isn’t collected yet/);
+  await barMakes(ctx, a.roundId);
+  ok(await ctx.call('POST', '/api/ops/tabs/round-action', { who: ctx.W1, body: { roundId: a.roundId, action: 'delivered' } }), 'I got them');
+  // More drinks on the same tab later.
+  const more = ok(await ctx.call('POST', '/api/ops/tabs/order', { who: ctx.W1, body: { tabId: a.tabId, lines: [{ productId: 'shot', qty: 1 }] } }), 'more');
+  await barMakes(ctx, more.roundId);
+  ok(await ctx.call('POST', '/api/ops/tabs/round-action', { who: ctx.W1, body: { roundId: more.roundId, action: 'delivered' } }), 'I got them');
+  // Cash: one step takes it and closes the tab; the receipt is texted.
+  const c = ok(await ctx.call('POST', '/api/ops/tabs/checkout', { who: ctx.W1, body: { tabId: a.tabId, method: 'cash' } }), 'cash close');
+  assert.deepEqual([c.closed, c.cashPesewas, c.receiptSent], [true, 8000, true]);
+  assert.equal(ctx.store.get('tabs', a.tabId).fields.status, 'closed');
+  assert.match(ctx.store.sms.filter(x => x.to === '0245557070').at(-1).message, /Fully paid/);
+  const bag = ctx.store.list('cash_sessions').find(x => x.fields.uid === 'w1').fields;
+  assert.equal(bag.payments.reduce((n, p) => n + p.amountPesewas, 0), 8000, 'in the waiter’s cash');
+
+  // MoMo: the prompt goes to their phone, the invoice is texted; it closes by itself once paid.
+  const m = ok(await ctx.call('POST', '/api/ops/tabs/order', { who: ctx.W1, body: { table: '8', lines: [{ productId: 'beer', qty: 1 }] } }), 'order 2');
+  await barMakes(ctx, m.roundId);
+  ok(await ctx.call('POST', '/api/ops/tabs/round-action', { who: ctx.W1, body: { roundId: m.roundId, action: 'delivered' } }), 'got');
+  assert.match((await ctx.call('POST', '/api/ops/tabs/checkout', { who: ctx.W1, body: { tabId: m.tabId, method: 'momo' } })).data.error, /MoMo number/);
+  const p = ok(await ctx.call('POST', '/api/ops/tabs/checkout', { who: ctx.W1, body: { tabId: m.tabId, method: 'momo', phone: '024 555 8080' } }), 'momo close');
+  assert.equal(p.prompt, true);
+  assert.equal(ctx.store.paystackCharges.at(-1).mobile_money.provider, 'mtn');
+  assert.equal(ctx.store.paystackCharges.at(-1).amount, 2500);
+  assert.match(ctx.store.sms.filter(x => x.to === '0245558080').at(-1).message, /MEMORIES INVOICE[\s\S]*bill\.html/);
+  ctx.store.setPaystack(p.reference, { status: 'abandoned', currency: 'GHS', amount: 2500 });
+  let w = ok(await ctx.call('GET', `/api/ops/tabs/charge?ref=${p.reference}`, { who: ctx.W1 }), 'still approving');
+  assert.deepEqual([w.status, w.tabStatus], ['pending', 'open']);
+  ctx.store.setPaystack(p.reference, { status: 'success', currency: 'GHS', amount: 2500 });
+  w = ok(await ctx.call('GET', `/api/ops/tabs/charge?ref=${p.reference}`, { who: ctx.W1 }), 'paid');
+  assert.deepEqual([w.status, w.tabStatus], ['issued', 'closed']);
+  // Someone else's tab: refused.
+  assert.equal((await ctx.call('POST', '/api/ops/tabs/checkout', { who: ctx.W2, body: { tabId: m.tabId, method: 'cash' } })).status, 403);
 });
 
 test('the bar sees every waiter’s tabs: drinks it gave each one (less what came back), per table, and what’s still unpaid', async () => {

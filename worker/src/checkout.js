@@ -563,7 +563,8 @@ async function fulfillTab(env, reference) {
   const pending = await getDoc(env, 'pending_checkouts', reference);
   if (pending.fields.status === 'issued') return { status: 'issued', kind: 'tab', tabId: pending.fields.tabId };
   if (pending.fields.status === 'failed') return { status: 'failed', kind: 'tab', error: pending.fields.error || 'Payment was not successful.' };
-  const bad = await confirmCharge(env, pending, reference); if (bad) return { kind: 'tab', ...bad };
+  // A waiter's MoMo prompt: the customer may still be approving it ("abandoned" means not yet).
+  const bad = await confirmCharge(env, pending, reference, { waiting: pending.fields.prompt === true }); if (bad) return { kind: 'tab', ...bad };
   return issueTabPayment(env, reference, pending.fields);
 }
 
