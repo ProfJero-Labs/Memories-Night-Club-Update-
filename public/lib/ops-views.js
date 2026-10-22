@@ -21,7 +21,7 @@ const cashWord = n => `${money(Math.abs(n))} ${n < 0 ? 'less' : 'more'} than exp
 // ── Today's sales ──
 // The three numbers that matter, big; everything else under "See details"; a spreadsheet to keep.
 const signed = n => `${n < 0 ? '−' : ''}${money(Math.abs(n))}`;
-const lineRow = (label, value, sub = '') => `<div class="ln"><span>${label}${sub ? `<br><small>${sub}</small>` : ''}</span><span>${value}</span></div>`;
+const lineRow = (label, value, sub = '') => `<div class="ln"><span>${label}${sub ? `<br><small>${sub}</small>` : ''}</span><span style="white-space:nowrap">${value}</span></div>`;
 const linesOr = (html, empty) => html || `<p class="muted" style="margin:0">${esc(empty)}</p>`;
 // A CSV the phone saves (opens in Excel / Google Sheets). rows: [[cell, …], …]
 const csvCell = v => { const s = String(v ?? ''); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
@@ -37,15 +37,14 @@ export async function salesView(el, date) {
   const tips = d.tips?.totalPesewas ? d.tips : null, momo = d.momoPayments || [];
   el.innerHTML = `<h1>Today’s sales</h1>
     <p class="lead">${esc(dayName(d.date))} · ${d.night.status === 'closed' ? `closed by ${esc(d.night.closedByName || '')}` : 'still open'}</p>
-    <div class="hero"><span>Sales</span><b>${money(t.salesPesewas)}</b></div>
+    <div class="hero-stack"><div class="hero"><span>Sales</span><b>${money(t.salesPesewas)}</b></div>
     <div class="hero-row">
       <div class="hero good"><span>Money received</span><b>${money(t.paidPesewas)}</b></div>
       <div class="hero ${t.owedPesewas ? 'bad' : ''}"><span>Still owed${t.unpaidTabs ? ` · ${t.unpaidTabs} bill${t.unpaidTabs > 1 ? 's' : ''}` : ''}</span><b>${money(t.owedPesewas)}</b></div>
-    </div>
+    </div></div>
     <p class="muted" style="margin:0">A sale is a drink on a bill. Money received is what has actually been paid.</p>
     <details class="fold"><summary>See details</summary>
       <h3 class="group-h">How it was paid</h3><div class="lines-list">
-        ${lineRow('MoMo / card (confirmed)', money(t.digitalPesewas))}${lineRow('Cash (recorded)', money(t.cashPesewas))}${lineRow('MoMo to the club (recorded)', money(t.momoPesewas || 0))}
         ${d.byMethod.map(m => lineRow(esc(m.method), money(m.amountPesewas))).join('')}</div>
       ${d.unpaid.length ? `<h3 class="group-h">Unpaid bills</h3><div class="lines-list">${d.unpaid.map(u => lineRow(`Tab ${u.number}`, money(u.balancePesewas), `${esc(u.table)} · ${esc(u.waiterName)}`)).join('')}</div>` : ''}
       <h3 class="group-h">By waiter</h3>${linesOr(d.byWaiter.length ? `<div class="lines-list">${d.byWaiter.map(w => lineRow(`<b>${esc(w.name)}</b>`, money(w.salesPesewas), `${w.tabs} tab${w.tabs === 1 ? '' : 's'} · paid ${money(w.paidPesewas)}${w.unpaidPesewas ? ` · <b class="diff-neg">unpaid ${money(w.unpaidPesewas)}</b>` : ''} · report ${w.report === 'submitted' ? 'in' : '<b class="diff-pos">not yet</b>'}`)).join('')}</div>` : '', 'No waiter tabs yet.')}
@@ -207,7 +206,8 @@ export async function stockAdminView(el, date, stationId, { role = '' } = {}) {
   const sid = stationId || stations[0]?.id;
   if (!sid) { el.innerHTML = '<div class="empty-box"><b>No bars yet</b>Add one under Setup → Bar orders.</div>'; return; }
   const [s, dl] = await Promise.all([sapi(`/api/ops/stock?stationId=${encodeURIComponent(sid)}${date ? `&date=${date}` : ''}`), sapi(`/api/ops/stock/deliveries?stationId=${encodeURIComponent(sid)}`).catch(() => ({ deliveries: [] }))]);
-  const dlState = x => (x.status === 'pending' ? st('unpaid', x.byBar ? 'Waiting for finance or the manager' : 'Waiting for the bar to confirm') : x.status === 'rejected' ? st('cancelled', 'Didn’t arrive') : x.purchase ? st('paid', 'Bought: in stock') : x.confirmedQty !== x.qty ? st('part_paid', `Bar counted ${x.confirmedQty}`) : st('paid', 'Confirmed by the bar'));
+  const ok = t => `<b style="color:#6fcfae">${t}</b>`;
+  const dlState = x => (x.status === 'pending' ? amber(x.byBar ? 'Waiting for finance or the manager' : 'Waiting for the bar to confirm') : x.status === 'rejected' ? '<b class="diff-neg">Didn’t arrive</b>' : x.purchase ? ok('Bought: in stock') : x.confirmedQty !== x.qty ? amber(`Bar counted ${x.confirmedQty}`) : ok('Confirmed by the bar'));
   const dlLine = x => `<div class="ln"><span><b>${x.qty} × ${esc(x.productName)}</b><br><small>${esc(x.recordedByName)} ${when(x.recordedAt)}${x.supplier ? ` · ${esc(x.supplier)}${x.reference ? ` · ${esc(x.reference)}` : ''}` : ''}${x.confirmedByName ? ` · confirmed by ${esc(x.confirmedByName)} ${when(x.confirmedAt)}` : ''}${x.confirmNote ? ` · ${esc(x.confirmNote)}` : ''}</small><br>${dlState(x)}</span>
     <span>${x.canConfirm ? `<button class="sbtn" data-dl="${esc(x.id)}">Confirm ${x.qty}</button>` : ''}</span></div>`;
   const pending = dl.deliveries.filter(x => x.status === 'pending'), done = dl.deliveries.filter(x => x.status !== 'pending');
@@ -257,7 +257,7 @@ export async function stockAdminView(el, date, stationId, { role = '' } = {}) {
     const r = s.rows.find(x => x.productId === b.dataset.sk), mine = dl.deliveries.filter(x => x.productId === r.productId || x.productName === r.name);
     const ledger = [['Opening', r.opening], ['Received', r.received], ['Moved in from another bar', r.transferIn], ['Returned to the bar', r.returns], ['Handed out (sold)', -r.issued], ['Broken or spilled', -r.waste], ['Moved out to another bar', -r.transferOut]];
     const { box, close } = sheet(`<h2>${esc(r.name)}</h2><p class="muted" style="margin:0">${esc(s.station.name)} · ${esc(dayName(s.date))}${r.lowStock ? ` · buy more at ${r.lowStock}` : ''}</p>
-      <div class="hero-row"><div class="hero"><span>Should be here</span><b>${r.expected}</b></div><div class="hero ${r.difference < 0 ? 'bad' : ''}"><span>Counted</span><b>${r.counted ?? '—'}</b></div></div>
+      <div class="hero-row" style="margin-top:12px"><div class="hero"><span>Should be here</span><b>${r.expected}</b></div><div class="hero ${r.difference < 0 ? 'bad' : ''}"><span>Counted</span><b>${r.counted ?? '—'}</b></div></div>
       ${r.difference ? `<div class="say ${r.difference < 0 ? 'bad' : 'warn'}"><b>${esc(diffWord(r.difference))}</b>${esc(s.reasons[r.reason] || 'No reason given')}${r.note ? ` · ${esc(r.note)}` : ''}</div>` : r.counted != null ? '<div class="say good">The count matches.</div>' : ''}
       ${r.low ? `<div class="say warn"><b>Low</b>At or below ${r.lowStock}: time to buy more.</div>` : ''}
       <h3 class="group-h">Tonight</h3><div class="lines-list">${ledger.filter(([k, n]) => n || k === 'Opening').map(([k, n]) => lineRow(k, k === 'Opening' ? n : plusMinus(n))).join('')}
@@ -281,12 +281,12 @@ export async function moneyView(el, period = 'today') {
   const live = m.expenses.filter(e => !e.removed);
   el.innerHTML = `<h1>Money</h1>
     <div class="seg" role="radiogroup" aria-label="Period" style="grid-template-columns:repeat(3,minmax(0,1fr))">${[['today', 'Tonight'], ['week', 'This week'], ['month', 'This month']].map(([k, l]) => `<button type="button" class="mid ${k === m.period.key ? 'on' : ''}" data-per="${k}" role="radio" aria-checked="${k === m.period.key}">${l}</button>`).join('')}</div>
-    ${m.myShare ? `<div class="hero ${m.myShare.profitPesewas >= 0 ? 'good' : 'bad'}"><span>Your share (${m.myShare.pct}%)</span><b>${signed(m.myShare.profitPesewas)}</b><span>${esc(m.period.label)} · club ${profit ? 'profit' : 'loss'} ${money(Math.abs(t.profitPesewas))}</span></div>`
+    <div class="hero-stack">${m.myShare ? `<div class="hero ${m.myShare.profitPesewas >= 0 ? 'good' : 'bad'}"><span>Your share (${m.myShare.pct}%)</span><b>${signed(m.myShare.profitPesewas)}</b><span>${esc(m.period.label)} · club ${profit ? 'profit' : 'loss'} ${money(Math.abs(t.profitPesewas))}</span></div>`
       : `<div class="hero ${profit ? 'good' : 'bad'}"><span>${profit ? 'Profit' : 'Loss'} · ${esc(m.period.label)}</span><b>${money(Math.abs(t.profitPesewas))}</b></div>`}
     <div class="hero-row">
       <div class="hero pos-money"><span>Money in</span><b>${money(t.inPesewas)}</b></div>
       <div class="hero pos-money"><span>Money out</span><b>${money(t.outPesewas)}</b></div>
-    </div>
+    </div></div>
     ${t.waiting ? `<div class="say warn"><b>${t.waiting} expense${t.waiting > 1 ? 's' : ''} waiting for a director: ${money(t.waitingPesewas)}</b>Not counted until approved.</div>` : ''}
     ${m.canAddExpense ? '<button class="big" id="addExp">Add an expense</button>' : ''}<div id="mMsg"></div>
     ${due || com ? `<div class="rows">

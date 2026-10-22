@@ -1038,7 +1038,7 @@ test('a night at the bar: tab without QR → bar → delivered → the customer 
   await w.click('[data-k="report"]'); await w.waitForSelector('#rpGo'); await w.click('#rpGo'); await w.getByText(/Report submitted/).waitFor();
   await bar.click('[data-k="stock"]'); await bar.click('#closeCount'); await bar.waitForSelector('#vStock #cf');
   for (const row of await bar.locator('#vStock [data-p]').all()) await row.locator('[data-n]').fill('0');
-  const reasons = bar.locator('[data-r]:not([hidden])');
+  const reasons = bar.locator('#vStock [data-r]:not([hidden])');
   for (let i = 0; i < await reasons.count(); i++) await reasons.nth(i).selectOption('unknown');
   bar.once('dialog', d => d.accept()); await bar.click('#cfGo'); await bar.getByText(/Count submitted with \d+ differences/).waitFor();
   await cash.click('[data-k="cash"]'); await cash.fill('#cnt', '108'); await cash.locator('#whyBox').waitFor();

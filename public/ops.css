@@ -179,3 +179,18 @@ html.sheet-open, html.sheet-open body { overflow: hidden; }
 .fold > summary { min-height: 52px; }
 /* "+ Add" style action that opens a form only when wanted */
 .add-btn { min-height: 52px; }
+
+/* Staff list (lib/staff-view.js) */
+.staffv { display: grid; gap: 14px; }
+.staffv .lead { margin: 0; }
+.staffv .group-h { margin: 10px 0 0; }
+.staffv .row-btn .r .flag { font: 600 13px/1 var(--sans); padding: 6px 8px; border: 1px solid currentColor; border-radius: 6px; }
+.flag.bad { color: #ff7a9c; } .flag.warn { color: var(--mustard); }
+.staff-nopin { display: grid; gap: 8px; } .staff-nopin span { color: var(--muted); font-size: 15px; } .staff-nopin .sbtn { justify-self: start; }
+.pfacts { display: grid; margin: 0; border-top: 1px solid var(--line); }
+.pfacts > div { display: flex; justify-content: space-between; align-items: center; gap: 12px; min-height: 52px; padding: 8px 0; border-bottom: 1px solid var(--line); }
+.pfacts dt { font: 600 14px var(--sans); color: var(--muted); }
+.pfacts dd { margin: 0; font: 600 17px var(--sans); text-align: right; }
+.pfacts a { color: var(--paper); }
+.big.staff-rm { margin-top: 18px; color: #ff7a9c; border-color: rgba(255, 122, 156, .45); }
+.pincards small { font-size: 13px !important; }

@@ -64,7 +64,7 @@ export async function staffView(el, user, notice = {}) {
     const groups = [...new Set(shown.map(s => s.role))].sort((a, b) => rank(a) - rank(b));
     $('#sList', el).innerHTML = !list.length ? `<p class="muted">No ${noun} yet. Tap “+ Add ${noun}” to add the first one.</p>`
       : !shown.length ? `<p class="muted" role="status">No one called “${esc(q().trim())}”.</p>`
-      : groups.map(r => { const g = shown.filter(s => s.role === r); return `<h2 class="group-h">${esc(g[0].roleName)} · ${g.length}</h2><div class="rows">${g.map(row).join('')}</div>`; }).join('');
+      : groups.map(r => { const g = shown.filter(s => s.role === r); return `<div class="group-h" role="heading" aria-level="2">${esc(g[0].roleName)} · ${g.length}</div><div class="rows">${g.map(row).join('')}</div>`; }).join('');
     $$('[data-person]', el).forEach(b => b.onclick = () => person(list.find(s => s.uid === b.dataset.person)));
   };
   if ($('#sQ', el)) $('#sQ', el).oninput = drawList;
@@ -139,6 +139,7 @@ export async function staffView(el, user, notice = {}) {
         }, 'Sending…');
         if (!s.hasPin) return go($('[data-pin]', box));
         // Someone with a PIN: one more tap to be sure (their old PIN stops working).
+        msg('');
         $('#pinAsk', box).innerHTML = `<div class="say warn"><b>Send ${esc(s.name)} a new PIN?</b>Their old PIN stops working now and the new one is texted to them.</div><button type="button" class="big" id="pinGo" style="margin-top:10px">Send the new PIN</button>`;
         $('#pinGo', box).onclick = () => go($('#pinGo', box));
         $('#pinGo', box).scrollIntoView({ block: 'nearest', behavior: 'smooth' });
@@ -188,6 +189,8 @@ export async function staffView(el, user, notice = {}) {
   };
 
   if (notice.text) say($('#sMsg', el), notice.text);
+  // After an action the confirmation (or the new PIN) is the first thing they see.
+  if (notice.text || notice.pins) requestAnimationFrame(() => $(notice.pins ? '#pinCards' : '#sMsg', el)?.scrollIntoView({ block: 'center' }));
   // New PINs stay on screen until the page changes, so the manager can read one out if a text
   // doesn't arrive. They are shown only here, once: the system keeps no copy.
   if (notice.pins) $('#pinCards', el).innerHTML = `<div class="card pincards" role="status"><strong>PINs sent</strong>
