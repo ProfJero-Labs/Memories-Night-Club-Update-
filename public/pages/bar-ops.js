@@ -108,7 +108,7 @@ async function shiftView() {
   el.innerHTML = `<h1 style="margin:0">My shift</h1>
     <div class="hero"><span>I sold tonight</span><b>${money(f.salesPesewas)}</b></div>
     <div class="hero-row" style="margin-top:10px"><div class="hero good"><span>Cash with me</span><b>${money(f.cashCollectedPesewas)}</b></div><div class="hero"><span>MoMo I took</span><b>${money(f.momoRecordedPesewas)}</b></div></div>
-    <div class="rows" style="margin-top:10px"><button type="button" class="row-btn" id="tipOnly"><span class="t">Record a tip</span><span class="s">A tip without a bill</span><span class="r">${money(f.tipsPesewas || 0)}</span></button></div>
+    <div class="rows" style="margin-top:10px"><button type="button" class="row-btn" id="tipOnly"><span class="t">Record a tip</span><span class="s">A tip without a bill · my tips tonight ${money(f.tipsPesewas || 0)}</span><span class="r"></span></button></div>
     <h2 class="shift-h">Hand in my cash</h2><div id="cashIn" style="display:grid;gap:12px;margin-top:10px"></div>
     <h2 class="shift-h">My report</h2><div style="display:grid;gap:12px;margin-top:10px">${r.submitted ? `<div class="say good"><b>Report submitted at ${when(r.submitted.at)}</b>Thank you.</div>` : '<div class="sfield"><label for="brWhy">Anything to explain? (optional)</label><textarea id="brWhy" rows="2" maxlength="600"></textarea></div><div id="brMsg"></div><button class="big ghost" id="brGo">Submit my report</button>'}</div>`;
   handInCash($('#cashIn', el), sapi);

@@ -647,7 +647,9 @@ test('scan to order: the bar QR opens the menu; pay; the pickup code shows only 
   await g.getByRole('button', { name: 'Pay' }).click();
   await g.waitForURL(/counter\.html/); await g.waitForSelector('.pickup', { timeout: 15000 });
   const code = (await g.textContent('.pickup')).trim();
-  assert.match(store.sms.at(-1).message, new RegExp(code));
+  // The guest's text carries the pickup code (the Manager's payment alert may come after it).
+  assert.match(store.sms.filter(x => x.to === '0241239876').at(-1).message, new RegExp(code));
+  assert.ok(store.sms.some(x => /MoMo\/card confirmed/.test(x.message)), 'the Manager is texted that it went through');
   const bar = await phone(390);
   await signInAs(bar, 'bar@dev');
   await bar.waitForURL(/bar\.html/); await bar.waitForSelector('.ord');

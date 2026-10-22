@@ -29,9 +29,10 @@ export function goBack(fallback = '') {
 }
 // Finished a task (drinks sent, sale done): return to the screen it was started from without
 // leaving the finished step in the history, so Back never reopens it.
+let leaving = false; // a return is on its way: a panel closing now mustn't take its own step back too
 export function returnTo(hash) {
   // Still inside a panel: close it first (one step back), then return.
-  if (history.state?.sheet || history.state?.spentSheet) { addEventListener('popstate', () => setTimeout(() => returnTo(hash), 0), { once: true }); history.back(); return; }
+  if (history.state?.sheet || history.state?.spentSheet) { leaving = true; addEventListener('popstate', () => { leaving = false; setTimeout(() => returnTo(hash), 0); }, { once: true }); history.back(); return; }
   if (history.state?.from === hash) history.back();
   else location.replace(`#${hash}`);
 }
@@ -60,7 +61,7 @@ export function sheet(html, { label = 'Details', full = false } = {}) {
   // that closed it has already moved to another screen.
   const close = () => {
     if (gone) return; finish();
-    if (history.state?.sheet === id) { history.replaceState({ spentSheet: 1, inApp: 1 }, ''); setTimeout(() => { if (location.href === at && history.state?.spentSheet) history.back(); }, 0); }
+    if (history.state?.sheet === id && !leaving) { history.replaceState({ spentSheet: 1, inApp: 1 }, ''); setTimeout(() => { if (location.href === at && history.state?.spentSheet) history.back(); }, 0); }
   };
   const key = e => { if (e.key === 'Escape') close(); };
   addEventListener('keydown', key); addEventListener('popstate', pop);

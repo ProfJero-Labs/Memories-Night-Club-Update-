@@ -35,7 +35,7 @@ export async function salesView(el, date) {
   el.innerHTML = '<div class="loading">Loading…</div>';
   const d = await sapi(`/api/ops/sales${date ? `?date=${date}` : ''}`), t = d.totals;
   const tips = d.tips?.totalPesewas ? d.tips : null, momo = d.momoPayments || [];
-  el.innerHTML = `<h1>Today’s sales</h1>
+  el.innerHTML = `<div class="vstack" style="display:grid;gap:14px"><h1>Today’s sales</h1>
     <p class="lead">${esc(dayName(d.date))} · ${d.night.status === 'closed' ? `closed by ${esc(d.night.closedByName || '')}` : 'still open'}</p>
     <div class="hero-stack"><div class="hero"><span>Sales</span><b>${money(t.salesPesewas)}</b></div>
     <div class="hero-row">
@@ -59,7 +59,7 @@ export async function salesView(el, date) {
       ${momo.length ? `<h3 class="group-h">MoMo to check on the statement</h3><div class="lines-list">${momo.map(m => lineRow(`<b>${esc(m.momoRef)}</b>`, money(m.amountPesewas), `Tab ${m.tabNumber} · from ${esc(m.momoFrom || '—')} · ${esc(m.byName)} ${when(m.at)}`)).join('')}</div>` : ''}
     </details>
     ${dateBar(d.date)}
-    <button class="big ghost" id="slCsv">Download (spreadsheet)</button>`;
+    <button class="big ghost" id="slCsv">Download (spreadsheet)</button></div>`;
   bindDate(el, v => salesView(el, v));
   $('#slCsv', el).onclick = () => saveCsv(`sales-${d.date}.csv`, [
     ['Sales', d.date], [],
@@ -150,11 +150,11 @@ export async function productsView(el, { canEdit = true } = {}) {
   const { products, units } = await sapi('/api/ops/products');
   const noCost = products.filter(p => !p.costPesewas).length, offSale = products.filter(p => !p.available).length;
   let show = 'all', find = '';
-  el.innerHTML = `<h1>Drinks and prices</h1><p class="lead">${canEdit ? `Tap a drink to change its price or cost.${noCost ? ` ${amber(`${noCost} without a cost`)}: the profit on ${noCost > 1 ? 'them' : 'it'} can’t be worked out.` : ''}` : 'Finance sets the prices. Tap a drink for its details.'}</p>
+  el.innerHTML = `<div class="vstack" style="display:grid;gap:14px"><h1>Drinks and prices</h1><p class="lead">${canEdit ? `Tap a drink to change its price or cost.${noCost ? ` ${amber(`${noCost} without a cost`)}: the profit on ${noCost > 1 ? 'them' : 'it'} can’t be worked out.` : ''}` : 'Finance sets the prices. Tap a drink for its details.'}</p>
     ${canEdit ? '<button class="big" id="pAdd">Add a drink</button>' : ''}<div id="pMsg"></div>
     <div class="quick" role="group" aria-label="Show">${[['all', `All (${products.length})`], ['nocost', `No cost (${noCost})`], ['off', `Off sale (${offSale})`]].map(([k, l]) => `<button type="button" class="chip" data-show="${k}" aria-pressed="${k === 'all'}">${l}</button>`).join('')}</div>
     ${products.length > 10 ? '<input type="search" class="searchbox" id="pFind" placeholder="Find a drink" aria-label="Find a drink" autocomplete="off">' : ''}
-    <div id="pList"></div>`;
+    <div id="pList"></div></div>`;
   const sub = p => `${money(p.pricePesewas)} · ${p.costPesewas ? `cost ${money(p.costPesewas)}` : amber('No cost yet')}${p.available ? '' : ' · <b>Off sale</b>'}`;
   const draw = () => {
     const q = find.trim().toLowerCase();
@@ -217,7 +217,7 @@ export async function stockAdminView(el, date, stationId, { role = '' } = {}) {
   const look = s.rows.filter(odd), rest = s.rows.filter(r => !odd(r));
   let cat = '';
   const diffs = s.rows.filter(r => r.difference).length, lows = s.rows.filter(r => r.low).length;
-  el.innerHTML = `<h1>Stock</h1>
+  el.innerHTML = `<div class="vstack" style="display:grid;gap:14px"><h1>Stock</h1>
     ${stations.length > 1 ? `<div class="sfield"><label for="stSel">Bar</label><select id="stSel">${stations.map(x => `<option value="${esc(x.id)}" ${x.id === sid ? 'selected' : ''}>${esc(x.name)}</option>`).join('')}</select></div>` : ''}
     <p class="lead">${stations.length > 1 ? '' : `${esc(s.station.name)} · `}${esc(dayName(s.date))} · ${s.closing ? `counted by ${esc(s.closing.byName)}${s.closing.reviewedByName ? `, reviewed by ${esc(s.closing.reviewedByName)}` : ''}` : 'not counted yet'}</p>
     <button class="big" id="rcv">${buyer ? 'Record drinks bought' : 'Add new stock'}</button><div id="stMsg"></div>
@@ -232,7 +232,7 @@ export async function stockAdminView(el, date, stationId, { role = '' } = {}) {
       : !oc ? '<p class="muted" style="margin:0">The bar hasn’t counted tonight’s stock yet. Sales go on; the count is compared when it comes in.</p>' : ''}
     ${done.length ? `<details class="fold"><summary>New stock, last 7 days (${done.length})</summary><div class="lines-list">${done.map(dlLine).join('')}</div></details>` : ''}
     <details class="fold"><summary>How “should be here” is worked out</summary><p style="margin:0">Opening + received + moved in + returned − handed out − broken − moved out. ${buyer ? 'Drinks you record as bought are in the bar’s stock straight away.' : 'New stock counts once the bar confirms it; finance sees it.'}</p></details>
-    ${dateBar(s.date)}`;
+    ${dateBar(s.date)}</div>`;
   const again = () => stockAdminView(el, s.date, sid, { role });
   bindDate(el, v => stockAdminView(el, v, sid, { role }));
   $('#stSel', el) && ($('#stSel', el).onchange = e => stockAdminView(el, s.date, e.target.value, { role }));
@@ -278,7 +278,7 @@ export async function moneyView(el, period = 'today') {
   const t = m.totals, d = m.drinks, profit = t.profitPesewas >= 0;
   const rows = list => list.filter(r => r.amountPesewas).map(r => lineRow(esc(r.label), money(r.amountPesewas))).join('') || '<div class="ln"><span class="muted">Nothing yet</span></div>';
   const live = m.expenses.filter(e => !e.removed);
-  el.innerHTML = `<h1>Money</h1>
+  el.innerHTML = `<div class="vstack" style="display:grid;gap:14px"><h1>Money</h1>
     <div class="seg" role="radiogroup" aria-label="Period" style="grid-template-columns:repeat(3,minmax(0,1fr))">${[['today', 'Tonight'], ['week', 'This week'], ['month', 'This month']].map(([k, l]) => `<button type="button" class="mid ${k === m.period.key ? 'on' : ''}" data-per="${k}" role="radio" aria-checked="${k === m.period.key}">${l}</button>`).join('')}</div>
     <div class="hero-stack">${m.myShare ? `<div class="hero ${m.myShare.profitPesewas >= 0 ? 'good' : 'bad'}"><span>Your share (${m.myShare.pct}%)</span><b>${signed(m.myShare.profitPesewas)}</b><span>${esc(m.period.label)} · club ${profit ? 'profit' : 'loss'} ${money(Math.abs(t.profitPesewas))}</span></div>`
       : `<div class="hero ${profit ? 'good' : 'bad'}"><span>${profit ? 'Profit' : 'Loss'} · ${esc(m.period.label)}</span><b>${money(Math.abs(t.profitPesewas))}</b></div>`}
@@ -308,7 +308,7 @@ export async function moneyView(el, period = 'today') {
       ${lineRow(`Tips given (${m.tips.count})`, money(m.tips.totalPesewas))}${lineRow('MoMo / card: came into the club’s account', money(m.tips.momoPesewas + m.tips.digitalPesewas))}${lineRow('Cash: the staff kept it', money(m.tips.cashPesewas))}
       <div class="ln total"><span>Still to pay out to staff</span><span>${money(m.tips.owedPesewas)}</span></div></div>
       <p class="muted" style="margin:0">${esc(m.tips.note)}</p></details>` : ''}
-    ${m.owners?.length ? `<details class="fold"><summary>Directors’ shares</summary><div class="lines-list">${m.owners.map(o => lineRow(`${esc(o.name)} <small class="muted">${o.pct}%</small>`, signed(o.profitPesewas))).join('')}</div></details>` : ''}`;
+    ${m.owners?.length ? `<details class="fold"><summary>Directors’ shares</summary><div class="lines-list">${m.owners.map(o => lineRow(`${esc(o.name)} <small class="muted">${o.pct}%</small>`, signed(o.profitPesewas))).join('')}</div></details>` : ''}</div>`;
   $$('[data-per]', el).forEach(b => b.onclick = () => moneyView(el, b.dataset.per));
   $('#addExp', el) && ($('#addExp', el).onclick = () => expenseSheet(m, async r => { await moneyView(el, m.period.key); say($('#mMsg', el), r?.needsApproval ? 'Saved. It’s above the limit, so it waits for a director.' : 'Expense saved.'); }));
   $$('[data-rmexp]', el).forEach(b => b.onclick = () => {
