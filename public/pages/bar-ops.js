@@ -13,9 +13,9 @@ const user = await requireStaff(['superAdmin', 'director', 'manager', 'eventMana
 const canStock = ['superAdmin', 'director', 'manager', 'finance', 'barStaff'].includes(user.role);
 let station = sessionStorage.getItem('bar-station') || '', view = 'orders', stop = null, seen = null;
 const canSell = ['superAdmin', 'director', 'manager', 'barStaff'].includes(user.role);
-const views = { orders: $('#vOrders'), sell: $('#vSell'), stock: $('#vStock'), shift: $('#vShift') };
+const views = { orders: $('#vOrders'), sell: $('#vSell'), waiters: $('#vWaiters'), stock: $('#vStock'), shift: $('#vShift') };
 // Four jobs, four tabs. The counts (the stock I met, the closing count) live under Stock.
-const nav = bottomNav([['orders', 'Orders'], ...(canSell ? [['sell', 'Sell']] : []), ['stock', 'Stock'], ...(canSell ? [['shift', 'My shift']] : [])], k => go(k));
+const nav = bottomNav([['orders', 'Orders'], ...(canSell ? [['sell', 'Sell']] : []), ['waiters', 'Waiters'], ['stock', 'Stock'], ...(canSell ? [['shift', 'My shift']] : [])], k => go(k));
 document.addEventListener('bar-station', e => { if (e.detail !== station) { station = e.detail; seen = null; go(view); } });
 const top = (t, kind = 'good') => say($('#msgTop'), t, kind);
 $('#msgTop').onclick = () => { $('#msgTop').innerHTML = ''; }; // a tap clears a message
@@ -35,10 +35,37 @@ function go(k) {
   if (stop) { stop(); stop = null; }
   if (k === 'orders') stop = every(5000, rounds);
   if (k === 'sell') sellView();
+  if (k === 'waiters') stop = every(15000, waitersView);
   if (k === 'stock') stockView();
   if (k === 'shift') shiftView();
 }
 const lines = r => r.lines.map(l => `${l.qty} × ${esc(l.name)}`).join(', ');
+
+// ── Waiters: what this bar has given each waiter tonight, tab by tab, and what's still unpaid ──
+let waitersData = null;
+async function waitersView(alive = () => true) {
+  const el = views.waiters;
+  const d = await sapi(`/api/ops/bar/waiters?stationId=${encodeURIComponent(station)}`);
+  if (!alive()) return;
+  waitersData = d;
+  const total = d.waiters.reduce((n, w) => n + w.givenPesewas, 0), unpaid = d.waiters.reduce((n, w) => n + w.unpaidPesewas, 0);
+  el.innerHTML = `<h1 style="margin:0">Waiters</h1><p class="lead" style="margin:0">Drinks ${esc(d.stationName || 'this bar')} has given each waiter tonight. Tap a name for their tables.</p>
+    <div class="hero-row"><div class="hero"><span>Given to waiters</span><b>${money(total)}</b></div><div class="hero ${unpaid ? 'bad' : 'good'}"><span>Still unpaid</span><b>${money(unpaid)}</b></div></div>
+    <div class="rows">${d.waiters.map(w => `<button class="row-btn" type="button" data-w="${esc(w.uid)}"><span class="t">${esc(w.name)}</span>
+      <span class="s">${w.givenQty} drink${w.givenQty === 1 ? '' : 's'} · ${w.tabs.length} table${w.tabs.length === 1 ? '' : 's'}${w.openTabs ? ` (${w.openTabs} open)` : ''}${w.unpaidPesewas ? ` · ${money(w.unpaidPesewas)} unpaid` : ' · all paid'}${w.notConfirmedQty ? ` · ${w.notConfirmedQty} not confirmed yet` : ''}</span>
+      <span class="r">${money(w.givenPesewas)}</span></button>`).join('') || '<div class="empty-box"><b>Nothing given to waiters yet tonight</b></div>'}</div>`;
+  $$('[data-w]', el).forEach(b => b.onclick = () => waiterSheet(b.dataset.w));
+}
+function waiterSheet(uid) {
+  const w = waitersData?.waiters.find(x => x.uid === uid); if (!w) return;
+  sheet(`<h2>${esc(w.name)}</h2>
+    <div class="hero-row"><div class="hero"><span>Given tonight</span><b>${money(w.givenPesewas)}</b></div><div class="hero ${w.unpaidPesewas ? 'bad' : 'good'}"><span>Unpaid on open tables</span><b>${money(w.unpaidPesewas)}</b></div></div>
+    ${w.tabs.map(t => `<div class="tcard ${t.status !== 'open' ? 'done' : t.balancePesewas ? 'warn' : ''}" style="cursor:default">
+      <span class="row"><span class="t" style="font-size:20px">${t.quick ? 'Quick sale' : `Tab ${t.number} · ${esc(t.table === 'Walk-in' ? 'no table' : `table ${t.table}`)}`}</span>${st(t.payStatus, t.status === 'open' ? t.payLabel : t.status === 'closed' ? 'Closed' : t.payLabel)}</span>
+      <span>${t.given.map(l => `<b>${l.qty} ×</b> ${esc(l.name)} <small class="muted">${money(l.amountPesewas)}</small>`).join('<br>')}</span>
+      <span class="sub">From this bar ${money(t.givenPesewas)} · bill ${money(t.totalPesewas)} · paid ${money(t.paidPesewas)}${t.balancePesewas ? ` · <b>${money(t.balancePesewas)} to pay</b>` : ''} · last ${when(t.lastAt)}</span></div>`).join('')}
+    <button class="big ghost" data-close>Close</button>`, { label: w.name, full: true });
+}
 
 // ── Waiter orders: a ticket each, with one big next step (Start → Ready → Hand over) ──
 const first = r => esc(r.waiterName.split(' ')[0]);

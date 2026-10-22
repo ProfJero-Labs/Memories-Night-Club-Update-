@@ -1060,6 +1060,12 @@ test('a night at the bar: tab without QR → bar → delivered → the customer 
   await w.locator('#pkMsg').getByText(/CONNECTION/i).waitFor();
   assert.ok(!docs('tabs').some(t => t.table === '14'), 'nothing recorded without a connection');
   await w.context().setOffline(false); await w.click('[data-back]'); await w.waitForURL(/#tabs/);
+  // The bar opens any waiter's tables: what it gave them, per table, and what's unpaid.
+  await bar.click('[data-k="waiters"]');
+  await bar.locator('#vWaiters [data-w]', { hasText: 'Dev Waiter' }).first().click();
+  await bar.locator('.sheet').getByText(/table 12/).waitFor();
+  await bar.locator('.sheet').getByText(/2 ×/).first().waitFor();
+  await bar.click('.sheet [data-close]'); await bar.click('[data-k="orders"]');
   // End of night: waiter report, bar count, cash count, front office, the close, finance.
   await w.click('[data-k="report"]'); await w.waitForSelector('#rpGo'); await w.click('#rpGo'); await w.getByText(/Report submitted/).waitFor();
   await bar.click('[data-k="stock"]'); await bar.click('#closeCount'); await bar.waitForSelector('#vStock #cf');

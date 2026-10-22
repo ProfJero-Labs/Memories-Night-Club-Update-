@@ -348,3 +348,35 @@ test('the waiter’s one step: take the order → the bar has it → the custome
   // Someone else's table: refused.
   assert.equal((await ctx.call('POST', '/api/ops/tabs/order', { who: ctx.W2, body: { tabId: r.tabId, lines: [{ productId: 'beer', qty: 1 }] } })).status, 403);
 });
+
+test('the bar sees every waiter’s tabs: drinks it gave each one (less what came back), per table, and what’s still unpaid', async () => {
+  const ctx = setup();
+  await openingCount(ctx);
+  const a = ok(await ctx.call('POST', '/api/ops/tabs/order', { who: ctx.W1, body: { table: '5', lines: [{ productId: 'beer', qty: 3 }] } }), 'W1 table 5');
+  const b = ok(await ctx.call('POST', '/api/ops/tabs/order', { who: ctx.W1, body: { table: '6', lines: [{ productId: 'shot', qty: 2 }] } }), 'W1 table 6');
+  const c = ok(await ctx.call('POST', '/api/ops/tabs/order', { who: ctx.W2, body: { table: '9', lines: [{ productId: 'beer', qty: 1 }] } }), 'W2 table 9');
+  ok(await ctx.call('POST', '/api/ops/tabs/order', { who: ctx.W2, body: { table: '10', lines: [{ productId: 'beer', qty: 4 }] } }), 'still at the bar');
+  for (const r of [a, b, c]) await barMakes(ctx, r.roundId);
+  // One beer from table 5 goes back to the bar.
+  ok(await ctx.call('POST', '/api/ops/tabs/round-action', { who: ctx.W1, body: { roundId: a.roundId, action: 'received' } }), 'got them');
+  ok(await ctx.call('POST', '/api/ops/tabs/round-action', { who: ctx.W1, body: { roundId: a.roundId, action: 'delivered' } }), 'delivered');
+  const line = ctx.store.get('rounds', a.roundId).fields.lines[0].lineId;
+  ok(await ctx.call('POST', '/api/ops/tabs/round-action', { who: ctx.W1, body: { roundId: a.roundId, action: 'return', lineId: line, qty: 1 } }), 'send back');
+  ok(await ctx.call('POST', '/api/ops/bar/round', { who: ctx.B1, body: { roundId: a.roundId, action: 'confirm_return', lineId: line } }), 'bar takes it back');
+  // Table 6 pays in cash.
+  ok(await ctx.call('POST', '/api/ops/tabs/pay', { who: ctx.W1, body: { tabId: b.tabId, method: 'cash', amountPesewas: 6000 } }), 'cash');
+
+  const d = ok(await ctx.call('GET', '/api/ops/bar/waiters', { who: ctx.B1 }), 'bar waiters');
+  const efua = d.waiters.find(w => w.name === 'Efua Waiter'), kojo = d.waiters.find(w => w.name === 'Kojo Waiter');
+  const t5 = efua.tabs.find(t => t.table === '5'), t6 = efua.tabs.find(t => t.table === '6');
+  assert.equal(efua.tabs.length, 2);
+  assert.deepEqual(t5.given, [{ name: 'Club beer', qty: 2, amountPesewas: 5000 }], 'the beer that came back isn’t counted');
+  assert.deepEqual(t6.given, [{ name: 'Tequila shot', qty: 2, amountPesewas: 6000 }]);
+  assert.equal(t6.balancePesewas, 0, 'table 6 paid');
+  assert.equal(t5.balancePesewas, t5.totalPesewas, 'table 5 unpaid');
+  assert.equal(efua.unpaidPesewas, t5.balancePesewas);
+  assert.equal(kojo.givenQty, 1, 'an order still at the bar isn’t given yet');
+  assert.equal(kojo.notConfirmedQty, 1, 'handed, waiting for Kojo’s “I got them”');
+  // Waiters can't open the bar's view.
+  assert.equal((await ctx.call('GET', '/api/ops/bar/waiters', { who: ctx.W1 })).status, 403);
+});

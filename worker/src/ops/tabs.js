@@ -249,6 +249,50 @@ export async function barRounds(env, user, { stationId }) {
   };
 }
 
+// The bar's view of each waiter tonight: every drink this bar has given them (handed over, less
+// what came back to the bar), on which tab, and how much of those tabs is still unpaid. Drinks
+// still waiting for the waiter's "I got them" are counted as given (they left the bar).
+export async function barWaiters(env, user, { stationId }) {
+  if (!requireRole(user, BAR_HANDS)) return FORBIDDEN;
+  const stations = (await listDocs(env, 'bar_stations')).sort((a, b) => a.fields.name.localeCompare(b.fields.name));
+  const st = stations.find(s => s.id === stationId) || stations[0];
+  if (!st) return { stationId: null, waiters: [] };
+  const date = bizDate();
+  const given = (await queryWhere(env, 'rounds', [{ field: 'stationId', value: st.id }, { field: 'businessDate', value: date }]))
+    .map(r => ({ id: r.id, ...r.fields })).filter(r => r.handedAt && ['handed', 'received', 'delivered'].includes(r.status));
+  const tabIds = [...new Set(given.map(r => r.tabId).filter(Boolean))];
+  const tabs = new Map();
+  for (const tid of tabIds) {
+    const t = await getDoc(env, 'tabs', tid); if (!t) continue;
+    tabs.set(tid, { t: { id: t.id, ...t.fields }, bill: billOf(t.fields, await roundsOf(env, tid)) });
+  }
+  const people = new Map();
+  for (const r of given) {
+    const w = people.get(r.waiterUid) || { uid: r.waiterUid, name: r.waiterName || 'Waiter', givenQty: 0, givenPesewas: 0, notConfirmedQty: 0, tabs: new Map() };
+    const tab = w.tabs.get(r.tabId) || { id: r.tabId, number: r.tabNumber, table: r.table || '', given: new Map(), givenPesewas: 0, lastAt: '' };
+    for (const l of r.lines) {
+      const n = Math.max(0, l.qty - (l.returnedQty || 0)); if (!n) continue;
+      const k = `${l.productId}|${l.unitPesewas}`, cur = tab.given.get(k) || { name: l.name, qty: 0, amountPesewas: 0 };
+      cur.qty += n; cur.amountPesewas += n * l.unitPesewas; tab.given.set(k, cur);
+      tab.givenPesewas += n * l.unitPesewas; w.givenQty += n; w.givenPesewas += n * l.unitPesewas;
+      if (r.status === 'handed') w.notConfirmedQty += n;
+    }
+    if (String(r.handedAt) > tab.lastAt) tab.lastAt = r.handedAt;
+    w.tabs.set(r.tabId, tab); people.set(r.waiterUid, w);
+  }
+  const waiters = [...people.values()].map(w => {
+    const list = [...w.tabs.values()].map(x => {
+      const info = tabs.get(x.id), b = info?.bill;
+      return { id: x.id, number: x.number, table: x.table, quick: !!info?.t.quick, status: info?.t.status || 'open', payStatus: b?.status || 'unpaid', payLabel: PAY_LABEL[b?.status || 'unpaid'],
+        totalPesewas: b?.totalPesewas || 0, paidPesewas: b?.paidPesewas || 0, balancePesewas: b?.balancePesewas || 0,
+        given: [...x.given.values()], givenPesewas: x.givenPesewas, lastAt: x.lastAt };
+    }).sort((a, b) => String(b.lastAt).localeCompare(String(a.lastAt)));
+    return { uid: w.uid, name: w.name, givenQty: w.givenQty, givenPesewas: w.givenPesewas, notConfirmedQty: w.notConfirmedQty,
+      unpaidPesewas: list.reduce((n, t) => n + (t.status === 'open' ? t.balancePesewas : 0), 0), openTabs: list.filter(t => t.status === 'open').length, tabs: list };
+  }).sort((a, b) => b.givenPesewas - a.givenPesewas);
+  return { stationId: st.id, stationName: st.fields.name, date, waiters };
+}
+
 const issueMoves = (rid, f) => f.lines.map(l => ({ productId: l.productId, productName: l.name, stationId: f.stationId, qty: -l.qty, kind: 'issue', ref: rid, tabId: f.tabId, toWaiterUid: f.waiterUid, toWaiterName: f.waiterName, businessDate: f.businessDate }));
 
 export async function barRound(env, b, user) {
