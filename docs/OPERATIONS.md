@@ -73,6 +73,27 @@ Every screen follows the same few rules, so nothing new has to be learned on a b
 | Finance officer | **Finance** | Today, **Money** (in, out, profit; add expenses), Stock (*Record drinks bought*, stock the manager added, the bar's counts and the manager's explanations; drinks, prices and costs), Check (staff reports, cash, approvals), Reports (end of day, sign off, print, CSV) |
 | Events manager | Control room | Nights, tickets, tables, promos, bar setup (no money reports) |
 
+## The gate (front office, security, organisers)
+
+The Door screen is where the entrance is run. Phone numbers are the main ID: a person's number shows everything they have for the night. Scanning QR codes still works.
+
+**Front office** (tabs: Entrance, Sell, Check, Tables, More):
+- **Sell**: pick a ticket (the price at the door) or a table, type their phone number (it's their ticket) and, if you like, their name. Then:
+  - **Took GHS … cash**: the sale is recorded at once, the ticket is texted to them and they count as in. The cash goes into your cash for the night; hand it in from the same screen (**Hand in my cash**) and the Manager counts it.
+  - **MoMo prompt on their phone**: a payment prompt appears on the customer's phone; the sale records itself when they approve. If the prompt can't be sent, a payment link is texted to them and shown as a QR on your screen. Nothing counts as sold until MoMo confirms it, so a sale can't be faked. The Manager is not texted for gate sales.
+  - **Customers scan to buy**: a big QR for the queue; they buy on their own phone at the online price.
+- **Tables**: how many of each table are free, held or booked. Sell one, or **Hold 30 min** for a name; a hold lets go by itself after 30 minutes, or tap **Let it go**.
+- **Members**: type their number, they read you the code from their app. Someone already in tonight can't be let in again with a code: if they went out and came back, they show their app and you tap **Back in**.
+- **More**: Counts, Issues and the End of night report.
+
+**Security** (tabs: Check, Entrance, Issues): type anyone's number (or their ticket code) on **Check**. The screen says **PAID**, **MEMBER** or **NOT IN THE SYSTEM**, whether they have **VIP access** (a table, or a ticket marked VIP), and the detail: how they paid, who sold it and when they came in. Someone not in the system: tap **Report to the Manager** (it goes to Issues).
+
+**Friends joining a table**: on Check, open *A friend joining a table*, type the table code and the friend's number. The table's owner gets a 4-digit code by text; if they know the friend, they read it to you and you confirm. The friend then has VIP access too. A table never takes more people than it holds.
+
+**Organisers** see only their own night: Entrance, Check (the same as security) and **Counts**: everyone inside, online tickets in, bought at the gate (cash and MoMo), tables arrived, free passes and members. They can hold anyone at the entrance until Check shows they paid, are a member or have a table.
+
+**Control room**: each ticket can have a price **At the door** (blank means the same as online) and a **VIP** tick (gets into the VIP area). A ticket named "VIP" counts as VIP too.
+
 ## Quick sale (waiter or bar)
 
 - **Bar → Sell**: pick the drinks → the customer pays → **Cash received** or **MoMo received**

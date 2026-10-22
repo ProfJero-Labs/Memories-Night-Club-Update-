@@ -1048,7 +1048,7 @@ test('a night at the bar: tab without QR → bar → delivered → the customer 
   await cash.fill('#why', 'gave GHS 2 too much change'); cash.once('dialog', d => d.accept()); await cash.click('#cntGo');
   await cash.getByText(/GHS 2 less than expected/).waitFor();
   const fo = await phone(390); await signInAs(fo, 'door@dev'); await fo.waitForURL(/checkin\.html/);
-  await fo.click('[data-k="report"]'); await fo.waitForSelector('#frGo'); await fo.click('#frGo'); await fo.getByText(/Submitted by/).waitFor();
+  await fo.goto(`${base}/checkin.html#report`); await fo.waitForSelector('#frGo'); await fo.click('#frGo'); await fo.getByText(/Submitted by/).waitFor();
   // The manager's screen: tonight's money, the tables, and Close the night. Nothing technical.
   const mgr = await phone(390); await signInAs(mgr, 'manager@dev'); await mgr.waitForURL(/night\.html/);
   // Tonight: the money received big, with what was sold and what's still owed under it.
@@ -1077,4 +1077,52 @@ test('every public page renders at 320px with no sideways scroll and no script e
     assert.deepEqual(page.errors, [], `errors on ${p}`);
     await page.context().close();
   }
+});
+
+test('the gate: the front office sells for cash and by a MoMo prompt; security checks the number (paid, who sold it); the organiser sees the counts and reports someone not in the system', async () => {
+  const door = await phone();
+  await signInAs(door, 'door@dev'); await door.waitForURL(/checkin\.html/); await door.waitForLoadState('networkidle');
+  await door.goto(`${base}/checkin.html?event=dev-tonight#sell`);
+  // Cash: two Regular tickets, their number is the ticket.
+  await door.locator('#vSell [data-tt="dev-tonight-reg"]').click();
+  await door.click('#sPlus'); await door.fill('#sPhone', '024 555 7777'); await door.fill('#sName', 'Kwame Gate');
+  await door.getByRole('button', { name: /took ghs 200 cash/i }).click();
+  await door.getByText(/paid · admit 2/i).waitFor();
+  const cashOrder = docs('orders').find(o => o.channel === 'gate' && o.buyerPhone === '0245557777');
+  assert.equal(cashOrder.paidWith, 'cash'); assert.equal(cashOrder.soldBy, 'uid-door'); assert.equal(cashOrder.amountPesewas, 20000);
+  assert.ok(cashOrder.ticketIds.every(t => store.get('tickets', t).fields.status === 'used'), 'gate tickets count as in');
+  await door.getByRole('button', { name: 'Next sale' }).click();
+  await door.locator('#vSell .hero', { hasText: 'Cash with you' }).getByText('GHS 200').waitFor();
+  // MoMo: a prompt on the customer's phone; the sale records once they approve.
+  await door.locator('#vSell [data-tt="dev-tonight-reg"]').click();
+  await door.fill('#sPhone', '024 555 8888');
+  await door.getByRole('button', { name: /momo prompt/i }).click();
+  await door.getByText(/approve on your phone/i).waitFor();
+  await door.getByText(/paid · admit 1/i).waitFor({ timeout: 20000 });
+  assert.equal(docs('orders').find(o => o.channel === 'gate' && o.buyerPhone === '0245558888').paidWith, 'momo');
+  assert.deepEqual(door.errors, []);
+
+  // Security checks the cash buyer's number.
+  const sec = await phone();
+  await signInAs(sec, 'security@dev'); await sec.waitForURL(/checkin\.html/); await sec.waitForLoadState('networkidle');
+  await sec.goto(`${base}/checkin.html?event=dev-tonight`);
+  await sec.locator('#ckPhone').waitFor();
+  await sec.fill('#ckPhone', '0245557777'); await sec.click('#ckForm button[type=submit]');
+  await sec.locator('#ckOut .result.ok').getByRole('heading', { name: 'PAID' }).waitFor();
+  await sec.locator('#ckOut').getByText(/GHS 200 for 2 cash/).first().waitFor();
+  await sec.locator('#ckOut').getByText(/cash at the gate, sold by dev/i).first().waitFor();
+  assert.deepEqual(sec.errors, []);
+
+  // The organiser: counts for their night, and a number that isn't in the system is reported.
+  const org = await phone();
+  await signInAs(org, 'orga@dev'); await org.waitForURL(u => !/login\.html/.test(u.pathname)); await org.waitForLoadState('networkidle');
+  await org.goto(`${base}/checkin.html?event=dev-tonight#counts`);
+  await org.locator('#vCounts .hero', { hasText: 'Gate cash' }).getByText('GHS 200').waitFor();
+  await org.goto(`${base}/checkin.html?event=dev-tonight#check`);
+  await org.fill('#ckPhone', '0245550000'); await org.click('#ckForm button[type=submit]');
+  await org.getByRole('heading', { name: 'NOT IN THE SYSTEM' }).waitFor();
+  await org.click('#ckReport'); await org.locator('#askGo').click();
+  await org.locator('#ckOut').getByText('Reported.').waitFor();
+  assert.ok(docs('incidents').some(i => i.needsManager && /not in the system/i.test(i.note)));
+  assert.deepEqual(org.errors, []);
 });

@@ -37,6 +37,7 @@ globalThis.fetch = store.fetch = async (url, options = {}) => {
   // The gate's MoMo prompt: in dev the customer "approves" it after 4 seconds.
   if (u.hostname === 'api.paystack.co' && u.pathname === '/charge') {
     const b = JSON.parse(options.body);
+    store.setPaystack(b.reference, { status: 'ongoing', currency: 'GHS', amount: b.amount });
     setTimeout(() => store.setPaystack(b.reference, { status: 'success', currency: 'GHS', amount: b.amount }), 4000);
     return new Response(JSON.stringify({ status: true, data: { reference: b.reference, status: 'pay_offline' } }), { headers: { 'Content-Type': 'application/json' } });
   }

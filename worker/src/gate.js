@@ -278,7 +278,8 @@ export async function gateCheck(env, user, { eventId, phone, code } = {}) {
   for (const t of tickets) {
     if (t.revoked || t.cancelled) { lines.push({ kind: 'ticket', ok: false, title: `${t.type || 'Ticket'}: CANCELLED`, sub: t.displayCode || '' }); continue; }
     const o = orderOf(t.token)?.fields;
-    const paid = t.comp ? 'Free (comp)' : t.channel === 'gate' ? `Paid ${o ? money(o.amountPesewas) : ''} ${t.paidWith === 'cash' ? 'cash' : 'MoMo'} at the gate${o?.soldByName ? `, sold by ${firstName(o.soldByName)}` : ''}` : `Paid online${o ? ` ${money(o.amountPesewas)}` : ''}`;
+    const amt = o ? `${money(o.amountPesewas)}${(o.ticketIds || []).length > 1 ? ` for ${o.ticketIds.length}` : ''}` : '';
+    const paid = t.comp ? 'Free (comp)' : t.channel === 'gate' ? `Paid ${amt} ${t.paidWith === 'cash' ? 'cash' : 'MoMo'} at the gate${o?.soldByName ? `, sold by ${firstName(o.soldByName)}` : ''}` : `Paid online${amt ? ` ${amt}` : ''}`;
     lines.push({ kind: 'ticket', ok: true, title: `${t.type || 'Ticket'}${Number(t.admitCount || 1) > 1 ? ` (admits ${t.admitCount})` : ''}`, sub: `${paid} · ${t.status === 'used' ? `in at ${hhmm(t.checkedInAt)}${t.checkedInBy ? ` (${firstName(await nameOf(t.checkedInBy))})` : ''}` : 'not in yet'}`, code: t.displayCode || '', at: t.checkedInAt || '' });
   }
   for (const o of orders.filter(x => x.fields.kind === 'table')) {

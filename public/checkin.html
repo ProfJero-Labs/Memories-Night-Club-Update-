@@ -35,6 +35,19 @@
   .hits li { display: flex; justify-content: space-between; align-items: center; gap: 10px; border: 1.5px solid var(--line-2); padding: 10px 12px; }
   .hits button { min-height: 44px; }
   .count { display: flex; justify-content: space-between; font: 700 12px var(--sans); letter-spacing: .16em; text-transform: uppercase; color: var(--muted); }
+  .gate-h { font: 400 30px/1 var(--display); text-transform: uppercase; margin: 0; }
+  .stepper { display: flex; align-items: center; gap: 18px; }
+  .stepper .sbtn { min-width: 56px; min-height: 52px; font-size: 26px; }
+  .stepper b { font: 400 40px/1 var(--display); min-width: 40px; text-align: center; }
+  .sale-total { display: flex; justify-content: space-between; align-items: baseline; font: 600 17px var(--sans); border-top: 1px solid var(--line-2); padding-top: 10px; }
+  .sale-total b { font: 400 34px/1 var(--display); }
+  .qr-big { background: #fff; padding: 16px; justify-self: center; width: min(100%, 320px); }
+  .qr-big svg { display: block; width: 100%; height: auto; }
+  .vip { justify-self: start; font: 700 16px var(--sans); letter-spacing: .06em; text-transform: uppercase; padding: 8px 12px; border: 2px solid; }
+  .vip.yes { color: #f3d36b; border-color: #f3d36b; } .vip.no { color: var(--muted); border-color: var(--line-2); }
+  .ck-line { display: grid; gap: 2px; border-top: 1px solid rgba(255,255,255,.18); padding-top: 8px; }
+  .ck-line b { font-size: 18px; } .ck-line span { font-size: 15px; opacity: .9; } .ck-line.bad b { color: #ff7a9c; }
+  .count a { display: inline-flex; align-items: center; min-height: 44px; }
   #ev:invalid { border-color: var(--crimson); }
 </style>
 <link rel="stylesheet" href="ops.css">
@@ -42,8 +55,10 @@
 </head>
 <body class="staff">
 <main class="door">
-<section id="vEntrance" style="display:grid;gap:inherit">
+<div id="nightBox">
   <div class="sfield"><label for="ev">Night</label><select id="ev" required><option value="" disabled selected>Choose the night</option></select><span class="hint" id="evHint"></span></div>
+</div>
+<section id="vEntrance" style="display:grid;gap:inherit">
   <div class="headcount" aria-live="polite"><div><small>In</small><br><b id="inCount">–</b></div><div style="text-align:right"><small>Expected</small><br><b id="expCount">–</b></div></div>
   <div id="out" aria-live="assertive"></div>
   <button class="btn red" id="next" type="button" hidden>Scan next</button>
@@ -67,7 +82,7 @@
   <ul class="hits" id="hits"></ul>
   <div class="count"><span id="counted">This phone: 0</span><a href="admin.html" id="adminLink" hidden>Control room</a></div>
 </section>
-<section id="vTables" hidden></section><section id="vIssues" hidden></section><section id="vReport" hidden></section>
+<section id="vSell" hidden style="display:grid;gap:inherit"></section><section id="vCheck" hidden style="display:grid;gap:inherit"></section><section id="vCounts" hidden style="display:grid;gap:inherit"></section><section id="vTables" hidden></section><section id="vIssues" hidden></section><section id="vReport" hidden></section>
 <div style="height:70px"></div>
 </main>
 <script type="module" src="pages/checkin.js"></script>

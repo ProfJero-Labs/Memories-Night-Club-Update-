@@ -89,9 +89,11 @@ export async function initiateTicket(env, b) {
   }
 }
 
-async function confirmCharge(env, pending, reference) {
+// waiting: the gate screen is asking while the customer approves on their phone, so "abandoned"
+// (not finished yet) means keep waiting, not failed.
+async function confirmCharge(env, pending, reference, { waiting = false } = {}) {
   const payment = await paystack(env, `/transaction/verify/${encodeURIComponent(reference)}`);
-  if (payment.status !== 'success') return { status: payment.status === 'failed' || payment.status === 'abandoned' ? 'failed' : 'pending', error: payment.status === 'failed' ? 'Payment was not successful.' : undefined };
+  if (payment.status !== 'success') return { status: payment.status === 'failed' || (payment.status === 'abandoned' && !waiting) ? 'failed' : 'pending', error: payment.status === 'failed' ? 'Payment was not successful.' : undefined };
   if (payment.currency !== 'GHS' || Number(payment.amount) !== Number(pending.fields.amountPesewas)) {
     await setDoc(env, 'pending_checkouts', reference, { ...pending.fields, status: 'failed', error: 'amount_mismatch' });
     return { status: 'failed', error: 'Payment amount did not match. Contact us with your reference.' };
@@ -577,7 +579,7 @@ async function fulfillGate(env, reference) {
   if (!pending) return { status: 'failed', error: 'Checkout not found.' };
   if (pending.fields.status === 'issued') return { status: 'issued', kind: 'gate', orderId: pending.fields.orderId, ticketIds: pending.fields.ticketIds || [] };
   if (pending.fields.status === 'failed') return { status: 'failed', kind: 'gate', error: pending.fields.error || 'Payment was not successful.' };
-  const bad = await confirmCharge(env, pending, reference); if (bad) return { kind: 'gate', ...bad };
+  const bad = await confirmCharge(env, pending, reference, { waiting: true }); if (bad) return { kind: 'gate', ...bad };
   const r = await issueGateSale(env, pending.fields.sale, { paidWith: 'momo', reference });
   if (r.error) {
     // Paid, but it sold out while they were approving: a refund is owed (listed under Refunds).

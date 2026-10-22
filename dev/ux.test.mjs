@@ -85,6 +85,9 @@ const ROLES = [
   { who: 'director', ph: '0200000012', pin: '258025', page: 'night.html', tabs: ['tonight', 'money', 'approve'], subs: ['salaries', 'budget', 'reviews', 'feedback', 'perf', 'staff', 'tables', 'sales', 'reports'] },
   { who: 'human manager', ph: '0200000013', pin: '258025', page: 'hr.html', tabs: ['floor', 'staff', 'pay', 'customers'], subs: ['payments', 'feedback', 'perf', 'close'] },
   { who: 'finance', ph: '0200000010', pin: '258025', page: 'finance.html', tabs: ['today', 'pay', 'money', 'stock', 'reports'], subs: ['salaries', 'purchases', 'commissions', 'tips', 'budget', 'payments', 'prices', 'check'] },
+  { who: 'front office', ph: '0200000003', pin: '2580', page: 'checkin.html?event=dev-tonight', tabs: ['entrance', 'sell', 'check', 'tables'], subs: ['issues', 'report', 'counts'] },
+  { who: 'security', ph: '0200000011', pin: '2580', page: 'checkin.html?event=dev-tonight', tabs: ['check', 'entrance', 'issues'], subs: [] },
+  { who: 'organiser at the door', ph: '0245552020', pin: '2580', page: 'checkin.html?event=dev-tonight', tabs: ['entrance', 'check', 'counts'], subs: [] },
   { who: 'dj', ph: '0200000016', pin: '2580', page: 'me.html', tabs: ['notices', 'messages', 'pay', 'me'], subs: [] },
 ];
 for (const r of ROLES) {

@@ -19,6 +19,8 @@ export function seed(store, origin) {
   const nights = [
     { id: 'dev-afro', name: 'Afrobeats Friday', date: nextDow(5), artwork: art('poster-a.svg'), organiserId: 'uid-org-a', description: 'Two rooms. One night. Dress like you meant it.' },
     { id: 'dev-piano', name: 'Amapiano Saturday', date: nextDow(6), artwork: art('poster-b.svg'), organiserId: 'uid-org-b', description: '' },
+    // Tonight's night (a night runs until 04:00), so the gate can sell and check.
+    { id: 'dev-tonight', name: 'Tonight at Memories', date: (() => { const d = new Date(Date.now() - 4 * 36e5); d.setUTCHours(22, 0, 0, 0); return d.toISOString(); })(), artwork: art('poster-a.svg'), organiserId: 'uid-org-a', description: 'Dev night happening now.' },
     { id: 'dev-dnd', name: 'DND — Dance. Network. Disconnect.', date: nextDow(5, 1), artwork: art('dnd-party-poster.jpeg'), organiserId: null, description: '' },
   ];
   for (const n of nights) {

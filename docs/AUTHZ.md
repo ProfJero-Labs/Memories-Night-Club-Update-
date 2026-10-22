@@ -59,6 +59,16 @@ Public (no sign-in, rate limited): `POST /api/checkout/quote` (the exact price w
 
 **Director and waitress roles.** `director` has exactly the manager's access in every row above (it is in the Worker's `CMS`, `MONEY` and `DOOR` lists and in the Firestore/Storage `staff()` rule). `waitStaff` (waitresses and waiters) has only the bar routes, like `barStaff`. Neither can manage staff: that stays superAdmin only. `POST /api/admin/members/delete` is manager/director/superAdmin only.
 
+## The gate (`/api/door/gate/*`, from October 2026)
+
+| Route | superAdmin | director | manager | eventManager | doorStaff (front office) | security | organiser |
+|---|---|---|---|---|---|---|---|
+| `GET night` (ticket and table stock, gate sales), `GET check`, `GET counts`, `POST report`, `POST table-guest/request`, `/confirm` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | own nights |
+| `POST sell`, `GET sale/:ref`, `POST hold`, `POST release` | ✅ | — | ✅ | ✅ | ✅ | — | — |
+| `POST /api/members/door/reentry` (a member already in tonight comes back) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | — |
+
+Selling is for tonight's night only. A MoMo sale records only when Paystack confirms the payment; a cash sale records the seller and goes into their cash session for the Manager's count.
+
 ## Venue operations (staff sign-in by PIN, tabs, bar, stock, cash, closing)
 
 The role on the staff record (`users/{uid}`) is checked on every request, so a job change or a
