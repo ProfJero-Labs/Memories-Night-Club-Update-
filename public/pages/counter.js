@@ -22,6 +22,11 @@ const spot = fromQr ? (qs.get('t') || '').slice(0, 24) : (store.get('mem-bar-spo
 const again = () => `counter.html?s=${encodeURIComponent(station)}${spot ? `&t=${encodeURIComponent(spot)}` : ''}`;
 const cart = store.get('mem-bar-cart') || {};
 let clientId = store.get('mem-bar-draft') || uuid(), timer = null, query = '';
+// An optional tip for anyone on the team (the bartender, a waiter, the DJ…): the whole tip is theirs.
+const tipPick = { tip: 0, other: '', to: '' };
+const TIPS = [0, 1000, 2000, 5000];
+const ghsIn = v => { const n = Math.round(Number(String(v).replace(/[^0-9.]/g, '')) * 100); return Number.isFinite(n) ? n : 0; };
+const tipNow = () => (tipPick.tip === 'other' ? ghsIn(tipPick.other) : tipPick.tip);
 // The last order this phone paid tonight: the key to "My night".
 const lastPaid = () => { const x = store.get('mem-bar-paid'); return x?.at > Date.now() - 14 * 3600e3 ? x.id : null; };
 async function myNight() {
@@ -102,12 +107,16 @@ async function start() {
     clientId = uuid(); store.set('mem-bar-draft', clientId); store.set('mem-bar-cart', cart);
     $('#menuList').innerHTML = list(); bindSteps(); payDock();
   });
-  const payDock = () => dock(total() ? `${money(total())}<small>${count()} drink${count() > 1 ? 's' : ''}</small>` : '', total() ? `Pay ${money(total())}` : '', async btn => {
+  const grand = () => total() + (total() ? tipNow() : 0);
+  const payDock = () => dock(total() ? `${money(grand())}<small>${count()} drink${count() > 1 ? 's' : ''}${total() && tipNow() ? ` + tip ${money(tipNow())}` : ''}</small>` : '', total() ? `Pay ${money(grand())}` : '', async btn => {
     const phone = $('#ph').value;
     if (!normalizePhone(phone)) { $('#err').innerHTML = msg('Enter your MoMo number, e.g. 024 123 4567.', 'bad'); return $('#ph').focus(); }
+    const t = tipNow();
+    if (tipPick.tip === 'other' && t < 100) { $('#err').innerHTML = msg('Enter the tip (at least GHS 1), or pick No tip.', 'bad'); return $('#tipAmt').focus(); }
+    if (t && !tipPick.to) { $('#err').innerHTML = msg('Pick who the tip is for.', 'bad'); return $('#tipTo').focus(); }
     btn.disabled = true; btn.textContent = 'Opening payment…';
     try {
-      const o = await api('/api/guest/counter/checkout', { method: 'POST', body: { station, spot, items: Object.entries(cart).map(([itemId, qty]) => ({ itemId, qty })), phone, clientId } });
+      const o = await api('/api/guest/counter/checkout', { method: 'POST', body: { station, spot, items: Object.entries(cart).map(([itemId, qty]) => ({ itemId, qty })), phone, clientId, ...(t ? { tipPesewas: t, tipToUid: tipPick.to } : {}) } });
       store.set('mem-bar-momo', phone); store.set('mem-bar-order', o.orderId); store.set('mem-bar-cart', null); store.set('mem-bar-draft', null);
       location.href = o.authorizationUrl;
     } catch (e) { $('#err').innerHTML = msg(e.message, 'bad'); btn.disabled = false; btn.textContent = 'Try again'; }
@@ -117,10 +126,31 @@ async function start() {
       <div class="field search-drink"><label for="find">Search drinks</label><input id="find" type="search" placeholder="e.g. Heineken, Guinness, Hennessy" autocomplete="off" autocapitalize="off" spellcheck="false" enterkeyhint="search" value="${esc(query)}"></div>
       <div id="menuList">${list()}</div>
       <div class="field" style="margin-top:14px"><label for="ph">MoMo number</label><input id="ph" type="tel" inputmode="tel" autocomplete="tel" placeholder="024 123 4567" value="${esc(store.get('mem-bar-momo') || '')}"><span class="hint">Your pickup code also comes here by text. Paying cash? Just order at the bar.</span></div>
+      ${tipPart()}
       <div id="err"></div>`;
     // Typing only redraws the list, so the keyboard stays open.
     $('#find').oninput = e => { query = e.target.value; $('#menuList').innerHTML = list(); bindSteps(); };
+    // A different tip is a different payment: a new order id, so the old payment isn't reused.
+    const tipChanged = () => { clientId = uuid(); store.set('mem-bar-draft', clientId); payDock(); };
+    $$('[data-tip]').forEach(x => x.onclick = () => {
+      tipPick.tip = x.dataset.tip === 'other' ? 'other' : Number(x.dataset.tip);
+      $$('[data-tip]').forEach(y => y.setAttribute('aria-pressed', String(y === x)));
+      $('#tipOther').hidden = tipPick.tip !== 'other'; $('#tipWho').hidden = !tipPick.tip;
+      if (tipPick.tip === 'other') $('#tipAmt').focus();
+      tipChanged();
+    });
+    $('#tipAmt') && ($('#tipAmt').oninput = e => { tipPick.other = e.target.value; tipChanged(); });
+    $('#tipTo') && ($('#tipTo').onchange = e => { tipPick.to = e.target.value; tipChanged(); });
     bindSteps(); payDock();
+  };
+  const tipPart = () => {
+    if (!r.tipPeople?.length) return '';
+    const on = v => String(tipPick.tip === v);
+    return `<div class="field"><span class="label" id="tipL">Add a tip? (optional)</span>
+      <div class="tipseg" role="group" aria-labelledby="tipL">${TIPS.map(v => `<button type="button" data-tip="${v}" aria-pressed="${on(v)}">${v ? money(v) : 'No tip'}</button>`).join('')}<button type="button" data-tip="other" aria-pressed="${on('other')}">Other</button></div></div>
+      <div class="field" id="tipOther" ${tipPick.tip === 'other' ? '' : 'hidden'}><label for="tipAmt">Tip amount (GHS)</label><input id="tipAmt" inputmode="decimal" autocomplete="off" value="${esc(tipPick.other)}"></div>
+      <div class="field" id="tipWho" ${tipPick.tip ? '' : 'hidden'}><label for="tipTo">Tip for</label><select id="tipTo"><option value="">Pick who it’s for</option>${r.tipPeople.map(p => `<option value="${esc(p.id)}" ${p.id === tipPick.to ? 'selected' : ''}>${esc(p.name)}${p.job ? ` · ${esc(p.job)}` : ''}</option>`).join('')}</select>
+        <span class="hint">The whole tip goes to them, not to the club.</span></div>`;
   };
   draw();
 }

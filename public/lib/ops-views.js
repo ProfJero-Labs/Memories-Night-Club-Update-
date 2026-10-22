@@ -34,6 +34,10 @@ export async function salesView(el, date) {
     <h2>By bar</h2><div class="tbl-wrap"><table class="tbl"><thead><tr><th>Bar</th><th class="num">Orders</th><th class="num">Sales</th><th class="num">Paid</th></tr></thead><tbody>
       ${d.byStation.map(s => `<tr><td>${esc(s.name)}</td><td class="num">${s.orders}</td><td class="num">${money(s.salesPesewas)}</td><td class="num">${money(s.paidPesewas)}</td></tr>`).join('') || '<tr><td colspan="4" class="empty-row">Nothing yet.</td></tr>'}</tbody></table></div>
     <h2>By payment</h2><div class="tbl-wrap"><table class="tbl"><thead><tr><th>How</th><th class="num">Amount</th></tr></thead><tbody>${d.byMethod.map(m => `<tr><td>${esc(m.method)}</td><td class="num">${money(m.amountPesewas)}</td></tr>`).join('')}</tbody></table></div>
+    ${d.tips?.totalPesewas ? `<h2>Tips for staff</h2><p class="muted" style="margin:0">Not sales and not the club’s money. MoMo on the statement = MoMo sales + MoMo tips (one MoMo can carry both).</p>
+      <div class="nums"><div><span>Tips tonight (${d.tips.count})</span><b>${money(d.tips.totalPesewas)}</b></div><div><span>MoMo / card tips</span><b>${money(d.tips.momoPesewas + d.tips.digitalPesewas)}</b></div><div><span>Cash tips (kept)</span><b>${money(d.tips.cashPesewas)}</b></div></div>
+      <div class="lines-list">${d.tips.people.map(p => `<div class="ln"><span>${esc(p.name)}</span><span>${money(p.amountPesewas)}</span></div>`).join('')}</div>
+      ${d.tips.momo.length ? `<div class="tbl-wrap"><table class="tbl"><thead><tr><th>MoMo ID</th><th>For</th><th>Recorded by</th><th class="num">Tip</th></tr></thead><tbody>${d.tips.momo.map(x => `<tr><td><b>${esc(x.momoRef)}</b>${x.tabNumber ? ` · Tab ${x.tabNumber}` : ''}</td><td>${esc(x.toName)}</td><td>${esc(x.byName)} ${when(x.at)}</td><td class="num">${money(x.amountPesewas)}</td></tr>`).join('')}</tbody></table></div>` : ''}` : ''}
     ${d.momoPayments?.length ? `<h2>MoMo to check on the statement</h2><div class="tbl-wrap"><table class="tbl"><thead><tr><th>Transaction ID</th><th>Tab</th><th>From</th><th>Recorded by</th><th class="num">Amount</th></tr></thead><tbody>${d.momoPayments.map(m => `<tr><td><b>${esc(m.momoRef)}</b></td><td>Tab ${m.tabNumber}</td><td>${esc(m.momoFrom || '—')}</td><td>${esc(m.byName)} ${when(m.at)}</td><td class="num">${money(m.amountPesewas)}</td></tr>`).join('')}</tbody></table></div>` : ''}
     <h2>By drink</h2><div class="tbl-wrap"><table class="tbl"><thead><tr><th>Drink</th><th class="num">Sold</th><th class="num">Value</th></tr></thead><tbody>${d.byProduct.map(p => `<tr><td>${esc(p.name)}</td><td class="num">${p.qty}</td><td class="num">${money(p.valuePesewas)}</td></tr>`).join('') || '<tr><td colspan="3" class="empty-row">Nothing yet.</td></tr>'}</tbody></table></div>`;
   bindDate(el, v => salesView(el, v)); labelTables(el);
@@ -203,6 +207,12 @@ export async function moneyView(el, period = 'today') {
     <h2>Money in</h2><div class="lines-list">${rows(m.moneyIn)}<div class="ln total"><span>Total</span><span>${money(t.inPesewas)}</span></div></div>
     ${d.unpaidPesewas ? `<p class="muted" style="margin:0">Not counted yet: ${money(d.unpaidPesewas)} of drinks still unpaid on open tables.</p>` : ''}
     <h2>Money out</h2><div class="lines-list">${rows(m.moneyOut)}<div class="ln total"><span>Total</span><span>${money(t.outPesewas)}</span></div></div>
+    ${m.tips?.totalPesewas ? `<h2>Tips for staff</h2><div class="lines-list">
+      <div class="ln"><span>Tips given (${m.tips.count})</span><span>${money(m.tips.totalPesewas)}</span></div>
+      <div class="ln"><span>MoMo / card: came into the club’s account</span><span>${money(m.tips.momoPesewas + m.tips.digitalPesewas)}</span></div>
+      <div class="ln"><span>Cash: the staff kept it</span><span>${money(m.tips.cashPesewas)}</span></div>
+      <div class="ln total"><span>Still to pay out to staff</span><span>${money(m.tips.owedPesewas)}</span></div></div>
+      <p class="muted" style="margin:0">${esc(m.tips.note)}</p>` : ''}
     <h2>Drinks</h2><div class="nums">
       <div><span>Sold</span><b>${money(d.soldPesewas)}</b></div><div><span>What they cost us</span><b>${money(d.costPesewas)}</b></div>
       <div class="${d.profitPesewas >= 0 ? 'good' : 'bad'}"><span>Made on drinks</span><b>${money(d.profitPesewas)}</b></div></div>
@@ -328,6 +338,32 @@ export async function budgetView(el, month) {
 }
 
 // ── Commissions: 10% to whoever brings a table deal over GHS 3,000 ──
+// ── Tips owed to staff (finance pays them out weekly; no director: it's the staff's own money) ──
+export async function tipsView(el) {
+  el.innerHTML = '<div class="loading">Loading…</div>';
+  const t = await sapi('/api/ops/tips/owed');
+  el.innerHTML = `<h1 style="margin:0">Tips owed to staff</h1>
+    <p class="lead" style="margin:0">Customers’ MoMo and card tips came into the club’s account. They’re the staff’s money, not the club’s: pay each person what they’re owed.</p>
+    <div class="pos-money"><div class="big-line ${t.owedPesewas ? 'bad' : 'good'}"><span>Still to pay out</span><b>${money(t.owedPesewas)}</b></div></div><div id="tMsg"></div>
+    ${t.people.length ? `<div class="lines-list">${t.people.map(p => `<div class="ln"><span><b>${esc(p.name)}</b>${p.roleName ? ` · ${esc(p.roleName)}` : ''}<br><small class="muted">${p.tips.length} tip${p.tips.length > 1 ? 's' : ''} · ${p.payTo ? `pay to ${esc(p.payTo)}` : 'no MoMo or bank details yet (Human manager)'}</small>
+        <details class="fold"><summary>See the tips</summary>${p.tips.map(x => `<small style="display:block">${esc(dayName(x.date))} · ${esc(x.from)} · ${money(x.amountPesewas)} · ${esc(x.methodLabel)}${x.momoRef ? ` · ID ${esc(x.momoRef)}` : ''}</small>`).join('')}</details>
+        ${p.needsCheck ? '<small class="muted">Some came by MoMo to the club’s number: check the IDs on the MoMo statement first.</small>' : ''}</span>
+      <span>${money(p.owedPesewas)}${t.canPay ? `<br><button class="sbtn" data-payt="${esc(p.uid)}">Pay</button>` : ''}</span></div>`).join('')}</div>` : '<div class="empty-box"><b>No tips owed</b>MoMo and card tips show here until finance pays them out.</div>'}
+    ${t.paid.length ? `<h2>Paid out</h2><div class="lines-list">${t.paid.map(p => `<div class="ln"><span>${esc(p.name)}<br><small class="muted">${esc(dayName(String(p.at).slice(0, 10)))} · ${esc(p.paidWith === 'momo' ? 'MoMo' : p.paidWith === 'bank' ? 'Bank' : 'Cash')}${p.ref ? ` · ref ${esc(p.ref)}` : ''} · by ${esc(p.byName)}</small></span><span>${money(p.amountPesewas)}</span></div>`).join('')}</div>` : ''}`;
+  $$('[data-payt]', el).forEach(x => x.onclick = () => {
+    const p = t.people.find(y => y.uid === x.dataset.payt);
+    const { box, close } = sheet(`<h2>Pay ${esc(p.name)} ${money(p.owedPesewas)}</h2><p class="muted" style="margin:0">${p.tips.length} tip${p.tips.length > 1 ? 's' : ''}. ${p.payTo ? `Pay to ${esc(p.payTo)}.` : ''} They get a text when it’s recorded.</p>
+      <div class="sfield"><label for="ptW">Paid with</label><select id="ptW"><option value="momo">MoMo</option><option value="bank">Bank</option><option value="cash">Cash</option></select></div>
+      <div class="sfield" id="ptRefBox"><label for="ptRef">MoMo or bank reference</label><input id="ptRef" maxlength="60" autocomplete="off"></div>
+      <div id="ptM"></div><button class="big" id="ptGo">Record payment</button><button class="big ghost" data-close>Cancel</button>`, { label: 'Pay tips' });
+    $('#ptW', box).onchange = e => { $('#ptRefBox', box).hidden = e.target.value === 'cash'; };
+    $('#ptGo', box).onclick = async () => {
+      try { const r = await busy($('#ptGo', box), () => sapi('/api/ops/tips/pay', { method: 'POST', body: { uid: p.uid, paidWith: $('#ptW', box).value, ref: $('#ptRef', box).value } })); close(); await tipsView(el); say($('#tMsg', el), `Paid ${r.name} ${money(r.amountPesewas)}. They’ve been texted.`); }
+      catch (e) { say($('#ptM', box), e.message, 'bad'); }
+    };
+  });
+}
+
 export async function commissionsView(el, month) {
   el.innerHTML = '<div class="loading">Loading…</div>';
   const c = await sapi(`/api/ops/commissions${month ? `?month=${month}` : ''}`);
@@ -378,7 +414,7 @@ export async function paymentsView(el, { tab = 'payments' } = {}) {
     ${tab === 'customers' ? `${d.customers.length ? `<div class="lines-list">${d.customers.map((c, i) => `<div class="ln"><span><b>${i + 1}. ${esc(c.name || 'Customer')}</b> · <a href="tel:${esc(c.phone)}">${esc(c.phone)}</a><br><small class="muted">${c.visits} order${c.visits > 1 ? 's' : ''} · ${esc(c.where)} · last ${when(c.lastAt)}</small></span><span>${money(c.spentPesewas)}</span></div>`).join('')}</div>` : '<p class="muted">No customers with a phone number yet tonight.</p>'}
       ${d.noPhonePesewas ? `<p class="muted" style="margin:0">${money(d.noPhonePesewas)} was spent by customers who gave no phone number. Ask waiters and the bar to add the customer’s phone, so their spending adds up.</p>` : ''}`
     : `<div class="pos-money"><div class="big-line good"><span>Paid tonight</span><b>${money(d.totalPesewas)}</b></div><p class="how">${d.byMethod.map(m => `${esc(m.label)} ${money(m.amountPesewas)}`).join(' · ')}</p></div>
-      ${d.payments.length ? `<div class="pos-tables">${d.payments.map((p, i) => `<button type="button" class="pos-row" data-pay="${i}"><span class="where">${when(p.at)} · ${esc(p.where)}<small>${esc(p.methodLabel)} · served by ${esc(p.servedByName || '—')}${p.customerName ? ` · ${esc(p.customerName)}` : ''}</small></span><span class="amt">${money(p.amountPesewas)}${p.refund ? st('cancelled', 'refund') : ''}</span></button>`).join('')}</div>` : '<p class="muted">No payments yet tonight.</p>'}`}`;
+      ${d.payments.length ? `<div class="pos-tables">${d.payments.map((p, i) => `<button type="button" class="pos-row" data-pay="${i}"><span class="where">${when(p.at)} · ${esc(p.where)}<small>${esc(p.methodLabel)} · served by ${esc(p.servedByName || '—')}${p.customerName ? ` · ${esc(p.customerName)}` : ''}${p.tipPesewas ? ` · + tip ${money(p.tipPesewas)}` : ''}</small></span><span class="amt">${money(p.amountPesewas)}${p.refund ? st('cancelled', 'refund') : ''}</span></button>`).join('')}</div>` : '<p class="muted">No payments yet tonight.</p>'}`}`;
   $$('[data-tabv]', el).forEach(b => b.onclick = () => paymentsView(el, { tab: b.dataset.tabv }));
   $$('[data-pay]', el).forEach(b => b.onclick = () => {
     const p = d.payments[Number(b.dataset.pay)];
@@ -388,6 +424,7 @@ export async function paymentsView(el, { tab = 'payments' } = {}) {
         ${p.momoRef ? `<div class="ln"><span>Reference</span><span>${esc(p.momoRef)}</span></div>` : ''}
         <div class="ln"><span>Payment taken by</span><span>${esc(p.takenByName || '—')}</span></div>
         <div class="ln"><span>Served by</span><span>${esc(p.servedByName || '—')}</span></div>
+        ${p.tipPesewas ? `<div class="ln"><span>Tip (theirs, not the club’s)</span><span>${money(p.tipPesewas)} for ${esc(p.tipToName)}</span></div>` : ''}
         <div class="ln"><span>Where</span><span>${esc(p.where)}${p.bar ? ` · ${esc(p.bar)}` : ''} · ${esc(p.tab)}</span></div>
         ${p.customerName || p.customerPhone ? `<div class="ln"><span>Customer</span><span>${esc(p.customerName)}${p.customerPhone ? ` <a href="tel:${esc(p.customerPhone)}">${esc(p.customerPhone)}</a>` : ''}</span></div>` : ''}
       </div>

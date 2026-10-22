@@ -33,7 +33,7 @@ const sum = (arr, f) => arr.reduce((n, x) => n + Number(f(x) || 0), 0);
 const LOAN_LABEL = { requested: 'Waiting for a director', approved: 'Approved: waiting for finance to pay', paid: 'Being repaid from salary', cleared: 'Repaid', rejected: 'Not approved' };
 const PAYROLL_LABEL = { draft: 'Being prepared by the Human manager', submitted: 'Waiting for a director', approved: 'Approved: finance pays', paid: 'Paid' };
 const loanLeft = l => Math.max(0, Number(l.amountPesewas) - sum(l.repaid || [], r => r.amountPesewas));
-const payTo = p => (!p ? '' : p.payMethod === 'bank' ? [p.bankName, p.bankAccount, p.accountName].filter(Boolean).join(' · ') : p.momoNumber ? `MoMo ${maskPhone(p.momoNumber)}${p.momoName ? ` (${p.momoName})` : ''}` : '');
+export const payTo = p => (!p ? '' : p.payMethod === 'bank' ? [p.bankName, p.bankAccount, p.accountName].filter(Boolean).join(' · ') : p.momoNumber ? `MoMo ${maskPhone(p.momoNumber)}${p.momoName ? ` (${p.momoName})` : ''}` : '');
 // On payroll: staff only. The directors aren't paid a salary through the Human manager, and the
 // system admin and event organisers aren't staff.
 const NOT_ON_PAYROLL = ['organiser', 'superAdmin', 'director'];

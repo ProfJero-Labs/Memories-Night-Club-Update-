@@ -6,7 +6,7 @@
 import { $, $$, esc } from '../app.js';
 import { requireStaff, sapi } from '../staff.js';
 import { sheet, say, st, every, bottomNav, busy, ghsIn, moneyField, money, when } from '../lib/ops-ui.js';
-import { drinkPicker, paySheet, handInCash } from '../lib/sell.js';
+import { drinkPicker, paySheet, handInCash, tipSheet, tipSaid } from '../lib/sell.js';
 
 const user = await requireStaff(['superAdmin', 'director', 'manager', 'eventManager', 'barStaff']);
 const canStock = ['superAdmin', 'director', 'manager', 'finance', 'barStaff'].includes(user.role);
@@ -75,20 +75,22 @@ async function sellView() {
     title: 'Sell', top: '<p class="lead" style="margin:0">The customer pays you now. Pick the drinks, then Cash or MoMo.</p>', button: n => `Customer pays · ${n}`,
     onSend: async (lines, total) => {
       paySheet(total, async pay => {
-        await sapi('/api/ops/quick-sale', { method: 'POST', body: { lines, stationId: sid, fromBar: true, ...pay } });
-        top(`${pay.method === 'momo' ? 'MoMo' : 'Cash'} ${money(total)} recorded. Serve the drinks.`);
+        const r = await sapi('/api/ops/quick-sale', { method: 'POST', body: { lines, stationId: sid, fromBar: true, ...pay } });
+        top(`${pay.method === 'momo' ? 'MoMo' : 'Cash'} ${money(total)} recorded.${tipSaid(r)} Serve the drinks.`);
         sellView();
-      }, { title: 'Sell' });
+      }, { title: 'Sell', sapi, tipFor: user.uid });
     },
   });
   // Tonight: what I sold, my cash and MoMo, hand in my cash, my report.
   let r; try { r = await sapi('/api/ops/my-report'); } catch { return; }
   const f = r.figures;
   mine.innerHTML = `<h2>My sales tonight</h2><div class="nums">
-      <div><span>I sold</span><b>${money(f.salesPesewas)}</b></div><div class="good"><span>Cash with me</span><b>${money(f.cashCollectedPesewas)}</b></div><div class="good"><span>MoMo I took</span><b>${money(f.momoRecordedPesewas)}</b></div></div>
+      <div><span>I sold</span><b>${money(f.salesPesewas)}</b></div><div class="good"><span>Cash with me</span><b>${money(f.cashCollectedPesewas)}</b></div><div class="good"><span>MoMo I took</span><b>${money(f.momoRecordedPesewas)}</b></div><div><span>My tips tonight</span><b>${money(f.tipsPesewas || 0)}</b></div></div>
+    <button class="link" id="tipOnly" style="justify-self:start">Record a tip (no bill)</button>
     <h2>Hand in my cash</h2><div id="cashIn"></div>
     <h2>My report</h2>${r.submitted ? `<div class="say good"><b>Report submitted at ${when(r.submitted.at)}</b>Thank you.</div>` : '<div class="sfield"><label for="brWhy">Anything to explain? (optional)</label><textarea id="brWhy" rows="2" maxlength="600"></textarea></div><div id="brMsg"></div><button class="big ghost" id="brGo">Submit my report</button>'}`;
   handInCash($('#cashIn', mine), sapi);
+  $('#tipOnly', mine).onclick = () => tipSheet(sapi, user.uid, m => top(m));
   $('#brGo', mine) && ($('#brGo', mine).onclick = async () => {
     try { await busy($('#brGo', mine), () => sapi('/api/ops/my-report', { method: 'POST', body: { explanation: $('#brWhy', mine).value } }), 'Submitting…'); sellView(); }
     catch (e) { say($('#brMsg', mine), e.message, 'bad'); }

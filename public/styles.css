@@ -650,3 +650,8 @@ h1, h2, h3 { margin: 0; }
 /* Staff sign-in: phone + PIN, big and simple */
 .signin input#pin, .signin #sPin, .signin #sPin2, .signin #sCode { font-size: 28px; letter-spacing: .4em; }
 .pin-row { display: flex; gap: 8px; align-items: center; } .pin-row input { flex: 1; min-width: 0; }
+
+/* Tip amounts on the bill link and the QR menu: thumb-sized, wrap on small phones. */
+.tipseg { display: grid; grid-template-columns: repeat(auto-fit, minmax(66px, 1fr)); gap: 6px; }
+.tipseg button { min-height: 44px; padding: 8px 4px; white-space: nowrap; border: 1px solid var(--line-2); background: transparent; color: inherit; border-radius: 10px; font: inherit; font-weight: 600; cursor: pointer; }
+.tipseg button[aria-pressed="true"] { background: var(--paper); color: var(--ink); border-color: var(--paper); }

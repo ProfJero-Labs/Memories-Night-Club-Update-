@@ -9,7 +9,7 @@
 import { $, $$, esc } from '../app.js';
 import { requireStaff, staffHeader, sapi } from '../staff.js';
 import { bottomNav, money } from '../lib/ops-ui.js';
-import { salesView, closingView, approvalsView, stockAdminView, eodListView, eodView, productsView, changesView, moneyView, budgetView, paymentsView, commissionsView, purchasesView, cashReceiveView } from '../lib/ops-views.js';
+import { salesView, closingView, approvalsView, stockAdminView, eodListView, eodView, productsView, changesView, moneyView, budgetView, paymentsView, commissionsView, purchasesView, cashReceiveView, tipsView } from '../lib/ops-views.js';
 import { payView } from '../lib/people-views.js';
 
 const user = await requireStaff(['finance', 'superAdmin', 'director', 'manager']);
@@ -24,7 +24,7 @@ const sub = (label, to, html) => { app.innerHTML = `${back(label, to)}<div id="s
 
 async function route() {
   const [k, arg] = location.hash.slice(1).split('/');
-  const group = { report: 'reports', check: 'reports', prices: 'stock', budget: 'money', payments: 'money', commissions: 'pay', salaries: 'pay', purchases: 'pay', cash: 'pay' }[k] || k || 'today';
+  const group = { report: 'reports', check: 'reports', prices: 'stock', budget: 'money', payments: 'money', commissions: 'pay', salaries: 'pay', purchases: 'pay', cash: 'pay', tips: 'pay' }[k] || k || 'today';
   nav.setActive(group); scrollTo(0, 0);
   try {
     if (k === 'pay') return await toPay();
@@ -32,6 +32,7 @@ async function route() {
     if (k === 'purchases') return await sub('To pay', 'pay', el => purchasesView(el));
     if (k === 'commissions') return await sub('To pay', 'pay', el => commissionsView(el));
     if (k === 'cash') return await sub('To pay', 'pay', el => cashReceiveView(el));
+    if (k === 'tips') return await sub('To pay', 'pay', el => tipsView(el));
     if (k === 'check') { app.innerHTML = `${back('Reports', 'reports')}<div id="cl"></div><div id="ap" style="margin-top:20px"></div>`; bindBack(); await closingView($('#cl'), undefined, { canClose: false }); await approvalsView($('#ap')); return; }
     if (k === 'money') return await moneyView(app);
     if (k === 'budget') return await sub('Money', 'money', el => budgetView(el));
@@ -48,7 +49,7 @@ addEventListener('hashchange', route);
 // ── To pay: one place for everything waiting for finance ──
 async function toPay() {
   app.innerHTML = '<div class="loading">Loading…</div>';
-  const [b, p, c, pu] = await Promise.all([sapi('/api/ops/budget'), sapi('/api/ops/payroll'), sapi('/api/ops/commissions'), sapi('/api/ops/purchases')]);
+  const [b, p, c, pu, tp] = await Promise.all([sapi('/api/ops/budget'), sapi('/api/ops/payroll'), sapi('/api/ops/commissions'), sapi('/api/ops/purchases'), sapi('/api/ops/tips/owed').catch(() => null)]);
   const billsReady = b.bills.filter(x => x.approved && x.leftPesewas), billsWaiting = b.bills.filter(x => x.state === 'awaiting_approval');
   const loansReady = p.loans.filter(l => l.status === 'approved');
   const comReady = c.people.filter(x => x.payout?.status === 'approved' && x.owedPesewas);
@@ -59,6 +60,7 @@ async function toPay() {
       ${row('purchases', 'Drinks to buy', toCheck.length ? `${toCheck.length} request${toCheck.length > 1 ? 's' : ''} to check against the stock limits` : 'Nothing to check', toCheck.length ? money(toCheck.reduce((n, r) => n + r.estTotalPesewas, 0)) : '', false)}
       ${row('budget', 'Bills', `${billsReady.length} approved to pay${billsWaiting.length ? ` · ${billsWaiting.length} waiting for a director` : ''}${b.totals.overdue ? ` · ${b.totals.overdue} overdue` : ''}`, money(billsReady.reduce((n, x) => n + x.leftPesewas, 0)), billsReady.length)}
       ${row('salaries', `Salaries · ${p.label}`, `${esc(p.statusLabel)}${loansReady.length ? ` · ${loansReady.length} loan${loansReady.length > 1 ? 's' : ''} to pay out` : ''}`, money(p.totals.netPesewas - p.totals.paidPesewas), p.can.pay || loansReady.length)}
+      ${tp ? row('tips', 'Tips owed to staff', tp.people.length ? `${tp.people.length} ${tp.people.length > 1 ? 'people' : 'person'} · MoMo and card tips · no director needed` : 'Nothing owed', money(tp.owedPesewas), tp.owedPesewas > 0) : ''}
       ${row('commissions', 'Commissions', comReady.length ? `${comReady.length} approved to pay` : `${money(c.totals.owedPesewas)} owed this month`, money(comReady.reduce((n, x) => n + x.owedPesewas, 0)), comReady.length)}
     </div>`;
 }

@@ -157,6 +157,31 @@ training.
 - **The director** sees, month by month: what's still to pay out, what's been paid, who is owed, and
   every deal (sold for how much, served by whom, brought by whom).
 
+## Tips
+
+A tip is the staff member's money, never the club's: it is kept apart from the bill, so it is
+never in sales, money in or profit.
+
+- **Who can be tipped**: anyone on the team (waiters, bartenders, security, DJ, MC, managers…), not
+  the directors or the system admin. The customer says who; the person serving is picked by default.
+- **With a payment**: on *Customer paid* (a table) or a quick sale, open **Customer gave a tip**,
+  enter the amount and who it's for. With MoMo, one transaction for bill and tip is fine: they
+  share the transaction ID.
+- **Without a bill** (e.g. a customer tips the DJ): **Record a tip (no bill)** on the waiter's and
+  the bar's screens. Only people who take payments can record one.
+- **On the bill link and the QR menu** the customer picks a tip (GHS 10, 20, 50 or another amount)
+  and who it's for. It's charged with the drinks and split off when Paystack confirms it. If the
+  bar can't make a QR order, the tip is refunded with the drinks.
+- **Cash tips**: the person keeps them. They are not in the cash the waiter or bartender hands in.
+- **MoMo and card tips** come into the club's account, so the club owes them to the person.
+  **Finance pays them out weekly** (*To pay → Tips owed to staff*), with no director needed since
+  it's the staff's own money. MoMo tips sent to the club's number show their transaction IDs:
+  check them on the statement first. The person gets a text when a tip arrives and when it's paid.
+- **Each person** sees their tips on **My page → My pay → My tips**: tonight, this week, owed to me,
+  paid to me, cash I kept. Waiters and bartenders also see *My tips tonight* on their report.
+- **Reports**: the night's sales report and the Money screen show tips separately (MoMo on the
+  statement = MoMo sales + MoMo tips), and *Payments tonight* shows the tip on each payment.
+
 ## Customer reviews
 
 - After paying (the bill link, the QR receipt, *My night*), customers are asked **How was your

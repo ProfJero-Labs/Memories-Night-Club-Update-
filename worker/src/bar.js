@@ -12,10 +12,11 @@
 // Payment goes through pending_checkouts (kind 'counter') and the same confirmCharge/fulfil path
 // as tickets, so the webhook, the return page and the reconciliation job all complete it.
 import { getDoc, setDoc, listDocs, queryWhere, batchGet, commitTx, updateWrite, foundFields, withTransaction } from './lib/firestore.js';
-import { now, id, clean, normalizePhone, money, paymentRef, validEmail } from './lib/util.js';
+import { now, id, clean, normalizePhone, money, paymentRef, validEmail, nightKey } from './lib/util.js';
 import { requireRole, CMS, uidOf } from './lib/auth.js';
 import { sendSms, siteUrl } from './lib/notify.js';
 import { addMoves, saveProduct, stockLeft, stockError } from './ops/stock.js';
+import { prepareTip, tipFields, textTip, phoneOf, guestTipPeople } from './ops/tips.js';
 
 const FORBIDDEN = { error: 'Forbidden.', status: 403 };
 export const BAR = ['superAdmin', 'director', 'manager', 'eventManager', 'barStaff', 'waitStaff'];
@@ -49,7 +50,9 @@ export async function guestMenu(env, token) {
   const left = await stockLeft(env, st.id);
   const items = (await listDocs(env, 'menu_items')).map(publicItem).filter(i => i.pricePesewas > 0)
     .map(i => (i.id in left ? { ...i, available: i.available && left[i.id] > 0, left: left[i.id] } : i)).sort(sortMenu);
-  return { station: { name: st.fields.name }, open: st.fields.open !== false && items.some(i => i.available), items };
+  // Who the guest can tip (short names and jobs), at checkout.
+  const tipPeople = (await guestTipPeople(env)).people;
+  return { station: { name: st.fields.name }, open: st.fields.open !== false && items.some(i => i.available), items, tipPeople };
 }
 
 export async function counterCheckout(env, b) {
@@ -80,14 +83,19 @@ export async function counterCheckout(env, b) {
   const short = await stockError(env, st.id, lines.map(l => ({ productId: l.itemId, name: l.name, qty: l.qty })), { guest: true });
   if (short) return { error: short };
   const totalPesewas = lines.reduce((n, l) => n + l.qty * l.unitPesewas, 0);
+  // An optional tip for whoever the guest picks: charged with the drinks, but never part of the
+  // drinks' total (it's the staff member's money, see ops/tips.js).
+  const tip = await prepareTip(env, b); if (tip.error) return tip;
+  const tipPart = tip.none ? {} : { tipPesewas: tip.amount, tipToUid: tip.to.uid, tipToName: tip.to.name, tipToRole: tip.to.role };
+  const charge = totalPesewas + (tip.none ? 0 : tip.amount);
   const orderId = id(), reference = paymentRef();
   const spot = cleanSpot(b?.spot);
-  const order = { stationId: st.id, stationName: st.fields.name, ...(spot ? { spot } : {}), lines, totalPesewas, phone, clientId, reference, status: 'pending_payment', receiptCode: id(), createdAt: now() };
+  const order = { stationId: st.id, stationName: st.fields.name, ...(spot ? { spot } : {}), lines, totalPesewas, ...tipPart, phone, clientId, reference, status: 'pending_payment', receiptCode: id(), createdAt: now() };
   await setDoc(env, 'counter_orders', orderId, order);
-  await setDoc(env, 'pending_checkouts', reference, { reference, kind: 'counter', orderId, eventName: st.fields.name, amountPesewas: totalPesewas, buyerPhone: phone, status: 'pending', createdAt: now() });
+  await setDoc(env, 'pending_checkouts', reference, { reference, kind: 'counter', orderId, eventName: st.fields.name, amountPesewas: charge, ...tipPart, buyerPhone: phone, status: 'pending', createdAt: now() });
   try {
     const email = validEmail(b?.email) ? b.email : `guest-${phone}@${new URL(env.PUBLIC_SITE_URL || 'https://memoriesnightclub.com').hostname.replace(/^www\./, '')}`;
-    const p = await paystackInit(env, { email, amount: totalPesewas, currency: 'GHS', reference, callback_url: siteUrl(env, '/counter.html'), metadata: { kind: 'counter', orderId } });
+    const p = await paystackInit(env, { email, amount: charge, currency: 'GHS', reference, callback_url: siteUrl(env, '/counter.html'), metadata: { kind: 'counter', orderId } });
     await setDoc(env, 'counter_orders', orderId, { ...order, authorizationUrl: p.authorization_url });
     return { orderId, authorizationUrl: p.authorization_url };
   } catch (e) {
@@ -105,16 +113,21 @@ export async function issueCounter(env, reference, P) {
     if (!fresh || !o) throw new Error('Counter order data disappeared.');
     if (fresh.fields.status === 'issued') return { status: 'issued', kind: 'counter', orderId: P.orderId, already: true };
     const code = pickupCode(), at = now();
+    const tipPesewas = Number(o.fields.tipPesewas || 0);
+    const tip = tipPesewas ? { amount: tipPesewas, to: { uid: o.fields.tipToUid, name: o.fields.tipToName || '', role: o.fields.tipToRole || '' } } : null;
     await commitTx(env, [
       updateWrite(env, 'counter_orders', P.orderId, { ...o.fields, status: 'paid', pickupCode: code, paidAt: at }),
       updateWrite(env, 'pending_checkouts', reference, { ...fresh.fields, status: 'issued', orderId: P.orderId, issuedAt: at }),
+      ...(tip ? [updateWrite(env, 'tips', `tip_${reference}`, tipFields(tip, { method: 'digital', source: 'qr', at, date: nightKey(at), reference, orderId: P.orderId, stationId: o.fields.stationId }))] : []),
     ], tx);
-    return { status: 'issued', kind: 'counter', orderId: P.orderId, code, order: o.fields };
+    return { status: 'issued', kind: 'counter', orderId: P.orderId, code, order: o.fields, tip };
   });
   if (!result.already && result.order) {
     const o = result.order;
-    await sendSms(env, o.phone, `MEMORIES BAR\nPaid ${money(o.totalPesewas)} at ${o.stationName}.\nPickup code: ${result.code}\nShow it at the bar. Receipt: ${siteUrl(env, `/receipt.html?code=${o.receiptCode}`)}`);
+    await sendSms(env, o.phone, `MEMORIES BAR\nPaid ${money(o.totalPesewas + Number(o.tipPesewas || 0))} at ${o.stationName}${o.tipPesewas ? ` (tip ${money(o.tipPesewas)} for ${String(o.tipToName || '').split(/\s+/)[0]})` : ''}.\nPickup code: ${result.code}\nShow it at the bar. Receipt: ${siteUrl(env, `/receipt.html?code=${o.receiptCode}`)}`);
+    if (result.tip) await textTip(env, await phoneOf(env, result.tip.to.uid), result.tip, 'digital');
   }
+  delete result.tip;
   delete result.already; delete result.order; delete result.code;
   return result;
 }
@@ -172,14 +185,20 @@ export async function barUpdate(env, user, b) {
   const orderId = String(b?.orderId || ''), action = b?.action;
   if (!/^[0-9a-f]{32}$/.test(orderId) || !['deliver', 'refund'].includes(action)) return { error: 'Unknown order.' };
   const r = await withTransaction(env, async tx => {
-    const o = foundFields(await batchGet(env, [`counter_orders/${orderId}`], tx), `/counter_orders/${orderId}`);
+    const first = foundFields(await batchGet(env, [`counter_orders/${orderId}`], tx), `/counter_orders/${orderId}`);
+    // A tip that came with an order the bar can't make goes back to the guest with the drinks.
+    const tipPath = first?.fields?.tipPesewas && first.fields.reference ? `tips/tip_${first.fields.reference}` : null;
+    const tipDoc = tipPath && action === 'refund' ? foundFields(await batchGet(env, [tipPath], tx), `/${tipPath}`) : null;
+    const o = first;
     if (!o) return { error: 'Unknown order.', status: 404 };
     if (o.fields.status !== 'paid') return { error: o.fields.status === 'delivered' ? 'Already handed over.' : 'This order isn’t waiting at the bar.' };
     const at = now();
     const next = action === 'deliver'
       ? { ...o.fields, status: 'delivered', deliveredAt: at, deliveredBy: uidOf(user) }
       : { ...o.fields, status: 'refund_due', refundReason: clean(b.reason, 120) || 'bar_could_not_make', refundFlaggedAt: at, refundFlaggedBy: uidOf(user) };
-    await commitTx(env, [updateWrite(env, 'counter_orders', orderId, next), updateWrite(env, 'audit_logs', id(), { action: action === 'deliver' ? 'BAR_HANDED_OVER' : 'BAR_REFUND_FLAGGED', actorUid: uidOf(user), orderId, timestamp: at })], tx);
+    await commitTx(env, [updateWrite(env, 'counter_orders', orderId, next),
+      ...(tipDoc && tipDoc.fields.status === 'owed' ? [updateWrite(env, 'tips', tipPath.slice(5), { ...tipDoc.fields, status: 'cancelled', cancelledAt: at, cancelReason: 'order_refunded' })] : []),
+      updateWrite(env, 'audit_logs', id(), { action: action === 'deliver' ? 'BAR_HANDED_OVER' : 'BAR_REFUND_FLAGGED', actorUid: uidOf(user), orderId, timestamp: at })], tx);
     return { status: next.status, lines: action === 'deliver' ? o.fields.lines : null, stationId: o.fields.stationId };
   });
   // Handed to the customer: those drinks leave the bar's stock (once, here).
@@ -226,7 +245,7 @@ export async function upsertMenuItem(env, b, user) {
 // Refunds owed on bar orders, for the control room's Refunds tab.
 export async function counterRefunds(env) {
   return (await queryWhere(env, 'counter_orders', [{ field: 'status', value: 'refund_due' }])).map(o => ({
-    source: 'counter', id: o.id, reason: o.fields.refundReason || 'bar_could_not_make', amountPesewas: Number(o.fields.totalPesewas || 0),
+    source: 'counter', id: o.id, reason: o.fields.refundReason || 'bar_could_not_make', amountPesewas: Number(o.fields.totalPesewas || 0) + Number(o.fields.tipPesewas || 0),
     buyerName: 'Bar guest', buyerPhone: o.fields.phone || '', eventName: o.fields.stationName || 'Bar', planId: '', at: o.fields.refundFlaggedAt || o.fields.paidAt || '',
   }));
 }

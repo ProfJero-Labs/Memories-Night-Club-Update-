@@ -68,10 +68,19 @@ async function messages() {
 
 // ── My pay ──
 async function pay() {
-  let d = null; try { d = await sapi('/api/ops/my-pay'); } catch { /* not built yet on an older Worker */ }
+  let d = null, t = null;
+  [d, t] = await Promise.all([sapi('/api/ops/my-pay').catch(() => null), sapi('/api/ops/my-tips').catch(() => null)]); // null: an older Worker
   if (d && d.onPayroll === false) { app.innerHTML = '<h1>My pay</h1><div class="empty-box"><b>Not on payroll</b>Directors aren’t paid through the Human manager.</div>'; return; }
   if (!d) { app.innerHTML = '<h1>My pay</h1><div class="empty-box"><b>Nothing yet</b>Your payslips show here once the Human manager sets up your pay.</div>'; return; }
+  const tips = t?.onTips ? `<h2>My tips</h2>
+    <div class="nums"><div><span>Tonight</span><b>${money(t.tonightPesewas)}</b></div><div><span>This week</span><b>${money(t.weekPesewas)}</b></div>
+      <div class="${t.owedPesewas ? 'warn' : 'good'}"><span>Owed to me</span><b>${money(t.owedPesewas)}</b><small class="muted">MoMo / card tips: finance pays them out weekly</small></div>
+      <div class="good"><span>Paid to me</span><b>${money(t.paidPesewas)}</b></div><div><span>Cash tips I kept</span><b>${money(t.cashPesewas)}</b></div></div>
+    ${t.tips.length ? `<details class="fold"><summary>Every tip (${t.tips.length})</summary><div class="lines-list">${t.tips.map(x => `<div class="ln"><span>${esc(dayName(x.date))} · ${esc(x.from)}<br><small class="muted">${esc(x.methodLabel)} · ${esc(x.statusLabel)}${x.byName ? ` · recorded by ${esc(x.byName)}` : ''}</small></span><span>${money(x.amountPesewas)}</span></div>`).join('')}</div></details>` : '<p class="muted" style="margin:0">No tips yet. When a customer tips you, it shows here.</p>'}
+    ${t.payouts.length ? `<details class="fold"><summary>Tip payouts</summary><div class="lines-list">${t.payouts.map(p => `<div class="ln"><span>${esc(day(p.at))}<br><small class="muted">${esc(p.paidWith === 'momo' ? 'MoMo' : p.paidWith === 'bank' ? 'Bank' : 'Cash')}${p.ref ? ` · ref ${esc(p.ref)}` : ''} · ${p.count} tip${p.count === 1 ? '' : 's'}</small></span><span>${money(p.amountPesewas)}</span></div>`).join('')}</div></details>` : ''}` : '';
   app.innerHTML = `<h1>My pay</h1>
+    ${tips}
+    <h2>My salary</h2>
     <div class="nums"><div><span>Monthly salary</span><b>${money(d.salaryPesewas)}</b></div><div class="${d.loanLeftPesewas ? 'warn' : 'good'}"><span>Loan still to repay</span><b>${money(d.loanLeftPesewas)}</b></div></div>
     ${d.payTo ? `<p class="muted" style="margin:0">Paid to: ${esc(d.payTo)}. Wrong? Tell the Human manager.</p>` : '<div class="say warn"><b>No payment details yet</b>Give the Human manager your MoMo number or bank account.</div>'}
     ${d.thisMonth.lines.length ? `<h2>This month so far (${esc(d.thisMonth.label)})</h2><div class="lines-list">${d.thisMonth.lines.map(l => `<div class="ln"><span>${esc(l.label)}${l.reason ? `<br><small class="muted">${esc(l.reason)}</small>` : ''}</span><span>${l.amountPesewas < 0 ? '−' : ''}${money(Math.abs(l.amountPesewas))}</span></div>`).join('')}

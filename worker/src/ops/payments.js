@@ -22,30 +22,33 @@ const where = t => (t.quick ? (t.soldAtBar ? 'At the bar' : 'Quick sale') : t.ta
 
 async function night(env, date) {
   const since = new Date(new Date(`${date}T00:00:00Z`).getTime() - 864e5);
-  const [tabsRaw, roundsRaw, qrRaw, users, stations] = await Promise.all([
+  const [tabsRaw, roundsRaw, qrRaw, users, stations, tipsRaw] = await Promise.all([
     queryWhere(env, 'tabs', [{ field: 'businessDate', value: date }]), queryWhere(env, 'rounds', [{ field: 'businessDate', value: date }]),
     queryRecent(env, 'counter_orders', 'createdAt', since, 5000), listDocs(env, 'users'), listDocs(env, 'bar_stations'),
+    queryWhere(env, 'tips', [{ field: 'businessDate', value: date }]),
   ]);
+  // The tip that came with each payment (kept apart from the bill: it's the staff member's money).
+  const tipBy = new Map(tipsRaw.filter(d => d.fields.status !== 'cancelled').flatMap(d => [d.fields.paymentId, d.fields.orderId].filter(Boolean).map(k => [k, { tipPesewas: d.fields.amountPesewas, tipToName: d.fields.toName || '' }])));
   const name = Object.fromEntries(users.map(u => [u.id, u.fields.name || '']));
   const stationName = Object.fromEntries(stations.map(s => [s.id, s.fields.name]));
   const rounds = roundsRaw.map(r => ({ id: r.id, ...r.fields }));
   const tabs = tabsRaw.map(t => ({ id: t.id, ...t.fields }));
   for (const t of tabs) { t.rounds = rounds.filter(r => r.tabId === t.id); t.bill = billOf(t, t.rounds); }
   const qr = qrRaw.map(o => ({ id: o.id, ...o.fields })).filter(o => ['paid', 'delivered', 'refund_due', 'refunded'].includes(o.status) && o.paidAt && nightKey(o.paidAt) === date);
-  return { tabs, qr, name, stationName };
+  return { tabs, qr, name, stationName, tipBy };
 }
 
-function paymentsOf({ tabs, qr, name, stationName }) {
+function paymentsOf({ tabs, qr, name, stationName, tipBy = new Map() }) {
   const out = [];
   for (const t of tabs) for (const p of t.payments || []) {
     out.push({ id: p.id, at: p.at, amountPesewas: p.amountPesewas, method: p.method, methodLabel: METHOD[p.method] || p.method, takenByName: p.method === 'digital' ? 'Customer, on their phone' : p.byName || '',
       servedByName: t.waiterName || '', where: where(t), tab: `Tab ${t.number}`, bar: stationName[t.stationId] || t.stationName || '', customerName: t.customerName || '', customerPhone: t.customerPhone || p.momoFrom || '',
-      momoRef: p.momoRef || p.reference || '', wholeBill: !t.quick, lines: t.bill.lines.map(l => ({ qty: l.qty, name: l.name, amountPesewas: l.amountPesewas })), billTotalPesewas: t.bill.totalPesewas, billLeftPesewas: t.bill.balancePesewas });
+      momoRef: p.momoRef || p.reference || '', wholeBill: !t.quick, lines: t.bill.lines.map(l => ({ qty: l.qty, name: l.name, amountPesewas: l.amountPesewas })), billTotalPesewas: t.bill.totalPesewas, billLeftPesewas: t.bill.balancePesewas, ...(tipBy.get(p.id) || {}) });
   }
   for (const o of qr) {
     out.push({ id: o.id, at: o.paidAt, amountPesewas: o.totalPesewas, method: 'qr', methodLabel: METHOD.qr, takenByName: 'Customer, by QR', servedByName: o.deliveredBy ? name[o.deliveredBy] || 'The bar' : o.status === 'paid' ? 'Not collected yet' : '',
       where: o.spot ? `Table ${o.spot}` : 'QR at the bar', tab: `Code ${o.pickupCode || ''}`, bar: o.stationName || '', customerName: '', customerPhone: o.phone || '', momoRef: o.reference || '', wholeBill: false,
-      lines: (o.lines || []).map(l => ({ qty: l.qty, name: l.name, amountPesewas: l.qty * l.unitPesewas })), refund: ['refund_due', 'refunded'].includes(o.status) ? o.status : '' });
+      lines: (o.lines || []).map(l => ({ qty: l.qty, name: l.name, amountPesewas: l.qty * l.unitPesewas })), refund: ['refund_due', 'refunded'].includes(o.status) ? o.status : '', ...(tipBy.get(o.id) || {}) });
   }
   return out.sort((a, b) => String(b.at).localeCompare(String(a.at)));
 }
