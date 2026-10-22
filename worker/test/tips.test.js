@@ -123,7 +123,8 @@ test('a tip on the QR menu: drinks total unchanged, owed to the person picked; i
   const got = ok(await call('GET', `/api/guest/counter/${o.orderId}`), 'poll');
   assert.equal(got.status, 'paid'); assert.equal(got.totalPesewas, 5000, 'the drinks');
   assert.deepEqual([tips(store)[0].toUid, tips(store)[0].status, tips(store)[0].source], ['b1', 'owed', 'qr']);
-  ok(await call('POST', '/api/bar/order', { who: 'b1', body: { orderId: o.orderId, action: 'refund', reason: 'finished' } }), 'can’t make it');
+  assert.equal((await call('POST', '/api/bar/order', { who: 'b1', body: { orderId: o.orderId, action: 'refund', reason: 'finished' } })).status, 403, 'not the bar');
+  ok(await call('POST', '/api/bar/order', { who: 'm1', body: { orderId: o.orderId, action: 'refund', reason: 'bottle broke' } }), 'the Manager, as a last resort');
   assert.equal(tips(store)[0].status, 'cancelled', 'the tip goes back with the drinks');
   const refunds = ok(await call('GET', '/api/admin/refunds', { who: 'sa' }), 'refunds');
   assert.equal(refunds.refunds.find(x => x.id === o.orderId).amountPesewas, 6000, 'drinks and tip go back');
@@ -138,4 +139,27 @@ test('a tip on its own (no bill): cash for the DJ; the one who records it must t
   assert.match(store.sms.at(-1).message, /You got a tip: GHS 50 \(cash\)/);
   assert.equal(ok(await call('GET', '/api/ops/my-tips', { who: 'dj' }), 'dj').cashPesewas, 5000);
   assert.match((await call('POST', '/api/ops/tips', { who: 'w1', body: { method: 'cash', tipPesewas: 2000000, tipToUid: 'dj' } })).data.error, /can’t be more/);
+});
+
+test('no refunds at the bar: a paid quick sale can’t be cancelled by the bar; the last bottle can’t be bought twice', async () => {
+  const { store, call } = setup();
+  store.seed('menu_items', 'champ', { name: 'Champagne', category: 'Wine', unit: 'bottle', pricePesewas: 90000, costPesewas: 50000, available: true, tracked: true });
+  store.seed('stock_moves', 'seed-champ', { productId: 'champ', stationId: 'main', qty: 1, kind: 'received', businessDate: '2000-01-01' });
+  // A waiter's quick sale is paid before the bar makes it: the bar can't cancel it; the Manager can.
+  const sale = ok(await call('POST', '/api/ops/quick-sale', { who: 'w1', body: { lines: [{ productId: 'beer', qty: 1 }], method: 'cash' } }), 'quick sale');
+  const rid = sale.roundId;
+  const no = await call('POST', '/api/ops/bar/round', { who: 'b1', body: { roundId: rid, action: 'cant_make', reason: 'x' } });
+  assert.equal(no.status, 403); assert.match(no.data.error, /Call the Manager/);
+  // A table order isn't paid yet: the bar can still say it can't make it (no money to give back).
+  const tab = ok(await call('POST', '/api/ops/tabs/open', { who: 'w1', body: { table: '2' } }), 'tab');
+  const round = ok(await call('POST', '/api/ops/tabs/round', { who: 'w1', body: { tabId: tab.id, lines: [{ productId: 'beer', qty: 1 }] } }), 'round');
+  ok(await call('POST', '/api/ops/bar/round', { who: 'b1', body: { roundId: round.id, action: 'cant_make', reason: 'x' } }), 'unpaid table order');
+  // One Champagne left: a guest paying for it holds it; the next guest can't buy it at all.
+  const basket = n => ({ station: STATION, items: [{ itemId: 'champ', qty: 1 }], phone: '024 123 4567', clientId: `a1b2c3d4-0000-4000-8000-00000000c0${n}` });
+  ok(await call('POST', '/api/guest/counter/checkout', { body: basket(1) }), 'first guest');
+  const second = await call('POST', '/api/guest/counter/checkout', { body: basket(2) });
+  assert.match(second.data.error, /Champagne is finished/);
+  const menu = ok(await call('GET', `/api/guest/menu?station=${STATION}`), 'menu');
+  assert.equal(menu.items.find(i => i.id === 'champ').available, false, 'shown as finished');
+  assert.match((await call('POST', '/api/ops/quick-sale', { who: 'w1', body: { lines: [{ productId: 'champ', qty: 1 }], method: 'cash' } })).data.error, /Champagne is finished/);
 });

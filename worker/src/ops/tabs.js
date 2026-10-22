@@ -64,7 +64,7 @@ const tabView = (t, rounds, { full = true } = {}) => {
   };
 };
 export const ROUND_LABEL = { waiting: 'Sent to bar', preparing: 'Bar is making it', ready: 'Ready at the bar', taken: 'You took it: the bar must confirm', handed: 'Bar gave it to you: tap “I got them”', received: 'With you', delivered: 'Delivered', cancelled: 'Cancelled' };
-const roundView = r => ({ id: r.id, tabId: r.tabId, tabNumber: r.tabNumber, table: r.table || '', status: r.status, statusLabel: ROUND_LABEL[r.status], waiterUid: r.waiterUid, waiterName: r.waiterName, stationId: r.stationId,
+const roundView = r => ({ id: r.id, tabId: r.tabId, tabNumber: r.tabNumber, table: r.table || '', quick: !!r.quick, status: r.status, statusLabel: ROUND_LABEL[r.status], waiterUid: r.waiterUid, waiterName: r.waiterName, stationId: r.stationId,
   lines: r.lines.map(l => ({ lineId: l.lineId, productId: l.productId, name: l.name, qty: l.qty, unitPesewas: l.unitPesewas, returnedQty: l.returnedQty || 0, brokenQty: l.brokenQty || 0, compQty: l.compQty || 0, returnPending: l.returnPending || 0 })),
   note: r.note || '', createdAt: r.createdAt, handedAt: r.handedAt || '', handedByName: r.handedByName || '', takenAt: r.takenAt || '', takenByName: r.takenByName || '', takenConfirmed: !!r.takenConfirmedAt, cancelReason: r.cancelReason || '' });
 
@@ -243,6 +243,8 @@ export async function barRound(env, b, user) {
       next = { ...f, status: 'ready', takenAt: '', takenByName: '', takenDisputedAt: at, takenDisputedByName: byName };
     } else if (action === 'cant_make') {
       if (!['waiting', 'preparing', 'ready'].includes(f.status)) return { error: 'Already handed over.' };
+      // A quick sale is already paid: cancelling it means giving money back. The Manager only.
+      if (f.quick && !requireRole(user, ['superAdmin', 'manager'])) return { error: 'This quick sale is paid, so the bar can’t cancel it. Call the Manager.', status: 403 };
       next = { ...f, status: 'cancelled', cancelledAt: at, cancelledByName: byName, cancelReason: clean(b.reason, 120) || 'The bar couldn’t make it' };
     } else if (action === 'confirm_return') {
       const back = f.lines.filter(l => l.returnPending > 0); if (!back.length) return { error: 'Nothing is waiting to come back.' };

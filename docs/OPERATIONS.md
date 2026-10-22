@@ -116,6 +116,11 @@ training.
   flagged on the manager's Tonight screen; the manager explains it (the manager holds the keys) and
   finance sees the explanation. From the count on, the bar sells from what it actually found.
 - **Nothing sells past zero**: what's left = expected stock − orders at the bar not yet handed over.
+  A QR order being paid holds its drinks (30 minutes), so two guests can't buy the last bottle.
+  It's checked before anyone pays, so there are no refunds for finished drinks.
+- **No refunds at the bar**: once an order is paid (a QR order or a quick sale), the bar can't
+  cancel it. Only the Manager can, as a last resort (e.g. a bottle broke), and it goes to Refunds.
+  A table order isn't paid yet, so the bar can still say it can't make it.
 - **Closing count:** the bar types what it counts; any difference shows straight away ("3 fewer than
   expected") and needs a reason. A submitted count is locked; a correction needs approval from
   someone else, and the first count is kept.
@@ -171,7 +176,7 @@ never in sales, money in or profit.
   the bar's screens. Only people who take payments can record one.
 - **On the bill link and the QR menu** the customer picks a tip (GHS 10, 20, 50 or another amount)
   and who it's for. It's charged with the drinks and split off when Paystack confirms it. If the
-  bar can't make a QR order, the tip is refunded with the drinks.
+  Manager cancels a paid QR order (last resort), the tip is refunded with the drinks.
 - **Cash tips**: the person keeps them. They are not in the cash the waiter or bartender hands in.
 - **MoMo and card tips** come into the club's account, so the club owes them to the person.
   **Finance pays them out weekly** (*To pay → Tips owed to staff*), with no director needed since

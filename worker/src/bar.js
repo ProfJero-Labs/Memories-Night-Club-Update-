@@ -20,6 +20,7 @@ import { prepareTip, tipFields, textTip, phoneOf, guestTipPeople } from './ops/t
 
 const FORBIDDEN = { error: 'Forbidden.', status: 403 };
 export const BAR = ['superAdmin', 'director', 'manager', 'eventManager', 'barStaff', 'waitStaff'];
+export const PAID_CANCELLERS = ['superAdmin', 'manager']; // a paid order cancelled (a refund): the Manager only
 const MAX_LINES = 20, MAX_QTY = 20;
 const PICKUP = '23456789ABCDEFGHJKMNPQRSTUVWXYZ'; // no 0/O, 1/I/L: read across a loud bar
 const pickupCode = () => Array.from(crypto.getRandomValues(new Uint8Array(4)), b => PICKUP[b % PICKUP.length]).join('');
@@ -184,6 +185,9 @@ export async function barUpdate(env, user, b) {
   if (!requireRole(user, BAR)) return FORBIDDEN;
   const orderId = String(b?.orderId || ''), action = b?.action;
   if (!/^[0-9a-f]{32}$/.test(orderId) || !['deliver', 'refund'].includes(action)) return { error: 'Unknown order.' };
+  // The guest has paid: the bar never turns it into a refund. Only the Manager can, as a last resort
+  // (nothing sells past zero, so the drinks should be there).
+  if (action === 'refund' && !requireRole(user, PAID_CANCELLERS)) return { error: 'This order is paid, so the bar can’t cancel it. Call the Manager.', status: 403 };
   const r = await withTransaction(env, async tx => {
     const first = foundFields(await batchGet(env, [`counter_orders/${orderId}`], tx), `/counter_orders/${orderId}`);
     // A tip that came with an order the bar can't make goes back to the guest with the drinks.

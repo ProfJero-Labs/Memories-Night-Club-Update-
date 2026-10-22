@@ -51,7 +51,7 @@ async function rounds() {
       <span class="foot-small">Tab ${r.tabNumber} · ${esc(r.waiterName)}</span>
       <ul>${r.lines.map(l => `<li><b>${l.qty}×</b><span>${esc(l.name)}</span></li>`).join('')}</ul>${r.note ? `<span class="foot-small">${esc(r.note)}</span>` : ''}
       ${st(r.status, r.statusLabel)}
-      <div class="btn-row">${nextBtn(r)}<button class="mid" data-a="cant_make" data-r="${esc(r.id)}">Can’t make it</button></div></article>`).join('')
+      <div class="btn-row">${nextBtn(r)}${r.quick && !['superAdmin', 'manager'].includes(user.role) ? '' : `<button class="mid" data-a="cant_make" data-r="${esc(r.id)}">Can’t make it</button>`}</div></article>`).join('')
     + waiting.map(r => `<article class="ord" style="opacity:.7"><div class="head"><span class="code" style="font-size:30px">${esc(r.table)}</span>${st('handed', 'With ' + r.waiterName.split(' ')[0])}</div><span class="foot-small">Tab ${r.tabNumber} · handed ${when(r.handedAt || r.createdAt)}</span></article>`).join('')
     || '<div class="bar-empty"><b>No waiter orders</b>They appear here by themselves.</div>';
   $$('[data-a]').forEach(b => b.onclick = () => act(b.dataset.r, b.dataset.a));
