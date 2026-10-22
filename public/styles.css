@@ -655,3 +655,6 @@ h1, h2, h3 { margin: 0; }
 .tipseg { display: grid; grid-template-columns: repeat(auto-fit, minmax(66px, 1fr)); gap: 6px; }
 .tipseg button { min-height: 44px; padding: 8px 4px; white-space: nowrap; border: 1px solid var(--line-2); background: transparent; color: inherit; border-radius: 10px; font: inherit; font-weight: 600; cursor: pointer; }
 .tipseg button[aria-pressed="true"] { background: var(--paper); color: var(--ink); border-color: var(--paper); }
+/* Sign in: Show/Hide is a real, thumb-sized button beside the PIN. */
+.pin-show { min-height: 52px; min-width: 64px; border: 1px solid var(--line-2); border-radius: 10px; background: var(--ink-2); color: var(--paper); font: 600 15px var(--sans); cursor: pointer; }
+.pin-show[aria-pressed="true"] { background: var(--paper); color: var(--ink); }

@@ -8,7 +8,7 @@
 //   Reports: end of day, sign-off; the night's checks (staff reports, cash, approvals).
 import { $, $$, esc } from '../app.js';
 import { requireStaff, staffHeader, sapi } from '../staff.js';
-import { bottomNav, money } from '../lib/ops-ui.js';
+import { bottomNav, money, backBar, bindBackBar } from '../lib/ops-ui.js';
 import { salesView, closingView, approvalsView, stockAdminView, eodListView, eodView, productsView, changesView, moneyView, budgetView, paymentsView, commissionsView, purchasesView, cashReceiveView, tipsView } from '../lib/ops-views.js';
 import { payView } from '../lib/people-views.js';
 
@@ -18,8 +18,8 @@ const app = $('#app');
 const canSignOff = ['finance', 'superAdmin', 'director'].includes(user.role);
 const nav = bottomNav([['today', 'Today'], ['pay', 'To pay'], ['money', 'Money'], ['stock', 'Stock'], ['reports', 'Reports']], k => { location.hash = k; });
 const fail = e => { app.innerHTML = `<div class="say bad" role="alert"><b>Couldn’t load</b>${esc(e.message)}</div>`; };
-const back = (label, to) => `<button class="link" data-goto="${to}" style="justify-self:start">← ${esc(label)}</button>`;
-const bindBack = () => $$('[data-goto]', app).forEach(b => b.onclick = () => { location.hash = b.dataset.goto; });
+const back = (label = '', to = 'today') => backBar('', to); // ← Back: where they came from (or the parent screen)
+const bindBack = () => { bindBackBar(app); $$('[data-goto]:not(.back-btn)', app).forEach(b => b.onclick = () => { location.hash = b.dataset.goto; }); };
 const sub = (label, to, html) => { app.innerHTML = `${back(label, to)}<div id="sv"></div>`; bindBack(); return html($('#sv')); };
 
 async function route() {

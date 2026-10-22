@@ -4,7 +4,9 @@
 // an element to draw into.
 import { $, $$, esc } from '../app.js';
 import { sapi } from '../staff.js';
-import { sheet, say, st, busy, ghsIn, moneyField, money, when, dayName } from './ops-ui.js';
+import { sheet, say, st, busy, ghsIn, moneyField, money, when, dayName, ask } from './ops-ui.js';
+// One-tap reasons for refusing a request or a payment (they can still type their own).
+const REFUSE_QUICK = ['Wrong amount', 'Not in this month’s budget', 'Too expensive', 'Not needed now', 'Ask me first'];
 
 // Phones: tables become labelled cards (CSS in admin.css), once per render.
 export const labelTables = root => $$('table.tbl', root).forEach(t => {
@@ -73,7 +75,7 @@ export async function closingView(el, date, { canClose = false } = {}) {
     ${closed ? `<div class="say good"><b>This night is closed</b>The end-of-day report is saved for finance.</div>` : canClose ? '<h2>6. Close the night</h2><p class="muted" style="margin:0">This prepares the end-of-day report, sends it to finance, and locks the night’s records.</p><button class="big" id="closeGo">Close the night and send the report</button>' : ''}`;
   bindDate(el, v => closingView(el, v, { canClose: true })); labelTables(el);
   $('#clHand', el) && ($('#clHand', el).onclick = async () => {
-    const note = prompt('Why can’t you close tonight? The Human manager and the Event manager are texted.'); if (!note) return;
+    const note = await ask({ title: 'I can’t close tonight', label: 'Why? The Human manager and the Event manager are texted.', quick: ['I’m not well', 'Family emergency', 'I’m travelling', 'I’m at another venue'], send: 'Hand it over' }); if (!note) return;
     try { await sapi('/api/ops/close-night/hand-over', { method: 'POST', body: { date: d.date, note } }); await closingView(el, d.date, { canClose: true }); say($('#clMsg', el), 'Handed over. The Human manager and the Event manager have been texted.'); }
     catch (e) { say($('#clMsg', el), e.message, 'bad'); }
   });
@@ -108,7 +110,7 @@ export async function approvalsView(el) {
     <div class="cards">${approvals.map(a => `<div class="tcard warn" style="cursor:default"><span class="row"><span class="t" style="font-size:20px">${esc(a.label)}</span><span class="sub">${when(a.requestedAt)}</span></span>
       <span>${esc(a.summary)}</span><span class="sub">Asked by ${esc(a.requestedByName)} · “${esc(a.reason)}”</span>
       ${a.canDecide ? `<span class="btn-row"><button class="mid okc" data-yes="${esc(a.id)}">Approve</button><button class="mid" data-no="${esc(a.id)}">Refuse</button></span>` : '<span class="sub">Someone else must decide this one.</span>'}</div>`).join('') || '<div class="empty-box"><b>Nothing waiting</b></div>'}</div>`;
-  const decide = async (id, approve) => { const note = approve ? '' : prompt('Why refuse? (optional)') ?? null; if (note === null) return; try { await sapi('/api/ops/approvals/decide', { method: 'POST', body: { id, approve, note } }); approvalsView(el); } catch (e) { say($('#apMsg', el), e.message, 'bad'); } };
+  const decide = async (id, approve) => { const note = approve ? '' : await ask({ title: 'Refuse this?', label: 'Why? (optional)', quick: REFUSE_QUICK, send: 'Refuse', required: false, danger: true }); if (note === null) return; try { await sapi('/api/ops/approvals/decide', { method: 'POST', body: { id, approve, note } }); approvalsView(el); } catch (e) { say($('#apMsg', el), e.message, 'bad'); } };
   $$('[data-yes]', el).forEach(b => b.onclick = () => decide(b.dataset.yes, true));
   $$('[data-no]', el).forEach(b => b.onclick = () => decide(b.dataset.no, false));
 }
@@ -331,7 +333,7 @@ export async function budgetView(el, month) {
     $('#pyGo', box).onclick = async () => { try { await busy($('#pyGo', box), () => sapi('/api/ops/bills/pay', { method: 'POST', body: { id: bill.id, amountPesewas: ghsIn($('#pyA', box).value), paidWith: $('#pyW', box).value, date: $('#pyD', box).value } })); close(); again(); } catch (e) { say($('#pyM', box), e.message, 'bad'); } };
   });
   $$('[data-rmb]', el).forEach(x => x.onclick = async () => {
-    const reason = prompt('Why take this bill off?'); if (!reason) return;
+    const reason = await ask({ title: 'Take this bill off', label: 'Why?', quick: ['Entered twice', 'Wrong amount', 'Already paid', 'Not needed any more'], send: 'Take it off', danger: true }); if (!reason) return;
     try { await sapi('/api/ops/bills/remove', { method: 'POST', body: { id: x.dataset.rmb, reason } }); again(); } catch (e) { say($('#bMsg', el), e.message, 'bad'); }
   });
   labelTables(el);
@@ -450,7 +452,7 @@ export async function toApproveView(el, { onCount } = {}) {
       <span class="btn-row"><button class="mid okc" data-yes="${i}">Approve</button><button class="mid" data-no="${i}">Refuse</button></span></div>`).join('') || '<div class="empty-box"><b>All clear</b>New requests appear here.</div>'}</div>`;
   const decide = async (x, approve) => {
     let note = '';
-    if (!approve) { note = prompt(x.kind === 'payroll' ? 'What needs changing? (it goes back to the Human manager)' : 'Why is it refused?'); if (!note) return; }
+    if (!approve) { note = await ask(x.kind === 'payroll' ? { title: 'Send salaries back', label: 'What needs changing? It goes back to the Human manager.', quick: ['A salary is wrong', 'A bonus needs checking', 'Someone is missing', 'Someone shouldn’t be paid'], send: 'Send back', danger: true } : { title: 'Refuse this payment', label: 'Why? They see your reason.', quick: REFUSE_QUICK, send: 'Refuse', danger: true }); if (!note) return; }
     try { await sapi('/api/ops/approve', { method: 'POST', body: { kind: x.kind, id: x.id, approve, note } }); await toApproveView(el, { onCount }); say($('#taMsg', el), approve ? 'Approved. Finance can pay it now.' : 'Refused.'); }
     catch (e) { say($('#taMsg', el), e.message, 'bad'); }
   };
@@ -552,7 +554,7 @@ export async function eodView(el, date, { canSignOff = false } = {}) {
   const { report: r } = await sapi(`/api/ops/eod?date=${encodeURIComponent(date)}`);
   if (!r) { el.innerHTML = '<div class="say warn"><b>Not closed yet</b>This night has no end-of-day report.</div>'; return; }
   const R = r.report, t = R.sales.totals, x = R.exceptions;
-  el.innerHTML = `<button class="link" id="back" style="justify-self:start">← All reports</button><h1>End of day · ${esc(dayName(r.date))}</h1>
+  el.innerHTML = `<div class="backbar"><button type="button" class="back-btn" id="back" aria-label="Back to all reports">←<span>All reports</span></button></div><h1>End of day · ${esc(dayName(r.date))}</h1>
     <p class="lead">Prepared ${when(R.preparedAt)} by ${esc(R.preparedByName)} · ${r.sent ? `emailed to ${esc(r.sentTo)}` : esc(r.sendNote || 'not emailed')}${r.financeApprovedAt ? ` · signed off by ${esc(r.financeApprovedByName)}` : ''}</p>
     <h2>Sales and money</h2><div class="nums"><div><span>Sales</span><b>${money(t.salesPesewas)}</b></div><div class="good"><span>Received</span><b>${money(t.paidPesewas)}</b></div><div><span>MoMo / card</span><b>${money(t.digitalPesewas)}</b></div><div><span>Cash</span><b>${money(t.cashPesewas)}</b></div><div><span>MoMo to the club</span><b>${money(t.momoPesewas || 0)}</b></div><div class="${t.owedPesewas ? 'bad' : 'good'}"><span>Still owed</span><b>${money(t.owedPesewas)}</b></div><div><span>Refunds</span><b>${money(t.refundsPesewas)}</b></div><div><span>Free drinks</span><b>${money(t.freeDrinksPesewas)}</b></div><div><span>Discounts</span><b>${money(t.discountsPesewas)}</b></div></div>
     <h2>Things to check</h2>${[x.unpaidTabs.length ? `${x.unpaidTabs.length} unpaid bill(s): ${x.unpaidTabs.map(u => `Tab ${u.number} ${money(u.balancePesewas)} (${esc(u.waiterName)})`).join(', ')}` : '',

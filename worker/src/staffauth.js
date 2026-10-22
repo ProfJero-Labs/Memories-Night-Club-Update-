@@ -118,7 +118,7 @@ export async function sendNewPin(env, { phone }) {
   if (f.pinSentAt && Date.now() - new Date(f.pinSentAt).getTime() < 60e3) return NEUTRAL; // one text a minute
   const pin = starterPin(roleOfRecord(f)), salt = newSalt();
   await setDoc(env, 'users', rec.id, { ...f, tempPinSalt: salt, tempPinHash: await hashPin(pin, salt), tempPinExpires: new Date(Date.now() + TEMP_PIN_MS).toISOString(), pinSentAt: now() });
-  await sendSms(env, f.phone, `MEMORIES STAFF\nYour new PIN: ${pin}\nSign in at ${siteUrl(env, '/login.html')} with your phone number and this PIN within 30 minutes. You can change it after. Don’t share it.`);
+  await sendSms(env, f.phone, `MEMORIES STAFF\nYour new PIN: ${pin}\nSign in at ${siteUrl(env, '/login.html')} with your phone number and this PIN within 30 minutes. You can change it after. Don’t share it.${otpLine(env, pin)}`);
   return NEUTRAL;
 }
 
@@ -153,8 +153,11 @@ export async function listStaffPeople(env, user) {
   return { staff: all.sort((a, b) => (a.name || a.email).localeCompare(b.name || b.email)), roles: STAFF_ROLES.filter(r => canAssign(user.role, r)).map(r => ({ id: r, name: ROLE_NAMES[r] })) };
 }
 
+// The last line lets the phone fill the PIN in by itself on the sign-in page (Android reads a text
+// that ends with "@site #code"; an iPhone offers the code above the keyboard).
+const otpLine = (env, pin) => { try { const host = new URL(env.PUBLIC_SITE_URL).host; return host ? `\n\n@${host} #${pin}` : ''; } catch { return ''; } };
 function pinText(env, name, role, pin, again = false) {
-  return `MEMORIES STAFF\nHi ${firstName(name)}, ${again ? 'here is your new PIN' : `you’re on the Memories team as ${ROLE_NAMES[role]}`}.\nSign in at ${siteUrl(env, '/login.html')}\nPhone: your number\nPIN: ${pin}\nYou can change your PIN after signing in (tap your name). Don’t share it.`;
+  return `MEMORIES STAFF\nHi ${firstName(name)}, ${again ? 'here is your new PIN' : `you’re on the Memories team as ${ROLE_NAMES[role]}`}.\nSign in at ${siteUrl(env, '/login.html')}\nPhone: your number\nPIN: ${pin}\nYou can change your PIN after signing in (tap your name). Don’t share it.${otpLine(env, pin)}`;
 }
 // Gives someone a fresh starting PIN (replacing any old one), texts it, and returns it once for
 // the manager's screen. The PIN itself is never stored, only its hash.

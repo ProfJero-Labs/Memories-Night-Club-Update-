@@ -23,6 +23,7 @@ import { sendSms, siteUrl } from '../lib/notify.js';
 import { FORBIDDEN, bizDate, who, audit, closedError, ghs, int } from './common.js';
 import { addMoves, stockError } from './stock.js';
 import { prepareTip, tipFields, textTip, phoneOf, guestTipPeople } from './tips.js';
+import { paymentAlert } from './alerts.js';
 
 export const BOSS = ['superAdmin', 'director', 'manager'];
 export const WAITERS = [...BOSS, 'waitStaff', 'eventManager'];             // the Event manager serves tables too
@@ -276,6 +277,8 @@ export async function recordPayment(env, b, user) {
   const tip = await prepareTip(env, b); if (tip.error) return tip;
   const r = await (method === 'momo' ? recordMomo(env, b, user, tip) : recordCash(env, b, user, tip));
   if (r.recorded && !tip.none) { r.tip = { toName: tip.to.name, amountPesewas: tip.amount }; await textTip(env, await phoneOf(env, tip.to.uid), tip, method); }
+  // MoMo to the club's number: the Manager is texted (cash is counted at the cash count instead).
+  if (r.recorded && method === 'momo') await paymentAlert(env, { amountPesewas: int(b?.amountPesewas), kind: 'momo', where: `Tab ${r.tabNumber}`, byName: user.name, tipPesewas: tip.none ? 0 : tip.amount });
   return r;
 }
 const tipWrite = (env, tip, extra) => (tip && !tip.none ? [updateWrite(env, 'tips', id(), tipFields(tip, extra))] : []);
@@ -315,7 +318,7 @@ async function recordMomo(env, b, user, tip = null) {
       updateWrite(env, 'audit_logs', id(), { action: 'MOMO_PAYMENT', actorUid: uidOf(user), actorName: user.name || '', tabId, amountPesewas: amount, momoRef: ref, ...(tip && !tip.none ? { tipPesewas: tip.amount, tipToUid: tip.to.uid } : {}), timestamp: at }),
       ...tipWrite(env, tip, { method: 'momo', source: 'tab', user, date, at, momoRef: ref, momoFrom: from, tabId, tabNumber: t.fields.number, paymentId: payId }),
     ], tx);
-    return { recorded: true, method: 'momo', balancePesewas: bill.balancePesewas - amount, receiptId: payId };
+    return { recorded: true, method: 'momo', balancePesewas: bill.balancePesewas - amount, receiptId: payId, tabNumber: t.fields.number };
   });
 }
 
@@ -419,6 +422,7 @@ export async function quickSale(env, b, user) {
   });
   if (fromBar) await addMoves(env, lines.map(l => ({ productId: l.productId, productName: l.name, stationId: st.id, qty: -l.qty, kind: 'issue', ref: rid, tabId, quickSale: true, businessDate: date })), user);
   if (!tip.none) await textTip(env, await phoneOf(env, tip.to.uid), tip, method);
+  if (method === 'momo') await paymentAlert(env, { amountPesewas: total, kind: 'momo', where: `Quick sale, Tab ${number}`, byName: user.name, tipPesewas: tip.none ? 0 : tip.amount });
   return { id: tabId, number, label: `Tab ${number}`, roundId: rid, totalPesewas: total, method, ...(tip.none ? {} : { tip: { toName: tip.to.name, amountPesewas: tip.amount } }) };
 }
 
@@ -531,8 +535,13 @@ export async function issueTabPayment(env, reference, P) {
       updateWrite(env, 'pending_checkouts', reference, { ...pc.fields, status: 'issued', issuedAt: at }),
       ...(tip ? [updateWrite(env, 'tips', `tip_${reference}`, tipFields(tip, { method: 'digital', source: 'bill', date, at, reference, tabId: P.tabId, tabNumber: t.fields.number, paymentId: reference }))] : []),
     ], tx);
-    return { status: 'issued', kind: 'tab', tabId: P.tabId, tip };
-  }).then(async r => { if (r.tip) await textTip(env, await phoneOf(env, r.tip.to.uid), r.tip, 'digital'); return r; });
+    return { status: 'issued', kind: 'tab', tabId: P.tabId, tip, fresh: { amountPesewas: pay.amountPesewas, where: `Tab ${t.fields.number}`, byName: t.fields.waiterName || '' } };
+  }).then(async r => {
+    if (r.tip) await textTip(env, await phoneOf(env, r.tip.to.uid), r.tip, 'digital');
+    // Paystack confirmed it: the Manager is texted.
+    if (r.fresh) await paymentAlert(env, { ...r.fresh, kind: 'digital', tipPesewas: r.tip?.amount || 0 });
+    delete r.fresh; return r;
+  });
 }
 
 // Cashier: find a bill by tab number, table or name.

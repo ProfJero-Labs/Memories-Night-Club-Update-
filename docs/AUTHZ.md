@@ -94,7 +94,7 @@ removal applies at once. Each row is covered by `worker/test/staffauth.test.js` 
 | `GET /api/ops/to-approve`, `POST /api/ops/approve` | Directors (either one): salaries, loans, bills, commission payouts, purchases, expenses above the budget's limit |
 | `GET/POST /api/ops/purchases` | Ask: Manager, directors. `POST /purchases/check`: finance |
 | `POST /api/ops/cash/receive` | Manager, directors (not your own cash) |
-| `GET /api/ops/reviews`, `/payments` | Manager, Human manager, directors. `POST /reviews/handle`: Manager, Human manager |
+| `GET /api/ops/reviews`, `/payments` | Manager, Human manager, directors (`/payments`: finance too). `POST /reviews/handle`: Manager, Human manager |
 | `GET/POST /api/ops/perf` | Human manager reviews the staff; directors review the managers (the Human manager too) and read all |
 | `POST /api/guest/review` | Public, rate limited |
 | `GET /api/guest/counter-night/:orderId` | A QR customer: everything paid tonight from the phone that paid that order |

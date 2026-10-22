@@ -31,7 +31,7 @@ export function staffHeader(user, title) {
   const h = document.createElement('header');
   h.className = 'staff-head';
   const who = user.name || user.email || 'Me';
-  h.innerHTML = `<div class="wrap"><a class="logo" href="index.html" title="Public site"><img src="assets/logo-sm.webp" alt="Memories" height="18"></a>
+  h.innerHTML = `<div class="wrap"><a class="logo" href="${home(user.role)}" title="My work screen" aria-label="Memories: my work screen"><img src="assets/logo-sm.webp" alt="Memories" height="18"></a>
     <strong class="head-title">${esc(title)}</strong>
     <div class="acct"><button type="button" id="acctBtn" aria-haspopup="true" aria-expanded="false"><span>${esc(who.split(/\s+/)[0])}</span> ▾</button>
       <div class="acct-menu" id="acctMenu" hidden role="menu">
@@ -45,7 +45,7 @@ export function staffHeader(user, title) {
         <button type="button" role="menuitem" id="signout" class="danger">Sign out</button>
       </div></div></div>
     <div class="gate-banner" id="gateBanner" hidden role="alert"></div>`;
-  document.body.prepend(h);
+  document.body.prepend(h); document.body.classList.add('staff-ui');
   const credit = document.createElement('footer'); credit.className = 'staff-credit'; credit.textContent = `Memories platform · ${CREDIT}`;
   document.body.append(credit);
   const menu = h.querySelector('#acctMenu'), btn = h.querySelector('#acctBtn');

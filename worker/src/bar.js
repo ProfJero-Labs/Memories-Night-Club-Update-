@@ -17,6 +17,7 @@ import { requireRole, CMS, uidOf } from './lib/auth.js';
 import { sendSms, siteUrl } from './lib/notify.js';
 import { addMoves, saveProduct, stockLeft, stockError } from './ops/stock.js';
 import { prepareTip, tipFields, textTip, phoneOf, guestTipPeople } from './ops/tips.js';
+import { paymentAlert } from './ops/alerts.js';
 
 const FORBIDDEN = { error: 'Forbidden.', status: 403 };
 export const BAR = ['superAdmin', 'director', 'manager', 'eventManager', 'barStaff', 'waitStaff'];
@@ -127,6 +128,8 @@ export async function issueCounter(env, reference, P) {
     const o = result.order;
     await sendSms(env, o.phone, `MEMORIES BAR\nPaid ${money(o.totalPesewas + Number(o.tipPesewas || 0))} at ${o.stationName}${o.tipPesewas ? ` (tip ${money(o.tipPesewas)} for ${String(o.tipToName || '').split(/\s+/)[0]})` : ''}.\nPickup code: ${result.code}\nShow it at the bar. Receipt: ${siteUrl(env, `/receipt.html?code=${o.receiptCode}`)}`);
     if (result.tip) await textTip(env, await phoneOf(env, result.tip.to.uid), result.tip, 'digital');
+    // Paystack confirmed it: the Manager is texted.
+    await paymentAlert(env, { amountPesewas: o.totalPesewas, kind: 'digital', where: `QR order, ${o.stationName}${o.spot ? `, ${o.spot}` : ''}`, tipPesewas: Number(o.tipPesewas || 0) });
   }
   delete result.tip;
   delete result.already; delete result.order; delete result.code;

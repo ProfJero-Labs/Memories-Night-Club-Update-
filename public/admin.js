@@ -6,6 +6,7 @@ import { ticketHTML, designFor, qrSvg } from './ticket-art.js';
 import { openQrMaker, ensureQrCss } from './lib/qrcard.js';
 import * as OV from './lib/ops-views.js';
 import { staffView } from './lib/staff-view.js';
+import { backBar, bindBackBar, goBack } from './lib/ops-ui.js';
 import { uploadImage } from './firebase.js';
 
 // The control room is the administrator's (everything technical), the events manager's (nights,
@@ -59,16 +60,29 @@ function bindVideo(id, msgEl, onChange) {
   $(`#${id}X`).onclick = () => { $(`#${id}T`).innerHTML = ''; $(`#${id}X`).hidden = true; $(`#${id}F`).value = ''; onChange(''); };
 }
 
-$('#tabs').innerHTML = GROUPS.map(([k, l]) => `<button role="tab" data-group="${k}">${l}</button>`).join('');
-$$('[data-group]').forEach(b => b.onclick = () => show(GROUPS.find(g => g[0] === b.dataset.group)[2][0]));
-const subtabs = document.createElement('nav'); subtabs.className = 'subtabs'; subtabs.setAttribute('aria-label', 'In this section'); $('#tabs').after(subtabs);
-function drawSubtabs(tab) {
+// Navigation, the same as every other staff screen: the sections (groups) in a fixed bar at the
+// bottom; the pages of the section in one scrolling row under the header (underlined when chosen);
+// a detail screen (a night, a day's report) has ← Back at the top instead of the row.
+// Back steps between sections and out of details, never through every page tapped in a section.
+const groupNav = $('#tabs');
+groupNav.innerHTML = GROUPS.map(([k, l]) => `<button type="button" role="tab" data-group="${k}" aria-selected="false">${l}</button>`).join('');
+groupNav.hidden = GROUPS.length < 2; // one section (managers: members and attendance) needs no bar
+document.body.classList.toggle('has-bnav', !groupNav.hidden);
+const lastIn = {}; // the page last open in each section, to come back to it
+$$('[data-group]', groupNav).forEach(b => b.onclick = () => {
+  const g = GROUPS.find(x => x[0] === b.dataset.group), here = groupOf(current.split('/')[0])[0] === g[0];
+  show(here || !lastIn[g[0]] ? g[2][0] : lastIn[g[0]]); // tapping the open section goes to its first page
+});
+const subtabs = document.createElement('nav'); subtabs.className = 'subtabs'; subtabs.setAttribute('aria-label', 'In this section'); panel.before(subtabs);
+function drawSubtabs(tab, arg) {
   const [g, , tabs] = groupOf(tab);
-  $$('[data-group]').forEach(b => b.setAttribute('aria-selected', String(b.dataset.group === g)));
-  const items = tabs.length > 1 ? tabs.map(k => `<button type="button" data-tab="${k}" aria-pressed="${k === tab}">${TABS.find(t => t[0] === k)[1]}</button>`) : [];
-  if (g === 'tonight' && can(CMS)) items.push('<a href="checkin.html">Door ↗</a>');
-  subtabs.innerHTML = items.join(''); subtabs.hidden = !items.length;
+  if (!arg) lastIn[g] = tab;
+  $$('[data-group]', groupNav).forEach(b => { const on = b.dataset.group === g; b.setAttribute('aria-selected', String(on)); b.setAttribute('aria-current', String(on)); });
+  subtabs.innerHTML = tabs.length > 1 ? tabs.map(k => `<button type="button" data-tab="${k}" aria-pressed="${k === tab}">${TABS.find(t => t[0] === k)[1]}</button>`).join('') : '';
+  subtabs.hidden = tabs.length < 2 || !!arg; // a detail screen has its own ← Back instead
   $$('[data-tab]', subtabs).forEach(b => b.onclick = () => show(b.dataset.tab));
+  const on = $('[aria-pressed="true"]', subtabs);
+  if (on && !subtabs.hidden) { const l = on.offsetLeft - 16, r = on.offsetLeft + on.offsetWidth + 16 - subtabs.clientWidth; if (subtabs.scrollLeft > l) subtabs.scrollLeft = l; else if (subtabs.scrollLeft < r) subtabs.scrollLeft = r; }
 }
 let current = '';
 // Set by an editor with unsaved work; leaving asks first (tabs, back, closing the page).
@@ -78,9 +92,19 @@ function show(tab, arg, notice) {
   const next = tab + (arg ? `/${arg}` : '');
   if (next !== current && unsaved?.() && !confirm('You have unsaved changes to this night. Leave without saving them?')) { location.hash = current; return; }
   unsaved = null;
+  const [prevTab, prevArg] = current.split('/');
   current = next;
-  if (location.hash.slice(1) !== current) location.hash = current;
-  drawSubtabs(tab);
+  if (location.hash.slice(1) !== current) {
+    // A new section or a detail screen is a step Back returns from. Another page of the same
+    // section replaces the one showing (and a detail replaced by its sibling, e.g. a new night once
+    // created), so Back leaves the section instead of replaying taps. Leaving a detail for the page
+    // it was opened from steps back over it.
+    const sameGroup = prevTab && groupOf(tab)[0] === groupOf(prevTab)[0];
+    if (prevArg && !arg && history.state?.inApp && history.state.from === current) history.back();
+    else if (!prevTab || (sameGroup && !arg) || (prevTab === tab && prevArg && arg)) history.replaceState(history.state, '', `#${current}`);
+    else location.hash = current;
+  }
+  drawSubtabs(tab, arg);
   panel.innerHTML = '<div class="loading">Loading…</div>';
   // Renders run one after another, so a slow tab that was left (e.g. Overview still loading when
   // a link opens Members) can't finish last and paint over the tab that was asked for.
@@ -94,6 +118,13 @@ const today = () => OV.salesView(panel);
 const closing = () => OV.closingView(panel, undefined, { canClose: true }); // the server says who may close (the Manager, or whoever accepted the handover)
 const approvals = () => OV.approvalsView(panel);
 const eod = arg => (arg ? OV.eodView(panel, arg, { canSignOff: can(['superAdmin', 'director']) }) : OV.eodListView(panel, { canSignOff: can(['superAdmin', 'director']) }));
+// A day's report opens at its own address (eod/<date>), so ← Back and the phone's back both return
+// to the list. (The shared views open it in place; this catches the tap before they do.)
+panel.addEventListener('click', ev => {
+  if (current.split('/')[0] !== 'eod') return;
+  const day = ev.target.closest('[data-d]'), back = ev.target.closest('.backbar #back');
+  if (day) { ev.stopPropagation(); show('eod', day.dataset.d); } else if (back) { ev.stopPropagation(); goBack('eod'); }
+}, true);
 const products = async () => { panel.innerHTML = '<div id="pr"></div><div id="ch" style="margin-top:24px"></div>'; await OV.productsView($('#pr'), { canEdit: user.role === 'superAdmin' }); await OV.changesView($('#ch')); };
 const stock = () => OV.stockAdminView(panel);
 

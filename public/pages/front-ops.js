@@ -4,7 +4,7 @@
 // Security sees Entrance and Issues only. No money reports, no stock.
 import { $, $$, esc } from '../app.js';
 import { requireStaff, sapi } from '../staff.js';
-import { sheet, say, st, every, bottomNav, busy, when } from '../lib/ops-ui.js';
+import { sheet, say, st, every, bottomNav, busy, when, ask } from '../lib/ops-ui.js';
 
 const user = await requireStaff(['superAdmin', 'director', 'manager', 'eventManager', 'doorStaff', 'security', 'organiser']);
 const isFront = user.role !== 'security';
@@ -56,7 +56,7 @@ async function issues() {
     $('#inGo', box).onclick = async () => { try { await busy($('#inGo', box), () => sapi('/api/ops/incidents', { method: 'POST', body: { kind: $('#inK', box).value, note: $('#inN', box).value, people: $('#inP', box).value, needsManager: $('#inM', box).checked } })); close(); issues(); } catch (e) { say($('#inMsg', box), e.message, 'bad'); } };
   };
   $$('[data-up]', el).forEach(b => b.onclick = async () => {
-    const note = prompt(b.dataset.s === 'handed_over' ? 'What does the next shift need to know?' : 'How was it sorted?'); if (!note) return;
+    const note = await ask(b.dataset.s === 'handed_over' ? { title: 'Hand it over', label: 'What does the next shift need to know?', send: 'Hand over' } : { title: 'Sorted', label: 'How was it sorted?', quick: ['Calmed down', 'Asked to leave', 'Manager handled it', 'Paid in full'], send: 'Mark sorted' }); if (!note) return;
     try { await sapi('/api/ops/incidents/update', { method: 'POST', body: { id: b.dataset.up, status: b.dataset.s, note } }); issues(); } catch (e) { say($('#iMsg', el), e.message, 'bad'); }
   });
 }

@@ -633,8 +633,15 @@ test('scan to order: the bar QR opens the menu; pay; the pickup code shows only 
   assert.match(await g.textContent('#label'), /main bar/i);
   assert.equal(await g.locator('[data-p="dev-m-flute"]').count(), 0, 'sold-out drink can’t be added');
   await g.click('[data-p="dev-m-beer"]'); await g.click('[data-p="dev-m-beer"]'); await g.click('[data-p="dev-m-water"]');
-  assert.match(await g.textContent('#dockBtn'), /Pay GHS 60/);
-  await g.fill('#ph', '024 123 9876'); await g.click('#dockBtn');
+  assert.match(await g.textContent('#dockBtn'), /View order.*3 drinks · GHS 60/);
+  // Step 2: the order panel. Pay without a number: the field says so, the panel stays open.
+  await g.click('#dockBtn'); await g.waitForSelector('#order:not([hidden])');
+  assert.match(await g.textContent('#pay'), /Pay GHS 60/);
+  await g.fill('#ph', ''); await g.click('#pay'); await g.locator('#order .field.bad').getByText(/MoMo number/).first().waitFor();
+  // The phone's back button closes the panel; the basket is kept.
+  await g.goBack(); await g.waitForSelector('#order', { state: 'hidden' });
+  assert.match(await g.textContent('#dockBtn'), /3 drinks · GHS 60/);
+  await g.click('#dockBtn'); await g.fill('#ph', '024 123 9876'); await g.click('#pay');
   await g.waitForURL(/dev\/paystack/);
   assert.equal(docs('counter_orders').find(o => o.phone === '0241239876').pickupCode, undefined, 'no pickup code before payment');
   await g.getByRole('button', { name: 'Pay' }).click();
@@ -923,7 +930,8 @@ test('people: the Human manager sets the DJ’s pay and a bonus and sends the mo
   // The Manager can't close tonight: hands it over; the Human manager takes it; a director can only look.
   const mg = await phone(390); await signInAs(mg, 'manager@dev'); await mg.waitForURL(/night\.html/);
   await mg.goto(`${base}/night.html#close`); await mg.waitForSelector('#clHand');
-  mg.once('dialog', dl => dl.accept('Family emergency')); await mg.click('#clHand');
+  // The reason is typed in the app's own writing panel (a quick reply is one tap), not a browser pop-up.
+  await mg.click('#clHand'); await mg.locator('.sheet .chip', { hasText: 'Family emergency' }).click(); await mg.click('#askGo');
   await mg.locator('#clMsg').getByText(/Handed over/).waitFor();
   await hr.goto(`${base}/hr.html#close`); await hr.click('#clAccept'); await hr.locator('#clMsg').getByText('You’re closing tonight.').waitFor();
   await d2.goto(`${base}/night.html#tonight`); await d2.locator('#toClose', { hasText: 'How closing is going' }).click();
@@ -957,10 +965,11 @@ test('tips: a waiter’s MoMo quick sale carries a tip for the DJ; the bar recor
   await w.locator('.say').getByText('Closed').waitFor({ timeout: 10000 });
   // A QR guest adds a tip: the pay button shows drinks + tip.
   const g = await phone(360); await g.goto(`${base}/counter.html?s=0123456789abcdef0123456789abcdef`); await g.waitForSelector('#find');
-  await g.locator('[data-p]').first().click();
+  await g.locator('[data-p]').first().click(); await g.click('#dockBtn');
   await g.click('[data-tip="1000"]'); await g.waitForSelector('#tipWho:not([hidden])');
   assert.ok((await g.locator('#tipTo option').allTextContents()).every(t => !/Director/.test(t)), 'no directors to tip');
-  assert.match(await g.locator('#dock').textContent(), /tip GHS 10/);
+  assert.match(await g.locator('#orderTotals').textContent(), /Tip\s*GHS 10/);
+  assert.match(await g.textContent('#pay'), /Pay GHS 35/);
   // Finance pays the DJ's tips; the DJ sees them paid.
   const fin = await phone(390); await signInAs(fin, 'finance@dev'); await fin.waitForURL(/finance\.html/);
   await fin.click('.bnav [data-k="pay"]'); await fin.locator('a[href="#tips"]').click();

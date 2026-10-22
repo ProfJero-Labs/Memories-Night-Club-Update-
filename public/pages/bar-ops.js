@@ -5,7 +5,7 @@
 // codes) is pages/bar.js; both follow the bar picked at the top.
 import { $, $$, esc } from '../app.js';
 import { requireStaff, sapi } from '../staff.js';
-import { sheet, say, st, every, bottomNav, busy, ghsIn, moneyField, money, when } from '../lib/ops-ui.js';
+import { sheet, say, st, every, bottomNav, busy, ghsIn, moneyField, money, when, ask } from '../lib/ops-ui.js';
 import { drinkPicker, paySheet, handInCash, tipSheet, tipSaid } from '../lib/sell.js';
 
 const user = await requireStaff(['superAdmin', 'director', 'manager', 'eventManager', 'barStaff']);
@@ -59,7 +59,7 @@ async function rounds() {
 }
 async function act(roundId, action) {
   let reason;
-  if (action === 'cant_make') { reason = prompt('Why can’t the bar make it? (e.g. finished)'); if (reason === null) return; }
+  if (action === 'cant_make') { reason = await ask({ title: 'Can’t make it', label: 'Why? The waiter sees this.', quick: ['Finished', 'Bottle broke', 'Ice finished', 'Wrong order'], send: 'Tell the waiter', danger: true }); if (reason === null) return; }
   try { await sapi('/api/ops/bar/round', { method: 'POST', body: { roundId, action, reason } }); top(action === 'hand' ? 'Handed over. It’s in the waiter’s drinks now.' : action === 'confirm_taken' ? 'Confirmed. It’s in the waiter’s drinks now, out of the bar’s stock.' : action === 'not_taken' ? 'Back on the bar’s list. Tell the waiter.' : action === 'confirm_return' ? 'Taken back into the bar’s stock.' : ''); rounds(); }
   catch (e) { top(e.message, 'bad'); }
 }

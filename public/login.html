@@ -28,10 +28,9 @@
     <!-- 1. Phone + PIN -->
     <form id="pinForm" class="step" novalidate>
       <div class="field"><label for="phone">Your phone number</label><input id="phone" type="tel" inputmode="tel" autocomplete="username" placeholder="024 123 4567"></div>
-      <div class="field"><label for="pin">Your PIN</label><div class="pin-row"><input id="pin" type="password" inputmode="numeric" autocomplete="current-password" maxlength="6" pattern="[0-9]*" placeholder="••••"><button type="button" class="link" id="showPin" aria-pressed="false">Show</button></div></div>
+      <div class="field"><label for="pin">Your PIN</label><div class="pin-row"><input id="pin" type="password" inputmode="numeric" autocomplete="current-password" maxlength="6" pattern="[0-9]*" placeholder="••••"><button type="button" class="pin-show" id="showPin" aria-pressed="false">Show</button></div></div>
       <button class="btn red block" type="submit" id="go">Sign in</button>
-      <button class="link" type="button" id="sendPin" style="justify-self:start">First time, or forgot your PIN? Text me one</button>
-      <p class="muted" style="margin:0;font-size:14px">Your manager adds you and your PIN comes by text. You can change it after you sign in (tap your name).</p>
+      <button class="btn ghost block" type="button" id="sendPin">New or forgot PIN? Text me one</button>
     </form>
 
     <!-- Older accounts: email + password -->

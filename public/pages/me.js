@@ -5,12 +5,17 @@
 //   Me: feedback or a complaint (to the Human manager or the directors, anonymous if I like), and
 //       the answers; my performance reviews.
 import { $, $$, esc } from '../app.js';
-import { requireStaff, staffHeader, sapi, ROLE_LABEL } from '../staff.js';
-import { say, every, bottomNav, busy, money, when, dayName } from '../lib/ops-ui.js';
+import { requireStaff, staffHeader, sapi, ROLE_LABEL, home } from '../staff.js';
+import { say, every, bottomNav, busy, money, when, dayName, backBar, bindBackBar, growAll } from '../lib/ops-ui.js';
 
 const user = await requireStaff(['superAdmin', 'director', 'manager', 'hrManager', 'finance', 'eventManager', 'doorStaff', 'security', 'barStaff', 'waitStaff', 'cashier', 'dj', 'mc']);
 staffHeader(user, 'My page');
 const app = $('#app');
+// Someone whose work screen is elsewhere (the Human manager, a waiter…) can always get back to it.
+if (home(user.role) !== 'me.html') {
+  const top = document.createElement('div'); top.className = 'ops'; top.style.paddingBottom = '0';
+  top.innerHTML = backBar('My page', `@${home(user.role)}`); app.before(top); bindBackBar(top);
+}
 let stop = null;
 // Directors aren't on payroll (the Human manager doesn't pay them), so they have no My pay.
 const onPayroll = !['director', 'superAdmin'].includes(user.role);
@@ -31,11 +36,12 @@ addEventListener('hashchange', route);
 async function notices() {
   const d = await sapi('/api/ops/notices');
   app.innerHTML = `<h1>Notices</h1><p class="lead" style="margin:0">Hello ${esc(user.name.split(' ')[0] || '')}. ${esc(ROLE_LABEL[user.role] || '')}.</p>
-    ${d.canPost ? '<details class="fold"><summary>Post a notice</summary><div class="sfield"><label for="nT">Title</label><input id="nT" maxlength="80" placeholder="e.g. Staff meeting Friday 6pm"></div><div class="sfield"><label for="nB">Details (optional)</label><textarea id="nB" rows="3" maxlength="1000"></textarea></div>' +
+    ${d.canPost ? '<details class="fold"><summary>Post a notice</summary><div class="sfield"><label for="nT">Title</label><input id="nT" maxlength="80" placeholder="e.g. Staff meeting Friday 6pm"></div><div class="sfield"><label for="nB">Details (optional)</label><textarea id="nB" maxlength="1000"></textarea></div>' +
       `<div class="sfield"><label for="nTo">For</label><select id="nTo"><option value="all">Everyone</option>${Object.entries(d.teams).map(([k, v]) => `<option value="${k}">${esc(v)}</option>`).join('')}</select></div><div id="nMsg"></div><button class="big" id="nGo">Post notice</button></details>` : ''}
     <div class="cards">${d.notices.map(n => `<div class="tcard" style="cursor:default"><span class="row"><span class="t">${esc(n.title)}</span><span class="sub">${esc(n.teamLabel)}</span></span>
       ${n.body ? `<span>${esc(n.body)}</span>` : ''}<span class="sub">${esc(n.byName)}${n.byRole ? `, ${esc(n.byRole)}` : ''} · ${esc(day(n.at))}</span>
       ${d.canPost ? `<span><button class="sbtn" data-rmn="${esc(n.id)}">Take down</button></span>` : ''}</div>`).join('') || '<div class="empty-box"><b>No notices</b>Notices from management show here.</div>'}</div>`;
+  growAll(app);
   $('#nGo') && ($('#nGo').onclick = async () => {
     try { await busy($('#nGo'), () => sapi('/api/ops/notices', { method: 'POST', body: { title: $('#nT').value, body: $('#nB').value, team: $('#nTo').value } })); notices(); }
     catch (e) { say($('#nMsg'), e.message, 'bad'); }
@@ -53,8 +59,10 @@ async function messages() {
     if (!drawnPost) {
       drawnPost = true;
       const teams = d.teams ? Object.entries(d.teams) : d.myTeam ? [[d.myTeam, d.myTeamLabel]] : [];
-      $('#post').innerHTML = `<div class="sfield"><label for="mT">Message</label><textarea id="mT" rows="2" maxlength="500" placeholder="Write to the team"></textarea></div>
-        <div class="btn-row"><select id="mTo" aria-label="Who it’s for"><option value="all">Everyone</option>${teams.map(([k, v]) => `<option value="${k}">${esc(v)}</option>`).join('')}</select><button class="mid red" id="mGo">Send</button></div><div id="mMsg"></div>`;
+      $('#post').innerHTML = `<div class="sfield"><label for="mTo">To</label><select id="mTo"><option value="all">Everyone</option>${teams.map(([k, v]) => `<option value="${k}">${esc(v)}</option>`).join('')}</select></div>
+        <div class="sfield"><label for="mT">Message</label><textarea id="mT" maxlength="500" placeholder="Write to the team"></textarea></div>
+        <div id="mMsg"></div><button class="big red" id="mGo">Send</button>`;
+      growAll($('#post'));
       $('#mGo').onclick = async () => {
         try { await busy($('#mGo'), () => sapi('/api/ops/board', { method: 'POST', body: { text: $('#mT').value, team: $('#mTo').value } })); $('#mT').value = ''; route(); }
         catch (e) { say($('#mMsg'), e.message, 'bad'); }
@@ -98,13 +106,14 @@ async function me() {
   app.innerHTML = `<h1>Me</h1>
     <h2>Say something</h2>
     <div class="sfield"><label for="fK">What is it?</label><select id="fK"><option value="feedback">Feedback or an idea</option><option value="complaint">A complaint</option></select></div>
-    <div class="sfield"><label for="fT">Tell us</label><textarea id="fT" rows="4" maxlength="1500"></textarea></div>
+    <div class="sfield"><label for="fT">Tell us</label><textarea id="fT" maxlength="1500" placeholder="Say it in your own words"></textarea></div>
     <div class="sfield"><label for="fTo">Send it to</label><select id="fTo"><option value="hr">The Human manager</option><option value="director">The directors</option></select></div>
     <label class="check"><input type="checkbox" id="fA"> Don’t show my name</label>
     <div id="fMsg"></div><button class="big" id="fGo">Send</button>
     ${f.feedback.length ? `<h2>What I sent</h2><div class="cards">${f.feedback.map(x => `<div class="tcard" style="cursor:default"><span class="row"><span class="t" style="font-size:15px">${esc(x.kindLabel)} to ${esc(x.toLabel.toLowerCase())}</span><span class="sub">${esc(day(x.at))}${x.anonymous ? ' · no name' : ''}</span></span>
       <span>${esc(x.text)}</span>${x.reply ? `<span class="say good" style="margin:0"><b>${esc(x.replyByName)} answered</b>${esc(x.reply)}</span>` : '<span class="sub">Waiting for an answer.</span>'}</div>`).join('')}</div>` : ''}
     ${r.reviews.length ? `<h2>My reviews</h2>${r.reviews.map(v => `<details class="fold"><summary>${esc(v.label)} · ${v.overall}/5</summary><div class="lines-list">${v.scores.map(s => `<div class="ln"><span>${esc(s.label)}</span><span>${s.score}/5</span></div>`).join('')}</div>${v.comment ? `<p>${esc(v.comment)}</p>` : ''}<p class="muted" style="margin:0">By ${esc(v.byName)}</p></details>`).join('')}` : ''}`;
+  growAll(app);
   $('#fGo').onclick = async () => {
     try {
       const x = await busy($('#fGo'), () => sapi('/api/ops/feedback', { method: 'POST', body: { kind: $('#fK').value, text: $('#fT').value, to: $('#fTo').value, anonymous: $('#fA').checked } }));

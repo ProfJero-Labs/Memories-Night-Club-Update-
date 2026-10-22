@@ -5,7 +5,7 @@
 //   perfView     monthly performance reviews of each staff member
 import { $, $$, esc } from '../app.js';
 import { sapi } from '../staff.js';
-import { sheet, say, st, busy, ghsIn, moneyField, money, when, dayName } from './ops-ui.js';
+import { sheet, say, st, busy, ghsIn, moneyField, money, when, dayName, addQuick } from './ops-ui.js';
 
 const mon = m => new Date(`${m}-15T12:00:00Z`).toLocaleDateString('en-GB', { month: 'short' });
 const shift = (m, by) => { const [y, mo] = m.split('-').map(Number); return new Date(Date.UTC(y, mo - 1 + by, 1)).toISOString().slice(0, 7); };
@@ -94,6 +94,7 @@ export async function reviewsView(el) {
   $$('[data-handle]', el).forEach(b => b.onclick = () => {
     const { box, close } = sheet(`<h2>Follow up</h2><div class="sfield"><label for="rhN">What was done</label><textarea id="rhN" rows="3" maxlength="500" placeholder="e.g. Called her, apologised, free drinks on her next visit"></textarea></div>
       <div id="rhM"></div><button class="big" id="rhGo">Save</button><button class="big ghost" data-close>Cancel</button>`);
+    addQuick($('#rhN', box), ['Called them and apologised', 'Free drink on their next visit', 'Spoke to the staff involved', 'Refunded']);
     $('#rhGo', box).onclick = async () => { try { await busy($('#rhGo', box), () => sapi('/api/ops/reviews/handle', { method: 'POST', body: { id: b.dataset.handle, note: $('#rhN', box).value } })); close(); reviewsView(el); } catch (e) { say($('#rhM', box), e.message, 'bad'); } };
   });
 }
@@ -112,6 +113,7 @@ export async function perfView(el, month) {
       ${Object.entries(d.scores).map(([k, label]) => `<div class="sfield"><label for="pf_${k}">${esc(label)}</label><select id="pf_${k}">${[5, 4, 3, 2, 1].map(n => `<option ${cur[k] === n ? 'selected' : ''}>${n}</option>`).join('')}</select></div>`).join('')}
       <div class="sfield"><label for="pfC">Comment</label><textarea id="pfC" rows="3" maxlength="1000">${esc(s.review?.comment || '')}</textarea></div>
       <div id="pfM"></div><button class="big" id="pfGo">Save review</button><button class="big ghost" data-close>Cancel</button>`, { label: 'Performance review' });
+    addQuick($('#pfC', box), ['Great with customers', 'Always on time', 'Needs to be on time', 'Keep it up', 'Let’s talk this week']);
     $('#pfGo', box).onclick = async () => {
       const scores = Object.fromEntries(Object.keys(d.scores).map(k => [k, Number($(`#pf_${k}`, box).value)]));
       try { await busy($('#pfGo', box), () => sapi('/api/ops/perf', { method: 'POST', body: { uid: s.uid, month: d.month, scores, comment: $('#pfC', box).value } })); close(); perfView(el, d.month); } catch (e) { say($('#pfM', box), e.message, 'bad'); }
