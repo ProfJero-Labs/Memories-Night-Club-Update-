@@ -180,3 +180,15 @@ export function every(ms, fn) {
 
 // A money input in cedis that the Worker receives in pesewas.
 export const moneyField = (id, label, value = '', hint = '') => `<div class="sfield"><label for="${id}">${esc(label)}</label><div class="money-in"><input id="${id}" inputmode="decimal" value="${esc(value)}" autocomplete="off"></div>${hint ? `<span class="hint">${esc(hint)}</span>` : ''}</div>`;
+
+// Table bookings for the coming nights, grouped by night (from /api/ops/tables → upcoming).
+export function upcomingBookings(list = []) {
+  if (!list.length) return '<p class="muted" style="margin:0">No tables booked for the coming nights yet.</p>';
+  const nights = [...new Set(list.map(t => t.night))];
+  return nights.map(n => {
+    const rows = list.filter(t => t.night === n);
+    return `<div class="group-h">${esc(dayName(n))} · ${esc(rows[0].eventName)} · ${rows.length} table${rows.length > 1 ? 's' : ''}</div>
+      <div class="rows">${rows.map(t => `<div class="row-btn plain"><span class="t">${esc(t.name)} · ${esc(t.packageName)}</span>
+        <span class="s">${esc(t.code)} · phone …${esc(t.phoneLast4)}${t.capacity ? ` · up to ${t.capacity}` : ''}${t.bottles.length ? ` · ${t.bottles.map(b => `${b.quantity} × ${esc(b.name)}`).join(', ')}` : ''}${t.bookedAt ? ` · booked ${esc(new Date(t.bookedAt).toLocaleDateString('en-GB', { timeZone: 'Africa/Accra', day: 'numeric', month: 'short' }))}` : ''}</span></div>`).join('')}</div>`;
+  }).join('');
+}

@@ -13,6 +13,7 @@ import { computeShares } from './shares.js';
 import { issueCounter } from './bar.js';
 import { issueTabPayment } from './ops/tabs.js';
 import { issueGateSale } from './gate.js';
+import { bookingAlert } from './ops/alerts.js';
 import { livePromos, bestPromo, promoRecord, promoCountFields } from './promos.js';
 
 // Smallest payment accepted anywhere: GHS 1.
@@ -246,6 +247,8 @@ export async function fulfillTable(env, reference) {
   });
   if (result.status === 'issued' && !result.already) {
     await sendSms(env, P.buyerPhone, `MEMORIES\nTable confirmed: ${P.packageName}, ${P.eventName}.\nTotal paid ${money(P.amountPesewas)}.\nAt the door: ${tableCode(result.orderId)}, or give your name.`);
+    const ev = await getDoc(env, 'events', P.eventId).catch(() => null);
+    await bookingAlert(env, { ...P, code: tableCode(result.orderId), nightLabel: ev?.fields?.date ? formatAccra(ev.fields.date, { weekday: 'short', day: 'numeric', month: 'short' }) : '' });
     await sendEmail(env, P.buyerEmail, 'Your Memories table is confirmed', [`${P.packageName} · ${P.eventName}`, `Total paid: ${money(P.amountPesewas)}`, `At the door, show ${tableCode(result.orderId)} or give your name.`, `Payment reference: ${reference}`]);
   }
   delete result.already;

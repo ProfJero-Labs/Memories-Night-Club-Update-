@@ -39,3 +39,20 @@ export async function paymentAlert(env, p) {
     return sent;
   } catch { return 0; } // an alert never gets in the way of a payment
 }
+
+// A table was booked online: the event managers and managers are texted who booked it, so the team
+// knows before the night (the booking is also on Tables / Bookings for every role that serves it).
+// Anyone whose staff record says bookingAlerts: false isn't texted.
+export async function bookingAlert(env, o) {
+  try {
+    const people = (await Promise.all(['eventManager', 'manager'].map(role => queryWhere(env, 'users', [{ field: 'role', value: role }])))).flat()
+      .filter(d => !d.fields.removed && d.fields.phone && d.fields.bookingAlerts !== false);
+    if (!people.length) return 0;
+    const text = [`MEMORIES: table booked`, `${o.packageName} · ${o.eventName}${o.nightLabel ? ` (${o.nightLabel})` : ''}`, `${o.buyerName} · ${o.buyerPhone}`,
+      `Paid ${ghs(o.amountPesewas)} · code ${o.code}`, ...(o.bottles?.length ? [`Bottles: ${o.bottles.map(b => `${b.quantity} x ${b.name}`).join(', ')}`] : [])].join('\n');
+    let sent = 0;
+    const seen = new Set();
+    for (const m of people) { if (seen.has(m.fields.phone)) continue; seen.add(m.fields.phone); if (await sendSms(env, m.fields.phone, text)) sent += 1; }
+    return sent;
+  } catch { return 0; } // an alert never gets in the way of a booking
+}

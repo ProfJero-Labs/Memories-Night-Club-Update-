@@ -7,7 +7,7 @@
 import { $, $$, esc, normalizePhone } from '../app.js';
 import { requireStaff, staffHeader, sapi } from '../staff.js';
 import { qrSvg } from '../ticket-art.js';
-import { sheet, say, st, every, bottomNav, busy, ghsIn, moneyField, money, when, backBar, bindBackBar, returnTo, pasteMomoButton } from '../lib/ops-ui.js';
+import { sheet, say, st, every, bottomNav, busy, ghsIn, moneyField, money, when, backBar, bindBackBar, returnTo, pasteMomoButton, upcomingBookings } from '../lib/ops-ui.js';
 import { drinkPicker, paySheet, handInCash, tipBox, tipSheet, tipSaid } from '../lib/sell.js';
 
 const user = await requireStaff(['waitStaff', 'eventManager', 'superAdmin', 'director', 'manager']);
@@ -294,15 +294,16 @@ async function quickSale(stationId) {
 
 // ── Bookings tonight ──
 async function bookings() {
-  app.innerHTML = '<h1>Bookings tonight</h1><p class="lead">Tables booked online, and the bottles they already paid for. Tick when served.</p><div id="msg"></div><div class="cards" id="list"><div class="loading">Loading…</div></div>';
+  app.innerHTML = '<h1>Bookings tonight</h1><p class="lead">Tables booked online, and the bottles they already paid for. Tick when served.</p><div id="msg"></div><div class="cards" id="list"><div class="loading">Loading…</div></div><h2>Coming up</h2><div id="soon"></div>';
   stop = every(15000, async alive => {
-    const { tables } = await sapi('/api/ops/tables');
+    const { tables, upcoming } = await sapi('/api/ops/tables');
     if (!alive()) return;
     $('#list').innerHTML = tables.map(t => `<div class="tcard ${t.bottlesServed ? 'done' : t.arrived ? 'warn' : ''}" style="cursor:default">
       <span class="row"><span class="t">${esc(t.tableNumber ? `Table ${t.tableNumber}` : t.packageName)}</span><span class="sub">${t.arrived ? `Arrived ${when(t.arrivedAt)}` : 'Not here yet'}</span></span>
       <span class="sub">${esc(t.name)} · ${esc(t.packageName)}${t.capacity ? ` · up to ${t.capacity}` : ''}</span>
       ${t.bottles.length ? `<span>${t.bottles.map(b => `<b>${b.quantity} ×</b> ${esc(b.name)}`).join('<br>')}</span>` : '<span class="sub">No bottles booked.</span>'}
       ${t.bottles.length ? `<button class="mid ${t.bottlesServed ? '' : 'okc'}" data-served="${esc(t.orderId)}" data-v="${t.bottlesServed ? '0' : '1'}">${t.bottlesServed ? 'Served ✓ (undo)' : 'Bottles served'}</button>` : ''}</div>`).join('') || '<div class="empty-box"><b>No bookings tonight</b></div>';
+    $('#soon').innerHTML = upcomingBookings(upcoming);
     $$('[data-served]').forEach(b => b.onclick = async () => { try { await sapi('/api/ops/tables', { method: 'POST', body: { orderId: b.dataset.served, bottlesServed: b.dataset.v === '1' } }); route(); } catch (e) { say($('#msg'), e.message, 'bad'); } });
   });
 }
