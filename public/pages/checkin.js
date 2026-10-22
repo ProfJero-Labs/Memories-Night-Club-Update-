@@ -23,6 +23,7 @@ try {
   else { const saved = sessionStorage.getItem('door-event'); if (tonight.some(e => e.id === saved)) ev.value = saved; }
   $('#evHint').textContent = !events.length ? 'No nights to check in yet.' : night() ? '' : 'Choose the night before scanning.';
 } catch (e) { $('#evHint').textContent = e.status === 0 ? 'No connection. Reload when you have signal.' : e.message; }
+ev.dispatchEvent(new Event('night-ready'));
 ev.onchange = () => { sessionStorage.setItem('door-event', night()); $('#evHint').textContent = ''; $('#hits').innerHTML = ''; summary(); };
 
 // ── Headcount from the server (every phone sees the same numbers) ──
@@ -96,9 +97,18 @@ function showMember(r) {
   $('#out').innerHTML = `<div class="result ${cls}" role="alert">
     <h1 class="display">${esc(r.message || 'Not valid')}</h1>
     ${m.name ? `<p style="margin:0;font-size:24px"><strong>${esc(m.name)}</strong></p><p class="foot-small" style="margin:0">${esc([m.type === 'staff' ? 'Staff' : 'Member', m.department, m.position, m.staffNo].filter(Boolean).join(' · '))}</p>` : ''}
-    ${r.hint ? `<p style="margin:0">${esc(r.hint)}</p>` : ''}</div>`;
+    ${r.hint ? `<p style="margin:0">${esc(r.hint)}</p>` : ''}
+    ${r.reentry && gatePhone ? '<button type="button" class="big" id="mBack">Back in (they showed their app)</button>' : ''}</div>`;
   tone(!!r.valid);
+  // Already in tonight and went out: they show their app, and they're let back in (logged, not counted twice).
+  const back = $('#mBack');
+  if (back) back.onclick = async () => {
+    back.disabled = true;
+    try { showMember(await sapi('/api/members/door/reentry', { method: 'POST', body: { phone: gatePhone } })); }
+    catch (e) { back.disabled = false; e.status === 0 ? offline() : showMember({ valid: false, message: 'Try again', hint: e.message }); }
+  };
 }
+let gatePhone = '';
 // Staff and members don't show a QR: they're verified through their app (their number, then the
 // code on their phone). An old pass QR scanned by habit points the door there.
 function memberPass() {
@@ -222,6 +232,7 @@ let mPhone = '';
 $('#mPhone').onsubmit = async ev => {
   ev.preventDefault();
   const btn = $('#mPhone button'); btn.disabled = true;
+  gatePhone = $('#mNum').value;
   try {
     const r = await sapi('/api/members/door/request-code', { method: 'POST', body: { phone: $('#mNum').value } });
     if (!r.sent) { showMember({ valid: false, ...r }); btn.disabled = false; return; }
@@ -234,6 +245,7 @@ $('#mPhone').onsubmit = async ev => {
 $('#mCode').onsubmit = async ev => {
   ev.preventDefault();
   try {
+    gatePhone = mPhone;
     const r = await sapi('/api/members/door/confirm', { method: 'POST', body: { phone: mPhone, code: $('#mCodeIn').value } });
     showMember(r);
     if (r.valid || r.code !== 'wrong_code') { $('#mCode').hidden = true; $('#mPhone').hidden = false; $('#mNum').value = ''; }

@@ -56,6 +56,39 @@ async function memberByPhone(env, phone) {
   const hit = (await queryWhere(env, 'members', [{ field: 'phone', value: phone }], { limit: 1 }))[0];
   return hit ? { id: hit.id, m: hit.fields } : null;
 }
+// Tonight's first entry for this member (re-entries don't count), or null.
+export async function enteredTonight(env, memberId) {
+  const tonight = nightKey(now());
+  return (await queryWhere(env, 'member_entries', [{ field: 'memberId', value: memberId }]))
+    .map(d => d.fields).filter(e => e.night === tonight && e.method !== 'reentry')
+    .sort((a, b) => String(a.at).localeCompare(String(b.at)))[0] || null;
+}
+async function byName(env, uid) { return uid ? (await getDoc(env, 'users', uid).catch(() => null))?.fields?.name || '' : ''; }
+// For the gate's "check by phone": is this number a member, in good standing, already in tonight?
+export async function memberAtGate(env, phone) {
+  const hit = await memberByPhone(env, phone); if (!hit) return null;
+  const st = standing(hit.m), e = await enteredTonight(env, hit.id);
+  return { id: hit.id, card: memberCard(hit.id, hit.m), ok: st.ok, message: st.ok ? 'MEMBER' : st.message, inAt: e?.at || null, inByName: e ? await byName(env, e.by) : '' };
+}
+// Already in tonight: a member's number lets one person in once a night. A second try is stopped
+// (someone else may be using their number); the door can let the same member back in (they went
+// out and came back), with a reason, recorded for the manager.
+async function alreadyIn(env, mid, m) {
+  const e = await enteredTonight(env, mid); if (!e) return null;
+  const at = new Date(e.at).toLocaleTimeString('en-GB', { timeZone: 'Africa/Accra', hour: '2-digit', minute: '2-digit' });
+  return { valid: false, code: 'already_in', message: 'ALREADY IN TONIGHT', hint: `In at ${at}${(await byName(env, e.by)) ? `, let in by ${await byName(env, e.by)}` : ''}. If they went out and are coming back, they show their app: tap “Back in”.`, member: memberCard(mid, m), reentry: true };
+}
+export async function doorReentry(env, user, { phone, reason }) {
+  if (!requireRole(user, MEMBER_DOOR)) return FORBIDDEN;
+  const ph = normalizePhone(phone); if (!ph) return { error: 'Use a Ghana number, e.g. 024 123 4567.' };
+  // They show their phone (the pass says they're in tonight): that's enough; a note is optional.
+  const why = clean(reason, 200) || 'Showed their app';
+  const hit = await memberByPhone(env, ph);
+  if (!hit) return { valid: false, code: 'not_member', message: 'NOT A MEMBER', hint: 'That number isn’t on the members list.' };
+  if (!(await enteredTonight(env, hit.id))) return { valid: false, code: 'not_in', message: 'NOT IN YET TONIGHT', hint: 'Let them in the usual way (code on their app).' };
+  await logEntry(env, user, hit.id, hit.m, 'reentry', why);
+  return { valid: true, code: 'member_ok', message: 'BACK IN', member: memberCard(hit.id, hit.m), hint: 'Recorded as back in (not a new entry).' };
+}
 async function memberByStaff(env, uid) {
   const hit = (await queryWhere(env, 'members', [{ field: 'staffUid', value: uid }], { limit: 1 }))[0];
   return hit ? { id: hit.id, m: hit.fields } : null;
@@ -272,11 +305,11 @@ export async function myGate(env, user) {
   return { member: true, active: standing(linked.m).ok, gate: standing(linked.m).ok ? await pendingGate(env, linked.id) : null };
 }
 
-async function logEntry(env, user, mid, m, method) {
+async function logEntry(env, user, mid, m, method, note = '') {
   const at = now();
   // Who let them in, by name, for the attendance log (the staff record has the email if the token doesn't).
   const byEmail = user.email || (await getDoc(env, 'users', uidOf(user)).catch(() => null))?.fields?.email || '';
-  await setDoc(env, 'member_entries', id(), { memberId: mid, name: m.name, type: m.type, department: m.department || '', at, by: uidOf(user), byEmail, method, night: nightKey(at) });
+  await setDoc(env, 'member_entries', id(), { memberId: mid, name: m.name, type: m.type, department: m.department || '', at, by: uidOf(user), byEmail, method, night: nightKey(at), ...(note ? { note } : {}) });
 }
 const result = (st, m, extra = {}) => ({ valid: st.ok, code: st.ok ? 'member_ok' : st.code, message: st.ok ? (m.fields.type === 'staff' ? 'STAFF VERIFIED' : 'MEMBER VERIFIED') : st.message, member: m ? memberCard(m.id, m.fields) : null, ...extra });
 
@@ -290,6 +323,7 @@ export async function doorRequestCode(env, user, phone) {
   if (!hit) return { sent: false, code: 'not_member', message: 'NOT A MEMBER', hint: 'That number isn’t on the members list. They need a ticket.' };
   const st = standing(hit.m);
   if (!st.ok) return { sent: false, ...result(st, { id: hit.id, fields: hit.m }) };
+  const twice = await alreadyIn(env, hit.id, hit.m); if (twice) return { sent: false, ...twice };
   const code = sixDigits();
   await setDoc(env, 'member_codes', `gate_${hit.id}`, { code, codeHash: await sha256Hex(`gate:${hit.id}:${code}`), memberId: hit.id, attempts: 0, expiresAt: new Date(Date.now() + GATE_TTL_MS).toISOString(), requestedBy: uidOf(user) });
   return { sent: true, firstName: firstName(hit.m.name), phoneHint: maskPhone(ph), staff: !!hit.m.staffUid, message: 'CODE IS ON THEIR APP' };
@@ -305,6 +339,7 @@ export async function doorManualAdmit(env, user, { phone, reason }) {
   if (!hit) return { valid: false, code: 'not_member', message: 'NOT A MEMBER', hint: 'That number isn’t on the members list. They need a ticket.' };
   const st = standing(hit.m);
   if (!st.ok) return result(st, { id: hit.id, fields: hit.m });
+  const twice = await alreadyIn(env, hit.id, hit.m); if (twice) return twice;
   await logEntry(env, user, hit.id, hit.m, 'manual');
   await setDoc(env, 'incidents', id(), { businessDate: nightKey(now()), kind: 'other', note: `Let in without the app: ${hit.m.name} (${why}). Check their photo/ID was seen.`, people: hit.m.name, needsManager: true, status: 'open', by: uidOf(user), byName: user.name || '', at: now(), updates: [] });
   return result(st, { id: hit.id, fields: hit.m }, { hint: 'Let in by hand: recorded for the manager.' });
@@ -328,7 +363,7 @@ export async function doorConfirmCode(env, user, { phone, code }, ip) {
   await deleteDoc(env, 'member_codes', key).catch(() => {});
   const m = await getDoc(env, 'members', hit.id);
   const st = standing(m?.fields);
-  if (st.ok) await logEntry(env, user, m.id, m.fields, 'code');
+  if (st.ok) { const twice = await alreadyIn(env, m.id, m.fields); if (twice) return twice; await logEntry(env, user, m.id, m.fields, 'code'); }
   return result(st, m);
 }
 

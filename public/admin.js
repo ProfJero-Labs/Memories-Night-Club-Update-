@@ -526,16 +526,16 @@ async function night(id, notice) {
 
 // Editable rows for ticket types / table packages / bottles.
 const CAT = {
-  'ticket-types': { cols: [['name', 'Name'], ['price', 'Price (GHS)'], ['admits', 'Admits'], ['remaining', 'Left (blank = no limit)'], ['description', 'Note']] },
+  'ticket-types': { cols: [['name', 'Name'], ['price', 'Price (GHS)'], ['door', 'At the door (GHS, blank = same)'], ['admits', 'Admits'], ['remaining', 'Left (blank = no limit)'], ['description', 'Note']] },
   'table-packages': { cols: [['name', 'Name'], ['price', 'Price (GHS)'], ['capacity', 'People'], ['remaining', 'Left (blank = no limit)'], ['description', 'What’s included']] },
   bottles: { cols: [['category', 'Category'], ['name', 'Name'], ['price', 'Price (GHS)'], ['remaining', 'Left (blank = no limit)']] },
 };
 function catalogTable(kind, rows, eventId) {
-  const cell = (r, k) => { const v = k === 'price' ? ghs(r.pricePesewas) : r[k] ?? ''; return `<td><input data-k="${k}" value="${esc(v)}" ${['price', 'admits', 'capacity', 'remaining'].includes(k) ? 'inputmode="decimal"' : ''} aria-label="${k}"></td>`; };
+  const cell = (r, k) => { const v = k === 'price' ? ghs(r.pricePesewas) : k === 'door' ? (r.doorPricePesewas ? ghs(r.doorPricePesewas) : '') : r[k] ?? ''; return `<td><input data-k="${k}" value="${esc(v)}" ${['price', 'door', 'admits', 'capacity', 'remaining'].includes(k) ? 'inputmode="decimal"' : ''} aria-label="${k}"></td>`; };
   const row = r => `<tr data-row="${esc(r.id || '')}" data-kind="${kind}" data-event="${esc(eventId)}">${CAT[kind].cols.map(([k]) => cell(r, k)).join('')}
-    <td><label class="check"><input type="checkbox" data-k="active" ${r.active !== false ? 'checked' : ''}> On</label></td>
+    ${kind === 'ticket-types' ? `<td><label class="check" title="Gets into the VIP area"><input type="checkbox" data-k="vip" ${r.vip ? 'checked' : ''}> VIP</label></td>` : ''}<td><label class="check"><input type="checkbox" data-k="active" ${r.active !== false ? 'checked' : ''}> On</label></td>
     <td class="actions"><button class="sbtn" data-save>Save</button>${r.id ? '<button class="sbtn ghost" data-del>×</button>' : ''}</td></tr>`;
-  return `<div class="tbl-wrap"><table class="tbl"><thead><tr>${CAT[kind].cols.map(([, l]) => `<th>${l}</th>`).join('')}<th></th><th></th></tr></thead>
+  return `<div class="tbl-wrap"><table class="tbl"><thead><tr>${CAT[kind].cols.map(([, l]) => `<th>${l}</th>`).join('')}${kind === 'ticket-types' ? '<th></th>' : ''}<th></th><th></th></tr></thead>
     <tbody>${rows.map(row).join('')}${row({ active: true })}</tbody></table></div><div data-msg="${kind}"></div>`;
 }
 function bindCatalog(reload) {
@@ -543,8 +543,8 @@ function bindCatalog(reload) {
   $$('tr[data-kind]').forEach(tr => tr.addEventListener('input', () => { tr.classList.add('dirty'); $('[data-save]', tr).classList.add('red'); }));
   $$('tr[data-kind] [data-save]').forEach(b => b.onclick = async () => {
     const tr = b.closest('tr'), kind = tr.dataset.kind, get = k => $(`[data-k="${k}"]`, tr);
-    const body = { id: tr.dataset.row || undefined, eventId: tr.dataset.event, active: get('active').checked };
-    for (const [k] of CAT[kind].cols) { const v = get(k).value.trim(); if (k === 'price') { try { body.pricePesewas = pes(v); } catch (err) { return flash($(`[data-msg="${kind}"]`), err.message, true); } } else if (['admits', 'capacity'].includes(k)) body[k] = v === '' ? undefined : Number(v); else if (k === 'remaining') body.remaining = v === '' ? null : Number(v); else body[k] = v; }
+    const body = { id: tr.dataset.row || undefined, eventId: tr.dataset.event, active: get('active').checked, ...(get('vip') ? { vip: get('vip').checked } : {}) };
+    for (const [k] of CAT[kind].cols) { const v = get(k).value.trim(); if (k === 'price') { try { body.pricePesewas = pes(v); } catch (err) { return flash($(`[data-msg="${kind}"]`), err.message, true); } } else if (k === 'door') { try { body.doorPricePesewas = v === '' ? null : pes(v); } catch (err) { return flash($(`[data-msg="${kind}"]`), `At the door: ${err.message}`, true); } } else if (['admits', 'capacity'].includes(k)) body[k] = v === '' ? undefined : Number(v); else if (k === 'remaining') body.remaining = v === '' ? null : Number(v); else body[k] = v; }
     if (!tr.dataset.row && !body.name) return;
     try { await sapi(`/api/admin/${kind}`, { method: 'POST', body }); reload({ at: `[data-msg="${kind}"]`, text: `Saved “${body.name || body.category || 'item'}”.` }); } catch (err) { flash($(`[data-msg="${kind}"]`), err.message, true); }
   });
