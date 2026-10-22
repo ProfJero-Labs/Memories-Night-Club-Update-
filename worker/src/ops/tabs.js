@@ -507,7 +507,11 @@ async function tabByToken(env, token) {
 export async function publicBill(env, token) {
   const t = await tabByToken(env, token); if (!t) return PUBLIC;
   const bill = billOf(t.fields, await roundsOf(env, t.id));
-  return { bill: { label: `Tab ${t.fields.number}`, table: t.fields.table, waiterFirstName: String(t.fields.waiterName || '').split(/\s+/)[0], date: t.fields.businessDate, lines: bill.lines, grossPesewas: bill.grossPesewas, discountPesewas: bill.discountPesewas, totalPesewas: bill.totalPesewas, paidPesewas: bill.paidPesewas, balancePesewas: bill.balancePesewas, status: bill.status, statusLabel: PAY_LABEL[bill.status],
+  // Paid, but staying: the table stays open for more drinks (from the waiter, or the bar's menu
+  // on this phone when the bar is taking app orders).
+  const st = t.fields.status === 'open' && t.fields.stationId ? await getDoc(env, 'bar_stations', t.fields.stationId).catch(() => null) : null;
+  const menuUrl = st?.fields?.open && /^[0-9a-f]{32}$/.test(st.fields.token || '') ? `counter.html?s=${st.fields.token}${t.fields.table && t.fields.table !== 'Walk-in' ? `&t=${encodeURIComponent(t.fields.table)}` : ''}` : '';
+  return { open: t.fields.status === 'open', menuUrl, bill: { label: `Tab ${t.fields.number}`, table: t.fields.table, waiterFirstName: String(t.fields.waiterName || '').split(/\s+/)[0], date: t.fields.businessDate, lines: bill.lines, grossPesewas: bill.grossPesewas, discountPesewas: bill.discountPesewas, totalPesewas: bill.totalPesewas, paidPesewas: bill.paidPesewas, balancePesewas: bill.balancePesewas, status: bill.status, statusLabel: PAY_LABEL[bill.status],
     payments: (t.fields.payments || []).map(p => ({ method: p.method === 'cash' ? 'Cash' : 'MoMo', amountPesewas: p.amountPesewas, at: p.at })), paying: !!(t.fields.pending && Date.now() - new Date(t.fields.pending.at).getTime() < 30 * 60e3) },
     // A tip with the payment: for their waiter by default, or anyone on the team.
     tip: { people: (await guestTipPeople(env)).people, defaultId: t.fields.waiterUid || '' } };

@@ -3,6 +3,10 @@
 import { api, esc, params, getSettings, socials, $, $$ } from '../app.js';
 
 const root = $('#root');
+// Where they came from (the bar menu or their bill): always a way back to ordering. Only this
+// site's own ordering pages, never another address.
+const back = /^(counter|bill)\.html\?[\w=&%.-]*$/.test(params.get('back') || '') ? params.get('back') : '';
+const backLink = back ? `<a class="btn red" href="${esc(back)}">${back.startsWith('bill') ? 'Back to my bill' : 'Back to the menu'}</a>` : '';
 const source = ['bill', 'qr', 'table', 'site'].includes(params.get('s')) ? params.get('s') : 'site';
 const follow = async () => {
   const s = await getSettings();
@@ -17,6 +21,7 @@ const LOGO = '<img src="/assets/logo-sm.webp" alt="Memories" width="110" height=
 function draw() {
   root.innerHTML = `${LOGO}
     <form id="rf" novalidate>
+      ${back ? `<p style="margin:0"><a href="${esc(back)}">← Back to ordering</a> · rating is optional</p>` : ''}
       <div><h1 class="display">How was your night?</h1></div>
       <div class="stars" role="radiogroup" aria-label="Your rating">${[1, 2, 3, 4, 5].map(n => `<button type="button" role="radio" aria-checked="false" aria-label="${n} star${n > 1 ? 's' : ''}: ${SAY[n]}" data-star="${n}" tabindex="${n === 1 ? 0 : -1}">${STAR}</button>`).join('')}</div>
       <p class="stars-say" id="say" aria-live="polite"></p>
@@ -47,7 +52,7 @@ function draw() {
     try {
       await api('/api/guest/review', { method: 'POST', body: { rating, comment: $('#c').value, name: $('#n').value, phone: $('#p').value, source, ref: (params.get('r') || '').slice(0, 64) } });
       root.innerHTML = `${LOGO}<div class="done"><h1 class="display">Thank you!</h1>
-        <p class="sub" style="margin:0">${rating <= 2 ? 'We’re sorry it wasn’t better. A manager will read this tonight.' : 'We’re glad you came. See you next time.'}</p>${await follow()}<a class="btn" href="index.html">What’s on next</a></div>`;
+        <p class="sub" style="margin:0">${rating <= 2 ? 'We’re sorry it wasn’t better. A manager will read this tonight.' : 'We’re glad you came. See you next time.'}</p>${backLink ? `<div class="row-actions">${backLink}</div>` : ''}${await follow()}<a class="btn" href="index.html">What’s on next</a></div>`;
     } catch (e) { $('#err').innerHTML = `<div class="notice bad" role="alert">${esc(e.message)}</div>`; $('#go').disabled = false; $('#go').textContent = 'Send'; }
   };
 }

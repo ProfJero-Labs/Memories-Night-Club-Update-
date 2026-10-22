@@ -647,6 +647,11 @@ test('scan to order: the bar QR opens the menu; pay; the pickup code shows only 
   await g.getByRole('button', { name: 'Pay' }).click();
   await g.waitForURL(/counter\.html/); await g.waitForSelector('.pickup', { timeout: 15000 });
   const code = (await g.textContent('.pickup')).trim();
+  // Waiting for the drinks never locks the menu: order more, and the pickup code is one tap back.
+  await g.getByRole('link', { name: 'Order more while you wait' }).click();
+  await g.waitForSelector('#find');
+  await g.getByRole('link', { name: /your order at the bar/i }).click();
+  await g.waitForSelector('.pickup'); assert.equal((await g.textContent('.pickup')).trim(), code);
   // The guest's text carries the pickup code (the Manager's payment alert may come after it).
   assert.match(store.sms.filter(x => x.to === '0241239876').at(-1).message, new RegExp(code));
   assert.ok(store.sms.some(x => /MoMo\/card confirmed/.test(x.message)), 'the Manager is texted that it went through');
@@ -662,6 +667,10 @@ test('scan to order: the bar QR opens the menu; pay; the pickup code shows only 
   await bar.getByText('Handed over.').waitFor();
   await g.getByText(/collected/i).waitFor({ timeout: 15000 });
   assert.equal(docs('counter_orders').find(o => o.pickupCode === code).status, 'delivered');
+  // After paying the guest goes on ordering; rating is a small optional link that leads back.
+  await g.getByRole('link', { name: 'Rate us' }).click(); await g.waitForURL(/review\.html/);
+  await g.getByRole('link', { name: /back to ordering/i }).click();
+  await g.waitForSelector('#find');
   assert.deepEqual([...g.errors, ...bar.errors], []);
 });
 
@@ -1030,6 +1039,9 @@ test('a night at the bar: tab without QR → bar → delivered → the customer 
   assert.match(await cust.textContent('#root'), /2 × Club beer/); assert.match(await cust.textContent('#pay'), /GHS 80/);
   await cust.click('#pay'); await cust.waitForURL(/dev\/paystack/); await cust.getByRole('button', { name: 'Pay' }).click();
   await cust.waitForURL(/bill\.html/); await cust.getByText('Payment confirmed. Thank you!').waitFor({ timeout: 20000 });
+  // Paid, but staying: the table stays open and they can order more from the bar menu.
+  await cust.getByText(/your table stays open/i).waitFor();
+  assert.match(await cust.getAttribute('a:has-text("Order more drinks")', 'href'), /^counter\.html\?s=[0-9a-f]{32}&t=12$/);
   await w.locator('.st').getByText('Paid', { exact: true }).waitFor({ timeout: 10000 });
   // Another round, paid in cash at the cashier
   await w.click('#add'); await w.waitForURL(/#add\//); await w.click('[data-p="dev-m-water"]'); await w.click('#send'); await w.waitForURL(/#tab\//);
