@@ -15,6 +15,7 @@ import * as payroll from './payroll.js';
 import * as purchases from './purchases.js';
 import * as director from './director.js';
 import * as reviews from './reviews.js';
+import * as tips from './tips.js';
 
 export async function opsRoute(m, p, u, b, env, user) {
   const q = k => u.searchParams.get(k) || undefined;
@@ -45,6 +46,9 @@ export async function opsRoute(m, p, u, b, env, user) {
       case '/api/ops/notices': return team.listNotices(env, user);
       case '/api/ops/payroll': return payroll.payroll(env, user, { month: q('month') });
       case '/api/ops/my-pay': return payroll.myPay(env, user);
+      case '/api/ops/my-tips': return tips.myTips(env, user);
+      case '/api/ops/tips/people': return tips.tipPeople(env, user);
+      case '/api/ops/tips/owed': return tips.tipsOwed(env, user);
       case '/api/ops/purchases': return purchases.purchases(env, user, { stationId: q('stationId') });
       case '/api/ops/to-approve': return director.toApprove(env, user);
       case '/api/ops/reviews': return reviews.listReviews(env, user, { days: q('days') });
@@ -105,6 +109,8 @@ export async function opsRoute(m, p, u, b, env, user) {
     case '/api/ops/loans/pay': return payroll.payLoan(env, b, user);
     case '/api/ops/payroll/submit': return payroll.submitPayroll(env, b, user);
     case '/api/ops/payroll/pay': return payroll.payPayroll(env, b, user);
+    case '/api/ops/tips': return tips.recordTip(env, b, user, { canTakeCash: tabs.canTakeCash, momoCheck: tabs.momoCheck });
+    case '/api/ops/tips/pay': return tips.payTips(env, b, user);
     case '/api/ops/purchases': return purchases.askPurchase(env, b, user);
     case '/api/ops/purchases/check': return purchases.checkPurchase(env, b, user);
     case '/api/ops/approve': return director.decide(env, b, user);

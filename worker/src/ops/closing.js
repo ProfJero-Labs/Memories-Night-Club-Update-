@@ -14,6 +14,7 @@ import { FORBIDDEN, bizDate, dateOr, audit, nightState, ghs } from './common.js'
 import { billOf } from './tabs.js';
 import { cashFigures } from './cash.js';
 import { stockSheet } from './stock.js';
+import { tipsOn, tipTotals } from './tips.js';
 
 const BOSS = ['superAdmin', 'director', 'manager'];
 const sum = (arr, f) => arr.reduce((n, x) => n + Number(f(x) || 0), 0);
@@ -33,7 +34,8 @@ async function nightData(env, date) {
   const qr = (await queryWhere(env, 'counter_orders', [{ field: 'status', value: 'paid' }])).concat(await queryWhere(env, 'counter_orders', [{ field: 'status', value: 'delivered' }]))
     .concat(await queryWhere(env, 'counter_orders', [{ field: 'status', value: 'refund_due' }])).concat(await queryWhere(env, 'counter_orders', [{ field: 'status', value: 'refunded' }]))
     .map(o => ({ id: o.id, ...o.fields })).filter(o => o.paidAt && nightKey(o.paidAt) === date);
-  return { tabs: T, rounds: R, cash: cash.map(c => ({ id: c.id, ...c.fields })), counts: counts.map(c => ({ id: c.id, ...c.fields })), approvals: approvals.map(a => ({ id: a.id, ...a.fields })), reports: reports.map(r => ({ id: r.id, ...r.fields })), stations: stations.map(s => ({ id: s.id, name: s.fields.name })), qr };
+  const tips = (await tipsOn(env, date)).filter(x => x.status !== 'cancelled');
+  return { tips, tabs: T, rounds: R, cash: cash.map(c => ({ id: c.id, ...c.fields })), counts: counts.map(c => ({ id: c.id, ...c.fields })), approvals: approvals.map(a => ({ id: a.id, ...a.fields })), reports: reports.map(r => ({ id: r.id, ...r.fields })), stations: stations.map(s => ({ id: s.id, name: s.fields.name })), qr };
 }
 
 // ── A waiter's own figures ──
@@ -62,6 +64,8 @@ export function waiterFigures(uid, data) {
     billsUnpaid: tabs.filter(t => ['unpaid', 'part_paid'].includes(t.bill.status)).length, unpaidPesewas: sum(tabs, t => t.bill.balancePesewas),
     unpaidTabs: tabs.filter(t => t.bill.balancePesewas > 0).map(t => ({ id: t.id, number: t.number, table: t.table, balancePesewas: t.bill.balancePesewas })),
     cashCollectedPesewas: sum(cash, p => p.amountPesewas), momoRecordedPesewas: sum(momo, p => p.amountPesewas),
+    // Tips for this person tonight (theirs, not part of the cash to hand in).
+    tipsPesewas: sum((data.tips || []).filter(x => x.toUid === uid), x => x.amountPesewas),
     cancelledRounds: data.rounds.filter(r => r.waiterUid === uid && r.status === 'cancelled').length,
   };
 }
@@ -163,6 +167,10 @@ function salesFrom(data) {
     byProduct: [...byProduct.values()].sort((a, b) => b.valuePesewas - a.valuePesewas),
     byMethod: [{ method: 'MoMo / card (Paystack, confirmed)', amountPesewas: digital }, { method: 'MoMo to the club’s number (recorded, check the statement)', amountPesewas: momo }, { method: 'Cash (recorded)', amountPesewas: cash }],
     momoPayments: tabPays.filter(p => p.method === 'momo').map(p => ({ tabNumber: p.tabNumber, amountPesewas: p.amountPesewas, momoRef: p.momoRef, momoFrom: p.momoFrom || '', byName: p.byName || '', at: p.at })),
+    // Tips: the staff's money, not sales. MoMo tips share the payment's transaction ID (one MoMo for
+    // bill and tip), so the MoMo statement = MoMo sales + MoMo tips.
+    tips: { ...tipTotals(data.tips || []), people: [...(data.tips || []).reduce((m, x) => m.set(x.toUid, { name: x.toName, amountPesewas: (m.get(x.toUid)?.amountPesewas || 0) + Number(x.amountPesewas || 0) }), new Map()).values()].sort((a, b) => b.amountPesewas - a.amountPesewas),
+      momo: (data.tips || []).filter(x => x.method === 'momo').map(x => ({ tabNumber: x.tabNumber || '', amountPesewas: x.amountPesewas, momoRef: x.momoRef, toName: x.toName, byName: x.byName || '', at: x.at })) },
     unpaid: data.tabs.filter(t => t.bill.balancePesewas > 0 && t.status !== 'written_off').map(t => ({ id: t.id, number: t.number, table: t.table, waiterName: t.waiterName, balancePesewas: t.bill.balancePesewas })),
   };
 }
@@ -265,6 +273,7 @@ export async function closeNight(env, b, user) {
   const fc = (await getDoc(env, 'config', 'finance'))?.fields || {};
   const to = fc.email || env.FINANCE_EMAIL || '';
   const lines = [`Memories: end of day ${d}`, `Sales ${ghs(sales.totals.salesPesewas)} · Paid ${ghs(sales.totals.paidPesewas)} (MoMo/card ${ghs(sales.totals.digitalPesewas)}, MoMo to the club ${ghs(sales.totals.momoPesewas || 0)}, cash ${ghs(sales.totals.cashPesewas)}) · Still owed ${ghs(sales.totals.owedPesewas)}`,
+    ...(sales.tips?.totalPesewas ? [`Tips for staff (not club money) ${ghs(sales.tips.totalPesewas)}: MoMo/card ${ghs(sales.tips.momoPesewas + sales.tips.digitalPesewas)}, cash ${ghs(sales.tips.cashPesewas)}`] : []),
     `Cash differences: ${report.exceptions.cashDifferences.length} · Stock differences: ${report.exceptions.stockDifferences.length} · Missing reports: ${report.exceptions.missingReports.length || 'none'}`,
     `Prepared by ${user.name || 'the manager'}. Open the full report: ${siteUrl(env, `/finance.html#report/${d}`)}`];
   const sent = to ? await sendEmail(env, to, `Memories end of day: ${d}`, lines) : false;

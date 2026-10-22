@@ -112,7 +112,11 @@ test('the bar: paid orders queue oldest first; hand over once; "can’t make it"
   const ref2 = store.list('pending_checkouts').find(p => p.fields.orderId === second.data.orderId).id;
   store.setPaystack(ref2, { status: 'success', currency: 'GHS', amount: 8000 });
   await call(env, 'GET', `/api/guest/counter/${second.data.orderId}`);
-  await call(env, 'POST', '/api/bar/order', { claims: BAR, body: { orderId: second.data.orderId, action: 'refund', reason: 'out of tequila' } });
+  // Paid: the bar can't turn it into a refund (that's chaos at the counter). Only the Manager can.
+  const barTry = await call(env, 'POST', '/api/bar/order', { claims: BAR, body: { orderId: second.data.orderId, action: 'refund', reason: 'out of tequila' } });
+  assert.equal(barTry.status, 403); assert.match(barTry.data.error, /Call the Manager/);
+  assert.equal(store.get('counter_orders', second.data.orderId).fields.status, 'paid');
+  assert.equal((await call(env, 'POST', '/api/bar/order', { claims: { role: 'manager' }, body: { orderId: second.data.orderId, action: 'refund', reason: 'out of tequila' } })).status, 200);
   const refunds = await call(env, 'GET', '/api/admin/refunds', { claims: { role: 'superAdmin' } });
   const owed = refunds.data.refunds.find(x => x.source === 'counter');
   assert.equal(owed.amountPesewas, 8000); assert.equal(owed.reason, 'out of tequila');

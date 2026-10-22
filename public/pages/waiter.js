@@ -8,7 +8,7 @@ import { $, $$, esc, normalizePhone } from '../app.js';
 import { requireStaff, staffHeader, sapi } from '../staff.js';
 import { qrSvg } from '../ticket-art.js';
 import { sheet, say, st, every, bottomNav, busy, ghsIn, moneyField, money, when } from '../lib/ops-ui.js';
-import { drinkPicker, paySheet, handInCash } from '../lib/sell.js';
+import { drinkPicker, paySheet, handInCash, tipBox, tipSheet, tipSaid } from '../lib/sell.js';
 
 const user = await requireStaff(['waitStaff', 'eventManager', 'superAdmin', 'director', 'manager']);
 staffHeader(user, 'Tables');
@@ -37,9 +37,11 @@ async function tabsList() {
   app.innerHTML = `<h1>My tables</h1>
     <div class="btn-row"><button class="big" id="quick">Quick sale</button><button class="big ghost" id="newTab">Open a table</button></div>
     <p class="muted" style="margin:0">Quick sale: the customer pays now. Table: they keep ordering and pay at the end.</p>
+    <button class="link" id="tipOnly" style="justify-self:start">Record a tip (no bill)</button>
     <div id="msg"></div><div class="cards" id="list"><div class="loading">Loading…</div></div>`;
   $('#newTab').onclick = newTab;
   $('#quick').onclick = () => { location.hash = 'quick'; };
+  $('#tipOnly').onclick = () => tipSheet(sapi, user.uid, m => say($('#msg'), m));
   const flash = sessionStorage.getItem('waiter-flash'); if (flash) { sessionStorage.removeItem('waiter-flash'); say($('#msg'), flash); }
   stop = every(6000, async alive => {
     const { tabs } = await sapi('/api/ops/tabs');
@@ -208,10 +210,12 @@ function takePayment(t) {
       <div class="sfield"><label for="tcFrom">Paid from number (optional)</label><input id="tcFrom" type="tel" inputmode="tel" placeholder="024 123 4567"></div>
     </div>
     <p class="muted" id="tcHint" style="margin:0">Give change from the cash. Cash you take goes in your report.</p>
+    <div id="tcTip"></div>
     <div id="tcMsg"></div><button class="big" id="tcGo">Record cash</button><button class="big ghost" data-close>Cancel</button>`, { label: 'Customer paid' });
   let method = 'cash';
+  const tb = tipBox($('#tcTip', box), sapi, t.waiterUid || user.uid);
   $$('[data-m]', box).forEach(b => b.onclick = () => {
-    method = b.dataset.m;
+    method = b.dataset.m; tb.method(method);
     $$('[data-m]', box).forEach(x => { x.classList.toggle('on', x === b); x.setAttribute('aria-checked', String(x === b)); });
     $('#tcMomo', box).hidden = method !== 'momo';
     $('#tcHint', box).textContent = method === 'momo' ? 'Only record MoMo you can see arrived on the club’s number. Finance checks every ID.' : 'Give change from the cash. Cash you take goes in your report.';
@@ -219,11 +223,11 @@ function takePayment(t) {
     if (method === 'momo') $('#tcRef', box).focus();
   });
   $('#tcGo', box).onclick = async () => {
-    const body = { tabId: t.id, method, amountPesewas: ghsIn($('#tcAmt', box).value) };
-    if (method === 'momo') Object.assign(body, { momoRef: $('#tcRef', box).value, momoFrom: $('#tcFrom', box).value.trim() || undefined });
     try {
+      const body = { tabId: t.id, method, amountPesewas: ghsIn($('#tcAmt', box).value), ...tb.value() };
+      if (method === 'momo') Object.assign(body, { momoRef: $('#tcRef', box).value, momoFrom: $('#tcFrom', box).value.trim() || undefined });
       const r = await busy($('#tcGo', box), () => sapi('/api/ops/tabs/pay', { method: 'POST', body }));
-      const what = method === 'momo' ? 'MoMo recorded.' : 'Cash recorded.';
+      const what = `${method === 'momo' ? 'MoMo recorded.' : 'Cash recorded.'}${tipSaid(r)}`;
       close(); route(); setTimeout(() => say($('#msg'), r.balancePesewas ? `${what} ${money(r.balancePesewas)} still to pay.` : `${what} The table is paid.`), 50);
     } catch (e) { say($('#tcMsg', box), e.message, 'bad'); }
   };
@@ -276,10 +280,10 @@ async function quickSale(stationId) {
     title: 'Quick sale', top: pickBar, button: n => `Customer pays · ${n}`, onBack: () => { location.hash = 'tabs'; },
     onSend: async (lines, total) => {
       paySheet(total, async pay => {
-        await sapi('/api/ops/quick-sale', { method: 'POST', body: { lines, stationId, ...pay } });
-        sessionStorage.setItem('waiter-flash', `${pay.method === 'momo' ? 'MoMo' : 'Cash'} ${money(total)} recorded. Collect the drinks at the bar, then tap “I got them”.`);
+        const r = await sapi('/api/ops/quick-sale', { method: 'POST', body: { lines, stationId, ...pay } });
+        sessionStorage.setItem('waiter-flash', `${pay.method === 'momo' ? 'MoMo' : 'Cash'} ${money(total)} recorded.${tipSaid(r)} Collect the drinks at the bar, then tap “I got them”.`);
         location.hash = 'tabs';
-      }, { title: 'Quick sale' });
+      }, { title: 'Quick sale', sapi, tipFor: user.uid });
     },
   });
   $('#qsBar') && ($('#qsBar').onchange = e => { sessionStorage.setItem('waiter-bar', e.target.value); quickSale(e.target.value); });
@@ -310,7 +314,8 @@ async function report() {
       <div><span>I sold</span><b>${money(f.salesPesewas)}</b></div>
       <div class="good"><span>Cash with me</span><b>${money(f.cashCollectedPesewas)}</b></div>
       <div class="good"><span>MoMo I took</span><b>${money(f.momoRecordedPesewas)}</b></div>
-      <div class="${f.unpaidPesewas ? 'bad' : 'good'}"><span>Not paid yet</span><b>${money(f.unpaidPesewas)}</b></div></div>
+      <div class="${f.unpaidPesewas ? 'bad' : 'good'}"><span>Not paid yet</span><b>${money(f.unpaidPesewas)}</b></div>
+      <div><span>My tips tonight</span><b>${money(f.tipsPesewas || 0)}</b><small class="muted">Yours: not in the cash to hand in</small></div></div>
     <details class="fold"><summary>More details</summary><div class="nums">
       <div><span>Orders taken</span><b>${f.ordersTaken}</b></div><div><span>Your sales</span><b>${money(f.salesPesewas)}</b></div>
       <div><span>Drinks from the bar</span><b>${f.receivedQty}</b><small class="muted">${money(f.receivedPesewas)}</small></div>

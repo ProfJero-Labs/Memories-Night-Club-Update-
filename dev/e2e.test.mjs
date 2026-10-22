@@ -932,6 +932,48 @@ test('people: the Human manager sets the DJ’s pay and a bonus and sends the mo
   assert.deepEqual([...hr.errors, ...d2.errors, ...fin.errors, ...dj.errors, ...mg.errors], []);
 });
 
+test('tips: a waiter’s MoMo quick sale carries a tip for the DJ; the bar records a cash tip; a QR guest adds a tip; finance pays the DJ’s tips; the DJ sees them', async () => {
+  const w = await phone(360); await signInAs(w, 'waiter2@dev'); await w.waitForURL(/waiter\.html/);
+  await w.click('#quick'); await w.waitForURL(/#quick/); await w.click('[data-p="dev-m-shot"]'); await w.click('#send');
+  await w.click('[data-pm="momo"]'); await w.fill('#psRef', '7712345601');
+  await w.locator('summary', { hasText: 'Customer gave a tip' }).click();
+  await w.waitForSelector('#tipTo option[value="uid-dj"]', { state: 'attached' });
+  await w.fill('#tipAmt', '20'); await w.selectOption('#tipTo', 'uid-dj'); await w.click('#psGo');
+  await w.waitForURL(/#tabs/); await w.locator('#msg').getByText(/MoMo GHS 30 recorded\. Tip GHS 20 for Dev/).waitFor();
+  const tip = docs('tips').find(t => t.momoRef === '7712345601');
+  assert.deepEqual([tip.toUid, tip.amountPesewas, tip.status], ['uid-dj', 2000, 'owed']);
+  assert.ok(docs('tabs').some(t => t.payments?.[0]?.momoRef === '7712345601' && t.payments[0].amountPesewas === 3000), 'the sale is the drinks only');
+  // The bar: a cash tip without a bill, kept by the bartender.
+  const bar = await phone(390); await signInAs(bar, 'bar@dev'); await bar.waitForURL(/bar\.html/);
+  await bar.click('[data-k="sell"]'); await bar.click('#vSell #tipOnly');
+  await bar.waitForSelector('.sheet #tipTo option[value]:not([value=""])', { state: 'attached' });
+  await bar.fill('.sheet #tipAmt', '15'); await bar.click('#tsGo');
+  await bar.locator('#msgTop').getByText(/Tip GHS 15 recorded/).waitFor();
+  // The waiter's quick sale is finished as usual: the bar hands it over, the waiter got them.
+  await bar.click('[data-k="orders"]');
+  await bar.locator('#rounds .ord').filter({ hasText: 'Quick sale' }).locator('[data-a="hand"]').click();
+  await w.locator('.tcard').filter({ hasText: 'Quick sale' }).first().click();
+  await w.locator('[data-act="delivered"]').waitFor({ timeout: 10000 }); await w.click('[data-act="delivered"]');
+  await w.locator('.say').getByText('Closed').waitFor({ timeout: 10000 });
+  // A QR guest adds a tip: the pay button shows drinks + tip.
+  const g = await phone(360); await g.goto(`${base}/counter.html?s=0123456789abcdef0123456789abcdef`); await g.waitForSelector('#find');
+  await g.locator('[data-p]').first().click();
+  await g.click('[data-tip="1000"]'); await g.waitForSelector('#tipWho:not([hidden])');
+  assert.ok((await g.locator('#tipTo option').allTextContents()).every(t => !/Director/.test(t)), 'no directors to tip');
+  assert.match(await g.locator('#dock').textContent(), /tip GHS 10/);
+  // Finance pays the DJ's tips; the DJ sees them paid.
+  const fin = await phone(390); await signInAs(fin, 'finance@dev'); await fin.waitForURL(/finance\.html/);
+  await fin.click('.bnav [data-k="pay"]'); await fin.locator('a[href="#tips"]').click();
+  await fin.locator('#app').getByText('Tips owed to staff').first().waitFor();
+  await fin.locator('.ln', { hasText: 'Dev DJ' }).locator('[data-payt]').click();
+  await fin.fill('#ptRef', 'MM-TIP-1'); await fin.click('#ptGo'); await fin.locator('#tMsg').getByText(/They’ve been texted/).waitFor();
+  assert.match(store.sms.filter(x => x.to === '0200000016').at(-1).message, /your tips are paid: GHS 20/);
+  const dj = await phone(360); await signInAs(dj, 'dj@dev'); await dj.waitForURL(/me\.html/);
+  await dj.click('.bnav [data-k="pay"]'); await dj.locator('h2', { hasText: 'My tips' }).waitFor();
+  assert.match(await dj.textContent('#app'), /Paid to me\s*GHS 20/);
+  assert.deepEqual([...w.errors, ...bar.errors, ...g.errors, ...fin.errors, ...dj.errors], []);
+});
+
 test('sign-in: an email typed in the phone box goes to the email form', async () => {
   const p = await phone(360);
   await p.goto(`${base}/login.html`); await p.waitForSelector('#pinForm');

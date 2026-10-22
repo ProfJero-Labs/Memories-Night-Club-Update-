@@ -83,6 +83,8 @@ removal applies at once. Each row is covered by `worker/test/staffauth.test.js` 
 | `GET /api/ops/money`, `/payments`, `/budget` | Manager, director, finance, admin |
 | `POST /api/ops/expenses`, `/expenses/remove` | Manager, director, finance, admin (taking one off: finance, director, admin, or whoever added it) |
 | `POST /api/ops/budget`, `/bills`, `/bills/pay`, `/bills/remove`, `/bills/copy` | Finance, admin |
+| `GET /api/ops/tips/people`, `/my-tips` | Every staff member (their own tips; directors and the admin aren't tipped). `POST /api/ops/tips` (a tip without a bill): whoever takes payments. Tips with a payment ride on `/tabs/pay` and `/quick-sale` (`tipPesewas`, `tipToUid`) |
+| `GET /api/ops/tips/owed` | Finance, admin, director, manager (look). `POST /tips/pay`: finance, admin (no director: it's the staff's own money) |
 | `GET /api/ops/commissions` | Manager, director, finance, admin. `POST /commissions/assign`: the same. `POST /commissions/pay`: finance, admin |
 | `GET/POST /api/admin/people…` | Directors (anyone but an admin), the Human manager (staff jobs: front office, security, bar, floor, cashier, DJ, MC), the Event manager (organisers only). The Manager no longer adds staff. A director's `sharePct`: system admin only |
 | `GET /api/admin/members…`, `/attendance` | System admin, directors, Manager, Human manager, Event manager |

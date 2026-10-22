@@ -1,11 +1,13 @@
 // bar.html: the bar's screen for scan-to-order. Paid orders only (Paystack confirmed), oldest
 // first, with the pickup code big. Hand over against the code on the guest's phone. Refreshes
-// every 5 seconds; nothing here moves money: "Can't make it" puts the order in Refunds.
+// every 5 seconds; nothing here moves money. Paid orders are only cancelled by the Manager (a refund).
 import { $, $$, esc, money } from '../app.js';
 import { requireStaff, staffHeader, sapi } from '../staff.js';
 import { openQrMaker } from '../lib/qrcard.js';
 const user = await requireStaff(['superAdmin', 'director', 'manager', 'eventManager', 'barStaff']);
 staffHeader(user, 'Bar');
+// The guest has paid: only the Manager can cancel it (a refund). Nothing sells past zero, so the drinks are there.
+const canCancel = ['superAdmin', 'manager'].includes(user.role);
 let station = sessionStorage.getItem('bar-station') || '', open = true, timer = null, data = null, seen = null;
 let sound = localStorage.getItem('bar-sound') === '1';
 const flash = (t, bad = false) => { $('#msg').innerHTML = t ? `<div class="msg ${bad ? 'err' : ''}" role="status">${esc(t)}</div>` : ''; if (t && !bad) setTimeout(() => flash(''), 3500); };
@@ -25,11 +27,11 @@ function draw() {
   $('#orders').innerHTML = list.map(o => `<article class="ord ${q && o.pickupCode === q ? 'hit' : ''} ${late(o) ? 'late' : ''}" aria-label="Order ${esc(o.pickupCode)}"><div class="head"><span class="code">${esc(o.pickupCode)}</span><span class="waited">${ago(o.paidAt)}</span></div>
     ${o.spot ? `<span class="spot">${esc(table(o))}</span>` : ''}
     <ul>${o.lines.map(l => `<li><b>${l.qty}×</b><span>${esc(l.name)}</span></li>`).join('')}</ul><span class="foot-small">${money(o.totalPesewas)} paid · phone …${esc(o.phoneLast4)}</span>
-    <div class="act"><button class="sbtn red" data-go="${esc(o.id)}">Hand over</button><button class="sbtn ghost" data-no="${esc(o.id)}">Can’t make it</button></div></article>`).join('')
+    <div class="act"><button class="sbtn red" data-go="${esc(o.id)}">Hand over</button>${canCancel ? `<button class="sbtn ghost" data-no="${esc(o.id)}">Cancel and refund</button>` : ''}</div>${canCancel ? '' : '<span class="foot-small">Paid: it can’t be cancelled here. A problem? Call the Manager.</span>'}</article>`).join('')
     || (q ? '<div class="bar-empty"><b>No match</b>No paid order with that code. Ask to see their phone: the code only shows once MoMo confirms.</div>' : '<div class="bar-empty"><b>All clear</b>New paid orders appear here by themselves.</div>');
   $('#done').innerHTML = data.delivered.map(o => `<tr><td><strong>${esc(o.pickupCode)}</strong></td><td>${esc(table(o)) || '—'}</td><td>${o.lines.map(l => `${l.qty} × ${esc(l.name)}`).join(', ')}</td><td>${ago(o.deliveredAt)}</td></tr>`).join('') || '<tr><td colspan="4" class="empty-row">None yet tonight.</td></tr>';
   $$('[data-go]').forEach(b => b.onclick = () => act(b.dataset.go, 'deliver'));
-  $$('[data-no]').forEach(b => b.onclick = () => { const why = prompt('Why can’t the bar make it? (e.g. out of tequila)'); if (why !== null) act(b.dataset.no, 'refund', why); });
+  $$('[data-no]').forEach(b => b.onclick = () => { const why = prompt('This guest has paid. Only cancel if it truly can’t be served. Why? (e.g. bottle broke)'); if (why) act(b.dataset.no, 'refund', why); });
 }
 async function act(orderId, action, reason) {
   try {

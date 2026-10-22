@@ -41,7 +41,7 @@ training.
 | Human manager | **Human manager** (hr.html) | The floor (open tables, free drinks and discounts) and the people: **staff accounts** (adds, changes, removes; texts PINs), members and attendance, **salaries** and payment details, bonuses, deductions, **loans**, the month's payroll (sends it to the directors), notices, **staff feedback**, **performance reviews**, customer reviews and complaints. |
 | Event manager | **Control room** | Nights, tickets, prices, promotions, bookings, **organiser accounts**, table service, **discounts** (approves them), members. **Serves tables like a waiter** (name menu → *Serve tables*): opens a table, sends drinks, takes cash or MoMo, closes it. |
 | Director (two) | **Tonight**, **Money**, **To approve** | **Approves every payment** (salaries, loans, bills, commissions, drinks purchases); either director can approve. Money shows money in, out, profit and **their own share** (e.g. 35% / 65%, set by the system admin). More: reports, salaries, bills and budget, commissions, customer reviews, staff feedback, performance reviews, tables, staff, members. Nothing from the ticket side. |
-| DJ, MC (and every staff member) | **My page** (me.html) | Notices, the team message board, **My pay** (salary, payslips, loans), feedback or complaints (to the Human manager or the directors, anonymous if they like), their performance reviews. Everyone else opens it from the name menu. |
+| DJ, MC (and every staff member) | **My page** (me.html) | Notices, the team message board, **My pay** (salary, payslips, loans; not for the directors, who aren't on payroll), feedback or complaints (to the Human manager or the directors, anonymous if they like), their performance reviews. Everyone else opens it from the name menu. |
 | System admin | **Control room** | Everything technical: the site, nights, tickets, promos, settings, system health, bar setup, and every report. |
 | Finance officer | **Finance** | Today, **Money** (in, out, profit; add expenses), Stock (*Record drinks bought*, stock the manager added, the bar's counts and the manager's explanations; drinks, prices and costs), Check (staff reports, cash, approvals), Reports (end of day, sign off, print, CSV) |
 | Events manager | Control room | Nights, tickets, tables, promos, bar setup (no money reports) |
@@ -116,6 +116,11 @@ training.
   flagged on the manager's Tonight screen; the manager explains it (the manager holds the keys) and
   finance sees the explanation. From the count on, the bar sells from what it actually found.
 - **Nothing sells past zero**: what's left = expected stock − orders at the bar not yet handed over.
+  A QR order being paid holds its drinks (30 minutes), so two guests can't buy the last bottle.
+  It's checked before anyone pays, so there are no refunds for finished drinks.
+- **No refunds at the bar**: once an order is paid (a QR order or a quick sale), the bar can't
+  cancel it. Only the Manager can, as a last resort (e.g. a bottle broke), and it goes to Refunds.
+  A table order isn't paid yet, so the bar can still say it can't make it.
 - **Closing count:** the bar types what it counts; any difference shows straight away ("3 fewer than
   expected") and needs a reason. A submitted count is locked; a correction needs approval from
   someone else, and the first count is kept.
@@ -157,6 +162,31 @@ training.
 - **The director** sees, month by month: what's still to pay out, what's been paid, who is owed, and
   every deal (sold for how much, served by whom, brought by whom).
 
+## Tips
+
+A tip is the staff member's money, never the club's: it is kept apart from the bill, so it is
+never in sales, money in or profit.
+
+- **Who can be tipped**: anyone on the team (waiters, bartenders, security, DJ, MC, managers…), not
+  the directors or the system admin. The customer says who; the person serving is picked by default.
+- **With a payment**: on *Customer paid* (a table) or a quick sale, open **Customer gave a tip**,
+  enter the amount and who it's for. With MoMo, one transaction for bill and tip is fine: they
+  share the transaction ID.
+- **Without a bill** (e.g. a customer tips the DJ): **Record a tip (no bill)** on the waiter's and
+  the bar's screens. Only people who take payments can record one.
+- **On the bill link and the QR menu** the customer picks a tip (GHS 10, 20, 50 or another amount)
+  and who it's for. It's charged with the drinks and split off when Paystack confirms it. If the
+  Manager cancels a paid QR order (last resort), the tip is refunded with the drinks.
+- **Cash tips**: the person keeps them. They are not in the cash the waiter or bartender hands in.
+- **MoMo and card tips** come into the club's account, so the club owes them to the person.
+  **Finance pays them out weekly** (*To pay → Tips owed to staff*), with no director needed since
+  it's the staff's own money. MoMo tips sent to the club's number show their transaction IDs:
+  check them on the statement first. The person gets a text when a tip arrives and when it's paid.
+- **Each person** sees their tips on **My page → My pay → My tips**: tonight, this week, owed to me,
+  paid to me, cash I kept. Waiters and bartenders also see *My tips tonight* on their report.
+- **Reports**: the night's sales report and the Money screen show tips separately (MoMo on the
+  statement = MoMo sales + MoMo tips), and *Payments tonight* shows the tip on each payment.
+
 ## Customer reviews
 
 - After paying (the bill link, the QR receipt, *My night*), customers are asked **How was your
@@ -191,6 +221,8 @@ training.
   (MoMo or bank), adds bonuses and deductions during the month, and **sends the month** to the
   directors. A director approves (or sends it back with what to change); finance pays each person;
   they get a text and their payslip on My page. It shows in Money out (Staff pay).
+  The directors aren't on payroll: the Human manager can't set a salary, bonus or loan for a
+  director, and directors don't count in the month's salaries.
 - **Loans**: the Human manager records it (amount, what for, how much comes off each salary); a
   director approves; finance pays it out (Staff loans); the repayment comes off each month's pay.
 - **Bills** (finance) and **commissions** (finance or a manager asks): a director approves; then

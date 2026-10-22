@@ -19,6 +19,7 @@ import { now, id, clean, nightKey } from '../lib/util.js';
 import { requireRole, uidOf, REPORTS } from '../lib/auth.js';
 import { FORBIDDEN, bizDate, isDate, audit, int, ghs } from './common.js';
 import { billOf } from './tabs.js';
+import { tipTotals } from './tips.js';
 
 export const EXPENSE_HANDS = ['superAdmin', 'director', 'manager', 'finance'];
 export const EXPENSE_CATEGORIES = { staff: 'Staff pay', dj: 'DJ and artists', rent: 'Rent', power: 'Light and water', fuel: 'Fuel / generator', security: 'Security', cleaning: 'Cleaning', repairs: 'Repairs', marketing: 'Adverts and promotion', supplies: 'Ice, cups and supplies', transport: 'Transport', commission: 'Commissions', loans: 'Staff loans', other: 'Other' };
@@ -92,10 +93,10 @@ export async function moneyReport(env, user, q = {}) {
   const inRange = d => d >= p.from && d <= p.to;
   // Everything created from the day before the period (a night runs past midnight), filtered by night.
   const since = new Date(new Date(`${p.from}T00:00:00Z`).getTime() - DAY);
-  const [tabsRaw, roundsRaw, qrRaw, ordersRaw, buysRaw, expRaw, items] = await Promise.all([
+  const [tabsRaw, roundsRaw, qrRaw, ordersRaw, buysRaw, expRaw, items, tipsRaw] = await Promise.all([
     queryRecent(env, 'tabs', 'createdAt', since, 10000), queryRecent(env, 'rounds', 'createdAt', since, 20000), queryRecent(env, 'counter_orders', 'createdAt', since, 10000),
     queryRecent(env, 'orders', 'createdAt', since, 10000), queryRecent(env, 'stock_deliveries', 'recordedAt', since, 5000), queryRecent(env, 'expenses', 'createdAt', since, 5000),
-    listDocs(env, 'menu_items'),
+    listDocs(env, 'menu_items'), queryRecent(env, 'tips', 'at', since, 10000),
   ]);
   const cost = Object.fromEntries(items.map(i => [i.id, Number(i.fields.costPesewas || 0)]));
   const rounds = roundsRaw.map(r => ({ id: r.id, ...r.fields })).filter(r => r.status !== 'cancelled');
@@ -142,6 +143,9 @@ export async function moneyReport(env, user, q = {}) {
   const owners = (await queryWhere(env, 'users', [{ field: 'role', value: 'director' }])).filter(d => !d.fields.removed && Number(d.fields.sharePct) > 0)
     .map(d => ({ uid: d.id, name: d.fields.name || 'Director', pct: Number(d.fields.sharePct), profitPesewas: Math.round((moneyIn - moneyOut) * Number(d.fields.sharePct) / 100) })).sort((a, b) => b.pct - a.pct);
   const mine = owners.find(o => o.uid === uidOf(user));
+  // Tips: the staff's money, not the club's. Not in money in or profit; shown so the MoMo and
+  // Paystack totals add up, and so the directors see what the club holds for staff.
+  const tipsIn = tipTotals(tipsRaw.map(d => ({ id: d.id, ...d.fields })).filter(x => inRange(x.businessDate)));
   const byCat = new Map();
   for (const e of live) byCat.set(e.category, (byCat.get(e.category) || 0) + e.amountPesewas);
   return {
@@ -160,6 +164,7 @@ export async function moneyReport(env, user, q = {}) {
     purchases: buys.sort((a, b) => String(b.recordedAt).localeCompare(String(a.recordedAt))).slice(0, 50).map(d => ({ id: d.id, date: d.businessDate || nightKey(d.recordedAt), productName: d.productName, qty: d.confirmedQty ?? d.qty, costPesewas: buyCost(d), recordedByName: d.recordedByName, supplier: d.supplier || '' })),
     expenses: expenses.sort((a, b) => b.date.localeCompare(a.date) || String(b.createdAt).localeCompare(String(a.createdAt))).slice(0, 100).map(e => ({ id: e.id, date: e.date, category: e.category, categoryLabel: EXPENSE_CATEGORIES[e.category] || e.category, description: e.description, amountPesewas: e.amountPesewas, paidWith: PAID_WITH[e.paidWith] || '', recordedByName: e.recordedByName, removed: !!e.removed, approval: e.approval || '', decisionNote: e.decisionNote || '', decidedByName: e.decidedByName || '', removedReason: e.removedReason || '', removedByName: e.removedByName || '', canRemove: !e.removed && (e.recordedBy === uidOf(user) || !!requireRole(user, ['finance', 'director', 'superAdmin'])) })),
     byNight: [...days.values()].filter(d => d.inPesewas || d.outPesewas).map(d => ({ ...d, profitPesewas: d.inPesewas - d.outPesewas })).sort((a, b) => b.date.localeCompare(a.date)),
+    tips: { ...tipsIn, note: 'Tips are the staff’s money: not in money in or profit. MoMo and card tips came into the club’s account; finance pays them out.' },
     summary: `${p.label}: ${ghs(moneyIn)} in, ${ghs(moneyOut)} out, ${moneyIn - moneyOut >= 0 ? `${ghs(moneyIn - moneyOut)} profit` : `${ghs(moneyOut - moneyIn)} loss`}.`,
   };
 }

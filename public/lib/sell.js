@@ -1,7 +1,7 @@
 // Selling, shared by the waiter and the bar: pick drinks (showing how many are left, finished ones
 // can't be picked) and take the payment (Cash, or MoMo with its transaction ID).
 import { $, $$, esc } from '../app.js';
-import { sheet, say, busy, money } from './ops-ui.js';
+import { sheet, say, busy, money, moneyField, ghsIn } from './ops-ui.js';
 
 // Draws a drink list into `el`. products: from /api/ops/products?stationId=… (with `left`).
 // onSend(lines, total) runs when the big button is tapped; it may throw to show an error.
@@ -32,8 +32,61 @@ export function drinkPicker(el, products, { title = 'Pick drinks', top = '', but
   draw();
 }
 
+// "Customer gave a tip": the amount and who it's for (the person serving, unless the customer
+// names someone else). Drawn into `holder`; value() gives { tipPesewas, tipToUid } or {}.
+// A tip is the staff member's money: never part of the bill or the cash to hand in.
+export function tipBox(holder, sapi, defaultUid) {
+  holder.innerHTML = `<details class="fold" data-tipbox><summary>Customer gave a tip</summary>
+    ${moneyField('tipAmt', 'Tip (GHS)', '', 'On top of the bill. It isn’t the club’s money.')}
+    <div class="sfield"><label for="tipTo">Tip for</label><select id="tipTo"><option value="">Loading names…</option></select><span class="hint">You, or whoever the customer names.</span></div>
+    <p class="muted" data-tiphint style="margin:0"></p></details>`;
+  const sel = $('#tipTo', holder);
+  sapi('/api/ops/tips/people').then(d => {
+    sel.innerHTML = '<option value="">Pick who it’s for</option>' + d.people.map(p => `<option value="${esc(p.uid)}" ${p.uid === defaultUid ? 'selected' : ''}>${esc(p.name)}${p.roleName ? ` (${esc(p.roleName)})` : ''}</option>`).join('');
+  }).catch(() => { sel.innerHTML = '<option value="">Couldn’t load the names</option>'; });
+  const hint = method => { $('[data-tiphint]', holder).textContent = method === 'momo' ? 'One MoMo for bill and tip is fine: it has one transaction ID. Finance pays MoMo tips out weekly.' : 'Cash tip: the person keeps it. It isn’t in your cash to hand in.'; };
+  hint('cash');
+  return {
+    method: hint,
+    value() {
+      const v = $('#tipAmt', holder).value.trim();
+      if (!v) return {};
+      const tipPesewas = ghsIn(v);
+      if (!(tipPesewas >= 100)) throw new Error('A tip is at least GHS 1, or leave it empty.');
+      if (!sel.value) throw new Error('Pick who the tip is for.');
+      return { tipPesewas, tipToUid: sel.value };
+    },
+  };
+}
+const tipSaid = r => (r?.tip ? ` Tip ${money(r.tip.amountPesewas)} for ${String(r.tip.toName || '').split(/\s+/)[0]}.` : '');
+export { tipSaid };
+
+// A tip on its own (no bill), e.g. a customer tips the DJ: cash, or MoMo to the club's number.
+export function tipSheet(sapi, defaultUid, done = () => {}) {
+  const { box, close } = sheet(`<h2>Record a tip</h2><p class="muted" style="margin:0">For a tip without a bill. With a bill, add the tip when you take the payment.</p>
+    <div class="seg" role="radiogroup" aria-label="How they paid"><button type="button" class="mid on" data-tm="cash" role="radio" aria-checked="true">Cash</button><button type="button" class="mid" data-tm="momo" role="radio" aria-checked="false">MoMo</button></div>
+    <div id="tsBox"></div>
+    <div id="tsMomo" hidden><div class="sfield"><label for="tsRef">MoMo transaction ID</label><input id="tsRef" maxlength="40" autocomplete="off" autocapitalize="characters" placeholder="From the MoMo text"></div></div>
+    <div id="tsMsg"></div><button class="big" id="tsGo">Record tip</button><button class="big ghost" data-close>Cancel</button>`, { label: 'Record a tip' });
+  const tb = tipBox($('#tsBox', box), sapi, defaultUid);
+  $('[data-tipbox]', box).open = true; $('[data-tipbox] summary', box).hidden = true;
+  let method = 'cash';
+  $$('[data-tm]', box).forEach(b => b.onclick = () => {
+    method = b.dataset.tm; tb.method(method);
+    $$('[data-tm]', box).forEach(x => { x.classList.toggle('on', x === b); x.setAttribute('aria-checked', String(x === b)); });
+    $('#tsMomo', box).hidden = method !== 'momo';
+  });
+  $('#tsGo', box).onclick = async () => {
+    try {
+      const t = tb.value(); if (!t.tipPesewas) throw new Error('Enter the tip amount.');
+      const r = await busy($('#tsGo', box), () => sapi('/api/ops/tips', { method: 'POST', body: { method, ...t, ...(method === 'momo' ? { momoRef: $('#tsRef', box).value } : {}) } }));
+      close(); done(`Tip ${money(r.amountPesewas)} recorded for ${String(r.toName || '').split(/\s+/)[0]}.`);
+    } catch (e) { say($('#tsMsg', box), e.message, 'bad'); }
+  };
+}
+
 // The payment sheet for a fixed amount. pay({ method, momoRef, momoFrom }) records it; it may throw.
-export function paySheet(totalPesewas, pay, { title = 'Customer pays' } = {}) {
+export function paySheet(totalPesewas, pay, { title = 'Customer pays', sapi = null, tipFor = '' } = {}) {
   const { box, close } = sheet(`<h2>${esc(title)}: ${money(totalPesewas)}</h2>
     <div class="seg" role="radiogroup" aria-label="How they paid"><button type="button" class="mid on" data-pm="cash" role="radio" aria-checked="true">Cash</button><button type="button" class="mid" data-pm="momo" role="radio" aria-checked="false">MoMo</button></div>
     <div id="psMomo" hidden>
@@ -41,10 +94,12 @@ export function paySheet(totalPesewas, pay, { title = 'Customer pays' } = {}) {
     </div>
     <div class="sfield"><label for="psFrom">Customer’s phone (optional)</label><input id="psFrom" type="tel" inputmode="tel" placeholder="024 123 4567"><span class="hint">So the manager sees what each customer spends tonight. For MoMo, the number it came from.</span></div>
     <p class="muted" id="psHint" style="margin:0">Take ${money(totalPesewas)} and give change. It goes in your cash for tonight.</p>
+    <div id="psTip"></div>
     <div id="psMsg"></div><button class="big" id="psGo">Cash received</button><button class="big ghost" data-close>Cancel</button>`, { label: title });
   let method = 'cash';
+  const tb = sapi ? tipBox($('#psTip', box), sapi, tipFor) : null;
   $$('[data-pm]', box).forEach(b => b.onclick = () => {
-    method = b.dataset.pm;
+    method = b.dataset.pm; tb?.method(method);
     $$('[data-pm]', box).forEach(x => { x.classList.toggle('on', x === b); x.setAttribute('aria-checked', String(x === b)); });
     $('#psMomo', box).hidden = method !== 'momo';
     $('#psHint', box).textContent = method === 'momo' ? 'Finance checks every MoMo ID against the club’s statement.' : `Take ${money(totalPesewas)} and give change. It goes in your cash for tonight.`;
@@ -53,8 +108,10 @@ export function paySheet(totalPesewas, pay, { title = 'Customer pays' } = {}) {
   });
   $('#psGo', box).onclick = async () => {
     const phone = $('#psFrom', box).value.trim() || undefined;
-    const body = { method, customerPhone: phone, ...(method === 'momo' ? { momoRef: $('#psRef', box).value, momoFrom: phone } : {}) };
-    try { await busy($('#psGo', box), () => pay(body)); close(); }
+    try {
+      const body = { method, customerPhone: phone, ...(method === 'momo' ? { momoRef: $('#psRef', box).value, momoFrom: phone } : {}), ...(tb ? tb.value() : {}) };
+      await busy($('#psGo', box), () => pay(body)); close();
+    }
     catch (e) { say($('#psMsg', box), e.message, 'bad'); }
   };
   return close;
