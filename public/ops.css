@@ -194,3 +194,11 @@ html.sheet-open, html.sheet-open body { overflow: hidden; }
 .pfacts a { color: var(--paper); }
 .big.staff-rm { margin-top: 18px; color: #ff7a9c; border-color: rgba(255, 122, 156, .45); }
 .pincards small { font-size: 13px !important; }
+
+/* Hero numbers stacked: the big one, then the pair under it. */
+.hero-stack { display: grid; gap: 10px; }
+.hero small, .hero span + span { font: 500 14px/1.35 var(--sans); color: var(--muted); }
+/* Lists inside folds and sheets: values never wrap; a little air under group headings. */
+.lines-list .ln > span:last-child { white-space: nowrap; text-align: right; }
+.fold .group-h:first-of-type { margin-top: 4px; }
+.fold > summary .muted { font-weight: 400; margin-left: auto; }
