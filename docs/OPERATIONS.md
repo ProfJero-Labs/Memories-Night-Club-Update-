@@ -314,18 +314,21 @@ never in sales, money in or profit.
 
 ## Closing the night
 
-1. **Waiters** submit *My report*. Drinks still with them, or unpaid bills, need an explanation.
-2. **Bar** submits the closing count.
-3. **Cashier** submits the cash count.
-4. **Front office** submits its report (open issues handed over or explained).
-5. **Manager**: Control room → Tonight → *Close the night*. Each step shows who has finished.
-   Review the differences, decide the approvals, then **Close the night and send the report**. If
-   something is missing, it asks first and lists it in the report.
-6. The **end-of-day report** is saved and emailed to the finance email (set it under End-of-day
-   reports → *Where the report is sent*). If the email can't be sent, the screen says so: the
-   report is always saved in the system.
-7. **Finance** opens it (Finance → Reports), checks it, and signs it off. The person who closed the
-   night can't sign off for finance.
+Four steps, and nothing blocks the close:
+
+1. **Every tab closed, paid or owed.** That is the waiter's report: there is nothing else to
+   submit. **Close tab** → Cash, MoMo, or **They can't pay now: customer owes** (their name and
+   phone; they're texted the invoice to pay later, and the Manager sees it under what's owed).
+2. **Cash in: waiters → the bar → the Manager.** The bar person is the custodian of the drinks,
+   so the cash goes there. The waiter: *My report* → **Hand GHS … to the bar**. The bar person:
+   *Waiters* tab → *Cash from waiters* → **Received** (a different amount needs a note). It joins
+   the bar person's own cash, and they **Hand all my cash to the Manager** (My shift); the Manager
+   confirms it. Waiters take cash without any setting.
+3. **The bar counts its stock** (Stock → the closing count).
+4. **Close**: Control room → Tonight → *Close the night*. The end-of-day report is saved and sent
+   to finance (email set under End-of-day reports → *Where the report is sent*). Anything not done
+   yet is listed in it. Finance opens it (Finance → Reports) and signs it off; the person who
+   closed the night can't sign off for finance. Finance's **Today** shows cash and MoMo up front.
 
 Closing is for the accounts only. It never stops anyone working: staff can keep opening tabs,
 selling, taking payments and counting stock after it. A night can be closed at any time, and

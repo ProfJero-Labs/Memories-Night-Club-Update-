@@ -16,7 +16,8 @@ import { drinkPicker, paySheet, handInCash, tipBox, tipSheet, tipSaid } from '..
 const user = await requireStaff(['waitStaff', 'eventManager', 'superAdmin', 'director', 'manager']);
 staffHeader(user, 'Tables');
 const app = $('#app');
-const canCash = user.me?.canCollectCash === true;
+// Waiters take cash (and hand it to the bar); so do managers serving tables.
+const canCash = ['waitStaff', 'eventManager', 'superAdmin', 'director', 'manager'].includes(user.role) || user.me?.canCollectCash === true;
 let stop = null;
 const nav = bottomNav([['tabs', 'My tables'], ['tables', 'Bookings'], ['report', 'My report']], k => { location.hash = k; });
 
@@ -69,7 +70,7 @@ const card = t => t.status !== 'open' || t.quick ? doneCard(t) : `<div class="tc
   <span class="btn-row"><button type="button" class="mid" data-more="${esc(t.id)}">Add drinks</button><button type="button" class="mid okc" data-pay="${esc(t.id)}" ${t.bill.totalPesewas ? '' : 'disabled'}>Close tab</button></span></div>`;
 const doneCard = t => `<button class="tcard ${t.status !== 'open' ? 'done' : t.openRounds ? 'warn' : ''}" data-tab="${esc(t.id)}">
   <span class="row"><span class="t">${esc(t.label)} · ${esc(t.table)}</span><span class="amt">${money(t.bill.balancePesewas || t.bill.totalPesewas)}</span></span>
-  <span class="row"><span class="sub">${t.customerName ? `${esc(t.customerName)} · ` : ''}${t.status !== 'open' ? 'Closed' : t.openRounds ? `${t.openRounds} order${t.openRounds > 1 ? 's' : ''} to collect` : 'Add drinks or close'}</span>${st(t.payStatus, t.payLabel)}</span></button>`;
+  <span class="row"><span class="sub">${t.customerName ? `${esc(t.customerName)} · ` : ''}${t.status === 'owed' ? `Owed by ${esc(t.customerName || 'the customer')}` : t.status !== 'open' ? 'Closed' : t.openRounds ? `${t.openRounds} order${t.openRounds > 1 ? 's' : ''} to collect` : 'Add drinks or close'}</span>${st(t.payStatus, t.payLabel)}</span></button>`;
 
 // ── One tab: Add drinks or Close tab, the orders to collect, the bill ──
 async function tabView(id) {
@@ -127,19 +128,25 @@ function closeSheet(t) {
   const paid = !b.balancePesewas;
   const { box, close } = sheet(`<h2>Close ${esc(t.label)}</h2><div id="csBody" style="display:grid;gap:14px">
     <div class="sale-total"><span>${paid ? 'Already paid' : 'To pay'}</span><b>${money(paid ? b.totalPesewas : b.balancePesewas)}</b></div>
-    <div class="sfield"><label for="csPhone">Customer’s phone (gets the ${paid ? 'receipt' : 'invoice'})</label><input id="csPhone" type="tel" inputmode="tel" autocomplete="off" placeholder="${esc(t.customerPhoneHint || '024 123 4567')}">${t.customerPhoneHint ? `<span class="hint">Empty: it goes to ${esc(t.customerPhoneHint)}.</span>` : '<span class="hint">Optional for cash. Needed for MoMo.</span>'}</div>
+    <div class="sfield"><label for="csPhone">Customer’s phone (gets the ${paid ? 'receipt' : 'invoice'})</label><input id="csPhone" type="tel" inputmode="tel" autocomplete="off" placeholder="${esc(t.customerPhoneHint || '024 123 4567')}">${t.customerPhoneHint ? `<span class="hint">Empty: it goes to ${esc(t.customerPhoneHint)}.</span>` : '<span class="hint">Optional for cash. Needed for MoMo, or if they owe.</span>'}</div>
     <div id="csMsg"></div>
     ${paid ? '<button class="big" id="csDone">Close the tab</button>' : `<p class="lead" style="margin:0">How is the customer paying?</p>
     <div class="btn-row"><button class="big" id="csCash" ${canCash ? '' : 'disabled'}>Cash</button><button class="big" id="csMomo">MoMo</button></div>
-    ${canCash ? '' : '<span class="hint">Cash: your job doesn’t include taking cash. Send them to the cashier.</span>'}`}</div>`, { label: 'Close tab' });
+    <button class="big ghost" id="csOwe">They can’t pay now: customer owes</button>
+    <div id="csOweBox" hidden style="display:grid;gap:12px">
+      <div class="sfield"><label for="csName">Customer’s name</label><input id="csName" maxlength="60" autocomplete="off" value="${esc(t.customerName || '')}"></div>
+      <div class="sfield"><label for="csNote">When will they pay? (optional)</label><input id="csNote" maxlength="200" autocomplete="off" placeholder="e.g. tomorrow by MoMo"></div>
+      <span class="hint">Their phone (above) is needed: they get the invoice to pay later.</span>
+      <button class="big red" id="csOweGo">Close as owed · ${money(b.balancePesewas)}</button></div>`}</div>`, { label: 'Close tab' });
   const phone = () => $('#csPhone', box)?.value.trim() || '';
   // Opened from My tables: just close the panel and refresh the list. From a tab: back to My tables.
   const backToTables = () => { if (!location.hash.startsWith('#tab/')) { close(); setTimeout(route, 0); } else returnTo('tabs'); };
   const go = async (method, btn) => {
     if (phone() && !normalizePhone(phone())) return say($('#csMsg', box), 'That phone number doesn’t look right.', 'bad');
     try {
-      const r = await busy(btn, () => sapi('/api/ops/tabs/checkout', { method: 'POST', body: { tabId: t.id, method, phone: phone() } }), method === 'momo' ? 'Sending…' : 'Closing…');
-      if (r.closed) return done(`${r.cashPesewas ? `${money(r.cashPesewas)} cash taken.` : 'Paid.'} ${t.label} closed.${r.receiptSent ? ` Receipt texted to ${r.phoneHint}.` : ''}`);
+      const r = await busy(btn, () => sapi('/api/ops/tabs/checkout', { method: 'POST', body: { tabId: t.id, method, phone: phone(), customerName: $('#csName', box)?.value.trim(), note: $('#csNote', box)?.value.trim() } }), method === 'momo' ? 'Sending…' : 'Closing…');
+      if (r.method === 'debt') return done(`${t.label} closed as owed: ${money(r.owedPesewas)}. The invoice is texted to ${r.phoneHint}; the Manager sees it under what’s owed.`);
+      if (r.closed) return done(`${r.cashPesewas ? `${money(r.cashPesewas)} cash taken: hand it to the bar.` : 'Paid.'} ${t.label} closed.${r.receiptSent ? ` Receipt texted to ${r.phoneHint}.` : ''}`);
       waitMomo(r);
     } catch (e) { say($('#csMsg', box), e.status === 0 ? 'No connection. Nothing was recorded: try again.' : e.message, 'bad'); }
   };
@@ -149,6 +156,8 @@ function closeSheet(t) {
     btn.onclick = e => go('cash', e.currentTarget); $('#csMomo', box).hidden = true;
   });
   $('#csMomo', box) && ($('#csMomo', box).onclick = e => go('momo', e.currentTarget));
+  $('#csOwe', box) && ($('#csOwe', box).onclick = () => { $('#csOweBox', box).hidden = false; $('#csOwe', box).hidden = true; $('#csName', box).focus(); });
+  $('#csOweGo', box) && ($('#csOweGo', box).onclick = e => go('debt', e.currentTarget));
   function done(text) {
     $('#csBody', box).innerHTML = `<div class="result ok" role="alert"><h1 class="display">Tab closed</h1><p style="margin:0">${esc(text)}</p></div><button class="big" id="csBack">Back to my tables</button>`;
     navigator.vibrate?.(80);
@@ -385,41 +394,36 @@ async function bookings() {
   });
 }
 
-// ── My report ──
+// ── My report: it's my tabs (each closed paid or owed) and my cash, handed to the bar ──
 async function report() {
   app.innerHTML = '<div class="loading">Loading…</div>';
-  let d; try { d = await sapi('/api/ops/my-report'); } catch (e) { return fail(e); }
-  const f = d.figures, sub = d.submitted;
-  app.innerHTML = `<h1>My report</h1><p class="lead">Tonight so far.</p>
-    <div class="nums">
-      <div><span>I sold</span><b>${money(f.salesPesewas)}</b></div>
-      <div class="good"><span>Cash with me</span><b>${money(f.cashCollectedPesewas)}</b></div>
-      <div class="good"><span>MoMo I took</span><b>${money(f.momoRecordedPesewas)}</b></div>
-      <div class="${f.unpaidPesewas ? 'bad' : 'good'}"><span>Not paid yet</span><b>${money(f.unpaidPesewas)}</b></div>
-      <div><span>My tips tonight</span><b>${money(f.tipsPesewas || 0)}</b><small class="muted">Yours: not in the cash to hand in</small></div></div>
+  let d, tabs, cs;
+  try { [d, { tabs }, cs] = await Promise.all([sapi('/api/ops/my-report'), sapi('/api/ops/tabs'), canCash ? sapi('/api/ops/cash').catch(() => ({ session: null })) : { session: null }]); } catch (e) { return fail(e); }
+  const f = d.figures, s = cs.session;
+  const open = tabs.filter(t => t.status === 'open'), owed = tabs.filter(t => t.status === 'owed');
+  const withMe = s ? (s.status === 'open' ? s.expectedPesewas : 0) : 0;
+  app.innerHTML = `<h1>My report</h1><p class="lead">Every tab paid or owed, and the cash handed to the bar. That’s it.</p>
+    <div class="hero-row"><div class="hero ${withMe ? '' : 'good'}"><span>Cash with me</span><b>${money(withMe)}</b></div><div class="hero ${owed.length ? 'bad' : 'good'}"><span>Owed by customers</span><b>${money(owed.reduce((n, t) => n + t.bill.balancePesewas, 0))}</b></div></div>
+    ${open.length ? `<div class="say warn"><b>${open.length} tab${open.length > 1 ? 's' : ''} still open</b>Close each one: paid (cash or MoMo) or owed. <a href="#tabs">My tables</a></div>` : '<div class="say good"><b>All my tabs are closed</b></div>'}
+    ${owed.length ? `<div class="group-h">Owed</div><div class="lines-list">${owed.map(t => `<div class="ln"><span>${esc(t.label)} · ${esc(t.customerName || '')}</span><span>${money(t.bill.balancePesewas)}</span></div>`).join('')}</div>` : ''}
+    <h2>Hand my cash to the bar</h2><div id="toBar"></div>
     <details class="fold"><summary>More details</summary><div class="nums">
-      <div><span>Orders taken</span><b>${f.ordersTaken}</b></div><div><span>Your sales</span><b>${money(f.salesPesewas)}</b></div>
-      <div><span>Drinks from the bar</span><b>${f.receivedQty}</b><small class="muted">${money(f.receivedPesewas)}</small></div>
-      <div><span>Delivered to customers</span><b>${f.deliveredQty}</b><small class="muted">${money(f.deliveredPesewas)}</small></div>
-      <div><span>Sent back to the bar</span><b>${f.returnedQty}${f.returnPendingQty ? ` <small>(+${f.returnPendingQty} waiting)</small>` : ''}</b></div>
-      <div class="${f.brokenQty ? 'warn' : ''}"><span>Broken</span><b>${f.brokenQty}</b></div>
-      <div><span>Free (approved)</span><b>${f.freeQty}</b></div>
-      <div class="${f.withYouQty ? 'bad' : 'good'}"><span>With you, not delivered</span><b>${f.withYouQty}</b><small class="muted">${money(f.withYouPesewas)}</small></div>
-      <div class="good"><span>Bills paid</span><b>${f.billsPaid}</b><small class="muted">${money(f.paidPesewas)}</small></div>
-      <div class="${f.billsUnpaid ? 'bad' : 'good'}"><span>Bills unpaid</span><b>${f.billsUnpaid}</b><small class="muted">${money(f.unpaidPesewas)}</small></div>
-      <div><span>Waiting at the bar</span><b>${f.waitingAtBar}</b></div></div></details>
-    ${f.withYou.length ? `<div class="say bad"><b>Drinks you haven’t confirmed</b>${f.withYou.map(x => `${x.qty} × ${esc(x.name)}`).join(', ')}. Tap “I got them”, or send them back to the bar.</div>` : ''}
-    ${f.unpaidTabs.length ? `<div class="say warn"><b>Unpaid bills</b>${f.unpaidTabs.map(x => `Tab ${x.number} (${esc(x.table)}): ${money(x.balancePesewas)}`).join(' · ')}</div>` : ''}
-    ${canCash ? '<h2>Hand in my cash</h2><div id="cashIn"><div class="loading">Loading…</div></div>' : ''}
-    <h2>End of shift</h2>
-    ${sub ? `<div class="say good"><b>Report submitted at ${when(sub.at)}</b>${sub.explanation ? esc(sub.explanation) : 'Thank you.'}</div>` : `
-      <div class="sfield"><label for="rpWhy">Anything to explain? (needed if drinks or bills are still open)</label><textarea id="rpWhy" rows="3" maxlength="600"></textarea></div>
-      <div id="rpMsg"></div><button class="big" id="rpGo">Submit my report</button>`}`;
-  $('#cashIn') && handInCash($('#cashIn'), sapi);
-  $('#rpGo') && ($('#rpGo').onclick = async () => {
-    try { await busy($('#rpGo'), () => sapi('/api/ops/my-report', { method: 'POST', body: { explanation: $('#rpWhy').value } }), 'Submitting…'); report(); }
-    catch (e) { say($('#rpMsg'), e.message, 'bad'); $('#rpWhy').focus(); }
-  });
+      <div><span>I sold</span><b>${money(f.salesPesewas)}</b></div><div class="good"><span>Cash I took</span><b>${money(f.cashCollectedPesewas)}</b></div><div class="good"><span>MoMo</span><b>${money(f.momoRecordedPesewas)}</b></div>
+      <div><span>Orders taken</span><b>${f.ordersTaken}</b></div><div><span>Drinks from the bar</span><b>${f.receivedQty}</b></div><div class="${f.withYouQty ? 'bad' : 'good'}"><span>With me, not delivered</span><b>${f.withYouQty}</b></div>
+      <div><span>Sent back to the bar</span><b>${f.returnedQty}</b></div><div class="${f.brokenQty ? 'warn' : ''}"><span>Broken</span><b>${f.brokenQty}</b></div><div><span>My tips tonight</span><b>${money(f.tipsPesewas || 0)}</b><small class="muted">Yours: not in the cash to hand in</small></div></div></details>`;
+  const el = $('#toBar');
+  if (!s || (!s.expectedPesewas && s.status === 'open')) { el.innerHTML = '<p class="muted" style="margin:0">No cash taken tonight.</p>'; return; }
+  if (s.status !== 'open') { el.innerHTML = s.receivedAt ? `<div class="say good"><b>${esc(s.receivedByName)} received ${money(s.receivedPesewas)}</b>${s.receivedNote ? esc(s.receivedNote) : 'Done for tonight.'}</div>` : `<div class="say warn"><b>Handed over: ${money(s.countedPesewas)}</b>Waiting for the bar to confirm they got it.</div>`; return; }
+  el.innerHTML = `${moneyField('hbAmt', 'Cash I’m handing over (GHS)', String(s.expectedPesewas / 100), `The system says ${money(s.expectedPesewas)}.`)}
+    <div class="sfield" id="hbWhyBox" hidden><label for="hbWhy">Why is it different?</label><input id="hbWhy" maxlength="400"></div>
+    <div id="hbMsg"></div><button class="big" id="hbGo">Hand ${money(s.expectedPesewas)} to the bar</button>`;
+  $('#hbAmt').oninput = () => { const v = ghsIn($('#hbAmt').value); $('#hbGo').textContent = `Hand ${money(Number.isFinite(v) ? v : 0)} to the bar`; $('#hbWhyBox').hidden = v === s.expectedPesewas; };
+  $('#hbGo').onclick = async () => {
+    const v = ghsIn($('#hbAmt').value);
+    if (!Number.isFinite(v) || $('#hbAmt').value === '') return say($('#hbMsg'), 'Enter the cash you’re handing over.', 'bad');
+    try { await busy($('#hbGo'), () => sapi('/api/ops/cash/close', { method: 'POST', body: { countedPesewas: v, explanation: $('#hbWhy').value } })); report(); }
+    catch (e) { $('#hbWhyBox').hidden = false; say($('#hbMsg'), e.message, 'bad'); $('#hbWhy').focus(); }
+  };
 }
 
 route();

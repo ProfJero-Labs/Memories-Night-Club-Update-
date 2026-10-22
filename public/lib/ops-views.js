@@ -41,7 +41,8 @@ export async function salesView(el, date) {
     <div class="hero-row">
       <div class="hero good"><span>Money received</span><b>${money(t.paidPesewas)}</b></div>
       <div class="hero ${t.owedPesewas ? 'bad' : ''}"><span>Still owed${t.unpaidTabs ? ` · ${t.unpaidTabs} bill${t.unpaidTabs > 1 ? 's' : ''}` : ''}</span><b>${money(t.owedPesewas)}</b></div>
-    </div></div>
+    </div>
+    <div class="hero-row"><div class="hero"><span>Cash</span><b>${money(t.cashPesewas)}</b></div><div class="hero"><span>MoMo / card</span><b>${money(t.digitalPesewas + (t.momoPesewas || 0))}</b></div></div></div>
     <p class="muted" style="margin:0">A sale is a drink on a bill. Money received is what has actually been paid.</p>
     <details class="fold"><summary>See details</summary>
       <h3 class="group-h">How it was paid</h3><div class="lines-list">
@@ -84,11 +85,13 @@ export async function closingView(el, date, { canClose = false } = {}) {
     ? `${esc(h.byName)} can’t close: “${esc(h.note)}”. ${h.acceptedByName ? `<b>${esc(h.acceptedByName)}</b> is closing instead.` : 'Waiting for the Human manager or the Event manager to take it.'}`
     : 'The Manager.'}
     ${d.closer?.canHandOver ? '<br><button class="mid" id="clHand" style="margin-top:8px">I can’t close tonight</button>' : ''}${d.closer?.canAccept ? '<br><button class="mid okc" id="clAccept" style="margin-top:8px">I’ll close tonight</button>' : ''}</div>`;
-  el.innerHTML = `<h1>Close the night</h1>${dateBar(d.date)}<p class="lead">${esc(dayName(d.date))}. Each step shows who has finished and what still needs doing.</p>${who}
+  el.innerHTML = `<h1>Close the night</h1>${dateBar(d.date)}<p class="lead">${esc(dayName(d.date))}. You can close at any time; what isn’t done yet is listed in the report.</p>${who}
     <div class="stepbar">${d.steps.map(s => `<div class="${s.done ? 'done' : ''}"><span><b>${esc(s.label)}</b><small>${esc(s.detail)}</small></span>${s.done ? st('paid', 'Done') : st('unpaid', 'Waiting')}</div>`).join('')}</div>
     <div id="clMsg"></div>
-    <h2>1. Waiters</h2><div class="tbl-wrap"><table class="tbl"><thead><tr><th>Waiter</th><th class="num">Sales</th><th class="num">Not delivered</th><th class="num">Unpaid</th><th>Report</th></tr></thead><tbody>
-      ${d.waiters.map(w => `<tr><td><strong>${esc(w.name)}</strong>${w.explanation ? `<br><small class="muted">“${esc(w.explanation)}”</small>` : ''}</td><td class="num">${money(w.salesPesewas)}</td><td class="num">${w.withYouQty ? `<span class="diff-neg">${w.withYouQty}</span>` : 0}</td><td class="num">${w.unpaidPesewas ? `<span class="diff-neg">${money(w.unpaidPesewas)}</span>` : money(0)}</td><td>${w.submitted ? st('paid', 'In') : st('unpaid', 'Not yet')}</td></tr>`).join('') || '<tr><td colspan="5" class="empty-row">No waiters worked tonight.</td></tr>'}</tbody></table></div>
+    ${closed ? `<div class="say good"><b>Closed: the report is with finance</b>Staff can keep working. Anything sold after this goes in the report if you close again.</div>` : ''}${canClose ? `<p class="muted" style="margin:0">This prepares the end-of-day report and sends it to finance. It doesn’t stop anyone working: you can close at any time, and close again later to update it.</p><button class="big" id="closeGo">${closed ? 'Close again and send the updated report' : 'Close the night and send the report'}</button>` : ''}
+    <details class="fold"><summary>See the details: tabs, bar stock, cash</summary>
+    <h2>1. Waiters</h2><div class="tbl-wrap"><table class="tbl"><thead><tr><th>Waiter</th><th class="num">Sales</th><th class="num">Not delivered</th><th class="num">Owed / unpaid</th><th>Tabs</th></tr></thead><tbody>
+      ${d.waiters.map(w => `<tr><td><strong>${esc(w.name)}</strong>${w.explanation ? `<br><small class="muted">“${esc(w.explanation)}”</small>` : ''}</td><td class="num">${money(w.salesPesewas)}</td><td class="num">${w.withYouQty ? `<span class="diff-neg">${w.withYouQty}</span>` : 0}</td><td class="num">${w.unpaidPesewas ? `<span class="diff-neg">${money(w.unpaidPesewas)}</span>` : money(0)}</td><td>${w.openTabs ? st('unpaid', `${w.openTabs} open`) : st('paid', 'All closed')}</td></tr>`).join('') || '<tr><td colspan="5" class="empty-row">No waiters worked tonight.</td></tr>'}</tbody></table></div>
     <h2>2. Bar stock</h2>${d.bars.map(b => `<div class="tcard ${!b.counted || b.differences.length ? 'warn' : 'done'}" style="cursor:default"><span class="row"><span class="t">${esc(b.name)}</span>${b.counted ? (b.reviewed ? st('paid', 'Reviewed') : st('ready', 'Counted')) : st('unpaid', 'Not counted')}</span>
       ${b.countedByName ? `<span class="sub">Counted by ${esc(b.countedByName)}</span>` : ''}
       ${b.differences.length ? `<span>${b.differences.map(x => `<b>${esc(x.name)}</b>: ${esc(diffWord(x.difference))}`).join('<br>')}</span>` : b.counted ? '<span class="sub">Everything matched.</span>' : ''}
@@ -96,10 +99,10 @@ export async function closingView(el, date, { canClose = false } = {}) {
     <h2>3. Cash</h2>${d.cash.map(c => `<div class="tcard ${c.differencePesewas ? 'warn' : 'done'}" style="cursor:default"><span class="row"><span class="t">${esc(c.name)}</span>${c.status === 'open' ? st('unpaid', 'Not counted') : c.status === 'reviewed' ? st('paid', 'Reviewed') : st('ready', 'Counted')}</span>
       <span class="sub">Should have ${money(c.expectedPesewas)}${c.countedPesewas != null ? ` · counted ${money(c.countedPesewas)}` : ''}</span>
       ${c.differencePesewas ? `<span class="diff-neg">${esc(cashWord(c.differencePesewas))}</span><span class="sub">“${esc(c.explanation)}”</span>` : ''}
-      ${c.status === 'submitted' ? `<button class="mid" data-cash="${esc(c.id)}">Mark reviewed</button>` : ''}</div>`).join('') || '<p class="muted">Nobody took cash tonight.</p>'}
+      ${c.receivedAt ? `<span class="sub">Received by ${esc(c.receivedByName)}</span>` : c.status !== 'open' ? '<span class="sub">Handed over: waiting to be received</span>' : ''}</div>`).join('') || '<p class="muted">Nobody took cash tonight.</p>'}
     <h2>4. Front office</h2>${d.frontOffice ? `<div class="say good"><b>Submitted by ${esc(d.frontOffice.name)}</b>${d.frontOffice.figures.ticketsChecked} tickets checked · ${d.frontOffice.figures.admitted} people in · ${d.frontOffice.figures.tablesArrived} of ${d.frontOffice.figures.tablesBooked} tables arrived · ${d.frontOffice.figures.openIssues} open issues${d.frontOffice.note ? `<br>“${esc(d.frontOffice.note)}”` : ''}</div>` : '<p class="muted">Not submitted yet.</p>'}
     <h2>5. Approvals</h2><p class="muted" style="margin:0">${d.pendingApprovals ? `${d.pendingApprovals} waiting: see Approvals.` : 'Nothing waiting.'}</p>
-    ${closed ? `<div class="say good"><b>Closed: the report is with finance</b>Staff can keep working. Anything sold after this goes in the report if you close again.</div>` : ''}${canClose ? `<h2>6. ${closed ? 'Update the report' : 'Close the night'}</h2><p class="muted" style="margin:0">This prepares the end-of-day report and sends it to finance. It doesn’t stop anyone working: you can close at any time, and close again later to update it.</p><button class="big" id="closeGo">${closed ? 'Close again and send the updated report' : 'Close the night and send the report'}</button>` : ''}`;
+    </details>`;
   bindDate(el, v => closingView(el, v, { canClose: true })); labelTables(el);
   $('#clHand', el) && ($('#clHand', el).onclick = async () => {
     const note = await ask({ title: 'I can’t close tonight', label: 'Why? The Human manager and the Event manager are texted.', quick: ['I’m not well', 'Family emergency', 'I’m travelling', 'I’m at another venue'], send: 'Hand it over' }); if (!note) return;

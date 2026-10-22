@@ -33,6 +33,7 @@ export async function opsRoute(m, p, u, b, env, user) {
       case '/api/ops/bar/waiters': return tabs.barWaiters(env, user, { stationId: q('stationId') });
       case '/api/ops/cash': return cash.myCash(env, user, { date: q('date') });
       case '/api/ops/cash/all': return cash.cashSessions(env, user, { date: q('date') });
+      case '/api/ops/cash/waiters': return cash.waiterCash(env, user, { date: q('date') });
       case '/api/ops/approvals': return approvals.listApprovals(env, user, { status: q('status') });
       case '/api/ops/tables': return front.tablesTonight(env, user, { date: q('date') });
       case '/api/ops/incidents': return front.listIncidents(env, user, { date: q('date') });

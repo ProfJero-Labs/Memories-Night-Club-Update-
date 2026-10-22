@@ -894,7 +894,7 @@ test('stock, money and quick sales: finance buys drinks (in stock at once), the 
   await bar.click('#vSell [data-p="dev-m-beer"]'); await bar.click('#vSell #send'); await bar.click('#psGo');
   await bar.locator('#msgTop').getByText(/Cash GHS 25 recorded/).waitFor();
   assert.ok(docs('tabs').some(t => t.soldAtBar && t.status === 'closed' && t.payments[0].method === 'cash'));
-  await bar.click('[data-k="shift"]'); await bar.locator('#vShift').getByRole('heading', { name: 'Hand in my cash' }).waitFor();
+  await bar.click('[data-k="shift"]'); await bar.locator('#vShift').getByRole('heading', { name: 'Hand all my cash to the Manager' }).waitFor();
   // A waiter's quick sale, by MoMo: the bar hands it over, the waiter taps "I got them", it closes.
   const w = await phone(360); await signInAs(w, 'waiter2@dev'); await w.waitForURL(/waiter\.html/);
   await w.click('#quick'); await w.waitForURL(/#quick/); await w.click('[data-p="dev-m-shot"]'); await w.click('#send');
@@ -1080,7 +1080,8 @@ test('a night at the bar: tab without QR → bar → delivered → the customer 
   await bar.locator('.sheet').getByText(/2 ×/).first().waitFor();
   await bar.click('.sheet [data-close]'); await bar.click('[data-k="orders"]');
   // End of night: waiter report, bar count, cash count, front office, the close, finance.
-  await w.click('[data-k="report"]'); await w.waitForSelector('#rpGo'); await w.click('#rpGo'); await w.getByText(/Report submitted/).waitFor();
+  // The waiter's report is their tabs: nothing to submit.
+  await w.click('[data-k="report"]'); await w.getByText('All my tabs are closed').waitFor();
   await bar.click('[data-k="stock"]'); await bar.click('#closeCount'); await bar.waitForSelector('#vStock #cf');
   for (const row of await bar.locator('#vStock [data-p]').all()) await row.locator('[data-n]').fill('0');
   const reasons = bar.locator('#vStock [data-r]:not([hidden])');

@@ -537,6 +537,18 @@ export async function checkoutTab(env, b, user) {
   const fields = { ...t.fields, customerPhone: phone };
   if (phone !== t.fields.customerPhone) await setDoc(env, 'tabs', t.id, fields);
   const bill = billOf(fields, rounds);
+  // They can't pay now: the tab closes as a debt the customer owes, with who they are, so it can be
+  // collected (the bill link still works, and the Manager sees it under what's owed).
+  if (b?.method === 'debt') {
+    if (bill.balancePesewas <= 0) return { error: 'Nothing is owed on this tab. Close it.' };
+    const name = clean(b?.customerName, 60) || t.fields.customerName || '';
+    if (!name) return { error: 'Who owes it? Type the customer’s name.' };
+    if (!phone) return { error: 'Type the customer’s phone number, so the debt can be collected.' };
+    await setDoc(env, 'tabs', t.id, { ...fields, customerName: name, status: 'owed', debt: { name, phone, note: clean(b?.note, 200), amountPesewas: bill.balancePesewas, by: uidOf(user), byName: user.name || '', at: now() }, closedAt: now(), closedByName: user.name || '' });
+    await sendSms(env, phone, invoiceText(env, fields, bill));
+    await audit(env, user, 'TAB_CLOSED_AS_DEBT', { tabId: t.id, amountPesewas: bill.balancePesewas });
+    return { method: 'debt', closed: true, owedPesewas: bill.balancePesewas, phoneHint: maskPhone(phone) };
+  }
   if (b?.method === 'momo') {
     if (!phone) return { error: 'Type the customer’s MoMo number: the prompt and the invoice go to it.' };
     if (bill.balancePesewas < 100) return { error: bill.balancePesewas ? 'Less than GHS 1 is left. Take it in cash.' : 'Nothing to pay. Close the tab.' };
@@ -566,10 +578,10 @@ export async function checkoutTab(env, b, user) {
 // After a MoMo payment: a tab the waiter asked to close, now fully paid, closes by itself.
 async function closeIfPaid(env, tabId) {
   const t = await getDoc(env, 'tabs', tabId);
-  if (!t || t.fields.status !== 'open' || !t.fields.closeWhenPaid) return false;
+  if (!t || !((t.fields.status === 'open' && t.fields.closeWhenPaid) || t.fields.status === 'owed')) return false;
   const rounds = await roundsOf(env, tabId), bill = billOf(t.fields, rounds);
   if (bill.balancePesewas > 0 || rounds.some(r => !['delivered', 'cancelled'].includes(r.status))) return false;
-  await setDoc(env, 'tabs', tabId, { ...t.fields, status: 'closed', closedAt: now(), closedByName: `${t.fields.closeAskedByName || 'Waiter'} (paid by MoMo)` });
+  await setDoc(env, 'tabs', tabId, { ...t.fields, status: 'closed', closedAt: now(), closedByName: t.fields.status === 'owed' ? `${t.fields.closedByName || 'Waiter'} (debt paid by MoMo)` : `${t.fields.closeAskedByName || 'Waiter'} (paid by MoMo)` });
   return true;
 }
 

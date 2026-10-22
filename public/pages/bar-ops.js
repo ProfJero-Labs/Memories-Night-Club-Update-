@@ -45,16 +45,30 @@ const lines = r => r.lines.map(l => `${l.qty} × ${esc(l.name)}`).join(', ');
 let waitersData = null;
 async function waitersView(alive = () => true) {
   const el = views.waiters;
-  const d = await sapi(`/api/ops/bar/waiters?stationId=${encodeURIComponent(station)}`);
-  if (!alive()) return;
+  const [d, c] = await Promise.all([sapi(`/api/ops/bar/waiters?stationId=${encodeURIComponent(station)}`), sapi('/api/ops/cash/waiters').catch(() => ({ waiting: [], stillWith: [], received: [] }))]);
+  if (!alive() || document.querySelector('.sheet-back')) return;
   waitersData = d;
   const total = d.waiters.reduce((n, w) => n + w.givenPesewas, 0), unpaid = d.waiters.reduce((n, w) => n + w.unpaidPesewas, 0);
-  el.innerHTML = `<h1 style="margin:0">Waiters</h1><p class="lead" style="margin:0">Drinks ${esc(d.stationName || 'this bar')} has given each waiter tonight. Tap a name for their tables.</p>
+  // Cash from waiters: the bar is its custodian, and hands it all to the Manager.
+  const cashPart = `<h2 style="margin:0">Cash from waiters</h2>
+    ${c.waiting.map(x => `<div class="tcard warn" style="cursor:default"><span class="row"><span class="t" style="font-size:18px">${esc(x.name)}</span><span class="amt">${money(x.countedPesewas)}</span></span>
+      ${x.differencePesewas ? `<span class="sub">${money(Math.abs(x.differencePesewas))} ${x.differencePesewas < 0 ? 'less' : 'more'} than their sales: ${esc(x.explanation)}</span>` : ''}
+      <span class="btn-row"><button class="mid okc" type="button" data-rc="${esc(x.id)}">Received</button></span></div>`).join('') || '<p class="muted" style="margin:0">No cash waiting to be handed over.</p>'}
+    ${c.stillWith.length ? `<p class="muted" style="margin:0">Still with: ${c.stillWith.map(x => `${esc(x.name.split(' ')[0])} ${money(x.expectedPesewas)}`).join(' · ')}</p>` : ''}
+    ${c.received.length ? `<p class="muted" style="margin:0">Received tonight: ${c.received.map(x => `${esc(x.name.split(' ')[0])} ${money(x.receivedPesewas)}`).join(' · ')}. It’s in your cash: hand it to the Manager from My shift.</p>` : ''}`;
+  el.innerHTML = `${cashPart}<h1 style="margin:8px 0 0">Waiters</h1><p class="lead" style="margin:0">Drinks ${esc(d.stationName || 'this bar')} has given each waiter tonight. Tap a name for their tables.</p>
     <div class="hero-row"><div class="hero"><span>Given to waiters</span><b>${money(total)}</b></div><div class="hero ${unpaid ? 'bad' : 'good'}"><span>Still unpaid</span><b>${money(unpaid)}</b></div></div>
     <div class="rows">${d.waiters.map(w => `<button class="row-btn" type="button" data-w="${esc(w.uid)}"><span class="t">${esc(w.name)}</span>
       <span class="s">${w.givenQty} drink${w.givenQty === 1 ? '' : 's'} · ${w.tabs.length} table${w.tabs.length === 1 ? '' : 's'}${w.openTabs ? ` (${w.openTabs} open)` : ''}${w.unpaidPesewas ? ` · ${money(w.unpaidPesewas)} unpaid` : ' · all paid'}${w.notConfirmedQty ? ` · ${w.notConfirmedQty} not confirmed yet` : ''}</span>
       <span class="r">${money(w.givenPesewas)}</span></button>`).join('') || '<div class="empty-box"><b>Nothing given to waiters yet tonight</b></div>'}</div>`;
   $$('[data-w]', el).forEach(b => b.onclick = () => waiterSheet(b.dataset.w));
+  $$('[data-rc]', el).forEach(b => b.onclick = () => {
+    const x = c.waiting.find(y => y.id === b.dataset.rc);
+    const { box, close } = sheet(`<h2>Cash from ${esc(x.name)}</h2>${moneyField('rcA', 'Cash you received (GHS)', String(x.countedPesewas / 100), `They’re handing over ${money(x.countedPesewas)}.`)}
+      <div class="sfield"><label for="rcN">Note (needed if it’s different)</label><input id="rcN" maxlength="300"></div><div id="rcM"></div>
+      <button class="big" id="rcGo">Confirm received</button><button class="big ghost" data-close>Cancel</button>`, { label: 'Cash from a waiter' });
+    $('#rcGo', box).onclick = async () => { try { await busy($('#rcGo', box), () => sapi('/api/ops/cash/receive', { method: 'POST', body: { id: x.id, receivedPesewas: ghsIn($('#rcA', box).value), note: $('#rcN', box).value } })); close(); top(`Received from ${x.name.split(' ')[0]}. It’s in your cash now.`); waitersView(); } catch (e) { say($('#rcM', box), e.message, 'bad'); } };
+  });
 }
 function waiterSheet(uid) {
   const w = waitersData?.waiters.find(x => x.uid === uid); if (!w) return;
@@ -134,16 +148,11 @@ async function shiftView() {
   const f = r.figures;
   el.innerHTML = `<h1 style="margin:0">My shift</h1>
     <div class="hero"><span>I sold tonight</span><b>${money(f.salesPesewas)}</b></div>
-    <div class="hero-row" style="margin-top:10px"><div class="hero good"><span>Cash with me</span><b>${money(f.cashCollectedPesewas)}</b></div><div class="hero"><span>MoMo I took</span><b>${money(f.momoRecordedPesewas)}</b></div></div>
+    <div class="hero-row" style="margin-top:10px"><div class="hero good"><span>Cash I took</span><b>${money(f.cashCollectedPesewas)}</b></div><div class="hero"><span>MoMo I took</span><b>${money(f.momoRecordedPesewas)}</b></div></div>
     <div class="rows" style="margin-top:10px"><button type="button" class="row-btn" id="tipOnly"><span class="t">Record a tip</span><span class="s">A tip without a bill · my tips tonight ${money(f.tipsPesewas || 0)}</span><span class="r"></span></button></div>
-    <h2 class="shift-h">Hand in my cash</h2><div id="cashIn" style="display:grid;gap:12px;margin-top:10px"></div>
-    <h2 class="shift-h">My report</h2><div style="display:grid;gap:12px;margin-top:10px">${r.submitted ? `<div class="say good"><b>Report submitted at ${when(r.submitted.at)}</b>Thank you.</div>` : '<div class="sfield"><label for="brWhy">Anything to explain? (optional)</label><textarea id="brWhy" rows="2" maxlength="600"></textarea></div><div id="brMsg"></div><button class="big ghost" id="brGo">Submit my report</button>'}</div>`;
+    <h2 class="shift-h">Hand all my cash to the Manager</h2><p class="muted" style="margin:6px 0 0">Your sales and the cash waiters handed you (Waiters tab).</p><div id="cashIn" style="display:grid;gap:12px;margin-top:10px"></div>`;
   handInCash($('#cashIn', el), sapi);
   $('#tipOnly', el).onclick = () => tipSheet(sapi, user.uid, m => { top(m); shiftView(); });
-  $('#brGo', el) && ($('#brGo', el).onclick = async () => {
-    try { await busy($('#brGo', el), () => sapi('/api/ops/my-report', { method: 'POST', body: { explanation: $('#brWhy', el).value } }), 'Submitting…'); shiftView(); }
-    catch (e) { say($('#brMsg', el), e.message, 'bad'); }
-  });
 }
 
 // ── Stock: one line per drink; tap one for its details and what you can do with it ──
