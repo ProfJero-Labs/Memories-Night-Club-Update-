@@ -77,6 +77,7 @@ export async function opsRoute(m, p, u, b, env, user) {
     case '/api/ops/stock/review': return stock.reviewCount(env, b, user);
     case '/api/ops/tabs/open': return tabs.openTab(env, b, user);
     case '/api/ops/tabs/round': return tabs.addRound(env, b, user);
+    case '/api/ops/tabs/order': return tabs.takeOrder(env, b, user);
     case '/api/ops/tabs/round-action': return tabs.waiterRound(env, b, user);
     case '/api/ops/tabs/cash': return tabs.recordCash(env, b, user);
     case '/api/ops/tabs/pay': return tabs.recordPayment(env, b, user);

@@ -78,7 +78,7 @@ const verdict = page => assert.deepEqual(page.found || [], [], `\n  ${(page.foun
 
 // Main tabs (no back needed) and the screens under them (← Back needed), per role.
 const ROLES = [
-  { who: 'waiter', ph: '0200000007', pin: '2580', page: 'waiter.html', tabs: ['tabs', 'tables', 'report'], subs: ['quick'] },
+  { who: 'waiter', ph: '0200000007', pin: '2580', page: 'waiter.html', tabs: ['tabs', 'tables', 'report'], subs: ['quick', 'order'] },
   { who: 'bar', ph: '0200000004', pin: '2580', page: 'bar.html', tabs: [], subs: [] },
   { who: 'cashier', ph: '0200000009', pin: '2580', page: 'cashier.html', tabs: ['bills', 'cash'], subs: [] },
   { who: 'manager', ph: '0200000002', pin: '258025', page: 'night.html', tabs: ['tonight', 'tables', 'customers'], subs: ['payments', 'cash', 'purchases', 'stock', 'money', 'approvals', 'sales', 'prices', 'commissions', 'reports'] },

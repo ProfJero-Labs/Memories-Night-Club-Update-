@@ -322,3 +322,29 @@ test('the bar confirms drinks a waiter took without a hand-over tap; "not taken"
   assert.deepEqual(q.handedOver.map(x => [x.tabNumber, x.waiterName, x.handedByName, x.takenConfirmed]), [[1, 'Efua Waiter', 'Ama Bartender', true]]);
   ok(await ctx.call('POST', '/api/ops/tabs/round-action', { who: ctx.W1, body: { roundId: round.id, action: 'delivered' } }), 'delivered');
 });
+
+test('the waiter’s one step: take the order → the bar has it → the customer is texted the invoice; more drinks re-send it; a bad order leaves no empty table', async () => {
+  const ctx = setup();
+  await openingCount(ctx);
+  const r = ok(await ctx.call('POST', '/api/ops/tabs/order', { who: ctx.W1, body: { table: '7', customerPhone: '024 555 7070', lines: [{ productId: 'beer', qty: 2 }] } }), 'order');
+  assert.equal(r.totalPesewas, 5000);
+  assert.deepEqual(r.invoice, { sent: true, phoneHint: r.invoice.phoneHint });
+  const q = ok(await ctx.call('GET', '/api/ops/bar/rounds', { who: ctx.B1 }), 'bar queue');
+  assert.ok(q.rounds.some(x => x.table === '7' && x.statusLabel === 'Sent to bar'), 'at the bar');
+  const sms = ctx.store.sms.filter(x => x.to === '0245557070');
+  assert.equal(sms.length, 1); assert.match(sms[0].message, /2 x Club beer/); assert.match(sms[0].message, /bill\.html\?t=/);
+  // More drinks on the same table: the updated invoice goes again.
+  ok(await ctx.call('POST', '/api/ops/tabs/order', { who: ctx.W1, body: { tabId: r.tabId, lines: [{ productId: 'shot', qty: 1 }] } }), 'more');
+  const again = ctx.store.sms.filter(x => x.to === '0245557070');
+  assert.equal(again.length, 2); assert.match(again[1].message, /Total GHS 80/);
+  // Standing, no phone: an order with no invoice to text.
+  const walk = ok(await ctx.call('POST', '/api/ops/tabs/order', { who: ctx.W1, body: { lines: [{ productId: 'beer', qty: 1 }] } }), 'walk-in');
+  assert.equal(walk.invoice.sent, false);
+  assert.equal(ctx.store.get('tabs', walk.tabId).fields.table, 'Walk-in');
+  // Nothing orderable: refused, and no empty table is left open.
+  const before = ctx.store.list('tabs').length;
+  assert.equal((await ctx.call('POST', '/api/ops/tabs/order', { who: ctx.W1, body: { table: '9', lines: [{ productId: 'nope', qty: 1 }] } })).status, 400);
+  assert.equal(ctx.store.list('tabs').length, before);
+  // Someone else's table: refused.
+  assert.equal((await ctx.call('POST', '/api/ops/tabs/order', { who: ctx.W2, body: { tabId: r.tabId, lines: [{ productId: 'beer', qty: 1 }] } })).status, 403);
+});

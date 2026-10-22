@@ -1,7 +1,8 @@
 // waiter.html: a waiter's screen.
 //   Quick sale: pick drinks → Cash or MoMo → the bar makes it → "I got them" → done (closes itself).
-//   Open a table: a table number (or no table) → add drinks as they order → the bar hands them over →
-//   "I got them" → the customer pays (cash, MoMo, or the bill link) → Close table.
+//   New order: the drinks, the table and the customer's phone on one screen → Send: it goes to the bar
+//   and the customer is texted the invoice with a pay link → they pay (link, cash or MoMo). More
+//   drinks: "Add drinks" sends the updated invoice. The bar hands them over → "I got them".
 // Drinks that are finished at the bar can't be picked. "Bookings": tonight's booked tables and the
 // bottles they paid for. "My report": what I sold, my cash and MoMo, hand in my cash, submit.
 import { $, $$, esc, normalizePhone } from '../app.js';
@@ -20,10 +21,11 @@ const nav = bottomNav([['tabs', 'My tables'], ['tables', 'Bookings'], ['report',
 function route() {
   if (stop) { stop(); stop = null; }
   const [k, arg] = location.hash.slice(1).split('/');
-  nav.setActive(['tab', 'add', 'quick'].includes(k) ? 'tabs' : k || 'tabs');
+  nav.setActive(['tab', 'add', 'quick', 'order'].includes(k) ? 'tabs' : k || 'tabs');
   scrollTo(0, 0);
   if (k === 'tab') return tabView(arg);
-  if (k === 'add') return addDrinks(arg);
+  if (k === 'add') return takeOrder(arg);
+  if (k === 'order') return takeOrder();
   if (k === 'quick') return quickSale();
   if (k === 'tables') return bookings();
   if (k === 'report') return report();
@@ -35,11 +37,12 @@ const fail = e => { app.innerHTML = `<div class="say bad" role="alert"><b>Couldn
 // ── My tabs ──
 async function tabsList() {
   app.innerHTML = `<h1>My tables</h1>
-    <div class="btn-row"><button class="big" id="quick">Quick sale</button><button class="big ghost" id="newTab">New table</button></div>
-    <p class="muted" style="margin:0">Quick sale: the customer pays now. Table: they keep ordering and pay at the end.</p>
+    <button class="big" id="newTab">New order</button>
+    <button class="big ghost" id="quick">Quick sale (they pay before the bar makes it)</button>
+    <p class="muted" style="margin:0">New order: pick the drinks, the table and their phone. The bar gets it and they get the invoice by text to pay.</p>
     <button class="mid ghost" id="tipOnly">Record a tip (no bill)</button>
     <div id="msg"></div><div class="cards" id="list"><div class="loading">Loading…</div></div>`;
-  $('#newTab').onclick = newTab;
+  $('#newTab').onclick = () => { location.hash = 'order'; };
   $('#quick').onclick = () => { location.hash = 'quick'; };
   $('#tipOnly').onclick = () => tipSheet(sapi, user.uid, m => say($('#msg'), m));
   const flash = sessionStorage.getItem('waiter-flash'); if (flash) { sessionStorage.removeItem('waiter-flash'); say($('#msg'), flash); }
@@ -57,36 +60,6 @@ const card = t => `<button class="tcard ${t.status !== 'open' ? 'done' : t.openR
   <span class="row"><span class="t">${esc(t.label)} · ${esc(t.table)}</span><span class="amt">${money(t.bill.balancePesewas || t.bill.totalPesewas)}</span></span>
   <span class="row"><span class="sub">${t.customerName ? `${esc(t.customerName)} · ` : ''}${t.openRounds ? `${t.openRounds} order${t.openRounds > 1 ? 's' : ''} to collect` : 'All collected'}</span>${st(t.payStatus, t.payLabel)}</span></button>`;
 
-async function newTab() {
-  let tables = [], stations = [];
-  try { [tables, stations] = await Promise.all([sapi('/api/ops/tables').then(d => d.tables).catch(() => []), sapi('/api/ops/products').then(d => d.stations)]); } catch { /* the form still works */ }
-  const booked = tables.filter(t => t.arrived).map(t => t.tableNumber || t.firstName).filter(Boolean);
-  const { box, close } = sheet(`<h2>Open a table</h2>
-    <div class="sfield"><label for="ntTable">Table number or place</label><input id="ntTable" maxlength="30" autocomplete="off" placeholder="e.g. 5, VIP 2, Bar side"></div>
-    ${booked.length ? `<div class="chips" aria-label="Booked tables here tonight">${booked.map(b => `<button type="button" data-t="${esc(b)}">${esc(b)}</button>`).join('')}</div>` : ''}
-    <button type="button" class="mid" id="ntWalk">No table (standing, at the bar)</button>
-    ${stations.length > 1 ? `<div class="sfield"><label for="ntBar">Which bar makes the drinks?</label><select id="ntBar">${stations.map(s => `<option value="${esc(s.id)}">${esc(s.name)}</option>`).join('')}</select></div>` : ''}
-    <div class="sfield"><label for="ntName">Customer’s name (optional)</label><input id="ntName" maxlength="60" autocomplete="off"></div>
-    <div class="sfield"><label for="ntPhone">Customer’s phone, to text the invoice (optional)</label><input id="ntPhone" type="tel" inputmode="tel" placeholder="024 123 4567"></div>
-    <details class="fold"><summary>Did someone bring this table? (commission)</summary>
-      <div class="sfield"><label for="ntBy">Their name</label><input id="ntBy" maxlength="60" autocomplete="off"></div>
-      <div class="sfield"><label for="ntByPh">Their phone</label><input id="ntByPh" type="tel" inputmode="tel" placeholder="024 123 4567"></div></details>
-    <div id="ntMsg"></div>
-    <button class="big" id="ntGo">Open and add drinks</button><button class="big ghost" data-close>Cancel</button>`, { label: 'Open a table' });
-  let walkIn = false;
-  $$('[data-t]', box).forEach(b => b.onclick = () => { $('#ntTable', box).value = b.dataset.t; walkIn = false; });
-  $('#ntWalk', box).onclick = () => { walkIn = true; $('#ntTable', box).value = ''; open(); };
-  const open = async () => {
-    const phone = $('#ntPhone', box).value.trim();
-    if (phone && !normalizePhone(phone)) return say($('#ntMsg', box), 'That phone number doesn’t look right.', 'bad');
-    try {
-      const r = await busy($('#ntGo', box), () => sapi('/api/ops/tabs/open', { method: 'POST', body: { table: $('#ntTable', box).value.trim(), walkIn, stationId: $('#ntBar', box)?.value, customerName: $('#ntName', box).value.trim(), customerPhone: phone, broughtByName: $('#ntBy', box).value.trim(), broughtByPhone: $('#ntByPh', box).value.trim() } }), 'Opening…');
-      close(); location.hash = `add/${r.id}`;
-    } catch (e) { say($('#ntMsg', box), e.message, 'bad'); }
-  };
-  $('#ntGo', box).onclick = open;
-}
-
 // ── One tab ──
 async function tabView(id) {
   app.innerHTML = '<div class="loading">Loading…</div>';
@@ -100,6 +73,12 @@ async function tabView(id) {
       <div class="row" style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap"><h1>${esc(t.label)} · ${esc(t.table)}</h1>${st(t.payStatus, t.payLabel)}</div>
       ${t.customerName ? `<p class="lead">${esc(t.customerName)}${t.customerPhoneHint ? ` · ${esc(t.customerPhoneHint)}` : ''}</p>` : ''}
       <div id="msg"></div>
+      ${t.status === 'open' && !t.quick ? `${b.balancePesewas ? `<div class="pay-now"><b>${money(b.balancePesewas)} to pay</b>
+        ${canCash ? '<button class="big" id="cash">Customer paid (cash or MoMo)</button>' : ''}
+        <button class="big ${canCash ? 'ghost' : ''}" id="showBill">Show QR to pay</button>
+        <button class="mid" id="invoice">${t.customerPhoneHint ? 'Text the invoice again' : 'Text the invoice'}</button></div>` : ''}
+        <div class="btn-row"><button class="mid" id="ask">Ask the manager</button>
+        ${!b.balancePesewas && delivered && b.totalPesewas ? '<button class="mid okc" id="close">Close table</button>' : ''}</div>` : ''}
       ${t.status === 'open' && t.quick ? '<div class="say warn"><b>Quick sale</b>Collect the drinks at the bar, then tap “I got them”. It closes by itself.</div>' : t.status === 'open' ? '<button class="big" id="add">Add drinks</button>' : `<div class="say ${t.status === 'closed' ? 'good' : 'warn'}"><b>${t.status === 'closed' ? 'Closed' : 'Written off'}</b>This tab is finished.</div>`}
       <h2>Orders</h2>
       <div class="cards">${t.rounds.map(roundCard).join('') || '<div class="empty-box"><b>No drinks yet</b>Tap “Add drinks”.</div>'}</div>
@@ -108,18 +87,18 @@ async function tabView(id) {
         ${b.discountPesewas ? `<div class="ln"><span>Discount</span><span>−${money(b.discountPesewas)}</span></div>` : ''}
         <div class="ln total"><span>Total</span><span>${money(b.totalPesewas)}</span></div>
         <div class="ln"><span>Paid${t.payments.length ? ` <small>(${t.payments.map(p => `${p.method === 'cash' ? 'cash' : 'MoMo'} ${money(p.amountPesewas)}`).join(', ')})</small>` : ''}</span><span>${money(b.paidPesewas)}</span></div>
-        <div class="ln total"><span>Still to pay</span><span>${money(b.balancePesewas)}</span></div></div>
-      ${t.status === 'open' && !t.quick ? `<div class="btn-row">
-        ${b.balancePesewas && canCash ? '<button class="mid red" id="cash">Customer paid</button>' : ''}
-        ${b.totalPesewas ? '<button class="mid" id="invoice">Send invoice (SMS)</button>' : ''}
-        ${b.balancePesewas ? '<button class="mid" id="showBill">Show bill (QR)</button>' : ''}
-        <button class="mid" id="ask">Ask the manager</button>
-        ${!b.balancePesewas && delivered && b.totalPesewas ? '<button class="mid okc" id="close">Close table</button>' : ''}</div>` : ''}`;
+        <div class="ln total"><span>Still to pay</span><span>${money(b.balancePesewas)}</span></div></div>`;
     bindBackBar(app);
+    const flash = sessionStorage.getItem('waiter-flash'); if (flash) { sessionStorage.removeItem('waiter-flash'); say($('#msg'), flash); }
     $('#add') && ($('#add').onclick = () => { location.hash = `add/${t.id}`; });
     $('#showBill') && ($('#showBill').onclick = () => showBill(t));
     $('#cash') && ($('#cash').onclick = () => takePayment(t));
-    $('#invoice') && ($('#invoice').onclick = () => sendInvoice(t));
+    // Their phone is on the table: one tap texts the invoice again. No phone yet: ask for it.
+    $('#invoice') && ($('#invoice').onclick = async e => {
+      if (!t.customerPhoneHint) return sendInvoice(t);
+      try { const r = await busy(e.currentTarget, () => sapi('/api/ops/tabs/text-bill', { method: 'POST', body: { tabId: t.id } }), 'Sending…'); say($('#msg'), r.sent ? `Invoice texted to ${r.phoneHint}.` : 'The text didn’t send. Show the QR instead.', r.sent ? 'good' : 'bad'); }
+      catch (er) { say($('#msg'), er.message, 'bad'); }
+    });
     $('#ask') && ($('#ask').onclick = () => askManager(t));
     $('#close') && ($('#close').onclick = async () => { try { await sapi('/api/ops/tabs/close', { method: 'POST', body: { tabId: t.id } }); returnTo('tabs'); } catch (e) { say($('#msg'), e.message, 'bad'); } });
     $$('[data-act]').forEach(btn => btn.onclick = () => roundAct(btn.dataset.r, btn.dataset.act, t));
@@ -254,17 +233,41 @@ function askManager(t) {
   };
 }
 
-// ── Add drinks (a table) ──
-async function addDrinks(tabId) {
+// ── Take an order: new (drinks + table + phone on one screen) or more drinks for a table ──
+async function takeOrder(tabId = '') {
   app.innerHTML = '<div class="loading">Loading the menu…</div>';
-  let t, products;
+  let t = null, d, booked = [];
   try {
-    t = (await sapi(`/api/ops/tab?id=${encodeURIComponent(tabId)}`)).tab;
-    products = (await sapi(`/api/ops/products?stationId=${encodeURIComponent(t.stationId || '')}`)).products;
+    if (tabId) t = (await sapi(`/api/ops/tab?id=${encodeURIComponent(tabId)}`)).tab;
+    const stations = (await sapi('/api/ops/products')).stations;
+    let stationId = t?.stationId || sessionStorage.getItem('waiter-bar') || stations[0]?.id || '';
+    if (!stations.some(x => x.id === stationId)) stationId = stations[0]?.id || '';
+    d = { stations, stationId, products: (await sapi(`/api/ops/products?stationId=${encodeURIComponent(stationId)}`)).products };
+    if (!t) booked = (await sapi('/api/ops/tables').catch(() => ({ tables: [] }))).tables.filter(x => x.arrived).map(x => x.tableNumber || x.firstName).filter(Boolean);
   } catch (e) { return fail(e); }
-  drinkPicker(app, products, {
-    title: `Add drinks · ${t.label} · ${t.table}`, onBack: () => returnTo(`tab/${tabId}`),
-    onSend: async lines => { await sapi('/api/ops/tabs/round', { method: 'POST', body: { tabId, lines } }); returnTo(`tab/${tabId}`); },
+  // The table and the customer's phone: typed once, kept while drinks are added.
+  const top = document.createElement('div'); top.className = 'order-top';
+  top.innerHTML = t ? `<p class="lead" style="margin:0">${esc(t.table === 'Walk-in' ? 'No table' : `Table ${t.table}`)}${t.customerPhoneHint ? ` · invoice to ${esc(t.customerPhoneHint)}` : ''}</p>${t.customerPhoneHint ? '' : '<div class="sfield"><label for="odPhone">Customer’s phone, for the invoice (optional)</label><input id="odPhone" type="tel" inputmode="tel" autocomplete="off" placeholder="024 123 4567"></div>'}`
+    : `<div class="sfield"><label for="odTable">Table (leave empty if standing)</label><input id="odTable" maxlength="30" autocomplete="off" placeholder="e.g. 5, VIP 2"></div>
+    ${booked.length ? `<div class="chips" aria-label="Booked tables here tonight">${booked.map(b => `<button type="button" data-t="${esc(b)}">${esc(b)}</button>`).join('')}</div>` : ''}
+    <div class="sfield"><label for="odPhone">Customer’s phone, for the invoice (optional)</label><input id="odPhone" type="tel" inputmode="tel" autocomplete="off" placeholder="024 123 4567"><span class="hint">They get every drink and a link to pay by MoMo or card.</span></div>
+    ${d.stations.length > 1 ? `<div class="sfield"><label for="odBar">Which bar makes the drinks?</label><select id="odBar">${d.stations.map(x => `<option value="${esc(x.id)}" ${x.id === d.stationId ? 'selected' : ''}>${esc(x.name)}</option>`).join('')}</select></div>` : ''}
+    <details class="fold"><summary>Someone brought this table? (commission)</summary>
+      <div class="sfield"><label for="odBy">Their name</label><input id="odBy" maxlength="60" autocomplete="off"></div>
+      <div class="sfield"><label for="odByPh">Their phone</label><input id="odByPh" type="tel" inputmode="tel" placeholder="024 123 4567"></div></details>`;
+  $$('[data-t]', top).forEach(b => b.onclick = () => { $('#odTable', top).value = b.dataset.t; });
+  $('#odBar', top) && ($('#odBar', top).onchange = e => { sessionStorage.setItem('waiter-bar', e.target.value); takeOrder(); });
+  const v = s => $(s, top)?.value.trim() || '';
+  drinkPicker(app, d.products, {
+    title: t ? `More drinks · ${t.label}` : 'New order', topEl: top, button: n => `Send order · ${n}`,
+    onBack: () => returnTo(t ? `tab/${t.id}` : 'tabs'),
+    onSend: async lines => {
+      const phone = v('#odPhone');
+      if (phone && !normalizePhone(phone)) throw new Error('That phone number doesn’t look right. Fix it, or leave it empty.');
+      const r = await sapi('/api/ops/tabs/order', { method: 'POST', body: { tabId: t?.id, table: v('#odTable'), stationId: v('#odBar') || d.stationId, customerPhone: phone, broughtByName: v('#odBy'), broughtByPhone: v('#odByPh'), lines } });
+      sessionStorage.setItem('waiter-flash', `Sent to the bar.${r.invoice.sent ? ` Invoice texted to ${r.invoice.phoneHint}.` : r.invoice.phoneHint ? ' The invoice text didn’t send: show the QR.' : ' Show them the QR to pay, or text the invoice.'}`);
+      returnTo(`tab/${r.tabId}`);
+    },
   });
 }
 

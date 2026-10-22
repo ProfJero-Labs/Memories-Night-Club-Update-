@@ -109,8 +109,13 @@ The Door screen is where the entrance is run. Phone numbers are the main ID: a p
 
 ## A customer orders from a waiter (no QR)
 
-1. Waiter: **Open a table** → table number (or **Walk-in**), and the customer's name and phone if
-   they want the invoice by text → **Add drinks** → **Send to bar**.
+1. Waiter: **New order**. One screen has the drinks, the table (empty if they're standing) and the
+   customer's phone → **Send order**. The order goes to the bar and, if a phone was typed, the
+   customer is texted the invoice straight away: every drink, the total and a link to pay by MoMo
+   or card. The table's screen then starts with what's to pay: **Customer paid** (cash or MoMo),
+   **Show QR to pay** and **Text the invoice again**. Paying doesn't wait for the drinks.
+   - More drinks: **Add drinks** on the table. The updated invoice is texted again.
+   - Someone brought the table (commission): the fold at the top of **New order**.
 2. Bar: the order appears with the table, tab number and waiter. **Start** → **Ready** →
    **Hand to Efua**. At that moment the drinks leave the bar's stock.
    - If the waiter picks the drinks up without the bartender tapping anything, the waiter taps
@@ -130,10 +135,21 @@ The Door screen is where the entrance is run. Phone numbers are the main ID: a p
    to check against the MoMo statement. Cash goes in the waiter's cash for the night (their
    report). The cashier can also take cash.
 6. **Close tab** when everything is delivered and paid.
-- More rounds: **Add drinks** again on the same tab. Part payments are fine.
+- Part payments are fine.
 - Free drink, money off, or a customer who can't pay: **Ask the manager**. Nothing changes until
   someone else approves it.
 - Customers who prefer the QR at the bar still order the old way; both use the same menu and stock.
+
+## Table bookings reach the team
+
+A table booked online shows straight away on the waiter's **Bookings**, the front office's
+**Tables** and the manager's **Tables** screens: tonight's, and **Coming up** for the next 30
+nights (who, which table, the door code, bottles paid). The event managers and managers are also
+texted who booked it (name, phone, table, night, bottles, door code). Anyone who doesn't want
+these texts: set `bookingAlerts: false` on their staff record.
+
+If a guest pays but the booking doesn't appear: the payment check runs every 10 minutes, finishes
+any paid booking it finds and texts the people on the alert list if it can't.
 
 ## Discounted tickets (promos)
 

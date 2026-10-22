@@ -16,7 +16,7 @@
 // Nothing is sold past zero: every order is checked against what's left at the bar (stockError).
 // Quick sale: one go, no table: drinks + Cash or MoMo. From a waiter it goes to the bar like any
 // order and the waiter confirms they got the drinks; from the bar it's served and closed at once.
-import { getDoc, setDoc, queryWhere, batchGet, commitTx, updateWrite, foundFields, withTransaction, listDocs } from '../lib/firestore.js';
+import { getDoc, setDoc, queryWhere, batchGet, commitTx, updateWrite, foundFields, withTransaction, listDocs, deleteDoc } from '../lib/firestore.js';
 import { now, id, clean, normalizePhone, maskPhone, paymentRef, validEmail } from '../lib/util.js';
 import { requireRole, uidOf } from '../lib/auth.js';
 import { sendSms, siteUrl } from '../lib/notify.js';
@@ -143,6 +143,38 @@ export async function addRound(env, b, user) {
   const rid = id();
   await setDoc(env, 'rounds', rid, { tabId: t.id, tabNumber: t.fields.number, businessDate: bizDate(), stationId: t.fields.stationId, waiterUid: t.fields.waiterUid, waiterName: t.fields.waiterName, table: t.fields.table, lines, status: 'waiting', note: clean(b.note, 120), createdAt: now(), sentBy: uidOf(user) });
   return { id: rid, totalPesewas: lines.reduce((n, l) => n + l.qty * l.unitPesewas, 0) };
+}
+
+// The waiter's one step: take the order → it goes to the bar → the customer is texted the invoice
+// with a pay link. A new table is opened with it (a table number, or none: standing at the bar);
+// with tabId the drinks go on that table and the updated invoice is texted again.
+//   { tabId? | table, stationId, customerPhone, customerName }, lines
+export async function takeOrder(env, b, user) {
+  if (!requireRole(user, WAITERS)) return FORBIDDEN;
+  let tabId = String(b?.tabId || ''), opened = false;
+  if (!tabId) {
+    const table = clean(b?.table, 30);
+    const o = await openTab(env, { ...b, table, walkIn: !table }, user);
+    if (o.error) return o;
+    tabId = o.id; opened = true;
+  } else if (b?.customerPhone) {
+    const t = await getDoc(env, 'tabs', tabId), phone = normalizePhone(b.customerPhone);
+    if (!phone) return { error: 'That phone number doesn’t look right. Use a Ghana number, or leave it blank.' };
+    if (t && mineOrBoss(user, t.fields) && t.fields.customerPhone !== phone) await setDoc(env, 'tabs', t.id, { ...t.fields, customerPhone: phone });
+  }
+  const r = await addRound(env, { ...b, tabId }, user);
+  if (r.error) {
+    // Nothing was ordered: don't leave an empty table behind.
+    if (opened) await deleteDoc(env, 'tabs', tabId).catch(() => {});
+    return r;
+  }
+  const t = await getDoc(env, 'tabs', tabId);
+  let invoice = { sent: false, phoneHint: '' };
+  if (t?.fields?.customerPhone) {
+    const bill = billOf(t.fields, await roundsOf(env, t.id));
+    invoice = { sent: await sendSms(env, t.fields.customerPhone, invoiceText(env, t.fields, bill)), phoneHint: maskPhone(t.fields.customerPhone) };
+  }
+  return { tabId, roundId: r.id, number: t?.fields?.number, totalPesewas: r.totalPesewas, invoice };
 }
 
 // Waiter steps on a round: cancel (before the bar starts), got them, delivered, broken, send back.
