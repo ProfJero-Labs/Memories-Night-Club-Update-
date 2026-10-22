@@ -41,7 +41,7 @@ training.
 | Human manager | **Human manager** (hr.html) | The floor (open tables, free drinks and discounts) and the people: **staff accounts** (adds, changes, removes; texts PINs), members and attendance, **salaries** and payment details, bonuses, deductions, **loans**, the month's payroll (sends it to the directors), notices, **staff feedback**, **performance reviews**, customer reviews and complaints. |
 | Event manager | **Control room** | Nights, tickets, prices, promotions, bookings, **organiser accounts**, table service, **discounts** (approves them), members. **Serves tables like a waiter** (name menu → *Serve tables*): opens a table, sends drinks, takes cash or MoMo, closes it. |
 | Director (two) | **Tonight**, **Money**, **To approve** | **Approves every payment** (salaries, loans, bills, commissions, drinks purchases); either director can approve. Money shows money in, out, profit and **their own share** (e.g. 35% / 65%, set by the system admin). More: reports, salaries, bills and budget, commissions, customer reviews, staff feedback, performance reviews, tables, staff, members. Nothing from the ticket side. |
-| DJ, MC (and every staff member) | **My page** (me.html) | Notices, the team message board, **My pay** (salary, payslips, loans), feedback or complaints (to the Human manager or the directors, anonymous if they like), their performance reviews. Everyone else opens it from the name menu. |
+| DJ, MC (and every staff member) | **My page** (me.html) | Notices, the team message board, **My pay** (salary, payslips, loans; not for the directors, who aren't on payroll), feedback or complaints (to the Human manager or the directors, anonymous if they like), their performance reviews. Everyone else opens it from the name menu. |
 | System admin | **Control room** | Everything technical: the site, nights, tickets, promos, settings, system health, bar setup, and every report. |
 | Finance officer | **Finance** | Today, **Money** (in, out, profit; add expenses), Stock (*Record drinks bought*, stock the manager added, the bar's counts and the manager's explanations; drinks, prices and costs), Check (staff reports, cash, approvals), Reports (end of day, sign off, print, CSV) |
 | Events manager | Control room | Nights, tickets, tables, promos, bar setup (no money reports) |
@@ -191,6 +191,8 @@ training.
   (MoMo or bank), adds bonuses and deductions during the month, and **sends the month** to the
   directors. A director approves (or sends it back with what to change); finance pays each person;
   they get a text and their payslip on My page. It shows in Money out (Staff pay).
+  The directors aren't on payroll: the Human manager can't set a salary, bonus or loan for a
+  director, and directors don't count in the month's salaries.
 - **Loans**: the Human manager records it (amount, what for, how much comes off each salary); a
   director approves; finance pays it out (Staff loans); the repayment comes off each month's pay.
 - **Bills** (finance) and **commissions** (finance or a manager asks): a director approves; then

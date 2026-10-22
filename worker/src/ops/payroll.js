@@ -34,7 +34,10 @@ const LOAN_LABEL = { requested: 'Waiting for a director', approved: 'Approved: w
 const PAYROLL_LABEL = { draft: 'Being prepared by the Human manager', submitted: 'Waiting for a director', approved: 'Approved: finance pays', paid: 'Paid' };
 const loanLeft = l => Math.max(0, Number(l.amountPesewas) - sum(l.repaid || [], r => r.amountPesewas));
 const payTo = p => (!p ? '' : p.payMethod === 'bank' ? [p.bankName, p.bankAccount, p.accountName].filter(Boolean).join(' · ') : p.momoNumber ? `MoMo ${maskPhone(p.momoNumber)}${p.momoName ? ` (${p.momoName})` : ''}` : '');
-const staffOnly = d => !d.fields.removed && STAFF_ROLES.includes(d.fields.role) && !['organiser', 'superAdmin'].includes(d.fields.role) && d.fields.admin !== true;
+// On payroll: staff only. The directors aren't paid a salary through the Human manager, and the
+// system admin and event organisers aren't staff.
+const NOT_ON_PAYROLL = ['organiser', 'superAdmin', 'director'];
+const staffOnly = d => !d.fields.removed && STAFF_ROLES.includes(d.fields.role) && !NOT_ON_PAYROLL.includes(d.fields.role) && d.fields.admin !== true;
 
 // ── Payment details and salary (the Human manager) ──
 export async function setPayDetails(env, b, user) {
@@ -202,6 +205,7 @@ export async function payPayroll(env, b, user) {
 // ── My pay (every staff member, their own) ──
 export async function myPay(env, user) {
   if (!user || !STAFF_ROLES.includes(user.role) || user.role === 'organiser') return FORBIDDEN;
+  if (NOT_ON_PAYROLL.includes(user.role)) return { onPayroll: false };
   const uid = uidOf(user), m = thisMonth();
   const [p, loans, prs] = await Promise.all([getDoc(env, 'staff_pay', uid), queryWhere(env, 'loans', [{ field: 'uid', value: uid }]), listDocs(env, 'payrolls')]);
   const cur = await getDoc(env, 'payrolls', m);
@@ -211,7 +215,7 @@ export async function myPay(env, user) {
     .map(x => ({ month: x.month, label: monthLabel(x.month), lines: x.line.lines, netPesewas: x.line.netPesewas, paidAt: x.line.paidAt || '', payRef: x.line.payRef || '', statusLabel: x.line.paidAt ? 'Paid' : 'Approved: being paid' }));
   const L = loans.map(l => ({ id: l.id, ...l.fields }));
   return {
-    salaryPesewas: Number(p?.fields?.salaryPesewas || 0), payTo: payTo(p?.fields),
+    onPayroll: true, salaryPesewas: Number(p?.fields?.salaryPesewas || 0), payTo: payTo(p?.fields),
     loanLeftPesewas: sum(L.filter(l => l.status === 'paid'), loanLeft),
     loans: L.filter(l => l.status !== 'rejected').map(l => ({ amountPesewas: l.amountPesewas, monthlyPesewas: l.monthlyPesewas, reason: l.reason, statusLabel: LOAN_LABEL[l.status], leftPesewas: l.status === 'paid' ? loanLeft(l) : l.status === 'cleared' ? 0 : l.amountPesewas })),
     thisMonth: { label: monthLabel(m), lines: draft?.lines || [], netPesewas: draft?.netPesewas || 0 },

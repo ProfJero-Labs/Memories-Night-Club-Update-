@@ -12,7 +12,9 @@ const user = await requireStaff(['superAdmin', 'director', 'manager', 'hrManager
 staffHeader(user, 'My page');
 const app = $('#app');
 let stop = null;
-const nav = bottomNav([['notices', 'Notices'], ['messages', 'Messages'], ['pay', 'My pay'], ['me', 'Me']], k => { location.hash = k; });
+// Directors aren't on payroll (the Human manager doesn't pay them), so they have no My pay.
+const onPayroll = !['director', 'superAdmin'].includes(user.role);
+const nav = bottomNav([['notices', 'Notices'], ['messages', 'Messages'], ...(onPayroll ? [['pay', 'My pay']] : []), ['me', 'Me']], k => { location.hash = k; });
 const fail = e => { app.innerHTML = `<div class="say bad" role="alert"><b>Couldn’t load</b>${esc(e.message)}</div><button class="big ghost" id="retry">Try again</button>`; $('#retry').onclick = route; };
 const day = at => { const d = new Date(at); return `${d.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'Africa/Accra' })} · ${when(at)}`; };
 
@@ -20,7 +22,7 @@ function route() {
   if (stop) { stop(); stop = null; }
   const k = location.hash.slice(1) || 'notices';
   nav.setActive(k); scrollTo(0, 0);
-  const go = { notices, messages, pay, me }[k] || notices;
+  const go = { notices, messages, ...(onPayroll ? { pay } : {}), me }[k] || notices;
   go().catch(fail);
 }
 addEventListener('hashchange', route);
@@ -67,6 +69,7 @@ async function messages() {
 // ── My pay ──
 async function pay() {
   let d = null; try { d = await sapi('/api/ops/my-pay'); } catch { /* not built yet on an older Worker */ }
+  if (d && d.onPayroll === false) { app.innerHTML = '<h1>My pay</h1><div class="empty-box"><b>Not on payroll</b>Directors aren’t paid through the Human manager.</div>'; return; }
   if (!d) { app.innerHTML = '<h1>My pay</h1><div class="empty-box"><b>Nothing yet</b>Your payslips show here once the Human manager sets up your pay.</div>'; return; }
   app.innerHTML = `<h1>My pay</h1>
     <div class="nums"><div><span>Monthly salary</span><b>${money(d.salaryPesewas)}</b></div><div class="${d.loanLeftPesewas ? 'warn' : 'good'}"><span>Loan still to repay</span><b>${money(d.loanLeftPesewas)}</b></div></div>

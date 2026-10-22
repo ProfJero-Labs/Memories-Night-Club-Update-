@@ -28,6 +28,22 @@ function setup() {
 }
 const ok = (r, what) => { assert.ok(r.status === 200, `${what}: ${r.status} ${r.data.error || ''}`); return r.data; };
 
+test('directors are not on payroll: no salary, bonus or loan for them, not in the month, no My pay', async () => {
+  const ctx = setup();
+  const month = nightKey(new Date()).slice(0, 7);
+  assert.equal((await ctx.call('POST', '/api/ops/pay/details', { who: ctx.HR, body: { uid: 'd1', salaryPesewas: 500000 } })).status, 404, 'no salary for a director');
+  assert.equal((await ctx.call('POST', '/api/ops/pay/item', { who: ctx.HR, body: { uid: 'd2', month, kind: 'bonus', amountPesewas: 10000, reason: 'x' } })).status, 404, 'no bonus for a director');
+  assert.equal((await ctx.call('POST', '/api/ops/loans', { who: ctx.HR, body: { uid: 'd1', amountPesewas: 10000, monthlyPesewas: 1000, reason: 'x' } })).status, 404, 'no loan for a director');
+  ok(await ctx.call('POST', '/api/ops/pay/details', { who: ctx.HR, body: { uid: 'dj', salaryPesewas: 150000 } }), 'staff still paid');
+  const pr = ok(await ctx.call('GET', `/api/ops/payroll?month=${month}`, { who: ctx.HR }), 'payroll');
+  const staff = pr.staff.map(x => x.uid), lines = pr.lines.map(x => x.uid);
+  assert.ok(!staff.includes('d1') && !staff.includes('d2'), 'directors are not listed for pay');
+  assert.ok(!lines.includes('d1') && !lines.includes('d2'), 'nor in the month’s salaries');
+  assert.ok(staff.includes('dj') && lines.includes('dj'), 'staff are');
+  assert.equal(ok(await ctx.call('GET', '/api/ops/my-pay', { who: ctx.D1 }), 'my pay').onPayroll, false);
+  assert.equal(ok(await ctx.call('GET', '/api/ops/my-pay', { who: ctx.DJ }), 'dj my pay').onPayroll, true);
+});
+
 test('salaries: the Human manager sets them, adds a bonus, a deduction and a loan; a director approves; finance pays; the staff member is texted and sees the payslip', async () => {
   const ctx = setup();
   const month = nightKey(new Date()).slice(0, 7);
