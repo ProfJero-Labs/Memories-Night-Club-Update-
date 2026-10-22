@@ -34,6 +34,12 @@ globalThis.fetch = store.fetch = async (url, options = {}) => {
     checkouts.set(b.reference, { amount: b.amount, callback: b.callback_url });
     return new Response(JSON.stringify({ status: true, data: { authorization_url: `${ORIGIN}/dev/paystack?reference=${encodeURIComponent(b.reference)}` } }), { headers: { 'Content-Type': 'application/json' } });
   }
+  // The gate's MoMo prompt: in dev the customer "approves" it after 4 seconds.
+  if (u.hostname === 'api.paystack.co' && u.pathname === '/charge') {
+    const b = JSON.parse(options.body);
+    setTimeout(() => store.setPaystack(b.reference, { status: 'success', currency: 'GHS', amount: b.amount }), 4000);
+    return new Response(JSON.stringify({ status: true, data: { reference: b.reference, status: 'pay_offline' } }), { headers: { 'Content-Type': 'application/json' } });
+  }
   return mockFetch(url, options);
 };
 

@@ -143,6 +143,13 @@ export class MockFirestore {
         if (this.paystackListDown) return jsonResponse({ status: false, message: 'down' }, 503);
         return jsonResponse({ status: true, data: (this.paystackTransactions || []).slice((Number(u.searchParams.get('page') || 1) - 1) * 100, Number(u.searchParams.get('page') || 1) * 100) });
       }
+      // The gate's MoMo prompt (Charge API): recorded; the test decides when the customer approves.
+      if (u.pathname === '/charge') {
+        const b = JSON.parse(options.body || '{}');
+        (this.paystackCharges ||= []).push(b);
+        if (this.chargeStatus === 'error') return jsonResponse({ status: false, message: 'Charge not allowed' }, 400);
+        return jsonResponse({ status: true, data: { reference: b.reference, status: this.chargeStatus || 'pay_offline' } });
+      }
       if (u.pathname === '/transaction/initialize') {
         this.paystackInits.push(JSON.parse(options.body || '{}'));
         return jsonResponse({ status: true, data: { authorization_url: 'https://paystack.test/pay' } });

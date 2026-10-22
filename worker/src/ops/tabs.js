@@ -324,7 +324,7 @@ async function recordMomo(env, b, user, tip = null) {
 
 // This person's cash bag for the night. Waiters, bartenders and managers start at GHS 0; a
 // cashier opens theirs by counting a float first.
-async function cashBag(env, user, date) {
+export async function cashBag(env, user, date) {
   const sid = `${date}__${uidOf(user)}`;
   let session = await getDoc(env, 'cash_sessions', sid);
   if (!session) {

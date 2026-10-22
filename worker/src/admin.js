@@ -193,7 +193,7 @@ export async function deleteEvent(env, eventId, user) {
 
 // ── Ticket types, table packages, bottles ──
 const CATALOG = {
-  ticket_types: { fields: ['name', 'pricePesewas', 'admits', 'remaining', 'active', 'description', 'sortOrder'], minPrice: 1 },
+  ticket_types: { fields: ['name', 'pricePesewas', 'doorPricePesewas', 'vip', 'admits', 'remaining', 'active', 'description', 'sortOrder'], minPrice: 1 },
   table_packages: { fields: ['name', 'pricePesewas', 'capacity', 'remaining', 'active', 'description', 'sortOrder'], minPrice: 1 },
   bottles: { fields: ['name', 'pricePesewas', 'category', 'remaining', 'active'], minPrice: 1 },
 };
@@ -211,10 +211,13 @@ export async function upsertCatalog(env, col, b, user) {
   if (!d.name) return { error: 'Add a name.' };
   if (b.pricePesewas !== undefined) d.pricePesewas = Number(b.pricePesewas);
   if (!Number.isInteger(d.pricePesewas) || d.pricePesewas < spec.minPrice) return { error: 'Add a price above zero.' };
+  // The price at the gate (optional; blank = the same as online).
+  if (spec.fields.includes('doorPricePesewas') && b.doorPricePesewas !== undefined) { d.doorPricePesewas = b.doorPricePesewas === '' || b.doorPricePesewas === null ? null : Number(b.doorPricePesewas); if (d.doorPricePesewas !== null && (!Number.isInteger(d.doorPricePesewas) || d.doorPricePesewas < 1)) return { error: 'The door price must be above zero, or blank.' }; }
   if (spec.fields.includes('admits')) { d.admits = b.admits === undefined ? (d.admits || 1) : Number(b.admits); if (!Number.isInteger(d.admits) || d.admits < 1 || d.admits > 20) return { error: 'Admits must be 1 to 20.' }; }
   if (spec.fields.includes('capacity') && b.capacity !== undefined) { d.capacity = Number(b.capacity || 0); if (!Number.isInteger(d.capacity) || d.capacity < 0) return { error: 'Capacity must be a whole number.' }; }
   if (b.remaining !== undefined) { d.remaining = intOrNull(b.remaining); if (d.remaining !== null && (!Number.isInteger(d.remaining) || d.remaining < 0)) return { error: 'Quantity left must be a whole number, or blank for no limit.' }; }
   if (b.active !== undefined) d.active = b.active === true;
+  if (spec.fields.includes('vip') && b.vip !== undefined) d.vip = b.vip === true; // VIP area access with this ticket
   if (b.description !== undefined) d.description = clean(b.description, 200);
   if (b.category !== undefined) d.category = clean(b.category, 40);
   if (b.sortOrder !== undefined) d.sortOrder = Number(b.sortOrder) || 0;

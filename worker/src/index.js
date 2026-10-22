@@ -11,6 +11,8 @@ import { upsertRaffle, drawRaffle } from './raffle.js';
 import { checkin, verifyTicket, doorSummary, doorSearch, seatTable, undoCheckin } from './door.js';
 import * as admin from './admin.js';
 import * as members from './members.js';
+import * as gate from './gate.js';
+import { getDoc } from './lib/firestore.js';
 import * as bar from './bar.js';
 import * as promos from './promos.js';
 import * as staffauth from './staffauth.js';
@@ -163,7 +165,7 @@ async function route(req, env, ctx) {
   }
 
   // ── Staff (Firebase ID token with a role claim) ──
-  if (!p.startsWith('/api/admin/') && !p.startsWith('/api/ops/') && !p.startsWith('/api/members/door/') && !p.startsWith('/api/bar/') && !['/api/members/my-pass', '/api/members/my-gate'].includes(p) && !['/api/checkin', '/api/checkin/undo', '/api/door/events', '/api/door/summary', '/api/door/search', '/api/send-sms', '/api/balance'].includes(p)) return fail(req, env, 'Not found.', 404);
+  if (!p.startsWith('/api/admin/') && !p.startsWith('/api/ops/') && !p.startsWith('/api/members/door/') && !p.startsWith('/api/bar/') && !['/api/members/my-pass', '/api/members/my-gate'].includes(p) && !p.startsWith('/api/door/gate/') && !['/api/checkin', '/api/checkin/undo', '/api/door/events', '/api/door/summary', '/api/door/search', '/api/send-sms', '/api/balance'].includes(p)) return fail(req, env, 'Not found.', 404);
   const user = await verifyStaff(req, env);
   if (!user) return fail(req, env, 'Sign in again.', 401);
   if (m === 'GET' && p === '/api/ops/me') return reply(req, env, await staffauth.whoAmI(env, user));
@@ -201,6 +203,35 @@ async function route(req, env, ctx) {
     if (p === '/api/members/door/request-code' || p === '/api/members/door/send-code') return reply(req, env, await members.doorRequestCode(env, user, b.phone));
     if (p === '/api/members/door/confirm') return reply(req, env, await members.doorConfirmCode(env, user, b, ip));
     if (p === '/api/members/door/manual') return reply(req, env, await members.doorManualAdmit(env, user, b));
+    if (p === '/api/members/door/reentry') return reply(req, env, await members.doorReentry(env, user, b));
+  }
+  // ── The gate: selling tickets and tables, checking anyone by phone (see gate.js) ──
+  if (p.startsWith('/api/door/gate/')) {
+    if (!requireRole(user, DOOR)) return fail(req, env, 'Forbidden.', 403);
+    const q = k => u.searchParams.get(k);
+    if (m === 'GET' && p === '/api/door/gate/night') return reply(req, env, await gate.gateNightView(env, user, q('eventId')));
+    if (m === 'GET' && p === '/api/door/gate/counts') return reply(req, env, await gate.gateCounts(env, user, q('eventId')));
+    if (m === 'GET' && p === '/api/door/gate/check') {
+      if (await throttled(req, env, 'door-search', 'standard')) return tooMany(req, env);
+      return reply(req, env, await gate.gateCheck(env, user, { eventId: q('eventId'), phone: q('phone'), code: q('code') }));
+    }
+    // A MoMo sale waiting for the customer to approve: checked with Paystack each time it's asked.
+    if (m === 'GET' && p.startsWith('/api/door/gate/sale/')) {
+      if (!requireRole(user, gate.GATE_SELLERS)) return fail(req, env, 'Forbidden.', 403);
+      const ref = last(p), pc = await getDoc(env, 'pending_checkouts', ref);
+      if (!pc || pc.fields.kind !== 'gate') return fail(req, env, 'Not found.', 404);
+      return ok(req, env, await fulfill(env, ref));
+    }
+    if (m === 'POST') {
+      const b = await body(req);
+      if (p === '/api/door/gate/sell') { if (await throttled(req, env, 'gate-sell', 'standard')) return tooMany(req, env); return reply(req, env, await gate.gateSell(env, b, user)); }
+      if (p === '/api/door/gate/hold') return reply(req, env, await gate.gateHold(env, b, user));
+      if (p === '/api/door/gate/release') return reply(req, env, await gate.gateRelease(env, b, user));
+      if (p === '/api/door/gate/report') return reply(req, env, await gate.gateReport(env, b, user));
+      if (p === '/api/door/gate/table-guest/request') { if (await throttled(req, env, 'member-door', 'standard')) return tooMany(req, env); return reply(req, env, await gate.tableGuestRequest(env, b, user)); }
+      if (p === '/api/door/gate/table-guest/confirm') { if (await throttled(req, env, 'member-door', 'standard')) return tooMany(req, env); return reply(req, env, await gate.tableGuestConfirm(env, b, user)); }
+    }
+    return fail(req, env, 'Not found.', 404);
   }
   if (m === 'GET' && p === '/api/door/summary') { if (!requireRole(user, DOOR)) return fail(req, env, 'Forbidden.', 403); return reply(req, env, await doorSummary(env, user, u.searchParams.get('eventId'))); }
   if (m === 'GET' && p === '/api/door/search') {

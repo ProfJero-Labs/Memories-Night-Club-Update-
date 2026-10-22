@@ -12,6 +12,7 @@ import { openRaffleForEvent, raffleSpotWrites } from './raffle.js';
 import { computeShares } from './shares.js';
 import { issueCounter } from './bar.js';
 import { issueTabPayment } from './ops/tabs.js';
+import { issueGateSale } from './gate.js';
 import { livePromos, bestPromo, promoRecord, promoCountFields } from './promos.js';
 
 // Smallest payment accepted anywhere: GHS 1.
@@ -570,6 +571,22 @@ async function fulfillCounter(env, reference) {
   return issueCounter(env, reference, pending.fields);
 }
 
+// A MoMo sale at the gate, confirmed by Paystack: tickets issued and admitted (or the table seated).
+async function fulfillGate(env, reference) {
+  const pending = await getDoc(env, 'pending_checkouts', reference);
+  if (!pending) return { status: 'failed', error: 'Checkout not found.' };
+  if (pending.fields.status === 'issued') return { status: 'issued', kind: 'gate', orderId: pending.fields.orderId, ticketIds: pending.fields.ticketIds || [] };
+  if (pending.fields.status === 'failed') return { status: 'failed', kind: 'gate', error: pending.fields.error || 'Payment was not successful.' };
+  const bad = await confirmCharge(env, pending, reference); if (bad) return { kind: 'gate', ...bad };
+  const r = await issueGateSale(env, pending.fields.sale, { paidWith: 'momo', reference });
+  if (r.error) {
+    // Paid, but it sold out while they were approving: a refund is owed (listed under Refunds).
+    await setDoc(env, 'pending_checkouts', reference, { ...pending.fields, status: 'failed', error: r.soldOut ? 'sold_out_after_payment' : 'gate_issue_failed', refundStatus: 'manual_required' });
+    return { status: 'failed', kind: 'gate', error: `${r.error} They paid: a refund is owed.` };
+  }
+  return { kind: 'gate', ...r };
+}
+
 export async function fulfill(env, reference) {
   const p = await getDoc(env, 'pending_checkouts', reference);
   if (!p) return { status: 'failed', error: 'Checkout not found.' };
@@ -577,6 +594,7 @@ export async function fulfill(env, reference) {
   if (p.fields.kind === 'installment_topup') return fulfillInstallment(env, reference);
   if (p.fields.kind === 'counter') return fulfillCounter(env, reference);
   if (p.fields.kind === 'tab') return fulfillTab(env, reference);
+  if (p.fields.kind === 'gate') return fulfillGate(env, reference);
   return { kind: 'ticket', ...(await fulfillTicket(env, reference)) };
 }
 
