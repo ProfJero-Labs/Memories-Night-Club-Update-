@@ -4,6 +4,33 @@ This covers the venue side of the system: signing in, waiters' tabs, the bar, st
 front office and security, and closing the night. Written in plain words so it can be used for
 training.
 
+## Using the screens (everyone)
+
+Every screen follows the same few rules, so nothing new has to be learned on a busy night:
+
+- **← Back** sits at the top of every screen that isn't a main tab, and returns to where you came
+  from. The phone's back button does the same, and it closes a panel without leaving the screen.
+  Panels slide up from the bottom and always have ✕. The Memories logo goes to your work screen.
+- **Lists first, details on tap**: people, drinks, stock and payments are one line each; tap one to
+  see everything about it and what you can do. Long lists have a search box.
+- **One main button** (crimson) per screen. Forms open only when you tap "+ Add".
+- **Writing**: boxes are big and grow as you type; Send stays above the keyboard. Where it helps,
+  one-tap quick replies (e.g. "Wrong amount", "Not in this month’s budget" when refusing).
+- **Numbers** open the number keyboard; phone numbers open the phone keyboard.
+- **Smart paste**: when recording MoMo, tap **Paste the MoMo text**: the transaction ID (and the
+  amount and number where it can) is read from the customer's MoMo message; just check it.
+- **Payment texts for the Manager**: every MoMo or card payment (bill link, QR menu, and MoMo a waiter
+  or bartender records) texts the Manager with the amount and tonight's MoMo/card total. Cash isn't
+  texted (it's counted at the cash count). A Manager can be switched off with `paymentAlerts: false`
+  on their staff record.
+- **Signing in**: the phone saves the everyday PIN once and fills it in after that. A PIN that comes
+  by text ("New or forgot PIN? Text me one") is read from the SMS by Android, and offered above the
+  keyboard on an iPhone.
+- **Bar**: Orders · Sell · Stock · My shift. Bar settings (which bar, pause app orders, QR codes,
+  sound) are behind the ⚙ line at the top. Counts are under Stock.
+- **Automatic checks**: `dev/ux.test.mjs` measures every screen on a phone-sized browser on every
+  change (text size, box size, button size, a way back, no sideways scroll), so these can't slip back.
+
 ## Signing in (everyone)
 
 - Staff sign in with their **phone number and PIN**. Floor staff have a **4-number PIN**; managers,

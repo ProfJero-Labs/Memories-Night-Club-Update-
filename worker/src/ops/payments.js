@@ -54,7 +54,8 @@ function paymentsOf({ tabs, qr, name, stationName, tipBy = new Map() }) {
 }
 
 export async function nightPayments(env, user, { date } = {}) {
-  if (!requireRole(user, CUSTOMER_CARE)) return FORBIDDEN;
+  // Finance too: it matches each payment against the MoMo statement (its Money screen links here).
+  if (!requireRole(user, [...CUSTOMER_CARE, 'finance'])) return FORBIDDEN;
   const d = dateOr(date), data = await night(env, d), payments = paymentsOf(data);
   // Who spent the most: what they bought tonight (a table's bill, a quick sale, a QR order).
   const people = new Map(); let noPhone = 0;

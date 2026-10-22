@@ -17,10 +17,35 @@
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Anton&family=Archivo:wght@400;600;700&family=Instrument+Serif:ital@0;1&display=swap">
 <link rel="stylesheet" href="styles.css">
 <link rel="stylesheet" href="ops.css">
+<style>
+  /* The bill reads like a calm receipt: one column, quiet lines, one big Pay button. */
+  .bill-wrap { max-width: 520px; margin: 0 auto; padding: 16px var(--gutter) calc(40px + env(safe-area-inset-bottom)); display: grid; gap: 18px; }
+  .bill-wrap #root { display: grid; gap: 18px; }
+  .bill-wrap h1 { font: 400 34px/1 var(--display); text-transform: uppercase; margin: 6px 0 0; letter-spacing: .02em; }
+  .bill-wrap .lead { color: var(--paper-2); margin: -8px 0 0; font-size: 16px; }
+  .rcpt { background: var(--ink-2); border: 1px solid var(--line); border-radius: 16px; padding: 6px 18px 4px; }
+  .rcpt .ln { display: flex; justify-content: space-between; align-items: baseline; gap: 14px; padding: 12px 0; border-bottom: 1px dashed var(--line-2); font-size: 16px; }
+  .rcpt .ln:last-child { border-bottom: 0; }
+  .rcpt .ln > :last-child { white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .rcpt .ln small { display: block; color: var(--muted); font-size: 14px; margin-top: 2px; }
+  .rcpt .ln.sub { color: var(--paper-2); }
+  .rcpt .ln.total { font-weight: 700; font-size: 18px; }
+  .rcpt .ln.due { font: 400 32px/1.1 var(--display); letter-spacing: .02em; padding: 14px 0 12px; }
+  .rcpt .ln.due span:first-child { font: 700 14px/1.2 var(--sans); letter-spacing: .14em; text-transform: uppercase; color: var(--paper-2); align-self: center; }
+  .bill-wrap .st { font-size: 13px; }
+  .bill-wrap .field input, .bill-wrap .field select { border-radius: 12px; }
+  .bill-wrap .tipseg { grid-template-columns: repeat(3, 1fr); }
+  .bill-wrap .tipseg button { min-height: 50px; font-size: 16px; border-radius: 12px; }
+  .bill-wrap .big { border-radius: 14px; min-height: 60px; font-size: 18px; }
+  .bill-wrap .say { border-radius: 12px; }
+  .pay-box { display: grid; gap: 18px; padding-top: 4px; }
+  .pay-box .fine { margin: -8px 0 0; text-align: center; font-size: 13px; color: var(--muted); }
+  @media print { .pay-box, #save, .bill-wrap a.big { display: none !important; } }
+</style>
 <script src="config.js"></script>
 </head>
 <body>
-<main class="ops" style="padding-bottom:40px"><header style="display:flex;align-items:center;gap:12px"><img src="assets/logo-sm.webp" alt="Memories" width="110" height="26"></header><div id="root"><div class="loading" role="status">LOADING…</div></div></main>
+<main class="bill-wrap"><header style="display:flex;align-items:center;gap:12px"><img src="assets/logo-sm.webp" alt="Memories" width="110" height="26"></header><div id="root"><div class="loading" role="status">LOADING…</div></div></main>
 <script type="module" src="pages/bill.js"></script>
 </body>
 </html>

@@ -12,11 +12,32 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Memories">
 <link rel="icon" href="assets/icon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Anton&family=Archivo:wght@400;600;700&family=Instrument+Serif:ital@0;1&display=swap">
 <link rel="stylesheet" href="styles.css">
+<style>
+  .rv { max-width: 520px; padding-top: 24px; padding-bottom: calc(40px + env(safe-area-inset-bottom)); }
+  .rv form, .rv .done { display: grid; gap: 22px; }
+  .rv h1 { font-size: clamp(40px, 11vw, 60px); margin: 18px 0 0; }
+  .rv .sub { color: var(--paper-2); margin: -10px 0 0; font-size: 16px; }
+  .stars { display: flex; gap: 4px; margin: 0 -6px; }
+  .stars button { flex: 0 0 auto; width: 58px; height: 58px; display: grid; place-items: center; background: none; border: 0; padding: 0; border-radius: 12px; color: var(--paper-2); -webkit-tap-highlight-color: transparent; }
+  .stars svg { width: 44px; height: 44px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linejoin: round; transition: transform .12s ease; }
+  .stars button[aria-checked="true"], .stars button.on { color: var(--crimson); }
+  .stars button.on svg { fill: currentColor; }
+  .stars button:active svg { transform: scale(.9); }
+  .stars-say { min-height: 22px; margin: -14px 0 0; color: var(--paper-2); font-weight: 600; }
+  .rv .field label { font-size: 13px; letter-spacing: .16em; }
+  .rv .field input, .rv .field textarea { border-radius: 12px; }
+  .rv .field textarea { min-height: 140px; font-size: 17px; line-height: 1.45; }
+  .rv #go { width: 100%; min-height: 58px; border-radius: 14px; font-size: 17px; }
+  .rv .row-actions .btn { border-radius: 12px; }
+</style>
 <script src="config.js"></script>
 </head>
 <body>
-<main class="wrap" style="max-width:560px;padding-top:24px;padding-bottom:40px"><div id="root"><div class="loading" role="status">LOADING…</div></div></main>
+<main class="wrap rv"><div id="root"><div class="loading" role="status">LOADING…</div></div></main>
 <script type="module" src="pages/review.js"></script>
 </body>
 </html>

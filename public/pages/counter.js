@@ -91,65 +91,136 @@ async function start() {
   for (const id of Object.keys(cart)) if (!r.items.some(i => i.id === id && i.available)) delete cart[id];
   const total = () => Object.entries(cart).reduce((a, [id, q]) => a + q * price(id), 0);
   const count = () => Object.values(cart).reduce((a, q) => a + q, 0);
-  const drink = i => `<div class="drink ${i.available ? '' : 'out'}"><div class="grow">${esc(i.name)}<small>${money(i.pricePesewas)}${i.available ? '' : ' · out tonight'}</small></div>
-      ${i.available ? `<div class="stepper"><button type="button" data-m="${esc(i.id)}" aria-label="One fewer ${esc(i.name)}">−</button><span aria-live="polite">${cart[i.id] || 0}</span><button type="button" data-p="${esc(i.id)}" aria-label="One more ${esc(i.name)}">+</button></div>` : ''}</div>`;
+  const drinks = n => `${n} drink${n === 1 ? '' : 's'}`;
+  const grand = () => total() + (total() ? tipNow() : 0);
+  // A drink not in the basket shows one "+ Add"; once added, the − n + stepper.
+  const control = i => (cart[i.id]
+    ? `<div class="stepper"><button type="button" data-m="${esc(i.id)}" aria-label="One fewer ${esc(i.name)}">−</button><span aria-live="polite" aria-label="${cart[i.id]} in your order">${cart[i.id]}</span><button type="button" data-p="${esc(i.id)}" aria-label="One more ${esc(i.name)}">+</button></div>`
+    : `<button type="button" class="add" data-p="${esc(i.id)}" aria-label="Add ${esc(i.name)}">+ Add</button>`);
+  const drink = i => `<div class="drink ${i.available ? (cart[i.id] ? 'in' : '') : 'out'}"><div class="grow">${esc(i.name)}<small>${money(i.pricePesewas)}</small></div>
+      ${i.available ? control(i) : '<span class="gone">Finished</span>'}</div>`;
+  const cats = [...new Set(r.items.map(i => i.category))];
+  const catId = c => `cat-${cats.indexOf(c)}`;
   // The list: everything by group, or the search results (best match first).
   const list = () => {
-    if (!query.trim()) { const cats = [...new Set(r.items.map(i => i.category))]; return cats.map(c => `<h2 class="cat">${esc(c)}</h2>${r.items.filter(i => i.category === c).map(drink).join('')}`).join(''); }
+    if (!query.trim()) return cats.map(c => `<h2 class="cat" id="${catId(c)}">${esc(c)}</h2>${r.items.filter(i => i.category === c).map(drink).join('')}`).join('');
     const rank = fn => r.items.map(i => [i, fn(query, i.name, i.category)]).filter(([, s]) => s > 0).sort((a, b) => b[1] - a[1] || Number(b[0].available) - Number(a[0].available)).map(([i]) => i);
     let hits = rank(drinkMatch); if (!hits.length) hits = rank(drinkMatchAny);
-    return hits.length ? hits.map(drink).join('') : `<p class="foot-small" style="text-align:center;padding:18px 0">No drink like “${esc(query)}”. Try another word, or clear the search.</p>`;
+    return hits.length ? hits.map(drink).join('') : `<p class="empty-find">No drink like “${esc(query)}”.<br>Try another word, or clear the search.</p>`;
   };
-  const bindSteps = () => $$('[data-p],[data-m]').forEach(b => b.onclick = () => {
-    const id = b.dataset.p || b.dataset.m;
-    cart[id] = Math.max(0, Math.min(20, (cart[id] || 0) + (b.dataset.p ? 1 : -1))); if (!cart[id]) delete cart[id];
-    // A changed basket is a new order; the same basket paid twice is the same order.
-    clientId = uuid(); store.set('mem-bar-draft', clientId); store.set('mem-bar-cart', cart);
-    $('#menuList').innerHTML = list(); bindSteps(); payDock();
-  });
-  const grand = () => total() + (total() ? tipNow() : 0);
-  const payDock = () => dock(total() ? `${money(grand())}<small>${count()} drink${count() > 1 ? 's' : ''}${total() && tipNow() ? ` + tip ${money(tipNow())}` : ''}</small>` : '', total() ? `Pay ${money(grand())}` : '', async btn => {
+  // A changed basket is a new order; the same basket paid twice is the same order.
+  const newDraft = () => { clientId = uuid(); store.set('mem-bar-draft', clientId); };
+  const step = (id, by) => {
+    cart[id] = Math.max(0, Math.min(20, (cart[id] || 0) + by)); if (!cart[id]) delete cart[id];
+    newDraft(); store.set('mem-bar-cart', cart);
+  };
+  const refreshMenu = () => { $('#menuList').innerHTML = list(); $('#chips') && ($('#chips').hidden = !!query.trim()); };
+  $('#app').onclick = e => {
+    const b = e.target.closest('[data-p],[data-m]'); if (!b || !$('#menuList')?.contains(b)) return;
+    const id = b.dataset.p || b.dataset.m; step(id, b.dataset.p ? 1 : -1);
+    refreshMenu(); viewDock();
+    // Keep the finger's place: focus the same drink's control after the redraw.
+    $(`#menuList [data-p="${CSS.escape(id)}"]`)?.focus({ preventScroll: true });
+  };
+  const viewDock = () => {
+    const n = count();
+    dock('', n ? 'View order' : '', () => openOrder());
+    if (n) { const btn = $('#dockBtn'); btn.innerHTML = `<span class="n" aria-hidden="true">${n}</span><span class="l">View order</span><span>${drinks(n)} · ${money(total())}</span>`; }
+  };
+
+  // ── Step 2: the order panel (items, total, MoMo number, tip, one Pay button) ──
+  const panel = $('#order');
+  // A reload keeps the history entry the panel pushed: forget it, so ✕ never leaves the page.
+  if (history.state?.order === 1) history.replaceState(null, '');
+  const phoneNow = { v: store.get('mem-bar-momo') || '' };
+  const isOpen = () => !panel.hidden;
+  function openOrder() {
+    if (!count()) return;
+    panel.hidden = false; document.body.classList.add('locked');
+    if (history.state?.order !== 1) history.pushState({ order: 1 }, '');
+    drawOrder(); $('#orderH').setAttribute('tabindex', '-1'); $('#orderH').focus({ preventScroll: true });
+  }
+  // Closing never touches the basket. The phone's back button closes it too (popstate).
+  function shut() {
+    if (!isOpen()) return;
+    panel.hidden = true; document.body.classList.remove('locked');
+    refreshMenu(); viewDock(); $('#dockBtn').hidden || $('#dockBtn').focus({ preventScroll: true });
+  }
+  const closeOrder = () => { if (history.state?.order === 1) history.back(); else shut(); };
+  $('#orderBack').onclick = closeOrder; $('#orderX').onclick = closeOrder;
+  window.onpopstate = () => { if (isOpen()) shut(); };
+  panel.onkeydown = e => { if (e.key === 'Escape') closeOrder(); };
+
+  const orderItems = () => `<div class="op-items">${Object.keys(cart).map(id => r.items.find(i => i.id === id)).filter(Boolean).map(i => `<div class="drink"><div class="grow">${esc(i.name)}<small>${money(i.pricePesewas)} each</small></div>${control(i)}<span class="line-t">${money(cart[i.id] * i.pricePesewas)}</span></div>`).join('')}
+    <button type="button" class="more" id="addMore">+ Add more drinks</button></div>`;
+  const totals = () => `<div class="r"><span>${drinks(count())}</span><span>${money(total())}</span></div>${tipNow() ? `<div class="r"><span>Tip</span><span>${money(tipNow())}</span></div>` : ''}<div class="r t"><span>Total</span><span>${money(grand())}</span></div>`;
+  const payLabel = () => { const b = $('#pay'); if (!b.disabled) b.textContent = `Pay ${money(grand())}`; };
+  const refreshOrder = () => { $('#orderItems').innerHTML = orderItems(); $('#orderTotals').innerHTML = totals(); payLabel(); bindItems(); };
+  const bindItems = () => {
+    $$('#orderItems [data-p],#orderItems [data-m]').forEach(b => b.onclick = () => {
+      const id = b.dataset.p || b.dataset.m; step(id, b.dataset.p ? 1 : -1);
+      if (!count()) return closeOrder();
+      refreshOrder(); $(`#orderItems [data-${b.dataset.p ? 'p' : 'm'}="${CSS.escape(id)}"]`)?.focus({ preventScroll: true });
+    });
+    $('#addMore').onclick = closeOrder;
+  };
+  const fieldErr = (sel, text) => { const f = $(sel).closest('.field'); f.classList.add('bad'); f.querySelector('.err').textContent = text; $(sel).focus(); f.scrollIntoView({ block: 'center', behavior: 'smooth' }); };
+  const clearErr = sel => { const f = $(sel)?.closest('.field'); if (f) { f.classList.remove('bad'); f.querySelector('.err').textContent = ''; } };
+  function drawOrder() {
+    $('#orderBody').innerHTML = `<div id="orderItems">${orderItems()}</div>
+      <div class="totals" id="orderTotals" aria-live="polite">${totals()}</div>
+      <div class="field"><label for="ph">MoMo number</label><input id="ph" type="tel" inputmode="tel" autocomplete="tel" placeholder="024 123 4567" value="${esc(phoneNow.v)}"><span class="err" role="alert"></span><span class="hint">Your pickup code also comes here by text. Paying cash? Just order at the bar.</span></div>
+      ${tipPart()}
+      <div id="err"></div>`;
+    $('#pay').disabled = false; payLabel(); bindItems();
+    $('#ph').oninput = e => { phoneNow.v = e.target.value; clearErr('#ph'); };
+    // A different tip is a different payment: a new order id, so the old payment isn't reused.
+    const tipChanged = () => { newDraft(); $('#orderTotals').innerHTML = totals(); payLabel(); };
+    $$('[data-tip]').forEach(x => x.onclick = () => {
+      tipPick.tip = x.dataset.tip === 'other' ? 'other' : Number(x.dataset.tip);
+      $$('[data-tip]').forEach(y => y.setAttribute('aria-pressed', String(y === x)));
+      $('#tipOther').hidden = tipPick.tip !== 'other'; $('#tipWho').hidden = !tipPick.tip;
+      clearErr('#tipAmt'); clearErr('#tipTo');
+      if (tipPick.tip === 'other') $('#tipAmt').focus();
+      tipChanged();
+    });
+    $('#tipAmt') && ($('#tipAmt').oninput = e => { tipPick.other = e.target.value; clearErr('#tipAmt'); tipChanged(); });
+    $('#tipTo') && ($('#tipTo').onchange = e => { tipPick.to = e.target.value; clearErr('#tipTo'); tipChanged(); });
+  }
+  $('#pay').onclick = async () => {
+    const btn = $('#pay'); $('#err').innerHTML = '';
     const phone = $('#ph').value;
-    if (!normalizePhone(phone)) { $('#err').innerHTML = msg('Enter your MoMo number, e.g. 024 123 4567.', 'bad'); return $('#ph').focus(); }
+    if (!normalizePhone(phone)) return fieldErr('#ph', 'Enter your MoMo number, e.g. 024 123 4567.');
     const t = tipNow();
-    if (tipPick.tip === 'other' && t < 100) { $('#err').innerHTML = msg('Enter the tip (at least GHS 1), or pick No tip.', 'bad'); return $('#tipAmt').focus(); }
-    if (t && !tipPick.to) { $('#err').innerHTML = msg('Pick who the tip is for.', 'bad'); return $('#tipTo').focus(); }
+    if (tipPick.tip === 'other' && t < 100) return fieldErr('#tipAmt', 'Enter the tip (at least GHS 1), or pick No tip.');
+    if (t && !tipPick.to) return fieldErr('#tipTo', 'Pick who the tip is for.');
     btn.disabled = true; btn.textContent = 'Opening payment…';
     try {
       const o = await api('/api/guest/counter/checkout', { method: 'POST', body: { station, spot, items: Object.entries(cart).map(([itemId, qty]) => ({ itemId, qty })), phone, clientId, ...(t ? { tipPesewas: t, tipToUid: tipPick.to } : {}) } });
       store.set('mem-bar-momo', phone); store.set('mem-bar-order', o.orderId); store.set('mem-bar-cart', null); store.set('mem-bar-draft', null);
       location.href = o.authorizationUrl;
-    } catch (e) { $('#err').innerHTML = msg(e.message, 'bad'); btn.disabled = false; btn.textContent = 'Try again'; }
-  });
+    } catch (e) { $('#err').innerHTML = msg(e.message, 'bad'); $('#err').scrollIntoView({ block: 'center', behavior: 'smooth' }); btn.disabled = false; btn.textContent = `Try again · ${money(grand())}`; }
+  };
+
+  // ── Step 1: the menu ──
   const draw = () => {
-    app.innerHTML = `${lastPaid() ? `<a class="btn" href="${esc(again())}&view=night" style="margin-bottom:10px">My night: what I’ve spent</a>` : ''}
-      <div class="field search-drink"><label for="find">Search drinks</label><input id="find" type="search" placeholder="e.g. Heineken, Guinness, Hennessy" autocomplete="off" autocapitalize="off" spellcheck="false" enterkeyhint="search" value="${esc(query)}"></div>
-      <div id="menuList">${list()}</div>
-      <div class="field" style="margin-top:14px"><label for="ph">MoMo number</label><input id="ph" type="tel" inputmode="tel" autocomplete="tel" placeholder="024 123 4567" value="${esc(store.get('mem-bar-momo') || '')}"><span class="hint">Your pickup code also comes here by text. Paying cash? Just order at the bar.</span></div>
-      ${tipPart()}
-      <div id="err"></div>`;
+    app.innerHTML = `${lastPaid() ? `<a class="night-link" href="${esc(again())}&view=night">My night: what I’ve spent</a>` : ''}
+      <div class="find-bar"><label class="sr" for="find">Search drinks</label><input id="find" type="search" placeholder="Search drinks, e.g. Guinness" autocomplete="off" autocapitalize="off" spellcheck="false" enterkeyhint="search" value="${esc(query)}">
+        ${cats.length > 1 ? `<nav class="chips" id="chips" aria-label="Drink groups" ${query.trim() ? 'hidden' : ''}>${cats.map(c => `<a href="#${catId(c)}">${esc(c)}</a>`).join('')}</nav>` : ''}</div>
+      <div id="menuList">${list()}</div>`;
     // Typing only redraws the list, so the keyboard stays open.
-    $('#find').oninput = e => { query = e.target.value; $('#menuList').innerHTML = list(); bindSteps(); };
-    // A different tip is a different payment: a new order id, so the old payment isn't reused.
-    const tipChanged = () => { clientId = uuid(); store.set('mem-bar-draft', clientId); payDock(); };
-    $$('[data-tip]').forEach(x => x.onclick = () => {
-      tipPick.tip = x.dataset.tip === 'other' ? 'other' : Number(x.dataset.tip);
-      $$('[data-tip]').forEach(y => y.setAttribute('aria-pressed', String(y === x)));
-      $('#tipOther').hidden = tipPick.tip !== 'other'; $('#tipWho').hidden = !tipPick.tip;
-      if (tipPick.tip === 'other') $('#tipAmt').focus();
-      tipChanged();
-    });
-    $('#tipAmt') && ($('#tipAmt').oninput = e => { tipPick.other = e.target.value; tipChanged(); });
-    $('#tipTo') && ($('#tipTo').onchange = e => { tipPick.to = e.target.value; tipChanged(); });
-    bindSteps(); payDock();
+    $('#find').oninput = e => { query = e.target.value; refreshMenu(); };
+    $('#find').onkeydown = e => { if (e.key === 'Enter') e.target.blur(); };
+    $$('#chips a').forEach(a => a.onclick = e => { e.preventDefault(); document.getElementById(a.getAttribute('href').slice(1))?.scrollIntoView({ behavior: 'smooth', block: 'start' }); });
+    viewDock();
   };
   const tipPart = () => {
     if (!r.tipPeople?.length) return '';
     const on = v => String(tipPick.tip === v);
     return `<div class="field"><span class="label" id="tipL">Add a tip? (optional)</span>
       <div class="tipseg" role="group" aria-labelledby="tipL">${TIPS.map(v => `<button type="button" data-tip="${v}" aria-pressed="${on(v)}">${v ? money(v) : 'No tip'}</button>`).join('')}<button type="button" data-tip="other" aria-pressed="${on('other')}">Other</button></div></div>
-      <div class="field" id="tipOther" ${tipPick.tip === 'other' ? '' : 'hidden'}><label for="tipAmt">Tip amount (GHS)</label><input id="tipAmt" inputmode="decimal" autocomplete="off" value="${esc(tipPick.other)}"></div>
-      <div class="field" id="tipWho" ${tipPick.tip ? '' : 'hidden'}><label for="tipTo">Tip for</label><select id="tipTo"><option value="">Pick who it’s for</option>${r.tipPeople.map(p => `<option value="${esc(p.id)}" ${p.id === tipPick.to ? 'selected' : ''}>${esc(p.name)}${p.job ? ` · ${esc(p.job)}` : ''}</option>`).join('')}</select>
+      <div class="field" id="tipOther" ${tipPick.tip === 'other' ? '' : 'hidden'}><label for="tipAmt">Tip amount (GHS)</label><input id="tipAmt" inputmode="decimal" autocomplete="off" placeholder="e.g. 15" value="${esc(tipPick.other)}"><span class="err" role="alert"></span></div>
+      <div class="field" id="tipWho" ${tipPick.tip ? '' : 'hidden'}><label for="tipTo">Tip for</label><select id="tipTo"><option value="">Pick who it’s for</option>${r.tipPeople.map(p => `<option value="${esc(p.id)}" ${p.id === tipPick.to ? 'selected' : ''}>${esc(p.name)}${p.job ? ` · ${esc(p.job)}` : ''}</option>`).join('')}</select><span class="err" role="alert"></span>
         <span class="hint">The whole tip goes to them, not to the club.</span></div>`;
   };
   draw();

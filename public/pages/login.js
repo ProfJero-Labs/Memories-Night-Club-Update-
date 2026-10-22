@@ -56,10 +56,24 @@ $('#sendPin').onclick = async () => {
   const phone = $('#phone').value.trim();
   if (!normalizePhone(phone)) { msg('Type your phone number first, then tap “Text me one”.'); return $('#phone').focus(); }
   const btn = $('#sendPin'); busy(btn, true, 'Sending…');
-  try { const r = await api('/api/staff-auth/send-pin', { method: 'POST', body: { phone } }); remember(phone); msg(r.message, true); $('#pin').value = ''; $('#pin').focus(); }
+  try { const r = await api('/api/staff-auth/send-pin', { method: 'POST', body: { phone } }); remember(phone); msg(r.message, true); $('#pin').value = ''; waitForTextedPin(); $('#pin').focus(); }
   catch (e) { msg(explain(e)); }
-  busy(btn, false, 'First time, or forgot your PIN? Text me one');
+  busy(btn, false, 'New or forgot PIN? Text me one');
 };
+
+// A PIN that comes by text: the phone can fill it in by itself (Android reads the text when the
+// person allows it; an iPhone shows the code above the keyboard). The everyday PIN stays a saved
+// password, so the phone's password manager remembers it and nobody retypes it.
+let otpWait = null;
+function waitForTextedPin() {
+  const pin = $('#pin');
+  pin.setAttribute('autocomplete', 'one-time-code'); pin.placeholder = 'The PIN from the text';
+  if (!('OTPCredential' in window)) return;
+  otpWait?.abort(); otpWait = new AbortController();
+  navigator.credentials.get({ otp: { transport: ['sms'] }, signal: otpWait.signal })
+    .then(c => { if (c?.code && /^\d{4,6}$/.test(c.code)) { pin.value = c.code; $('#pinForm').requestSubmit(); } })
+    .catch(() => { /* closed, or typed by hand */ });
+}
 
 // Older accounts: email + password
 $('#f').onsubmit = async e => {

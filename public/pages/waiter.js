@@ -7,7 +7,7 @@
 import { $, $$, esc, normalizePhone } from '../app.js';
 import { requireStaff, staffHeader, sapi } from '../staff.js';
 import { qrSvg } from '../ticket-art.js';
-import { sheet, say, st, every, bottomNav, busy, ghsIn, moneyField, money, when } from '../lib/ops-ui.js';
+import { sheet, say, st, every, bottomNav, busy, ghsIn, moneyField, money, when, backBar, bindBackBar, returnTo, pasteMomoButton } from '../lib/ops-ui.js';
 import { drinkPicker, paySheet, handInCash, tipBox, tipSheet, tipSaid } from '../lib/sell.js';
 
 const user = await requireStaff(['waitStaff', 'eventManager', 'superAdmin', 'director', 'manager']);
@@ -35,9 +35,9 @@ const fail = e => { app.innerHTML = `<div class="say bad" role="alert"><b>Couldn
 // ── My tabs ──
 async function tabsList() {
   app.innerHTML = `<h1>My tables</h1>
-    <div class="btn-row"><button class="big" id="quick">Quick sale</button><button class="big ghost" id="newTab">Open a table</button></div>
+    <div class="btn-row"><button class="big" id="quick">Quick sale</button><button class="big ghost" id="newTab">New table</button></div>
     <p class="muted" style="margin:0">Quick sale: the customer pays now. Table: they keep ordering and pay at the end.</p>
-    <button class="link" id="tipOnly" style="justify-self:start">Record a tip (no bill)</button>
+    <button class="mid ghost" id="tipOnly">Record a tip (no bill)</button>
     <div id="msg"></div><div class="cards" id="list"><div class="loading">Loading…</div></div>`;
   $('#newTab').onclick = newTab;
   $('#quick').onclick = () => { location.hash = 'quick'; };
@@ -48,7 +48,7 @@ async function tabsList() {
     if (!alive()) return;
     const open = tabs.filter(t => t.status === 'open'), done = tabs.filter(t => t.status !== 'open');
     nav.setDot('tabs', open.length || 0);
-    $('#list').innerHTML = (open.length ? open.map(card).join('') : '<div class="empty-box"><b>No open tables</b>Tap “Open a table” when a table or customer orders.</div>')
+    $('#list').innerHTML = (open.length ? open.map(card).join('') : '<div class="empty-box"><b>No open tables</b>Tap “New table” when a table or customer orders.</div>')
       + (done.length ? `<h2>Closed tonight</h2>${done.map(card).join('')}` : '');
     $$('[data-tab]').forEach(b => b.onclick = () => { location.hash = `tab/${b.dataset.tab}`; });
   });
@@ -96,7 +96,7 @@ async function tabView(id) {
     if (!alive()) return;
     t = fresh;
     const b = t.bill, delivered = t.rounds.every(r => ['delivered', 'cancelled'].includes(r.status));
-    app.innerHTML = `<button class="link" data-back style="justify-self:start">← My tables</button>
+    app.innerHTML = `${backBar('', 'tabs')}
       <div class="row" style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap"><h1>${esc(t.label)} · ${esc(t.table)}</h1>${st(t.payStatus, t.payLabel)}</div>
       ${t.customerName ? `<p class="lead">${esc(t.customerName)}${t.customerPhoneHint ? ` · ${esc(t.customerPhoneHint)}` : ''}</p>` : ''}
       <div id="msg"></div>
@@ -115,13 +115,13 @@ async function tabView(id) {
         ${b.balancePesewas ? '<button class="mid" id="showBill">Show bill (QR)</button>' : ''}
         <button class="mid" id="ask">Ask the manager</button>
         ${!b.balancePesewas && delivered && b.totalPesewas ? '<button class="mid okc" id="close">Close table</button>' : ''}</div>` : ''}`;
-    $('[data-back]').onclick = () => { location.hash = 'tabs'; };
+    bindBackBar(app);
     $('#add') && ($('#add').onclick = () => { location.hash = `add/${t.id}`; });
     $('#showBill') && ($('#showBill').onclick = () => showBill(t));
     $('#cash') && ($('#cash').onclick = () => takePayment(t));
     $('#invoice') && ($('#invoice').onclick = () => sendInvoice(t));
     $('#ask') && ($('#ask').onclick = () => askManager(t));
-    $('#close') && ($('#close').onclick = async () => { try { await sapi('/api/ops/tabs/close', { method: 'POST', body: { tabId: t.id } }); location.hash = 'tabs'; } catch (e) { say($('#msg'), e.message, 'bad'); } });
+    $('#close') && ($('#close').onclick = async () => { try { await sapi('/api/ops/tabs/close', { method: 'POST', body: { tabId: t.id } }); returnTo('tabs'); } catch (e) { say($('#msg'), e.message, 'bad'); } });
     $$('[data-act]').forEach(btn => btn.onclick = () => roundAct(btn.dataset.r, btn.dataset.act, t));
   };
   stop = every(5000, alive => draw(alive).catch(e => alive() && fail(e)));
@@ -206,6 +206,7 @@ function takePayment(t) {
     <div class="seg" role="radiogroup" aria-label="How they paid"><button type="button" class="mid on" data-m="cash" role="radio" aria-checked="true">Cash</button><button type="button" class="mid" data-m="momo" role="radio" aria-checked="false">MoMo</button></div>
     ${moneyField('tcAmt', 'Amount paid (GHS)', (t.bill.balancePesewas / 100).toString(), `Still to pay: ${money(t.bill.balancePesewas)}.`)}
     <div id="tcMomo" hidden>
+      <div id="tcPaste"></div>
       <div class="sfield"><label for="tcRef">MoMo transaction ID</label><input id="tcRef" maxlength="40" autocomplete="off" autocapitalize="characters" placeholder="From the MoMo text, e.g. 51234567890"><span class="hint">Check the customer’s MoMo text, or the club’s MoMo phone.</span></div>
       <div class="sfield"><label for="tcFrom">Paid from number (optional)</label><input id="tcFrom" type="tel" inputmode="tel" placeholder="024 123 4567"></div>
     </div>
@@ -214,6 +215,8 @@ function takePayment(t) {
     <div id="tcMsg"></div><button class="big" id="tcGo">Record cash</button><button class="big ghost" data-close>Cancel</button>`, { label: 'Customer paid' });
   let method = 'cash';
   const tb = tipBox($('#tcTip', box), sapi, t.waiterUid || user.uid);
+  // Smart paste: the ID, the amount and the number, out of the MoMo text (checked, not retyped).
+  $('#tcPaste', box).append(pasteMomoButton(m => { if (m.ref) $('#tcRef', box).value = m.ref; if (m.amountPesewas && m.amountPesewas <= t.bill.balancePesewas) $('#tcAmt', box).value = String(m.amountPesewas / 100); if (m.phone) $('#tcFrom', box).value = m.phone; }));
   $$('[data-m]', box).forEach(b => b.onclick = () => {
     method = b.dataset.m; tb.method(method);
     $$('[data-m]', box).forEach(x => { x.classList.toggle('on', x === b); x.setAttribute('aria-checked', String(x === b)); });
@@ -260,8 +263,8 @@ async function addDrinks(tabId) {
     products = (await sapi(`/api/ops/products?stationId=${encodeURIComponent(t.stationId || '')}`)).products;
   } catch (e) { return fail(e); }
   drinkPicker(app, products, {
-    title: `Add drinks · ${t.label} · ${t.table}`, onBack: () => { location.hash = `tab/${tabId}`; },
-    onSend: async lines => { await sapi('/api/ops/tabs/round', { method: 'POST', body: { tabId, lines } }); location.hash = `tab/${tabId}`; },
+    title: `Add drinks · ${t.label} · ${t.table}`, onBack: () => returnTo(`tab/${tabId}`),
+    onSend: async lines => { await sapi('/api/ops/tabs/round', { method: 'POST', body: { tabId, lines } }); returnTo(`tab/${tabId}`); },
   });
 }
 
@@ -277,12 +280,12 @@ async function quickSale(stationId) {
   } catch (e) { return fail(e); }
   const pickBar = d.stations.length > 1 ? `<div class="sfield"><label for="qsBar">Which bar makes the drinks?</label><select id="qsBar">${d.stations.map(x => `<option value="${esc(x.id)}" ${x.id === stationId ? 'selected' : ''}>${esc(x.name)}</option>`).join('')}</select></div>` : '';
   drinkPicker(app, d.products, {
-    title: 'Quick sale', top: pickBar, button: n => `Customer pays · ${n}`, onBack: () => { location.hash = 'tabs'; },
+    title: 'Quick sale', top: pickBar, button: n => `Customer pays · ${n}`, onBack: () => returnTo('tabs'),
     onSend: async (lines, total) => {
       paySheet(total, async pay => {
         const r = await sapi('/api/ops/quick-sale', { method: 'POST', body: { lines, stationId, ...pay } });
         sessionStorage.setItem('waiter-flash', `${pay.method === 'momo' ? 'MoMo' : 'Cash'} ${money(total)} recorded.${tipSaid(r)} Collect the drinks at the bar, then tap “I got them”.`);
-        location.hash = 'tabs';
+        returnTo('tabs');
       }, { title: 'Quick sale', sapi, tipFor: user.uid });
     },
   });

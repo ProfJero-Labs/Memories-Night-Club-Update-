@@ -61,7 +61,8 @@ test('a MoMo tip on a table for someone else: shares the MoMo ID, is owed to the
   assert.equal(pay.balancePesewas, 0, 'the bill is paid; the tip is on top');
   const [t] = tips(store);
   assert.deepEqual([t.toUid, t.amountPesewas, t.method, t.status, t.momoRef, t.tabNumber], ['dj', 2000, 'momo', 'owed', 'MP123456', 1]);
-  assert.match(store.sms.at(-1).message, /You got a tip: GHS 20/); assert.equal(store.sms.at(-1).to, '0240000320');
+  const djText = store.sms.filter(x => x.to === '0240000320').at(-1);
+  assert.match(djText.message, /You got a tip: GHS 20/);
   // The same MoMo can't be counted again, as a tip on its own either.
   assert.match((await call('POST', '/api/ops/tips', { who: 'w1', body: { method: 'momo', momoRef: 'MP123456', tipPesewas: 2000, tipToUid: 'dj' } })).data.error, /already recorded/);
   // The night's report: MoMo sales and MoMo tips, with the ID to find on the statement.
@@ -162,4 +163,31 @@ test('no refunds at the bar: a paid quick sale can’t be cancelled by the bar; 
   const menu = ok(await call('GET', `/api/guest/menu?station=${STATION}`), 'menu');
   assert.equal(menu.items.find(i => i.id === 'champ').available, false, 'shown as finished');
   assert.match((await call('POST', '/api/ops/quick-sale', { who: 'w1', body: { lines: [{ productId: 'champ', qty: 1 }], method: 'cash' } })).data.error, /Champagne is finished/);
+});
+
+test('the Manager is texted for every MoMo and card payment (not cash), with tonight’s MoMo/card total', async () => {
+  const { store, call } = setup();
+  const toManager = () => store.sms.filter(x => x.to === '0240000340'); // m1
+  // Cash: no text.
+  ok(await call('POST', '/api/ops/quick-sale', { who: 'b1', body: { lines: [{ productId: 'beer', qty: 1 }], fromBar: true, method: 'cash' } }), 'cash sale');
+  assert.equal(toManager().length, 0, 'cash isn’t texted');
+  // MoMo recorded by a waiter: texted, to check on the statement.
+  const tab = ok(await call('POST', '/api/ops/tabs/open', { who: 'w1', body: { table: '3' } }), 'tab');
+  ok(await call('POST', '/api/ops/tabs/round', { who: 'w1', body: { tabId: tab.id, lines: [{ productId: 'beer', qty: 4 }] } }), 'round');
+  ok(await call('POST', '/api/ops/tabs/pay', { who: 'w1', body: { tabId: tab.id, method: 'momo', amountPesewas: 10000, momoRef: 'AL123456' } }), 'momo');
+  assert.match(toManager().at(-1).message, /GHS 100 MoMo recorded by Efua \(check the statement\)\nTab 2\nMoMo\/card tonight: GHS 100/);
+  // A QR order, confirmed by Paystack.
+  const o = ok(await call('POST', '/api/guest/counter/checkout', { body: { station: STATION, items: [{ itemId: 'beer', qty: 2 }], phone: '024 123 4567', clientId: 'a1b2c3d4-0000-4000-8000-0000000000e1' } }), 'qr');
+  const ref = store.list('pending_checkouts').at(-1).id;
+  store.setPaystack(ref, { status: 'success', currency: 'GHS', amount: 5000 });
+  ok(await call('GET', `/api/guest/counter/${o.orderId}`), 'poll');
+  ok(await call('GET', `/api/guest/counter/${o.orderId}`), 'poll again');
+  const qrTexts = toManager().filter(x => /QR order/.test(x.message));
+  assert.equal(qrTexts.length, 1, 'once, even when checked twice');
+  assert.match(qrTexts[0].message, /GHS 50 MoMo\/card confirmed\nQR order, Main bar\nMoMo\/card tonight: GHS 150/);
+  // A manager who turned alerts off isn't texted.
+  store.seed('users', 'm1', { ...store.get('users', 'm1').fields, paymentAlerts: false });
+  const before = toManager().length;
+  ok(await call('POST', '/api/ops/quick-sale', { who: 'w1', body: { lines: [{ productId: 'beer', qty: 1 }], method: 'momo', momoRef: 'AL999999' } }), 'momo quick sale');
+  assert.equal(toManager().length, before);
 });

@@ -19,62 +19,85 @@
 <link rel="stylesheet" href="admin.css">
 <link rel="stylesheet" href="ops.css">
 <style>
-  .barq { max-width: 1100px; margin: 0 auto; padding: 14px var(--gutter) 48px; display: grid; gap: 16px; }
-  .bar-top { display: grid; gap: 10px; grid-template-columns: minmax(0, 1fr) auto; align-items: end; }
-  .bar-top .sfield { margin: 0; }
-  .bar-ctl { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
-  .bar-ctl select { min-height: 48px; background: var(--ink-2); border: 1px solid var(--line-2); padding: 0 12px; color: var(--paper); font: 700 15px var(--sans); }
-  .bar-state { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
-  .bar-find input { font: 400 40px/1 var(--display); letter-spacing: .14em; text-transform: uppercase; min-height: 64px; text-align: center; }
-  .bar-stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
-  .bar-stats div { border: 1px solid var(--line-2); padding: 10px 12px; background: var(--ink-2); }
-  .bar-stats b { display: block; font: 400 34px/1 var(--display); }
-  .bar-stats span { font: 700 11px var(--sans); letter-spacing: .12em; text-transform: uppercase; color: var(--muted); }
-  .bar-stats .hot b { color: var(--mustard); }
-  .orders { display: grid; gap: 12px; grid-template-columns: repeat(auto-fill, minmax(270px, 1fr)); }
-  .ord { border: 2px solid var(--line-2); border-top: 6px solid var(--crimson); padding: 14px; display: grid; gap: 10px; background: var(--ink-2); align-content: start; animation: pop .25s ease-out; }
+  .barq { max-width: 1100px; margin: 0 auto; padding: 10px var(--gutter) 96px; display: grid; gap: 14px; align-content: start; }
+  /* One quiet line on every tab: which bar, and whether app orders are on. Tap it for the settings. */
+  .bar-status { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 48px; padding: 6px 4px 6px 12px; border: 1px solid var(--line); border-radius: 24px; background: var(--ink-2); color: var(--paper); font: 600 15px var(--sans); text-align: left; cursor: pointer; }
+  .bar-status .where { flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; overflow: hidden; white-space: nowrap; }
+  .bar-status .where b { font-weight: 700; overflow: hidden; text-overflow: ellipsis; }
+  .bar-status .gear { display: inline-grid; place-items: center; width: 40px; height: 40px; border-radius: 20px; background: var(--ink-3); font-size: 19px; line-height: 1; }
+  .lamp { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font-size: 14px; }
+  .lamp::before { content: ''; width: 9px; height: 9px; border-radius: 50%; background: #6fcfae; }
+  .lamp.off { color: #ff7a9c; } .lamp.off::before { background: #ff7a9c; }
+  #msgTop { position: sticky; top: 62px; z-index: 25; } #msgTop:empty { display: none; } #msgTop .say { box-shadow: 0 8px 24px rgba(0,0,0,.5); background: var(--ink-3); }
+  .sec-h { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; margin-top: 4px; }
+  .sec-h h2 { margin: 0; font: 400 24px/1 var(--display); text-transform: uppercase; }
+  .sec-h span { font: 600 14px var(--sans); color: var(--muted); } .sec-h .hot { color: var(--mustard); }
+  .bar-find input { font: 400 34px/1 var(--display); letter-spacing: .14em; text-transform: uppercase; min-height: 60px; text-align: center; }
+  .orders { display: grid; gap: 12px; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); }
+  /* An order is a ticket: where it goes, what's in it, and one big next step. */
+  .ord { border: 1px solid var(--line-2); border-top: 6px solid var(--crimson); border-radius: 14px; padding: 14px; display: grid; gap: 10px; background: var(--ink-2); align-content: start; animation: pop .25s ease-out; }
   @keyframes pop { from { transform: scale(.97); opacity: 0; } }
   @media (prefers-reduced-motion: reduce) { .ord { animation: none; } }
-  .ord .head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
-  .ord .code { font: 400 60px/1 var(--display); letter-spacing: .1em; }
-  .ord .spot { justify-self: start; background: var(--mustard); color: var(--ink); font: 700 13px/1 var(--sans); letter-spacing: .1em; text-transform: uppercase; padding: 6px 8px; }
-  .ord .waited { color: var(--muted); font-size: 14px; white-space: nowrap; }
+  .ord.s-preparing { border-top-color: #8fb6ff; } .ord.s-ready { border-top-color: #6fcfae; }
+  .ord .head { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+  .ord .code { font: 400 52px/1 var(--display); letter-spacing: .08em; }
+  .ord .tbl-name { font: 400 36px/1 var(--display); text-transform: uppercase; overflow-wrap: anywhere; }
+  .ord .who { font-size: 15px; color: var(--muted); }
+  .ord .spot { justify-self: start; background: var(--mustard); color: var(--ink); font: 700 14px/1 var(--sans); letter-spacing: .08em; text-transform: uppercase; padding: 6px 8px; }
+  .ord .waited { color: var(--muted); font-size: 15px; white-space: nowrap; }
   .ord.late { border-top-color: var(--mustard); } .ord.late .waited { color: var(--mustard); font-weight: 700; }
-  .ord ul { margin: 0; padding: 0; list-style: none; font-size: 19px; display: grid; gap: 4px; }
-  .ord ul li { display: flex; gap: 10px; } .ord ul b { min-width: 34px; color: var(--crimson-text); }
-  .ord .act { display: grid; grid-template-columns: 2fr 1fr; gap: 8px; } .ord .act .sbtn { min-height: 56px; justify-content: center; }
+  .ord ul { margin: 0; padding: 10px 0; list-style: none; font-size: 20px; display: grid; gap: 6px; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+  .ord ul li { display: flex; gap: 10px; } .ord ul b { min-width: 38px; color: var(--crimson-text, var(--crimson)); }
+  .ord .note { font-size: 15px; color: var(--mustard); }
+  .ord .step { display: flex; align-items: center; justify-content: center; min-height: 60px; font-size: 18px; width: 100%; }
+  .ord .more { display: flex; gap: 8px; } .ord .more button { flex: 1; min-height: 48px; background: none; border: 1px solid var(--line-2); color: var(--paper); font: 600 15px var(--sans); cursor: pointer; }
+  .ord .note-small { font-size: 14px; color: var(--muted); }
   .ord.hit { border-color: var(--paper); box-shadow: 0 0 0 3px var(--crimson); }
-  .bar-empty { border: 1px dashed var(--line-2); padding: 28px 16px; text-align: center; color: var(--muted); }
-  .bar-empty b { display: block; font: 400 30px/1 var(--display); text-transform: uppercase; color: var(--paper); margin-bottom: 6px; }
-  .done-wrap summary { cursor: pointer; font: 400 22px var(--display); text-transform: uppercase; padding: 6px 0; }
-  @media (max-width: 560px) { .bar-top { grid-template-columns: 1fr; } .ord .code { font-size: 52px; } }
+  .none { margin: 0; padding: 14px 0; color: var(--muted); font-size: 16px; border-bottom: 1px solid var(--line); }
+  .ret { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-top: 8px; }
+  /* Counting: big boxes for big thumbs, the number keypad, and how far along you are. */
+  .count-list { display: grid; border-top: 1px solid var(--line); }
+  .count-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px 12px; align-items: center; padding: 12px 0; border-bottom: 1px solid var(--line); }
+  .count-row .nm { font: 700 17px/1.25 var(--sans); } .count-row .nm small { display: block; font: 400 14px var(--sans); color: var(--muted); margin-top: 2px; }
+  .count-row input[data-n] { width: 116px; min-height: 56px; padding: 0 10px; border: 1px solid var(--line-2); border-radius: 12px; background: var(--ink-3); color: var(--paper); font: 400 30px/1 var(--display); text-align: center; letter-spacing: .04em; }
+  .count-row input[data-n]:focus { outline: 2px solid var(--crimson); outline-offset: 1px; border-color: transparent; }
+  .count-row.done input[data-n] { border-color: #6fcfae; }
+  .count-row [data-diff] { grid-column: 1 / -1; font-size: 15px; } .count-row [data-diff]:empty { display: none; }
+  .count-row select, .count-row input[data-note] { grid-column: 1 / -1; min-height: 52px; font-size: 16px; padding: 0 12px; border-radius: 10px; background: var(--ink-2); border: 1px solid var(--line-2); color: var(--paper); }
+  .count-row [hidden] { display: none; }
+  .progress { display: flex; justify-content: space-between; align-items: center; gap: 10px; font: 600 15px var(--sans); color: var(--paper-2, var(--paper)); padding-bottom: 8px; }
+  .progress .bar { flex: 1; height: 6px; border-radius: 3px; background: var(--ink-3); overflow: hidden; } .progress .bar i { display: block; height: 100%; background: #6fcfae; width: 0; transition: width .2s; }
+  .stat-rows { display: grid; } .stat-rows div { display: flex; justify-content: space-between; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--line); font-size: 16px; } .stat-rows b { font-size: 18px; }
+  .row-btn .tag { display: inline-block; margin-left: 6px; font: 700 12px/1 var(--sans); letter-spacing: .04em; padding: 4px 6px; border-radius: 4px; vertical-align: 2px; }
+  .tag.low { color: var(--ink); background: var(--mustard); } .tag.out { color: #fff; background: var(--crimson-btn); }
+  .row-btn .r b { font: 400 28px/1 var(--display); }
+  .shift-h { margin: 18px 0 0; font: 400 24px/1 var(--display); text-transform: uppercase; }
+  .sub-back { display: flex; align-items: center; gap: 10px; margin: -4px 0 0; }
+  @media (max-width: 560px) { .ord .code { font-size: 46px; } }
 </style>
 <script src="config.js"></script>
 </head>
 <body class="staff">
 <main class="barq">
-  <div class="bar-top">
-    <div class="bar-ctl"><select id="st" aria-label="Which bar"></select><span class="bar-state" id="state" role="status"></span></div>
-    <div class="bar-ctl"><button class="sbtn" id="open" type="button"></button><button class="sbtn ghost" id="qr" type="button">QR codes</button><button class="sbtn ghost" id="sound" type="button" aria-pressed="false">Sound off</button></div>
-  </div>
+  <button class="bar-status" id="barSet" type="button" aria-label="Bar settings: which bar, app orders, QR codes, sound"><span class="where"><b id="stName">Bar</b><span id="state" role="status"></span></span><span class="gear" aria-hidden="true">⚙</span></button>
   <div id="msgTop"></div>
-  <section id="vOrders">
-  <h2 style="margin:0">Waiter orders <span id="rCount" class="kicker"></span></h2>
+  <section id="vOrders" style="display:grid;gap:12px">
   <div id="taken"></div>
   <div id="returns"></div>
+  <div class="sec-h"><h2>Waiter orders</h2><span id="rCount"></span></div>
   <div class="orders" id="rounds"><div class="loading">Loading…</div></div>
-  <div id="handedList" style="margin-top:16px"></div>
-  <h2 style="margin:10px 0 0">App orders (paid by QR)</h2>
-  <div class="sfield bar-find"><label for="find">Type the guest’s pickup code</label><input id="find" autocomplete="off" autocapitalize="characters" maxlength="4" placeholder="K7Q2" spellcheck="false"></div>
-  <div class="bar-stats" aria-live="polite"><div id="sWait"><b>0</b><span>Waiting</span></div><div id="sLate"><b>0</b><span>Over 10 min</span></div><div><b id="sDone">0</b><span>Handed over</span></div></div>
+  <div id="withWaiters"></div>
+  <div class="sec-h"><h2>App orders</h2><span id="aCount" aria-live="polite"></span></div>
+  <div class="sfield bar-find" id="findBox" hidden><label for="find">Type the guest’s pickup code</label><input id="find" autocomplete="off" autocapitalize="characters" maxlength="4" placeholder="K7Q2" spellcheck="false"></div>
   <div id="msg"></div>
   <div class="orders" id="orders"></div>
-  <details class="done-wrap"><summary>Handed over tonight</summary>
+  <div id="handedList"></div>
+  <details class="fold done-wrap" id="doneWrap"><summary>App orders handed over tonight</summary>
   <div class="tbl-wrap"><table class="tbl"><thead><tr><th>Code</th><th>Table</th><th>Drinks</th><th>When</th></tr></thead><tbody id="done"></tbody></table></div></details>
   </section>
   <section id="vSell" hidden></section>
   <section id="vStock" hidden></section>
-  <section id="vCount" hidden></section>
+  <section id="vShift" hidden></section>
 </main>
 <script type="module" src="pages/bar.js"></script>
 <script type="module" src="pages/bar-ops.js"></script>

@@ -4,7 +4,9 @@
 // an element to draw into.
 import { $, $$, esc } from '../app.js';
 import { sapi } from '../staff.js';
-import { sheet, say, st, busy, ghsIn, moneyField, money, when, dayName } from './ops-ui.js';
+import { sheet, say, st, busy, ghsIn, moneyField, money, when, dayName, ask } from './ops-ui.js';
+// One-tap reasons for refusing a request or a payment (they can still type their own).
+const REFUSE_QUICK = ['Wrong amount', 'Not in this month’s budget', 'Too expensive', 'Not needed now', 'Ask me first'];
 
 // Phones: tables become labelled cards (CSS in admin.css), once per render.
 export const labelTables = root => $$('table.tbl', root).forEach(t => {
@@ -17,30 +19,57 @@ const diffWord = (n, unit = '') => (n < 0 ? `${Math.abs(n)}${unit} fewer than ex
 const cashWord = n => `${money(Math.abs(n))} ${n < 0 ? 'less' : 'more'} than expected`;
 
 // ── Today's sales ──
+// The three numbers that matter, big; everything else under "See details"; a spreadsheet to keep.
+const signed = n => `${n < 0 ? '−' : ''}${money(Math.abs(n))}`;
+const lineRow = (label, value, sub = '') => `<div class="ln"><span>${label}${sub ? `<br><small>${sub}</small>` : ''}</span><span style="white-space:nowrap">${value}</span></div>`;
+const linesOr = (html, empty) => html || `<p class="muted" style="margin:0">${esc(empty)}</p>`;
+// A CSV the phone saves (opens in Excel / Google Sheets). rows: [[cell, …], …]
+const csvCell = v => { const s = String(v ?? ''); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
+const cedis = p => (Number(p || 0) / 100).toFixed(2);
+function saveCsv(name, rows) {
+  const blob = new Blob([`﻿${rows.map(r => r.map(csvCell).join(',')).join('\r\n')}`], { type: 'text/csv;charset=utf-8' });
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; document.body.append(a); a.click();
+  setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+}
 export async function salesView(el, date) {
   el.innerHTML = '<div class="loading">Loading…</div>';
   const d = await sapi(`/api/ops/sales${date ? `?date=${date}` : ''}`), t = d.totals;
-  el.innerHTML = `<h1>Today’s sales</h1>${dateBar(d.date)}<p class="lead">${esc(dayName(d.date))} · ${d.night.status === 'closed' ? `closed by ${esc(d.night.closedByName || '')}` : 'open'}. A sale is a drink on a bill; money is what has actually been paid.</p>
-    <div class="nums">
-      <div><span>Sales</span><b>${money(t.salesPesewas)}</b></div><div class="good"><span>Money received</span><b>${money(t.paidPesewas)}</b></div>
-      <div><span>MoMo / card (confirmed)</span><b>${money(t.digitalPesewas)}</b></div><div><span>Cash (recorded)</span><b>${money(t.cashPesewas)}</b></div>
-      <div><span>MoMo to the club (recorded)</span><b>${money(t.momoPesewas || 0)}</b></div>
-      <div class="${t.owedPesewas ? 'bad' : 'good'}"><span>Still owed (${t.unpaidTabs} bills)</span><b>${money(t.owedPesewas)}</b></div><div><span>Open tabs</span><b>${t.openTabs}</b></div>
-      <div><span>Free drinks (${t.freeDrinksQty})</span><b>${money(t.freeDrinksPesewas)}</b></div><div><span>Discounts</span><b>${money(t.discountsPesewas)}</b></div>
-      <div><span>Refunds</span><b>${money(t.refundsPesewas)}</b></div><div><span>Cancelled orders</span><b>${t.cancelledOrders}</b></div></div>
-    ${d.unpaid.length ? `<h2>Unpaid bills</h2><div class="tbl-wrap"><table class="tbl"><thead><tr><th>Tab</th><th>Table</th><th>Waiter</th><th class="num">Owed</th></tr></thead><tbody>${d.unpaid.map(u => `<tr><td>Tab ${u.number}</td><td>${esc(u.table)}</td><td>${esc(u.waiterName)}</td><td class="num">${money(u.balancePesewas)}</td></tr>`).join('')}</tbody></table></div>` : ''}
-    <h2>By waiter</h2><div class="tbl-wrap"><table class="tbl"><thead><tr><th>Waiter</th><th class="num">Tabs</th><th class="num">Sales</th><th class="num">Paid</th><th class="num">Unpaid</th><th>Report</th></tr></thead><tbody>
-      ${d.byWaiter.map(w => `<tr><td><strong>${esc(w.name)}</strong></td><td class="num">${w.tabs}</td><td class="num">${money(w.salesPesewas)}</td><td class="num">${money(w.paidPesewas)}</td><td class="num">${money(w.unpaidPesewas)}</td><td>${w.report === 'submitted' ? st('paid', 'In') : st('unpaid', 'Not yet')}</td></tr>`).join('') || '<tr><td colspan="6" class="empty-row">No waiter tabs yet.</td></tr>'}</tbody></table></div>
-    <h2>By bar</h2><div class="tbl-wrap"><table class="tbl"><thead><tr><th>Bar</th><th class="num">Orders</th><th class="num">Sales</th><th class="num">Paid</th></tr></thead><tbody>
-      ${d.byStation.map(s => `<tr><td>${esc(s.name)}</td><td class="num">${s.orders}</td><td class="num">${money(s.salesPesewas)}</td><td class="num">${money(s.paidPesewas)}</td></tr>`).join('') || '<tr><td colspan="4" class="empty-row">Nothing yet.</td></tr>'}</tbody></table></div>
-    <h2>By payment</h2><div class="tbl-wrap"><table class="tbl"><thead><tr><th>How</th><th class="num">Amount</th></tr></thead><tbody>${d.byMethod.map(m => `<tr><td>${esc(m.method)}</td><td class="num">${money(m.amountPesewas)}</td></tr>`).join('')}</tbody></table></div>
-    ${d.tips?.totalPesewas ? `<h2>Tips for staff</h2><p class="muted" style="margin:0">Not sales and not the club’s money. MoMo on the statement = MoMo sales + MoMo tips (one MoMo can carry both).</p>
-      <div class="nums"><div><span>Tips tonight (${d.tips.count})</span><b>${money(d.tips.totalPesewas)}</b></div><div><span>MoMo / card tips</span><b>${money(d.tips.momoPesewas + d.tips.digitalPesewas)}</b></div><div><span>Cash tips (kept)</span><b>${money(d.tips.cashPesewas)}</b></div></div>
-      <div class="lines-list">${d.tips.people.map(p => `<div class="ln"><span>${esc(p.name)}</span><span>${money(p.amountPesewas)}</span></div>`).join('')}</div>
-      ${d.tips.momo.length ? `<div class="tbl-wrap"><table class="tbl"><thead><tr><th>MoMo ID</th><th>For</th><th>Recorded by</th><th class="num">Tip</th></tr></thead><tbody>${d.tips.momo.map(x => `<tr><td><b>${esc(x.momoRef)}</b>${x.tabNumber ? ` · Tab ${x.tabNumber}` : ''}</td><td>${esc(x.toName)}</td><td>${esc(x.byName)} ${when(x.at)}</td><td class="num">${money(x.amountPesewas)}</td></tr>`).join('')}</tbody></table></div>` : ''}` : ''}
-    ${d.momoPayments?.length ? `<h2>MoMo to check on the statement</h2><div class="tbl-wrap"><table class="tbl"><thead><tr><th>Transaction ID</th><th>Tab</th><th>From</th><th>Recorded by</th><th class="num">Amount</th></tr></thead><tbody>${d.momoPayments.map(m => `<tr><td><b>${esc(m.momoRef)}</b></td><td>Tab ${m.tabNumber}</td><td>${esc(m.momoFrom || '—')}</td><td>${esc(m.byName)} ${when(m.at)}</td><td class="num">${money(m.amountPesewas)}</td></tr>`).join('')}</tbody></table></div>` : ''}
-    <h2>By drink</h2><div class="tbl-wrap"><table class="tbl"><thead><tr><th>Drink</th><th class="num">Sold</th><th class="num">Value</th></tr></thead><tbody>${d.byProduct.map(p => `<tr><td>${esc(p.name)}</td><td class="num">${p.qty}</td><td class="num">${money(p.valuePesewas)}</td></tr>`).join('') || '<tr><td colspan="3" class="empty-row">Nothing yet.</td></tr>'}</tbody></table></div>`;
-  bindDate(el, v => salesView(el, v)); labelTables(el);
+  const tips = d.tips?.totalPesewas ? d.tips : null, momo = d.momoPayments || [];
+  el.innerHTML = `<div class="vstack" style="display:grid;gap:14px"><h1>Today’s sales</h1>
+    <p class="lead">${esc(dayName(d.date))} · ${d.night.status === 'closed' ? `closed by ${esc(d.night.closedByName || '')}` : 'still open'}</p>
+    <div class="hero-stack"><div class="hero"><span>Sales</span><b>${money(t.salesPesewas)}</b></div>
+    <div class="hero-row">
+      <div class="hero good"><span>Money received</span><b>${money(t.paidPesewas)}</b></div>
+      <div class="hero ${t.owedPesewas ? 'bad' : ''}"><span>Still owed${t.unpaidTabs ? ` · ${t.unpaidTabs} bill${t.unpaidTabs > 1 ? 's' : ''}` : ''}</span><b>${money(t.owedPesewas)}</b></div>
+    </div></div>
+    <p class="muted" style="margin:0">A sale is a drink on a bill. Money received is what has actually been paid.</p>
+    <details class="fold"><summary>See details</summary>
+      <h3 class="group-h">How it was paid</h3><div class="lines-list">
+        ${d.byMethod.map(m => lineRow(esc(m.method), money(m.amountPesewas))).join('')}</div>
+      ${d.unpaid.length ? `<h3 class="group-h">Unpaid bills</h3><div class="lines-list">${d.unpaid.map(u => lineRow(`Tab ${u.number}`, money(u.balancePesewas), `${esc(u.table)} · ${esc(u.waiterName)}`)).join('')}</div>` : ''}
+      <h3 class="group-h">By waiter</h3>${linesOr(d.byWaiter.length ? `<div class="lines-list">${d.byWaiter.map(w => lineRow(`<b>${esc(w.name)}</b>`, money(w.salesPesewas), `${w.tabs} tab${w.tabs === 1 ? '' : 's'} · paid ${money(w.paidPesewas)}${w.unpaidPesewas ? ` · <b class="diff-neg">unpaid ${money(w.unpaidPesewas)}</b>` : ''} · report ${w.report === 'submitted' ? 'in' : '<b class="diff-pos">not yet</b>'}`)).join('')}</div>` : '', 'No waiter tabs yet.')}
+      <h3 class="group-h">By bar</h3>${linesOr(d.byStation.length ? `<div class="lines-list">${d.byStation.map(s => lineRow(esc(s.name), money(s.salesPesewas), `${s.orders} order${s.orders === 1 ? '' : 's'} · paid ${money(s.paidPesewas)}`)).join('')}</div>` : '', 'Nothing yet.')}
+      <h3 class="group-h">By drink</h3>${linesOr(d.byProduct.length ? `<div class="lines-list">${d.byProduct.map(p => lineRow(esc(p.name), money(p.valuePesewas), `${p.qty} sold`)).join('')}</div>` : '', 'Nothing yet.')}
+      <h3 class="group-h">Given away and taken back</h3><div class="lines-list">
+        ${lineRow(`Free drinks (${t.freeDrinksQty})`, money(t.freeDrinksPesewas))}${lineRow('Discounts', money(t.discountsPesewas))}${lineRow('Refunds', money(t.refundsPesewas))}${lineRow('Cancelled orders', t.cancelledOrders)}${lineRow('Open tabs', t.openTabs)}</div>
+      ${tips ? `<h3 class="group-h">Tips for staff</h3><p class="muted" style="margin:0">Not sales and not the club’s money. MoMo on the statement = MoMo sales + MoMo tips (one MoMo can carry both).</p>
+        <div class="lines-list">${lineRow(`Tips tonight (${tips.count})`, money(tips.totalPesewas))}${lineRow('MoMo / card tips', money(tips.momoPesewas + tips.digitalPesewas))}${lineRow('Cash tips (kept)', money(tips.cashPesewas))}
+          ${tips.people.map(p => lineRow(esc(p.name), money(p.amountPesewas))).join('')}
+          ${tips.momo.map(x => lineRow(`<b>${esc(x.momoRef)}</b>${x.tabNumber ? ` · Tab ${x.tabNumber}` : ''}`, money(x.amountPesewas), `Tip for ${esc(x.toName)} · ${esc(x.byName)} ${when(x.at)}`)).join('')}</div>` : ''}
+      ${momo.length ? `<h3 class="group-h">MoMo to check on the statement</h3><div class="lines-list">${momo.map(m => lineRow(`<b>${esc(m.momoRef)}</b>`, money(m.amountPesewas), `Tab ${m.tabNumber} · from ${esc(m.momoFrom || '—')} · ${esc(m.byName)} ${when(m.at)}`)).join('')}</div>` : ''}
+    </details>
+    ${dateBar(d.date)}
+    <button class="big ghost" id="slCsv">Download (spreadsheet)</button></div>`;
+  bindDate(el, v => salesView(el, v));
+  $('#slCsv', el).onclick = () => saveCsv(`sales-${d.date}.csv`, [
+    ['Sales', d.date], [],
+    ['Total', 'GHS'], ['Sales', cedis(t.salesPesewas)], ['Money received', cedis(t.paidPesewas)], ['Still owed', cedis(t.owedPesewas)],
+    ['MoMo / card (confirmed)', cedis(t.digitalPesewas)], ['Cash (recorded)', cedis(t.cashPesewas)], ['Free drinks', cedis(t.freeDrinksPesewas)], ['Discounts', cedis(t.discountsPesewas)], ['Refunds', cedis(t.refundsPesewas)], [],
+    ['Waiter', 'Tabs', 'Sales GHS', 'Paid GHS', 'Unpaid GHS', 'Report'], ...d.byWaiter.map(w => [w.name, w.tabs, cedis(w.salesPesewas), cedis(w.paidPesewas), cedis(w.unpaidPesewas), w.report === 'submitted' ? 'In' : 'Not yet']), [],
+    ['Drink', 'Sold', 'Value GHS'], ...d.byProduct.map(p => [p.name, p.qty, cedis(p.valuePesewas)]), [],
+    ['MoMo transaction ID', 'Tab', 'From', 'Recorded by', 'Time', 'Amount GHS'], ...momo.map(m => [m.momoRef, m.tabNumber, m.momoFrom || '', m.byName, when(m.at), cedis(m.amountPesewas)]),
+    ...(tips?.momo.length ? [[], ['MoMo tip ID', 'Tab', 'For', 'Recorded by', 'Time', 'Tip GHS'], ...tips.momo.map(x => [x.momoRef, x.tabNumber || '', x.toName, x.byName, when(x.at), cedis(x.amountPesewas)])] : []),
+  ]);
 }
 
 // ── Closing the night (manager) ──
@@ -73,7 +102,7 @@ export async function closingView(el, date, { canClose = false } = {}) {
     ${closed ? `<div class="say good"><b>This night is closed</b>The end-of-day report is saved for finance.</div>` : canClose ? '<h2>6. Close the night</h2><p class="muted" style="margin:0">This prepares the end-of-day report, sends it to finance, and locks the night’s records.</p><button class="big" id="closeGo">Close the night and send the report</button>' : ''}`;
   bindDate(el, v => closingView(el, v, { canClose: true })); labelTables(el);
   $('#clHand', el) && ($('#clHand', el).onclick = async () => {
-    const note = prompt('Why can’t you close tonight? The Human manager and the Event manager are texted.'); if (!note) return;
+    const note = await ask({ title: 'I can’t close tonight', label: 'Why? The Human manager and the Event manager are texted.', quick: ['I’m not well', 'Family emergency', 'I’m travelling', 'I’m at another venue'], send: 'Hand it over' }); if (!note) return;
     try { await sapi('/api/ops/close-night/hand-over', { method: 'POST', body: { date: d.date, note } }); await closingView(el, d.date, { canClose: true }); say($('#clMsg', el), 'Handed over. The Human manager and the Event manager have been texted.'); }
     catch (e) { say($('#clMsg', el), e.message, 'bad'); }
   });
@@ -108,46 +137,67 @@ export async function approvalsView(el) {
     <div class="cards">${approvals.map(a => `<div class="tcard warn" style="cursor:default"><span class="row"><span class="t" style="font-size:20px">${esc(a.label)}</span><span class="sub">${when(a.requestedAt)}</span></span>
       <span>${esc(a.summary)}</span><span class="sub">Asked by ${esc(a.requestedByName)} · “${esc(a.reason)}”</span>
       ${a.canDecide ? `<span class="btn-row"><button class="mid okc" data-yes="${esc(a.id)}">Approve</button><button class="mid" data-no="${esc(a.id)}">Refuse</button></span>` : '<span class="sub">Someone else must decide this one.</span>'}</div>`).join('') || '<div class="empty-box"><b>Nothing waiting</b></div>'}</div>`;
-  const decide = async (id, approve) => { const note = approve ? '' : prompt('Why refuse? (optional)') ?? null; if (note === null) return; try { await sapi('/api/ops/approvals/decide', { method: 'POST', body: { id, approve, note } }); approvalsView(el); } catch (e) { say($('#apMsg', el), e.message, 'bad'); } };
+  const decide = async (id, approve) => { const note = approve ? '' : await ask({ title: 'Refuse this?', label: 'Why? (optional)', quick: REFUSE_QUICK, send: 'Refuse', required: false, danger: true }); if (note === null) return; try { await sapi('/api/ops/approvals/decide', { method: 'POST', body: { id, approve, note } }); approvalsView(el); } catch (e) { say($('#apMsg', el), e.message, 'bad'); } };
   $$('[data-yes]', el).forEach(b => b.onclick = () => decide(b.dataset.yes, true));
   $$('[data-no]', el).forEach(b => b.onclick = () => decide(b.dataset.no, false));
 }
 
 // ── Products & prices ──
-// Finance sets the selling price and the cost price; everyone else with access only looks.
+// One line per drink: its price and cost. Tap one to change it (finance) or to read it.
+const amber = s => `<b style="color:var(--mustard)">${s}</b>`;
 export async function productsView(el, { canEdit = true } = {}) {
   el.innerHTML = '<div class="loading">Loading…</div>';
   const { products, units } = await sapi('/api/ops/products');
-  const noCost = products.filter(p => !p.costPesewas).length;
-  el.innerHTML = `<h1>Drinks and prices</h1><p class="lead">${canEdit ? 'You set the selling price and the cost price (what the club pays for one), so the director sees the profit.' : 'Finance sets the prices.'} A bill already sent keeps its price. Every change is recorded with who made it.</p>
+  const noCost = products.filter(p => !p.costPesewas).length, offSale = products.filter(p => !p.available).length;
+  let show = 'all', find = '';
+  el.innerHTML = `<div class="vstack" style="display:grid;gap:14px"><h1>Drinks and prices</h1><p class="lead">${canEdit ? `Tap a drink to change its price or cost.${noCost ? ` ${amber(`${noCost} without a cost`)}: the profit on ${noCost > 1 ? 'them' : 'it'} can’t be worked out.` : ''}` : 'Finance sets the prices. Tap a drink for its details.'}</p>
     ${canEdit ? '<button class="big" id="pAdd">Add a drink</button>' : ''}<div id="pMsg"></div>
-    ${noCost && canEdit ? `<div class="say warn"><b>${noCost} drink${noCost > 1 ? 's have' : ' has'} no cost price</b>Add it, or the profit on ${noCost > 1 ? 'them' : 'it'} can’t be worked out.</div>` : ''}
-    <div class="tbl-wrap"><table class="tbl"><thead><tr><th>Drink</th><th class="num">Selling</th><th class="num">Cost</th><th class="num">Made on one</th><th>Status</th><th></th></tr></thead><tbody>
-    ${products.map(p => `<tr><td><strong>${esc(p.name)}</strong><br><small class="muted">${esc(p.category)} · ${esc(p.unit)}${p.updatedByName ? ` · changed by ${esc(p.updatedByName)}` : ''}</small></td><td class="num">${money(p.pricePesewas)}</td><td class="num">${p.costPesewas ? money(p.costPesewas) : st('unpaid', 'Missing')}</td><td class="num">${p.costPesewas ? money(p.pricePesewas - p.costPesewas) : '—'}</td><td>${p.available ? st('paid', 'On sale') : st('cancelled', 'Finished')}</td><td class="actions">${canEdit ? `<button class="sbtn" data-edit="${esc(p.id)}">Change</button>` : ''}</td></tr>`).join('') || '<tr><td colspan="6" class="empty-row">No drinks yet.</td></tr>'}</tbody></table></div>`;
+    <div class="quick" role="group" aria-label="Show">${[['all', `All (${products.length})`], ['nocost', `No cost (${noCost})`], ['off', `Off sale (${offSale})`]].map(([k, l]) => `<button type="button" class="chip" data-show="${k}" aria-pressed="${k === 'all'}">${l}</button>`).join('')}</div>
+    ${products.length > 10 ? '<input type="search" class="searchbox" id="pFind" placeholder="Find a drink" aria-label="Find a drink" autocomplete="off">' : ''}
+    <div id="pList"></div></div>`;
+  const sub = p => `${money(p.pricePesewas)} · ${p.costPesewas ? `cost ${money(p.costPesewas)}` : amber('No cost yet')}${p.available ? '' : ' · <b>Off sale</b>'}`;
+  const draw = () => {
+    const q = find.trim().toLowerCase();
+    const list = products.filter(p => (show === 'nocost' ? !p.costPesewas : show === 'off' ? !p.available : true) && (!q || `${p.name} ${p.category}`.toLowerCase().includes(q)));
+    let cat = '';
+    $('#pList', el).innerHTML = list.length ? `<div class="rows">${list.map(p => `${p.category !== cat ? `<h3 class="group-h">${esc(cat = p.category)}</h3>` : ''}<button type="button" class="row-btn" data-edit="${esc(p.id)}" style="${p.available ? '' : 'opacity:.6'}"><span class="t">${esc(p.name)}</span><span class="s">${sub(p)}</span><span class="r"></span></button>`).join('')}</div>`
+      : `<div class="empty-box"><b>${products.length ? 'Nothing here' : 'No drinks yet'}</b>${products.length ? (show === 'nocost' ? 'Every drink has a cost. Good.' : show === 'off' ? 'Every drink is on sale.' : 'Try another name.') : canEdit ? 'Tap “Add a drink” to start the menu.' : 'Finance adds the drinks.'}</div>`;
+    $$('[data-edit]', el).forEach(b => b.onclick = () => (canEdit ? form : details)(products.find(x => x.id === b.dataset.edit)));
+  };
+  $$('[data-show]', el).forEach(b => b.onclick = () => { show = b.dataset.show; $$('[data-show]', el).forEach(c => c.setAttribute('aria-pressed', String(c === b))); draw(); });
+  $('#pFind', el) && ($('#pFind', el).oninput = e => { find = e.target.value; draw(); });
+  const details = p => sheet(`<h2>${esc(p.name)}</h2><p class="muted" style="margin:0">${esc(p.category)} · sold by the ${esc(p.unit)} · ${p.available ? 'on sale' : 'off sale'}</p>
+    <div class="lines-list">${lineRow('Selling price', money(p.pricePesewas))}${lineRow('Cost: what the club pays for one', p.costPesewas ? money(p.costPesewas) : amber('No cost yet'))}${lineRow('Made on one', p.costPesewas ? money(p.pricePesewas - p.costPesewas) : '—')}
+      ${p.tracked === false ? lineRow('Counted at the bar', 'No') : `${lineRow('Buy more at or below', p.lowStock || '—')}${lineRow('Never hold more than', p.maxStock || '—')}`}</div>
+    ${p.updatedByName ? `<p class="muted" style="margin:0">Last changed by ${esc(p.updatedByName)}.</p>` : ''}`, { label: p.name });
   const form = (p = null) => {
     const { box, close } = sheet(`<h2>${p ? `Change ${esc(p.name)}` : 'Add a drink'}</h2>
       <div class="sfield"><label for="pfN">Name</label><input id="pfN" maxlength="60" value="${esc(p?.name || '')}"></div>
-      <div class="sfield"><label for="pfC">Group (e.g. Beer, Spirits, Soft)</label><input id="pfC" maxlength="30" value="${esc(p?.category || '')}"></div>
-      <div class="sfield"><label for="pfU">Sold by the</label><select id="pfU">${units.map(u => `<option ${u === (p?.unit || 'bottle') ? 'selected' : ''}>${u}</option>`).join('')}</select></div>
-      ${moneyField('pfP', 'Selling price (GHS)', p ? String(p.pricePesewas / 100) : '')}${moneyField('pfK', 'Cost price: what the club pays for one (GHS)', p?.costPesewas ? String(p.costPesewas / 100) : '')}
-      <div class="sfield"><label for="pfL">Minimum stock: buy more at or below (optional)</label><input id="pfL" inputmode="numeric" value="${esc(p?.lowStock || '')}"></div>
-      <div class="sfield"><label for="pfX">Maximum stock: never hold more than (optional)</label><input id="pfX" inputmode="numeric" value="${esc(p?.maxStock || '')}"></div>
-      <label class="check"><input type="checkbox" id="pfT" ${p?.tracked === false ? '' : 'checked'}> Count it at the bar (bottles and cans)</label>
+      ${moneyField('pfP', 'Selling price (GHS)', p ? String(p.pricePesewas / 100) : '')}${moneyField('pfK', 'Cost price: what the club pays for one (GHS)', p?.costPesewas ? String(p.costPesewas / 100) : '', 'So the director sees the profit. A bill already sent keeps its price.')}
       <label class="check"><input type="checkbox" id="pfA" ${p?.available === false ? '' : 'checked'}> On sale tonight</label>
-      <div id="pfM"></div><button class="big" id="pfGo">Save</button><button class="big ghost" data-close>Cancel</button>`);
+      <details class="fold" ${p ? '' : 'open'}><summary>Group, unit and stock limits</summary>
+        <div class="sfield"><label for="pfC">Group (e.g. Beer, Spirits, Soft)</label><input id="pfC" maxlength="30" value="${esc(p?.category || '')}"></div>
+        <div class="sfield"><label for="pfU">Sold by the</label><select id="pfU">${units.map(u => `<option ${u === (p?.unit || 'bottle') ? 'selected' : ''}>${u}</option>`).join('')}</select></div>
+        <label class="check"><input type="checkbox" id="pfT" ${p?.tracked === false ? '' : 'checked'}> Count it at the bar (bottles and cans)</label>
+        <div class="sfield"><label for="pfL">Minimum stock: buy more at or below (optional)</label><input id="pfL" inputmode="numeric" pattern="[0-9]*" value="${esc(p?.lowStock || '')}"></div>
+        <div class="sfield"><label for="pfX">Maximum stock: never hold more than (optional)</label><input id="pfX" inputmode="numeric" pattern="[0-9]*" value="${esc(p?.maxStock || '')}"></div>
+      </details>
+      ${p?.updatedByName ? `<p class="muted" style="margin:0">Last changed by ${esc(p.updatedByName)}. Every change is recorded.</p>` : ''}
+      <div id="pfM"></div><div class="sheet-dock"><button class="big" id="pfGo">Save</button></div>`, { label: p ? `Change ${p.name}` : 'Add a drink' });
     $('#pfGo', box).onclick = async () => {
       const price = ghsIn($('#pfP', box).value), cost = $('#pfK', box).value !== '' ? ghsIn($('#pfK', box).value) : '';
       if (p && price !== p.pricePesewas && !confirm(`Change the price of ${p.name} from ${money(p.pricePesewas)} to ${money(price)}? New orders will use it.`)) return;
-      try { await busy($('#pfGo', box), () => sapi('/api/ops/products', { method: 'POST', body: { id: p?.id, name: $('#pfN', box).value, category: $('#pfC', box).value, unit: $('#pfU', box).value, pricePesewas: price, costPesewas: cost, lowStock: $('#pfL', box).value, maxStock: $('#pfX', box).value, tracked: $('#pfT', box).checked, available: $('#pfA', box).checked } })); close(); productsView(el); }
+      try { await busy($('#pfGo', box), () => sapi('/api/ops/products', { method: 'POST', body: { id: p?.id, name: $('#pfN', box).value, category: $('#pfC', box).value, unit: $('#pfU', box).value, pricePesewas: price, costPesewas: cost, lowStock: $('#pfL', box).value, maxStock: $('#pfX', box).value, tracked: $('#pfT', box).checked, available: $('#pfA', box).checked } })); close(); await productsView(el, { canEdit }); say($('#pMsg', el), 'Saved.'); }
       catch (e) { say($('#pfM', box), e.message, 'bad'); }
     };
   };
   $('#pAdd', el) && ($('#pAdd', el).onclick = () => form());
-  $$('[data-edit]', el).forEach(b => b.onclick = () => form(products.find(x => x.id === b.dataset.edit)));
-  labelTables(el);
+  draw();
 }
 
 // ── Stock & counts ──
+// One line per drink: what should be in the bar and what was counted. Tap a drink for its ledger.
+const plusMinus = n => (n > 0 ? `+${n}` : n < 0 ? `−${Math.abs(n)}` : '0');
 export async function stockAdminView(el, date, stationId, { role = '' } = {}) {
   const buyer = ['finance', 'director', 'superAdmin'].includes(role), explainer = ['manager', 'director', 'superAdmin'].includes(role);
   el.innerHTML = '<div class="loading">Loading…</div>';
@@ -155,76 +205,110 @@ export async function stockAdminView(el, date, stationId, { role = '' } = {}) {
   const sid = stationId || stations[0]?.id;
   if (!sid) { el.innerHTML = '<div class="empty-box"><b>No bars yet</b>Add one under Setup → Bar orders.</div>'; return; }
   const [s, dl] = await Promise.all([sapi(`/api/ops/stock?stationId=${encodeURIComponent(sid)}${date ? `&date=${date}` : ''}`), sapi(`/api/ops/stock/deliveries?stationId=${encodeURIComponent(sid)}`).catch(() => ({ deliveries: [] }))]);
-  const dlState = x => (x.status === 'pending' ? st('unpaid', x.byBar ? 'Waiting for finance or the manager' : 'Waiting for the bar to confirm') : x.status === 'rejected' ? st('cancelled', 'Didn’t arrive') : x.purchase ? st('paid', 'Bought: in stock') : x.confirmedQty !== x.qty ? st('part_paid', `Bar counted ${x.confirmedQty}`) : st('paid', 'Confirmed by the bar'));
-  const oc = s.openingCount;
-  el.innerHTML = `<h1>Stock</h1><div class="toolbar" style="margin:0">${stations.length > 1 ? `<select id="stSel">${stations.map(x => `<option value="${esc(x.id)}" ${x.id === sid ? 'selected' : ''}>${esc(x.name)}</option>`).join('')}</select>` : `<strong>${esc(s.station.name)}</strong>`}</div>${dateBar(s.date)}
-    <p class="lead">Expected = opening + received + moved in + returned − handed out − broken − moved out.${s.closing ? ` Counted by ${esc(s.closing.byName)}${s.closing.reviewedByName ? `, reviewed by ${esc(s.closing.reviewedByName)}` : ''}.` : ' Not counted yet.'}</p>
-    ${oc ? `<div class="say ${oc.differences.length && !oc.explanation ? 'warn' : 'good'}"><b>Bar’s count when it opened (${esc(oc.byName)}, ${when(oc.at)})</b>${oc.differences.length ? oc.differences.map(x => `${esc(x.name)}: system ${x.expected}, bar found ${x.counted} (${Math.abs(x.difference)} ${x.difference < 0 ? 'fewer' : 'more'})`).join('<br>') : 'Everything matched.'}
-      ${oc.explanation ? `<br><b style="margin-top:6px">Manager: ${esc(oc.explanation)}</b><small>${esc(oc.explainedByName)}</small>` : oc.differences.length ? `<br>${explainer ? '<button class="mid" id="explain" style="margin-top:8px">Explain the difference</button>' : 'Waiting for the manager to explain.'}` : ''}</div>` : '<p class="muted" style="margin:0">The bar hasn’t counted tonight’s stock yet. Sales go on; the count is compared when it comes in.</p>'}
-    <button class="big" id="rcv">${buyer ? 'Record drinks bought' : 'Add new stock'}</button><p class="muted" style="margin:0">${buyer ? 'Drinks you record are in the bar’s stock straight away.' : 'The bar confirms it when it arrives; finance sees it.'}</p><div id="stMsg"></div>
-    ${dl.deliveries.length ? `<h2>New stock (last 7 days)</h2><div class="tbl-wrap"><table class="tbl"><thead><tr><th>Drink</th><th class="num">Recorded</th><th>Recorded by</th><th>Status</th><th>Confirmed by</th><th></th></tr></thead><tbody>
-      ${dl.deliveries.map(x => `<tr><td><strong>${esc(x.productName)}</strong>${x.supplier ? `<br><small class="muted">${esc(x.supplier)}${x.reference ? ` · ${esc(x.reference)}` : ''}</small>` : ''}</td><td class="num">${x.qty}</td><td>${esc(x.recordedByName)}<br><small class="muted">${when(x.recordedAt)}</small></td><td>${dlState(x)}${x.confirmNote ? `<br><small class="muted">${esc(x.confirmNote)}</small>` : ''}</td><td>${x.confirmedByName ? `${esc(x.confirmedByName)}<br><small class="muted">${when(x.confirmedAt)}</small>` : ''}</td>
-        <td>${x.canConfirm ? `<button class="sbtn" data-dl="${esc(x.id)}">Confirm ${x.qty}</button>` : ''}</td></tr>`).join('')}</tbody></table></div>` : ''}
-    <div class="tbl-wrap"><table class="tbl"><thead><tr><th>Drink</th><th class="num">Opening</th><th class="num">Received</th><th class="num">Moved in</th><th class="num">Moved out</th><th class="num">Returned</th><th class="num">Handed out</th><th class="num">Free</th><th class="num">Broken</th><th class="num">Expected</th><th class="num">Counted</th><th>Difference</th></tr></thead><tbody>
-    ${s.rows.map(r => `<tr><td><strong>${esc(r.name)}</strong>${r.low ? ` ${st('unpaid', 'Low')}` : ''}</td><td class="num">${r.opening}</td><td class="num">${r.received}</td><td class="num">${r.transferIn}</td><td class="num">${r.transferOut}</td><td class="num">${r.returns}</td><td class="num">${r.issued}</td><td class="num">${r.comps}</td><td class="num">${r.waste}</td><td class="num"><b>${r.expected}</b></td><td class="num">${r.counted ?? '—'}</td>
-      <td>${r.difference ? `<span class="${r.difference < 0 ? 'diff-neg' : 'diff-pos'}">${esc(diffWord(r.difference))}</span><br><small class="muted">${esc(s.reasons[r.reason] || '')}${r.note ? ` · ${esc(r.note)}` : ''}</small>` : r.counted != null ? 'Matches' : ''}</td></tr>`).join('')}</tbody></table></div>
-    ${s.closing && s.closing.status !== 'reviewed' ? '<button class="mid" id="rev">Mark this count reviewed</button>' : ''}`;
+  const ok = t => `<b style="color:#6fcfae">${t}</b>`;
+  const dlState = x => (x.status === 'pending' ? amber(x.byBar ? 'Waiting for finance or the manager' : 'Waiting for the bar to confirm') : x.status === 'rejected' ? '<b class="diff-neg">Didn’t arrive</b>' : x.purchase ? ok('Bought: in stock') : x.confirmedQty !== x.qty ? amber(`Bar counted ${x.confirmedQty}`) : ok('Confirmed by the bar'));
+  const dlLine = x => `<div class="ln"><span><b>${x.qty} × ${esc(x.productName)}</b><br><small>${esc(x.recordedByName)} ${when(x.recordedAt)}${x.supplier ? ` · ${esc(x.supplier)}${x.reference ? ` · ${esc(x.reference)}` : ''}` : ''}${x.confirmedByName ? ` · confirmed by ${esc(x.confirmedByName)} ${when(x.confirmedAt)}` : ''}${x.confirmNote ? ` · ${esc(x.confirmNote)}` : ''}</small><br>${dlState(x)}</span>
+    <span>${x.canConfirm ? `<button class="sbtn" data-dl="${esc(x.id)}">Confirm ${x.qty}</button>` : ''}</span></div>`;
+  const pending = dl.deliveries.filter(x => x.status === 'pending'), done = dl.deliveries.filter(x => x.status !== 'pending');
+  const oc = s.openingCount, needsExplain = oc && oc.differences.length && !oc.explanation;
+  const odd = r => r.difference || r.low;
+  const sub = r => [`Should be here ${r.expected}`, r.counted != null ? `counted ${r.counted}${r.difference ? ` <b class="${r.difference < 0 ? 'diff-neg' : 'diff-pos'}">(${plusMinus(r.difference)})</b>` : ' ✓'}` : '', r.low ? amber('low') : ''].filter(Boolean).join(' · ');
+  const row = r => `<button type="button" class="row-btn" data-sk="${esc(r.productId)}"><span class="t">${esc(r.name)}</span><span class="s">${sub(r)}</span><span class="r">${r.counted ?? r.expected}</span></button>`;
+  const look = s.rows.filter(odd), rest = s.rows.filter(r => !odd(r));
+  let cat = '';
+  const diffs = s.rows.filter(r => r.difference).length, lows = s.rows.filter(r => r.low).length;
+  el.innerHTML = `<div class="vstack" style="display:grid;gap:14px"><h1>Stock</h1>
+    ${stations.length > 1 ? `<div class="sfield"><label for="stSel">Bar</label><select id="stSel">${stations.map(x => `<option value="${esc(x.id)}" ${x.id === sid ? 'selected' : ''}>${esc(x.name)}</option>`).join('')}</select></div>` : ''}
+    <p class="lead">${stations.length > 1 ? '' : `${esc(s.station.name)} · `}${esc(dayName(s.date))} · ${s.closing ? `counted by ${esc(s.closing.byName)}${s.closing.reviewedByName ? `, reviewed by ${esc(s.closing.reviewedByName)}` : ''}` : 'not counted yet'}</p>
+    <button class="big" id="rcv">${buyer ? 'Record drinks bought' : 'Add new stock'}</button><div id="stMsg"></div>
+    ${needsExplain ? `<div class="say warn"><b>The bar found a difference when it opened</b>${oc.differences.map(x => `${esc(x.name)}: should be ${x.expected}, bar found ${x.counted} (${plusMinus(x.difference)})`).join('<br>')}
+      <br>${explainer ? '<button class="mid" id="explain" style="margin-top:8px">Explain the difference</button>' : 'Waiting for the manager to explain.'}</div>` : ''}
+    ${pending.length ? `<h3 class="group-h">New stock not confirmed yet</h3><div class="lines-list">${pending.map(dlLine).join('')}</div>` : ''}
+    <p class="muted" style="margin:0">${s.rows.length} drink${s.rows.length === 1 ? '' : 's'}${diffs ? ` · <b class="diff-neg">${diffs} different</b>` : ''}${lows ? ` · ${amber(`${lows} low`)}` : ''}. Tap a drink for its details.</p>
+    ${s.rows.length ? `<div class="rows">${look.length ? `<h3 class="group-h">Needs a look</h3>${look.map(row).join('')}` : ''}${rest.map(r => `${r.category !== cat ? `<h3 class="group-h">${esc(cat = r.category)}</h3>` : ''}${row(r)}`).join('')}</div>`
+      : '<div class="empty-box"><b>No drinks counted at the bar</b>Drinks marked “Count it at the bar” appear here.</div>'}
+    ${s.closing && s.closing.status !== 'reviewed' ? '<button class="mid" id="rev">Mark this count reviewed</button>' : ''}
+    ${oc && !needsExplain ? `<details class="fold"><summary>Bar’s count when it opened</summary><p style="margin:0">${esc(oc.byName)}, ${when(oc.at)}: ${oc.differences.length ? oc.differences.map(x => `${esc(x.name)} should be ${x.expected}, bar found ${x.counted}`).map(x => x).join('; ') : 'everything matched.'}</p>${oc.explanation ? `<p style="margin:8px 0 0"><b>Manager:</b> ${esc(oc.explanation)} <small class="muted">${esc(oc.explainedByName)}</small></p>` : ''}</details>`
+      : !oc ? '<p class="muted" style="margin:0">The bar hasn’t counted tonight’s stock yet. Sales go on; the count is compared when it comes in.</p>' : ''}
+    ${done.length ? `<details class="fold"><summary>New stock, last 7 days (${done.length})</summary><div class="lines-list">${done.map(dlLine).join('')}</div></details>` : ''}
+    <details class="fold"><summary>How “should be here” is worked out</summary><p style="margin:0">Opening + received + moved in + returned − handed out − broken − moved out. ${buyer ? 'Drinks you record as bought are in the bar’s stock straight away.' : 'New stock counts once the bar confirms it; finance sees it.'}</p></details>
+    ${dateBar(s.date)}</div>`;
+  const again = () => stockAdminView(el, s.date, sid, { role });
   bindDate(el, v => stockAdminView(el, v, sid, { role }));
   $('#stSel', el) && ($('#stSel', el).onchange = e => stockAdminView(el, s.date, e.target.value, { role }));
-  $('#rev', el) && ($('#rev', el).onclick = async () => { try { await sapi('/api/ops/stock/review', { method: 'POST', body: { stationId: sid, date: s.date } }); stockAdminView(el, s.date, sid, { role }); } catch (e) { say($('#stMsg', el), e.message, 'bad'); } });
-  $('#explain', el) && ($('#explain', el).onclick = () => explainSheet({ ...oc, stationId: sid, stationName: s.station.name, date: s.date }, () => stockAdminView(el, s.date, sid, { role })));
-  $$('[data-dl]', el).forEach(b => b.onclick = async () => { try { await busy(b, () => sapi('/api/ops/stock/delivery', { method: 'POST', body: { id: b.dataset.dl, action: 'confirm' } })); stockAdminView(el, s.date, sid, { role }); } catch (e) { say($('#stMsg', el), e.message, 'bad'); } });
-  $('#rcv', el).onclick = () => {
-    const { box, close } = sheet(`<h2>${buyer ? 'Drinks bought' : 'New stock'}</h2><p class="muted" style="margin:0">${buyer ? 'It goes into the bar’s stock straight away.' : 'The bar confirms it when it arrives; only then does it count.'}</p><div class="sfield"><label for="rvP">Drink</label><select id="rvP">${products.filter(p => p.tracked).map(p => `<option value="${esc(p.id)}">${esc(p.name)}</option>`).join('')}</select></div>
-      <div class="sfield"><label for="rvB">Into which bar</label><select id="rvB">${stations.map(x => `<option value="${esc(x.id)}" ${x.id === sid ? 'selected' : ''}>${esc(x.name)}</option>`).join('')}</select></div>
-      <div class="sfield"><label for="rvQ">How many</label><input id="rvQ" inputmode="numeric"></div><div class="sfield"><label for="rvS">Supplier</label><input id="rvS" maxlength="80"></div>
-      <div class="sfield"><label for="rvR">Receipt or invoice number</label><input id="rvR" maxlength="60"></div>${moneyField('rvC', buyer ? 'Total paid (GHS)' : 'Total paid (GHS, if you know it)')}
-      <div id="rvM"></div><button class="big" id="rvGo">Save</button><button class="big ghost" data-close>Cancel</button>`);
-    $('#rvGo', box).onclick = async () => { try { await busy($('#rvGo', box), () => sapi('/api/ops/stock/received', { method: 'POST', body: { productId: $('#rvP', box).value, stationId: $('#rvB', box).value, qty: Number($('#rvQ', box).value), supplier: $('#rvS', box).value, reference: $('#rvR', box).value, totalCostPesewas: $('#rvC', box).value ? ghsIn($('#rvC', box).value) : '' } })); close(); await stockAdminView(el, s.date, sid, { role }); say($('#stMsg', el), buyer ? 'Saved. It’s in the bar’s stock.' : 'Saved. The bar confirms it when it arrives.'); } catch (e) { say($('#rvM', box), e.message, 'bad'); } };
+  $('#rev', el) && ($('#rev', el).onclick = async () => { try { await sapi('/api/ops/stock/review', { method: 'POST', body: { stationId: sid, date: s.date } }); again(); } catch (e) { say($('#stMsg', el), e.message, 'bad'); } });
+  $('#explain', el) && ($('#explain', el).onclick = () => explainSheet({ ...oc, stationId: sid, stationName: s.station.name, date: s.date }, again));
+  const confirmDl = (b, after) => async () => { try { await busy(b, () => sapi('/api/ops/stock/delivery', { method: 'POST', body: { id: b.dataset.dl, action: 'confirm' } })); after?.(); again(); } catch (e) { say($('#stMsg', el), e.message, 'bad'); } };
+  $$('[data-dl]', el).forEach(b => b.onclick = confirmDl(b));
+  const receive = (pid = '') => {
+    const { box, close } = sheet(`<h2>${buyer ? 'Drinks bought' : 'New stock'}</h2><p class="muted" style="margin:0">${buyer ? 'It goes into the bar’s stock straight away.' : 'The bar confirms it when it arrives; only then does it count.'}</p><div class="sfield"><label for="rvP">Drink</label><select id="rvP">${products.filter(p => p.tracked).map(p => `<option value="${esc(p.id)}" ${p.id === pid ? 'selected' : ''}>${esc(p.name)}</option>`).join('')}</select></div>
+      <div class="sfield"><label for="rvQ">How many</label><input id="rvQ" inputmode="numeric" pattern="[0-9]*" autocomplete="off"></div>
+      ${moneyField('rvC', buyer ? 'Total paid (GHS)' : 'Total paid (GHS, if you know it)')}
+      <div class="sfield"><label for="rvS">Supplier</label><input id="rvS" maxlength="80"></div>
+      <div class="sfield"><label for="rvR">Receipt or invoice number</label><input id="rvR" maxlength="60"></div>
+      <div class="sfield" ${stations.length > 1 ? '' : 'hidden'}><label for="rvB">Into which bar</label><select id="rvB">${stations.map(x => `<option value="${esc(x.id)}" ${x.id === sid ? 'selected' : ''}>${esc(x.name)}</option>`).join('')}</select></div>
+      <div id="rvM"></div><div class="sheet-dock"><button class="big" id="rvGo">Save</button></div>`, { label: buyer ? 'Drinks bought' : 'New stock' });
+    if (pid) setTimeout(() => $('#rvQ', box)?.focus(), 40);
+    $('#rvGo', box).onclick = async () => { try { await busy($('#rvGo', box), () => sapi('/api/ops/stock/received', { method: 'POST', body: { productId: $('#rvP', box).value, stationId: $('#rvB', box).value, qty: Number($('#rvQ', box).value), supplier: $('#rvS', box).value, reference: $('#rvR', box).value, totalCostPesewas: $('#rvC', box).value ? ghsIn($('#rvC', box).value) : '' } })); close(); await again(); say($('#stMsg', el), buyer ? 'Saved. It’s in the bar’s stock.' : 'Saved. The bar confirms it when it arrives.'); } catch (e) { say($('#rvM', box), e.message, 'bad'); } };
   };
-  labelTables(el);
+  $('#rcv', el).onclick = () => receive();
+  $$('[data-sk]', el).forEach(b => b.onclick = () => {
+    const r = s.rows.find(x => x.productId === b.dataset.sk), mine = dl.deliveries.filter(x => x.productId === r.productId || x.productName === r.name);
+    const ledger = [['Opening', r.opening], ['Received', r.received], ['Moved in from another bar', r.transferIn], ['Returned to the bar', r.returns], ['Handed out (sold)', -r.issued], ['Broken or spilled', -r.waste], ['Moved out to another bar', -r.transferOut]];
+    const { box, close } = sheet(`<h2>${esc(r.name)}</h2><p class="muted" style="margin:0">${esc(s.station.name)} · ${esc(dayName(s.date))}${r.lowStock ? ` · buy more at ${r.lowStock}` : ''}</p>
+      <div class="hero-row" style="margin-top:12px"><div class="hero"><span>Should be here</span><b>${r.expected}</b></div><div class="hero ${r.difference < 0 ? 'bad' : ''}"><span>Counted</span><b>${r.counted ?? '—'}</b></div></div>
+      ${r.difference ? `<div class="say ${r.difference < 0 ? 'bad' : 'warn'}"><b>${esc(diffWord(r.difference))}</b>${esc(s.reasons[r.reason] || 'No reason given')}${r.note ? ` · ${esc(r.note)}` : ''}</div>` : r.counted != null ? '<div class="say good">The count matches.</div>' : ''}
+      ${r.low ? `<div class="say warn"><b>Low</b>At or below ${r.lowStock}: time to buy more.</div>` : ''}
+      <h3 class="group-h">Tonight</h3><div class="lines-list">${ledger.filter(([k, n]) => n || k === 'Opening').map(([k, n]) => lineRow(k, k === 'Opening' ? n : plusMinus(n))).join('')}
+        ${r.comps ? lineRow('Of which free drinks', r.comps) : ''}<div class="ln total"><span>Should be here</span><span>${r.expected}</span></div></div>
+      ${ledger.some(([k, n]) => !n && k !== 'Opening') ? `<p class="muted" style="margin:0">Nothing ${ledger.filter(([k, n]) => !n && k !== 'Opening').map(([k]) => k.toLowerCase().replace(/ \(sold\)/, '')).join(', ')}.</p>` : ''}
+      ${mine.length ? `<h3 class="group-h">New stock, last 7 days</h3><div class="lines-list">${mine.map(dlLine).join('')}</div>` : ''}
+      <div id="skM"></div>
+      ${products.some(p => p.tracked && p.id === r.productId) ? `<div class="sheet-dock"><button class="big" id="skAdd">${buyer ? 'Record this drink bought' : 'Add new stock of this drink'}</button></div>` : ''}`, { label: r.name });
+    $$('[data-dl]', box).forEach(x => x.onclick = confirmDl(x, close));
+    $('#skAdd', box) && ($('#skAdd', box).onclick = () => { close(); setTimeout(() => receive(r.productId), 60); });
+  });
 }
 
 // ── Money: is the club making money? Tonight / this week / this month ──
+// The answer first (profit, or my share of it), then money in and out, then the details folded.
 export async function moneyView(el, period = 'today') {
   el.innerHTML = '<div class="loading">Loading…</div>';
   const [m, due, com] = await Promise.all([sapi(`/api/ops/money?period=${encodeURIComponent(period)}`), sapi('/api/ops/budget').catch(() => null), sapi('/api/ops/commissions').catch(() => null)]);
   const t = m.totals, d = m.drinks, profit = t.profitPesewas >= 0;
-  const rows = list => list.filter(r => r.amountPesewas).map(r => `<div class="ln"><span>${esc(r.label)}</span><span>${money(r.amountPesewas)}</span></div>`).join('') || '<div class="ln"><span class="muted">Nothing yet</span></div>';
-  el.innerHTML = `<h1>Money</h1>
+  const rows = list => list.filter(r => r.amountPesewas).map(r => lineRow(esc(r.label), money(r.amountPesewas))).join('') || '<div class="ln"><span class="muted">Nothing yet</span></div>';
+  const live = m.expenses.filter(e => !e.removed);
+  el.innerHTML = `<div class="vstack" style="display:grid;gap:14px"><h1>Money</h1>
     <div class="seg" role="radiogroup" aria-label="Period" style="grid-template-columns:repeat(3,minmax(0,1fr))">${[['today', 'Tonight'], ['week', 'This week'], ['month', 'This month']].map(([k, l]) => `<button type="button" class="mid ${k === m.period.key ? 'on' : ''}" data-per="${k}" role="radio" aria-checked="${k === m.period.key}">${l}</button>`).join('')}</div>
-    ${m.myShare ? `<div class="say ${m.myShare.profitPesewas >= 0 ? 'good' : 'bad'}"><b>Your share (${m.myShare.pct}%): ${m.myShare.profitPesewas < 0 ? '−' : ''}${money(Math.abs(m.myShare.profitPesewas))}</b>${esc(m.period.label)}.</div>` : ''}
-    <div class="pos-money">
-      <div class="big-line good"><span>Money in</span><b>${money(t.inPesewas)}</b></div>
-      <div class="big-line bad"><span>Money out</span><b>${money(t.outPesewas)}</b></div>
-      <div class="big-line ${profit ? 'good' : 'bad'}"><span>${profit ? 'Profit' : 'Loss'}</span><b>${money(Math.abs(t.profitPesewas))}</b></div>
-    </div>
-    ${due ? `<a class="pos-row" href="#budget" style="text-decoration:none"><span class="where">Bills this month<small>${due.totals.overdue ? `${due.totals.overdue} overdue · ` : ''}${money(due.totals.paidPesewas)} paid of ${money(due.totals.billsPesewas)}</small></span><span class="amt">${money(due.totals.duePesewas)}<small style="display:block">still to pay</small></span></a>` : ''}
-    ${com ? `<a class="pos-row" href="#commissions" style="text-decoration:none"><span class="where">Commissions this month<small>${com.ratePct}% on tables over ${money(com.overPesewas)}${com.totals.unassigned ? ` · ${com.totals.unassigned} not named yet` : ''}</small></span><span class="amt">${money(com.totals.owedPesewas)}<small style="display:block">to pay out</small></span></a>` : ''}
+    <div class="hero-stack">${m.myShare ? `<div class="hero ${m.myShare.profitPesewas >= 0 ? 'good' : 'bad'}"><span>Your share (${m.myShare.pct}%)</span><b>${signed(m.myShare.profitPesewas)}</b><span>${esc(m.period.label)} · club ${profit ? 'profit' : 'loss'} ${money(Math.abs(t.profitPesewas))}</span></div>`
+      : `<div class="hero ${profit ? 'good' : 'bad'}"><span>${profit ? 'Profit' : 'Loss'} · ${esc(m.period.label)}</span><b>${money(Math.abs(t.profitPesewas))}</b></div>`}
+    <div class="hero-row">
+      <div class="hero pos-money"><span>Money in</span><b>${money(t.inPesewas)}</b></div>
+      <div class="hero pos-money"><span>Money out</span><b>${money(t.outPesewas)}</b></div>
+    </div></div>
     ${t.waiting ? `<div class="say warn"><b>${t.waiting} expense${t.waiting > 1 ? 's' : ''} waiting for a director: ${money(t.waitingPesewas)}</b>Not counted until approved.</div>` : ''}
     ${m.canAddExpense ? '<button class="big" id="addExp">Add an expense</button>' : ''}<div id="mMsg"></div>
-    ${m.owners?.length ? `<h2>Directors’ shares</h2><div class="lines-list">${m.owners.map(o => `<div class="ln"><span>${esc(o.name)} <small class="muted">${o.pct}%</small></span><span>${o.profitPesewas < 0 ? '−' : ''}${money(Math.abs(o.profitPesewas))}</span></div>`).join('')}</div>` : ''}
-    <h2>Money in</h2><div class="lines-list">${rows(m.moneyIn)}<div class="ln total"><span>Total</span><span>${money(t.inPesewas)}</span></div></div>
-    ${d.unpaidPesewas ? `<p class="muted" style="margin:0">Not counted yet: ${money(d.unpaidPesewas)} of drinks still unpaid on open tables.</p>` : ''}
-    <h2>Money out</h2><div class="lines-list">${rows(m.moneyOut)}<div class="ln total"><span>Total</span><span>${money(t.outPesewas)}</span></div></div>
-    ${m.tips?.totalPesewas ? `<h2>Tips for staff</h2><div class="lines-list">
-      <div class="ln"><span>Tips given (${m.tips.count})</span><span>${money(m.tips.totalPesewas)}</span></div>
-      <div class="ln"><span>MoMo / card: came into the club’s account</span><span>${money(m.tips.momoPesewas + m.tips.digitalPesewas)}</span></div>
-      <div class="ln"><span>Cash: the staff kept it</span><span>${money(m.tips.cashPesewas)}</span></div>
-      <div class="ln total"><span>Still to pay out to staff</span><span>${money(m.tips.owedPesewas)}</span></div></div>
-      <p class="muted" style="margin:0">${esc(m.tips.note)}</p>` : ''}
-    <h2>Drinks</h2><div class="nums">
-      <div><span>Sold</span><b>${money(d.soldPesewas)}</b></div><div><span>What they cost us</span><b>${money(d.costPesewas)}</b></div>
-      <div class="${d.profitPesewas >= 0 ? 'good' : 'bad'}"><span>Made on drinks</span><b>${money(d.profitPesewas)}</b></div></div>
-    ${d.missingCost.length ? `<p class="muted" style="margin:0">No cost entered for: ${d.missingCost.map(esc).join(', ')}. Finance can add it under Drinks &amp; prices.</p>` : ''}
-    ${d.rows.length ? `<details class="fold"><summary>By drink</summary><div class="tbl-wrap"><table class="tbl"><thead><tr><th>Drink</th><th class="num">Sold</th><th class="num">Money</th><th class="num">Cost</th><th class="num">Made</th></tr></thead><tbody>
-      ${d.rows.map(r => `<tr><td>${esc(r.name)}</td><td class="num">${r.qty}</td><td class="num">${money(r.salesPesewas)}</td><td class="num">${money(r.costPesewas)}</td><td class="num">${money(r.profitPesewas)}</td></tr>`).join('')}</tbody></table></div></details>` : ''}
-    ${m.byNight.length > 1 ? `<details class="fold"><summary>Night by night</summary><div class="tbl-wrap"><table class="tbl"><thead><tr><th>Night</th><th class="num">In</th><th class="num">Out</th><th class="num">Profit</th></tr></thead><tbody>
-      ${m.byNight.map(r => `<tr><td>${esc(dayName(r.date))}</td><td class="num">${money(r.inPesewas)}</td><td class="num">${money(r.outPesewas)}</td><td class="num">${r.profitPesewas < 0 ? '−' : ''}${money(Math.abs(r.profitPesewas))}</td></tr>`).join('')}</tbody></table></div></details>` : ''}
-    <details class="fold" ${m.expenses.length ? 'open' : ''}><summary>Expenses (${m.expenses.filter(e => !e.removed).length})</summary>
+    ${due || com ? `<div class="rows">
+      ${due ? `<a class="row-btn" href="#budget" style="text-decoration:none"><span class="t">Bills this month</span><span class="s">${due.totals.overdue ? `<b class="diff-neg">${due.totals.overdue} overdue</b> · ` : ''}${money(due.totals.paidPesewas)} paid of ${money(due.totals.billsPesewas)}</span><span class="r">${money(due.totals.duePesewas)}</span></a>` : ''}
+      ${com ? `<a class="row-btn" href="#commissions" style="text-decoration:none"><span class="t">Commissions this month</span><span class="s">${com.ratePct}% on tables over ${money(com.overPesewas)}${com.totals.unassigned ? ` · ${com.totals.unassigned} not named yet` : ''}</span><span class="r">${money(com.totals.owedPesewas)}</span></a>` : ''}</div>` : ''}
+    <details class="fold"><summary>Money in and out</summary>
+      <h3 class="group-h">Money in</h3><div class="lines-list">${rows(m.moneyIn)}<div class="ln total"><span>Total</span><span>${money(t.inPesewas)}</span></div></div>
+      ${d.unpaidPesewas ? `<p class="muted" style="margin:0">Not counted yet: ${money(d.unpaidPesewas)} of drinks still unpaid on open tables.</p>` : ''}
+      <h3 class="group-h">Money out</h3><div class="lines-list">${rows(m.moneyOut)}<div class="ln total"><span>Total</span><span>${money(t.outPesewas)}</span></div></div></details>
+    <details class="fold"><summary>Drinks <span class="muted">${signed(d.profitPesewas)} made</span></summary>
+      <div class="lines-list">${lineRow('Sold', money(d.soldPesewas))}${lineRow('What they cost us', money(d.costPesewas))}<div class="ln total"><span>Made on drinks</span><span class="${d.profitPesewas >= 0 ? '' : 'diff-neg'}">${signed(d.profitPesewas)}</span></div></div>
+      ${d.missingCost.length ? `<p style="margin:0">${amber('No cost entered for:')} ${d.missingCost.map(esc).join(', ')}. Finance can add it under Drinks &amp; prices.</p>` : ''}
+      ${d.rows.length ? `<h3 class="group-h">By drink</h3><div class="lines-list">${d.rows.map(r => lineRow(esc(r.name), signed(r.profitPesewas), `${r.qty} sold · ${money(r.salesPesewas)} · cost ${money(r.costPesewas)}`)).join('')}</div>` : ''}</details>
+    <details class="fold"><summary>Expenses (${live.length})</summary>
       ${m.expenses.length ? `<div class="lines-list">${m.expenses.map(e => `<div class="ln" style="${e.removed ? 'opacity:.55' : ''}"><span><b>${esc(e.description)}</b><br><small class="muted">${esc(e.categoryLabel)} · ${esc(dayName(e.date))} · ${esc(e.paidWith)} · ${esc(e.recordedByName)}${e.removed ? ` · taken off by ${esc(e.removedByName)}: ${esc(e.removedReason)}` : ''}${e.approval === 'pending' ? ' · <b>waiting for a director</b>' : e.approval === 'refused' ? ` · <b>refused by ${esc(e.decidedByName)}</b>: ${esc(e.decisionNote)}` : ''}</small></span>
-        <span>${e.removed ? `<s>${money(e.amountPesewas)}</s>` : money(e.amountPesewas)}${e.canRemove ? `<br><button class="sbtn" data-rmexp="${esc(e.id)}">Take off</button>` : ''}</span></div>`).join('')}</div>` : '<p class="muted">No expenses recorded.</p>'}</details>
-    ${m.purchases.length ? `<details class="fold"><summary>Drinks bought (${m.purchases.length})</summary><div class="lines-list">${m.purchases.map(x => `<div class="ln"><span><b>${x.qty} × ${esc(x.productName)}</b><br><small class="muted">${esc(dayName(x.date))} · ${esc(x.recordedByName)}${x.supplier ? ` · ${esc(x.supplier)}` : ''}</small></span><span>${money(x.costPesewas)}</span></div>`).join('')}</div></details>` : ''}`;
+        <span>${e.removed ? `<s>${money(e.amountPesewas)}</s>` : money(e.amountPesewas)}${e.canRemove ? `<br><button class="sbtn" data-rmexp="${esc(e.id)}">Take off</button>` : ''}</span></div>`).join('')}</div>` : '<p class="muted" style="margin:0">No expenses recorded.</p>'}</details>
+    ${m.purchases.length ? `<details class="fold"><summary>Drinks bought (${m.purchases.length})</summary><div class="lines-list">${m.purchases.map(x => lineRow(`<b>${x.qty} × ${esc(x.productName)}</b>`, money(x.costPesewas), `${esc(dayName(x.date))} · ${esc(x.recordedByName)}${x.supplier ? ` · ${esc(x.supplier)}` : ''}`)).join('')}</div></details>` : ''}
+    ${m.byNight.length > 1 ? `<details class="fold"><summary>Night by night</summary><div class="lines-list">${m.byNight.map(r => lineRow(esc(dayName(r.date)), signed(r.profitPesewas), `in ${money(r.inPesewas)} · out ${money(r.outPesewas)}`)).join('')}</div></details>` : ''}
+    ${m.tips?.totalPesewas ? `<details class="fold"><summary>Tips for staff</summary><div class="lines-list">
+      ${lineRow(`Tips given (${m.tips.count})`, money(m.tips.totalPesewas))}${lineRow('MoMo / card: came into the club’s account', money(m.tips.momoPesewas + m.tips.digitalPesewas))}${lineRow('Cash: the staff kept it', money(m.tips.cashPesewas))}
+      <div class="ln total"><span>Still to pay out to staff</span><span>${money(m.tips.owedPesewas)}</span></div></div>
+      <p class="muted" style="margin:0">${esc(m.tips.note)}</p></details>` : ''}
+    ${m.owners?.length ? `<details class="fold"><summary>Directors’ shares</summary><div class="lines-list">${m.owners.map(o => lineRow(`${esc(o.name)} <small class="muted">${o.pct}%</small>`, signed(o.profitPesewas))).join('')}</div></details>` : ''}</div>`;
   $$('[data-per]', el).forEach(b => b.onclick = () => moneyView(el, b.dataset.per));
   $('#addExp', el) && ($('#addExp', el).onclick = () => expenseSheet(m, async r => { await moneyView(el, m.period.key); say($('#mMsg', el), r?.needsApproval ? 'Saved. It’s above the limit, so it waits for a director.' : 'Expense saved.'); }));
   $$('[data-rmexp]', el).forEach(b => b.onclick = () => {
@@ -331,7 +415,7 @@ export async function budgetView(el, month) {
     $('#pyGo', box).onclick = async () => { try { await busy($('#pyGo', box), () => sapi('/api/ops/bills/pay', { method: 'POST', body: { id: bill.id, amountPesewas: ghsIn($('#pyA', box).value), paidWith: $('#pyW', box).value, date: $('#pyD', box).value } })); close(); again(); } catch (e) { say($('#pyM', box), e.message, 'bad'); } };
   });
   $$('[data-rmb]', el).forEach(x => x.onclick = async () => {
-    const reason = prompt('Why take this bill off?'); if (!reason) return;
+    const reason = await ask({ title: 'Take this bill off', label: 'Why?', quick: ['Entered twice', 'Wrong amount', 'Already paid', 'Not needed any more'], send: 'Take it off', danger: true }); if (!reason) return;
     try { await sapi('/api/ops/bills/remove', { method: 'POST', body: { id: x.dataset.rmb, reason } }); again(); } catch (e) { say($('#bMsg', el), e.message, 'bad'); }
   });
   labelTables(el);
@@ -450,7 +534,7 @@ export async function toApproveView(el, { onCount } = {}) {
       <span class="btn-row"><button class="mid okc" data-yes="${i}">Approve</button><button class="mid" data-no="${i}">Refuse</button></span></div>`).join('') || '<div class="empty-box"><b>All clear</b>New requests appear here.</div>'}</div>`;
   const decide = async (x, approve) => {
     let note = '';
-    if (!approve) { note = prompt(x.kind === 'payroll' ? 'What needs changing? (it goes back to the Human manager)' : 'Why is it refused?'); if (!note) return; }
+    if (!approve) { note = await ask(x.kind === 'payroll' ? { title: 'Send salaries back', label: 'What needs changing? It goes back to the Human manager.', quick: ['A salary is wrong', 'A bonus needs checking', 'Someone is missing', 'Someone shouldn’t be paid'], send: 'Send back', danger: true } : { title: 'Refuse this payment', label: 'Why? They see your reason.', quick: REFUSE_QUICK, send: 'Refuse', danger: true }); if (!note) return; }
     try { await sapi('/api/ops/approve', { method: 'POST', body: { kind: x.kind, id: x.id, approve, note } }); await toApproveView(el, { onCount }); say($('#taMsg', el), approve ? 'Approved. Finance can pay it now.' : 'Refused.'); }
     catch (e) { say($('#taMsg', el), e.message, 'bad'); }
   };
@@ -552,7 +636,7 @@ export async function eodView(el, date, { canSignOff = false } = {}) {
   const { report: r } = await sapi(`/api/ops/eod?date=${encodeURIComponent(date)}`);
   if (!r) { el.innerHTML = '<div class="say warn"><b>Not closed yet</b>This night has no end-of-day report.</div>'; return; }
   const R = r.report, t = R.sales.totals, x = R.exceptions;
-  el.innerHTML = `<button class="link" id="back" style="justify-self:start">← All reports</button><h1>End of day · ${esc(dayName(r.date))}</h1>
+  el.innerHTML = `<div class="backbar"><button type="button" class="back-btn" id="back" aria-label="Back to all reports">←<span>All reports</span></button></div><h1>End of day · ${esc(dayName(r.date))}</h1>
     <p class="lead">Prepared ${when(R.preparedAt)} by ${esc(R.preparedByName)} · ${r.sent ? `emailed to ${esc(r.sentTo)}` : esc(r.sendNote || 'not emailed')}${r.financeApprovedAt ? ` · signed off by ${esc(r.financeApprovedByName)}` : ''}</p>
     <h2>Sales and money</h2><div class="nums"><div><span>Sales</span><b>${money(t.salesPesewas)}</b></div><div class="good"><span>Received</span><b>${money(t.paidPesewas)}</b></div><div><span>MoMo / card</span><b>${money(t.digitalPesewas)}</b></div><div><span>Cash</span><b>${money(t.cashPesewas)}</b></div><div><span>MoMo to the club</span><b>${money(t.momoPesewas || 0)}</b></div><div class="${t.owedPesewas ? 'bad' : 'good'}"><span>Still owed</span><b>${money(t.owedPesewas)}</b></div><div><span>Refunds</span><b>${money(t.refundsPesewas)}</b></div><div><span>Free drinks</span><b>${money(t.freeDrinksPesewas)}</b></div><div><span>Discounts</span><b>${money(t.discountsPesewas)}</b></div></div>
     <h2>Things to check</h2>${[x.unpaidTabs.length ? `${x.unpaidTabs.length} unpaid bill(s): ${x.unpaidTabs.map(u => `Tab ${u.number} ${money(u.balancePesewas)} (${esc(u.waiterName)})`).join(', ')}` : '',

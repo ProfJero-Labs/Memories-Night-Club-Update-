@@ -2,6 +2,7 @@
 // Built for a dark room, one hand, hundreds of scans: big results, tones, no paragraphs.
 import { $, esc, params, shortDate, nightKey } from '../app.js';
 import { requireStaff, staffHeader, sapi } from '../staff.js';
+import { ask } from '../lib/ops-ui.js';
 const user = await requireStaff(['superAdmin', 'director', 'manager', 'eventManager', 'doorStaff', 'security', 'organiser']);
 staffHeader(user, 'Door');
 if (['superAdmin', 'director', 'manager', 'eventManager'].includes(user.role)) $('#adminLink').hidden = false;
@@ -241,7 +242,7 @@ $('#mCode').onsubmit = async ev => {
 };
 // Phone dead or no data: let a known member in by name, with a reason (recorded for the manager).
 $('#mManual').onclick = async () => {
-  const reason = prompt('Why can’t they use the app? (e.g. phone dead). Check their face or ID first.');
+  const reason = await ask({ title: 'Let them in by name', label: 'Why can’t they use the app? Check their face or ID first.', quick: ['Phone dead', 'No data', 'Forgot phone', 'App won’t open'], send: 'Let them in' });
   if (!reason) return;
   try { showMember(await sapi('/api/members/door/manual', { method: 'POST', body: { phone: mPhone, reason } })); $('#mCode').hidden = true; $('#mPhone').hidden = false; $('#mNum').value = ''; }
   catch (e) { e.status === 0 ? offline() : showMember({ valid: false, message: 'Try again', hint: e.message }); }

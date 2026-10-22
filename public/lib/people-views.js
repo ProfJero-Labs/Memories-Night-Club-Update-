@@ -5,7 +5,7 @@
 //   perfView     monthly performance reviews of each staff member
 import { $, $$, esc } from '../app.js';
 import { sapi } from '../staff.js';
-import { sheet, say, st, busy, ghsIn, moneyField, money, when, dayName } from './ops-ui.js';
+import { sheet, say, st, busy, ghsIn, moneyField, money, when, dayName, addQuick } from './ops-ui.js';
 
 const mon = m => new Date(`${m}-15T12:00:00Z`).toLocaleDateString('en-GB', { month: 'short' });
 const shift = (m, by) => { const [y, mo] = m.split('-').map(Number); return new Date(Date.UTC(y, mo - 1 + by, 1)).toISOString().slice(0, 7); };
@@ -16,28 +16,39 @@ const signed = p => `${p < 0 ? '−' : ''}${money(Math.abs(p))}`;
 export async function payView(el, month) {
   el.innerHTML = '<div class="loading">Loading…</div>';
   const d = await sapi(`/api/ops/payroll${month ? `?month=${month}` : ''}`);
-  const stKey = { draft: 'unpaid', submitted: 'part_paid', approved: 'ready', paid: 'paid' }[d.status];
+  // One list: each person once (salary, this month's extras, payment details); tap for the rest.
+  const line = uid => d.lines.find(l => l.uid === uid);
+  const people = d.staff.map(s => ({ ...s, line: line(s.uid) })).concat(d.lines.filter(l => !d.staff.some(s => s.uid === l.uid)).map(l => ({ uid: l.uid, name: l.name, roleName: l.roleName, payTo: l.payTo, salaryPesewas: 0, line: l })));
+  const extras = l => (l?.lines || []).filter(x => !/^salary/i.test(x.label)).map(x => `${esc(x.label)} ${signed(x.amountPesewas)}`).join(' · ');
   el.innerHTML = `<h1 style="margin:0">Salaries</h1>${monthBar(d.month, d.label)}
-    <div class="pos-money"><div class="big-line"><span>To pay this month</span><b>${money(d.totals.netPesewas)}</b></div>
-      <div class="big-line good"><span>Paid</span><b>${money(d.totals.paidPesewas)}</b></div><p class="how">${st(stKey, d.statusLabel)} ${d.totals.people} ${d.totals.people === 1 ? 'person' : 'people'}${d.approvedByName ? ` · approved by ${esc(d.approvedByName)}` : ''}</p></div>
+    <div class="hero"><span>To pay for ${esc(d.label)}</span><b>${money(d.totals.netPesewas)}</b><small>${esc(d.statusLabel)} · ${d.totals.people} ${d.totals.people === 1 ? 'person' : 'people'}${d.totals.paidPesewas ? ` · ${money(d.totals.paidPesewas)} paid` : ''}${d.approvedByName ? ` · approved by ${esc(d.approvedByName)}` : ''}</small></div>
     ${d.note && d.status === 'draft' ? `<div class="say warn"><b>Sent back by a director</b>${esc(d.note)}</div>` : ''}
     <div id="pMsg"></div>
     ${d.can.submit ? '<button class="big" id="pSend">Send to the directors</button>' : ''}
     ${d.can.pay ? '<button class="big" id="pPayAll">Mark everyone paid</button>' : ''}
-    <h2>${d.status === 'draft' ? 'This month so far' : 'Payroll'}</h2>
-    <div class="lines-list">${d.lines.map(l => `<div class="ln"><span><b>${esc(l.name)}</b> <small class="muted">${esc(l.roleName)}</small><br>
-      <small class="muted">${l.lines.map(x => `${esc(x.label)}${x.reason ? ` (${esc(x.reason)})` : ''} ${signed(x.amountPesewas)}`).join(' · ')}</small><br><small class="muted">${l.payTo ? `To ${esc(l.payTo)}` : '<b style="color:var(--mustard)">No MoMo or bank details</b>'}</small></span>
-      <span>${money(l.netPesewas)}${l.paid ? `<br>${st('paid', 'Paid')}` : d.can.pay ? `<br><button class="sbtn" data-payone="${esc(l.uid)}">Paid</button>` : ''}</span></div>`).join('') || '<div class="ln"><span class="muted">Nobody has pay yet. Set salaries below.</span></div>'}
-      <div class="ln total"><span>Total</span><span>${money(d.totals.netPesewas)}</span></div></div>
-    ${d.can.edit ? '<div class="btn-row"><button class="mid" id="pBonus">Add a bonus</button><button class="mid" id="pDed">Add a deduction</button><button class="mid" id="pLoan">Record a loan</button></div>' : ''}
-    ${d.loans.length ? `<h2>Loans</h2><div class="lines-list">${d.loans.map(l => `<div class="ln"><span><b>${esc(l.name)}</b> · ${money(l.amountPesewas)}<br><small class="muted">${esc(l.reason)} · ${money(l.monthlyPesewas)} a month · ${esc(l.statusLabel)}</small></span>
-      <span>${money(l.leftPesewas)} left${l.status === 'approved' && d.can.payLoans ? `<br><button class="sbtn" data-payloan="${esc(l.id)}">Pay out</button>` : ''}</span></div>`).join('')}</div>` : ''}
-    <h2>Salaries and payment details</h2>
-    <div class="lines-list">${d.staff.map(s => `<div class="ln"><span><b>${esc(s.name)}</b> <small class="muted">${esc(s.roleName)}</small><br><small class="muted">${s.payTo ? esc(s.payTo) : 'No payment details'}</small></span>
-      <span>${s.salaryPesewas ? money(s.salaryPesewas) : '—'}${d.can.setPay ? `<br><button class="sbtn" data-set="${esc(s.uid)}">Change</button>` : ''}</span></div>`).join('')}</div>`;
+    ${d.can.edit ? '<div class="quick" role="group" aria-label="Add"><button type="button" class="chip" id="pBonus">+ Bonus</button><button type="button" class="chip" id="pDed">− Deduction</button><button type="button" class="chip" id="pLoan">Loan</button></div>' : ''}
+    <div class="rows">${people.map(p => `<button type="button" class="row-btn" data-person="${esc(p.uid)}"><span class="t">${esc(p.name)}</span>
+      <span class="s">${esc(p.roleName)} · ${p.salaryPesewas ? `salary ${money(p.salaryPesewas)}` : 'no salary set'}${extras(p.line) ? ` · ${extras(p.line)}` : ''}<br>${p.payTo ? esc(p.payTo) : '<b style="color:var(--mustard)">No MoMo or bank details</b>'}</span>
+      <span class="r">${p.line ? money(p.line.netPesewas) : '—'}${p.line?.paid ? ' ✓' : ''}</span></button>`).join('') || '<p class="muted">Nobody has pay yet. Set salaries from each person.</p>'}</div>
+    ${d.loans.length ? `<details class="fold"><summary>Loans (${d.loans.length})</summary><div class="lines-list">${d.loans.map(l => `<div class="ln"><span><b>${esc(l.name)}</b> · ${money(l.amountPesewas)}<br><small class="muted">${esc(l.reason)} · ${money(l.monthlyPesewas)} a month · ${esc(l.statusLabel)}</small></span>
+      <span>${money(l.leftPesewas)} left${l.status === 'approved' && d.can.payLoans ? `<br><button class="sbtn" data-payloan="${esc(l.id)}">Pay out</button>` : ''}</span></div>`).join('')}</div></details>` : ''}`;
+  // A person: this month's pay line by line, their payment details, and what can be done for them.
+  $$('[data-person]', el).forEach(b => b.onclick = () => {
+    const p = people.find(x => x.uid === b.dataset.person), l = p.line;
+    const { box, close } = sheet(`<h2>${esc(p.name)}</h2><p class="muted" style="margin:0">${esc(p.roleName)} · ${esc(d.label)}</p>
+      <div class="lines-list">${(l?.lines || []).map(x => `<div class="ln"><span>${esc(x.label)}${x.reason ? `<br><small class="muted">${esc(x.reason)}</small>` : ''}</span><span>${signed(x.amountPesewas)}</span></div>`).join('') || '<div class="ln"><span class="muted">Nothing this month yet</span></div>'}
+        ${l ? `<div class="ln total"><span>To be paid</span><span>${money(l.netPesewas)}${l.paid ? ' · paid' : ''}</span></div>` : ''}</div>
+      <p style="margin:0">${p.payTo ? `Paid to ${esc(p.payTo)}` : '<b style="color:var(--mustard)">No MoMo or bank details yet</b>'}</p>
+      ${d.can.setPay ? `<button class="big ghost" data-set="${esc(p.uid)}">Salary and payment details</button>` : ''}
+      ${d.can.edit ? `<div class="quick"><button type="button" class="chip" data-add="bonus">+ Bonus</button><button type="button" class="chip" data-add="deduction">− Deduction</button><button type="button" class="chip" data-add="loan">Loan</button></div>` : ''}
+      ${d.can.pay && l && !l.paid ? `<button class="big" data-payone="${esc(p.uid)}">Mark ${esc(p.name.split(' ')[0])} paid</button>` : ''}`, { label: `${p.name}’s pay` });
+    $$('[data-set]', box).forEach(x => x.onclick = () => { close(); setPay(p.uid); });
+    $$('[data-add]', box).forEach(x => x.onclick = () => { close(); x.dataset.add === 'loan' ? loan(p.uid) : item(x.dataset.add, p.uid); });
+    $$('[data-payone]', box).forEach(x => x.onclick = () => { close(); pay({ uid: p.uid }); });
+  });
   const again = () => payView(el, d.month);
   $$('[data-mon]', el).forEach(b => b.onclick = () => payView(el, b.dataset.mon));
-  const staffSel = id => `<div class="sfield"><label for="${id}">Who</label><select id="${id}">${d.staff.map(s => `<option value="${esc(s.uid)}">${esc(s.name)} (${esc(s.roleName)})</option>`).join('')}</select></div>`;
+  const staffSel = (id, who) => `<div class="sfield"><label for="${id}">Who</label><select id="${id}">${d.staff.map(s => `<option value="${esc(s.uid)}" ${s.uid === who ? 'selected' : ''}>${esc(s.name)} (${esc(s.roleName)})</option>`).join('')}</select></div>`;
   $('#pSend', el) && ($('#pSend', el).onclick = async () => {
     if (!confirm(`Send ${d.label}’s salaries (${money(d.totals.netPesewas)}) to the directors to approve? You can’t change them after.`)) return;
     try { await sapi('/api/ops/payroll/submit', { method: 'POST', body: { month: d.month } }); again(); }
@@ -56,19 +67,20 @@ export async function payView(el, month) {
     if (!confirm('Mark this loan as paid out to them? It goes in Money out and they are texted.')) return;
     try { await sapi('/api/ops/loans/pay', { method: 'POST', body: { id: b.dataset.payloan } }); again(); } catch (e) { say($('#pMsg', el), e.message, 'bad'); }
   });
-  const item = kind => { const { box, close } = sheet(`<h2>${kind === 'bonus' ? 'Add a bonus' : 'Add a deduction'}</h2>${staffSel('piU')}${moneyField('piA', 'Amount (GHS)')}
+  const item = (kind, who) => { const { box, close } = sheet(`<h2>${kind === 'bonus' ? 'Add a bonus' : 'Add a deduction'}</h2>${staffSel('piU', who)}${moneyField('piA', 'Amount (GHS)')}
       <div class="sfield"><label for="piR">${kind === 'bonus' ? 'What for' : 'Why'}</label><input id="piR" maxlength="160" placeholder="${kind === 'bonus' ? 'e.g. Best sales in October' : 'e.g. Late three times'}"></div>
       <div id="piM"></div><button class="big" id="piGo">Save</button><button class="big ghost" data-close>Cancel</button>`);
     $('#piGo', box).onclick = async () => { try { await busy($('#piGo', box), () => sapi('/api/ops/pay/item', { method: 'POST', body: { uid: $('#piU', box).value, month: d.month, kind, amountPesewas: ghsIn($('#piA', box).value), reason: $('#piR', box).value } })); close(); again(); } catch (e) { say($('#piM', box), e.message, 'bad'); } }; };
   $('#pBonus', el) && ($('#pBonus', el).onclick = () => item('bonus'));
   $('#pDed', el) && ($('#pDed', el).onclick = () => item('deduction'));
-  $('#pLoan', el) && ($('#pLoan', el).onclick = () => {
-    const { box, close } = sheet(`<h2>Record a loan</h2><p class="muted" style="margin:0">A director approves it, then finance pays it out. It comes off their salary each month.</p>${staffSel('lnU')}${moneyField('lnA', 'Loan amount (GHS)')}${moneyField('lnM', 'Taken off each month’s salary (GHS)')}
+  $('#pLoan', el) && ($('#pLoan', el).onclick = () => loan());
+  function loan(who) {
+    const { box, close } = sheet(`<h2>Record a loan</h2><p class="muted" style="margin:0">A director approves it, then finance pays it out. It comes off their salary each month.</p>${staffSel('lnU', who)}${moneyField('lnA', 'Loan amount (GHS)')}${moneyField('lnM', 'Taken off each month’s salary (GHS)')}
       <div class="sfield"><label for="lnR">What it’s for</label><input id="lnR" maxlength="160"></div><div id="lnMs"></div><button class="big" id="lnGo">Send to the directors</button><button class="big ghost" data-close>Cancel</button>`);
     $('#lnGo', box).onclick = async () => { try { await busy($('#lnGo', box), () => sapi('/api/ops/loans', { method: 'POST', body: { uid: $('#lnU', box).value, amountPesewas: ghsIn($('#lnA', box).value), monthlyPesewas: ghsIn($('#lnM', box).value), reason: $('#lnR', box).value } })); close(); again(); } catch (e) { say($('#lnMs', box), e.message, 'bad'); } };
-  });
-  $$('[data-set]', el).forEach(b => b.onclick = () => {
-    const s = d.staff.find(x => x.uid === b.dataset.set);
+  }
+  function setPay(uid) {
+    const s = d.staff.find(x => x.uid === uid);
     const { box, close } = sheet(`<h2>${esc(s.name)}’s pay</h2>${moneyField('sdS', 'Monthly salary (GHS)', s.salaryPesewas ? String(s.salaryPesewas / 100) : '')}
       <div class="sfield"><label for="sdM">Paid by</label><select id="sdM"><option value="momo" ${s.payMethod !== 'bank' ? 'selected' : ''}>MoMo</option><option value="bank" ${s.payMethod === 'bank' ? 'selected' : ''}>Bank</option></select></div>
       <div id="sdMomo"><div class="sfield"><label for="sdN">MoMo number</label><input id="sdN" type="tel" inputmode="tel" value="${esc(s.momoNumber)}"></div><div class="sfield"><label for="sdNm">Name on the MoMo account</label><input id="sdNm" maxlength="60" value="${esc(s.momoName)}"></div></div>
@@ -77,7 +89,7 @@ export async function payView(el, month) {
     const sync = () => { $('#sdMomo', box).hidden = $('#sdM', box).value !== 'momo'; $('#sdBank', box).hidden = $('#sdM', box).value !== 'bank'; };
     $('#sdM', box).onchange = sync; sync();
     $('#sdGo', box).onclick = async () => { try { await busy($('#sdGo', box), () => sapi('/api/ops/pay/details', { method: 'POST', body: { uid: s.uid, salaryPesewas: $('#sdS', box).value === '' ? 0 : ghsIn($('#sdS', box).value), payMethod: $('#sdM', box).value, momoNumber: $('#sdN', box).value, momoName: $('#sdNm', box).value, bankName: $('#sdB', box).value, bankAccount: $('#sdA', box).value, accountName: $('#sdAn', box).value } })); close(); again(); } catch (e) { say($('#sdMs', box), e.message, 'bad'); } };
-  });
+  }
 }
 
 // ── Customer reviews ──
@@ -94,6 +106,7 @@ export async function reviewsView(el) {
   $$('[data-handle]', el).forEach(b => b.onclick = () => {
     const { box, close } = sheet(`<h2>Follow up</h2><div class="sfield"><label for="rhN">What was done</label><textarea id="rhN" rows="3" maxlength="500" placeholder="e.g. Called her, apologised, free drinks on her next visit"></textarea></div>
       <div id="rhM"></div><button class="big" id="rhGo">Save</button><button class="big ghost" data-close>Cancel</button>`);
+    addQuick($('#rhN', box), ['Called them and apologised', 'Free drink on their next visit', 'Spoke to the staff involved', 'Refunded']);
     $('#rhGo', box).onclick = async () => { try { await busy($('#rhGo', box), () => sapi('/api/ops/reviews/handle', { method: 'POST', body: { id: b.dataset.handle, note: $('#rhN', box).value } })); close(); reviewsView(el); } catch (e) { say($('#rhM', box), e.message, 'bad'); } };
   });
 }
@@ -112,6 +125,7 @@ export async function perfView(el, month) {
       ${Object.entries(d.scores).map(([k, label]) => `<div class="sfield"><label for="pf_${k}">${esc(label)}</label><select id="pf_${k}">${[5, 4, 3, 2, 1].map(n => `<option ${cur[k] === n ? 'selected' : ''}>${n}</option>`).join('')}</select></div>`).join('')}
       <div class="sfield"><label for="pfC">Comment</label><textarea id="pfC" rows="3" maxlength="1000">${esc(s.review?.comment || '')}</textarea></div>
       <div id="pfM"></div><button class="big" id="pfGo">Save review</button><button class="big ghost" data-close>Cancel</button>`, { label: 'Performance review' });
+    addQuick($('#pfC', box), ['Great with customers', 'Always on time', 'Needs to be on time', 'Keep it up', 'Let’s talk this week']);
     $('#pfGo', box).onclick = async () => {
       const scores = Object.fromEntries(Object.keys(d.scores).map(k => [k, Number($(`#pf_${k}`, box).value)]));
       try { await busy($('#pfGo', box), () => sapi('/api/ops/perf', { method: 'POST', body: { uid: s.uid, month: d.month, scores, comment: $('#pfC', box).value } })); close(); perfView(el, d.month); } catch (e) { say($('#pfM', box), e.message, 'bad'); }

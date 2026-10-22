@@ -1,7 +1,7 @@
 // Selling, shared by the waiter and the bar: pick drinks (showing how many are left, finished ones
 // can't be picked) and take the payment (Cash, or MoMo with its transaction ID).
 import { $, $$, esc } from '../app.js';
-import { sheet, say, busy, money, moneyField, ghsIn } from './ops-ui.js';
+import { sheet, say, busy, money, moneyField, ghsIn, pasteMomoButton } from './ops-ui.js';
 
 // Draws a drink list into `el`. products: from /api/ops/products?stationId=… (with `left`).
 // onSend(lines, total) runs when the big button is tapped; it may throw to show an error.
@@ -13,7 +13,7 @@ export function drinkPicker(el, products, { title = 'Pick drinks', top = '', but
   const cap = p => Math.min(30, p.left == null ? 30 : p.left);
   const draw = () => {
     const total = Object.entries(cart).reduce((n, [id, q]) => n + q * menu.find(p => p.id === id).pricePesewas, 0), count = Object.values(cart).reduce((a, b) => a + b, 0);
-    el.innerHTML = `${onBack ? '<button class="link" data-back style="justify-self:start">← Back</button>' : ''}<h1>${esc(title)}</h1>${top}
+    el.innerHTML = `${onBack ? '<div class="backbar"><button type="button" class="back-btn" data-back aria-label="Back">←<span>Back</span></button></div>' : ''}<h1>${esc(title)}</h1>${top}
       ${cats.map(c => `<h3 class="cat-h">${esc(c)}</h3>${menu.filter(p => p.category === c).map(p => `<div class="pick ${out(p) ? 'out' : ''}"><div class="grow">${esc(p.name)}<small>${money(p.pricePesewas)}${out(p) ? ' · finished' : p.left != null && p.left <= 5 ? ` · only ${p.left} left` : ''}</small></div>
         ${out(p) ? '' : `<div class="qstep"><button type="button" data-m="${esc(p.id)}" aria-label="One fewer ${esc(p.name)}">−</button><span>${cart[p.id] || 0}</span><button type="button" data-p="${esc(p.id)}" aria-label="One more ${esc(p.name)}" ${(cart[p.id] || 0) >= cap(p) ? 'disabled' : ''}>+</button></div>`}</div>`).join('')}`).join('')}
       <div id="pkMsg"></div>
@@ -66,9 +66,10 @@ export function tipSheet(sapi, defaultUid, done = () => {}) {
   const { box, close } = sheet(`<h2>Record a tip</h2><p class="muted" style="margin:0">For a tip without a bill. With a bill, add the tip when you take the payment.</p>
     <div class="seg" role="radiogroup" aria-label="How they paid"><button type="button" class="mid on" data-tm="cash" role="radio" aria-checked="true">Cash</button><button type="button" class="mid" data-tm="momo" role="radio" aria-checked="false">MoMo</button></div>
     <div id="tsBox"></div>
-    <div id="tsMomo" hidden><div class="sfield"><label for="tsRef">MoMo transaction ID</label><input id="tsRef" maxlength="40" autocomplete="off" autocapitalize="characters" placeholder="From the MoMo text"></div></div>
+    <div id="tsMomo" hidden><div id="tsPaste"></div><div class="sfield"><label for="tsRef">MoMo transaction ID</label><input id="tsRef" maxlength="40" autocomplete="off" autocapitalize="characters" placeholder="From the MoMo text"></div></div>
     <div id="tsMsg"></div><button class="big" id="tsGo">Record tip</button><button class="big ghost" data-close>Cancel</button>`, { label: 'Record a tip' });
   const tb = tipBox($('#tsBox', box), sapi, defaultUid);
+  $('#tsPaste', box).append(pasteMomoButton(m => { if (m.ref) $('#tsRef', box).value = m.ref; if (m.amountPesewas) $('#tipAmt', box).value = String(m.amountPesewas / 100); }));
   $('[data-tipbox]', box).open = true; $('[data-tipbox] summary', box).hidden = true;
   let method = 'cash';
   $$('[data-tm]', box).forEach(b => b.onclick = () => {
@@ -90,6 +91,7 @@ export function paySheet(totalPesewas, pay, { title = 'Customer pays', sapi = nu
   const { box, close } = sheet(`<h2>${esc(title)}: ${money(totalPesewas)}</h2>
     <div class="seg" role="radiogroup" aria-label="How they paid"><button type="button" class="mid on" data-pm="cash" role="radio" aria-checked="true">Cash</button><button type="button" class="mid" data-pm="momo" role="radio" aria-checked="false">MoMo</button></div>
     <div id="psMomo" hidden>
+      <div id="psPaste"></div>
       <div class="sfield"><label for="psRef">MoMo transaction ID</label><input id="psRef" maxlength="40" autocomplete="off" autocapitalize="characters" placeholder="From the MoMo text, e.g. 51234567890"><span class="hint">Only when you can see the money arrived on the club’s MoMo number.</span></div>
     </div>
     <div class="sfield"><label for="psFrom">Customer’s phone (optional)</label><input id="psFrom" type="tel" inputmode="tel" placeholder="024 123 4567"><span class="hint">So the manager sees what each customer spends tonight. For MoMo, the number it came from.</span></div>
@@ -98,6 +100,8 @@ export function paySheet(totalPesewas, pay, { title = 'Customer pays', sapi = nu
     <div id="psMsg"></div><button class="big" id="psGo">Cash received</button><button class="big ghost" data-close>Cancel</button>`, { label: title });
   let method = 'cash';
   const tb = sapi ? tipBox($('#psTip', box), sapi, tipFor) : null;
+  // Smart paste: the transaction ID (and the number it came from) out of the customer's MoMo text.
+  $('#psPaste', box).append(pasteMomoButton(m => { if (m.ref) $('#psRef', box).value = m.ref; if (m.phone && !$('#psFrom', box).value) $('#psFrom', box).value = m.phone; }));
   $$('[data-pm]', box).forEach(b => b.onclick = () => {
     method = b.dataset.pm; tb?.method(method);
     $$('[data-pm]', box).forEach(x => { x.classList.toggle('on', x === b); x.setAttribute('aria-checked', String(x === b)); });

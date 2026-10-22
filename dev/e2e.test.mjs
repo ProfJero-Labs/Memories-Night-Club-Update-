@@ -633,19 +633,28 @@ test('scan to order: the bar QR opens the menu; pay; the pickup code shows only 
   assert.match(await g.textContent('#label'), /main bar/i);
   assert.equal(await g.locator('[data-p="dev-m-flute"]').count(), 0, 'sold-out drink can’t be added');
   await g.click('[data-p="dev-m-beer"]'); await g.click('[data-p="dev-m-beer"]'); await g.click('[data-p="dev-m-water"]');
-  assert.match(await g.textContent('#dockBtn'), /Pay GHS 60/);
-  await g.fill('#ph', '024 123 9876'); await g.click('#dockBtn');
+  assert.match(await g.textContent('#dockBtn'), /View order.*3 drinks · GHS 60/);
+  // Step 2: the order panel. Pay without a number: the field says so, the panel stays open.
+  await g.click('#dockBtn'); await g.waitForSelector('#order:not([hidden])');
+  assert.match(await g.textContent('#pay'), /Pay GHS 60/);
+  await g.fill('#ph', ''); await g.click('#pay'); await g.locator('#order .field.bad').getByText(/MoMo number/).first().waitFor();
+  // The phone's back button closes the panel; the basket is kept.
+  await g.goBack(); await g.waitForSelector('#order', { state: 'hidden' });
+  assert.match(await g.textContent('#dockBtn'), /3 drinks · GHS 60/);
+  await g.click('#dockBtn'); await g.fill('#ph', '024 123 9876'); await g.click('#pay');
   await g.waitForURL(/dev\/paystack/);
   assert.equal(docs('counter_orders').find(o => o.phone === '0241239876').pickupCode, undefined, 'no pickup code before payment');
   await g.getByRole('button', { name: 'Pay' }).click();
   await g.waitForURL(/counter\.html/); await g.waitForSelector('.pickup', { timeout: 15000 });
   const code = (await g.textContent('.pickup')).trim();
-  assert.match(store.sms.at(-1).message, new RegExp(code));
+  // The guest's text carries the pickup code (the Manager's payment alert may come after it).
+  assert.match(store.sms.filter(x => x.to === '0241239876').at(-1).message, new RegExp(code));
+  assert.ok(store.sms.some(x => /MoMo\/card confirmed/.test(x.message)), 'the Manager is texted that it went through');
   const bar = await phone(390);
   await signInAs(bar, 'bar@dev');
   await bar.waitForURL(/bar\.html/); await bar.waitForSelector('.ord');
   // Bar staff make table QR cards themselves: "1-3" is three cards, each opening that table's menu.
-  await bar.click('#qr'); await bar.fill('#qrmT', '1-3');
+  await bar.click('#barSet'); await bar.click('#qr'); await bar.fill('#qrmT', '1-3');
   await bar.waitForFunction(() => document.querySelectorAll('.qrm .qr-card svg').length === 3);
   assert.match(await bar.textContent('#qrmLink'), /counter\.html\?s=[0-9a-f]{32}&t=1$/);
   await bar.click('#qrmClose');
@@ -751,7 +760,7 @@ test('promos: the control room starts an automatic promo and a code promo; guest
 test('staff sign-in: the Human manager adds a waitress; her PIN is texted and shown to them; she signs in with it straight away, stays signed in the next day, can change it; forgot PIN texts a new one', async () => {
   const mgr = await phone(390);
   await signInAs(mgr, 'hr@dev'); await mgr.waitForURL(/hr\.html/);
-  await mgr.click('.bnav [data-k="staff"]'); await mgr.waitForSelector('#aRole');
+  await mgr.click('.bnav [data-k="staff"]'); await mgr.click('#addBtn'); await mgr.waitForSelector('#aRole');
   assert.equal(await mgr.$eval('#aRole', e => e.value), '', 'no job is pre-selected');
   assert.ok(!(await mgr.$$eval('#aRole option', os => os.map(o => o.value))).some(v => ['superAdmin', 'director', 'finance', 'manager', 'hrManager'].includes(v)), 'the Human manager adds the staff, not managers, directors or finance');
   await mgr.fill('#aName', 'Abena Waitress'); await mgr.fill('#aPhone', '024 777 1001'); await mgr.selectOption('#aRole', 'waitStaff'); await mgr.click('#aBtn');
@@ -759,7 +768,9 @@ test('staff sign-in: the Human manager adds a waitress; her PIN is texted and sh
   const sms = store.sms.filter(x => x.to === '0247771001').at(-1).message;
   assert.match(sms, /Waiter \/ waitress/); const pin = /PIN: (\d{4})/.exec(sms)[1];
   assert.equal((await mgr.locator('.pincards .pinnum').first().textContent()).trim(), pin, 'the manager sees the same PIN');
-  assert.equal(await mgr.$eval('#aName', e => e.value), '', 'the form is ready for the next person');
+  assert.equal(await mgr.locator('#aName').count(), 0, 'the add panel closes once they are added');
+  await mgr.locator('[data-person]', { hasText: 'Abena Waitress' }).waitFor(); // she is on the list
+  await mgr.click('#addBtn'); assert.equal(await mgr.$eval('#aName', e => e.value), '', 'the form is ready for the next person');
 
   // She signs in with the texted PIN: nothing to choose first.
   const w = await phone(360);
@@ -859,7 +870,7 @@ test('stock, money and quick sales: finance buys drinks (in stock at once), the 
   await bar.click('#vSell [data-p="dev-m-beer"]'); await bar.click('#vSell #send'); await bar.click('#psGo');
   await bar.locator('#msgTop').getByText(/Cash GHS 25 recorded/).waitFor();
   assert.ok(docs('tabs').some(t => t.soldAtBar && t.status === 'closed' && t.payments[0].method === 'cash'));
-  await bar.locator('#vSell').getByRole('heading', { name: 'Hand in my cash' }).waitFor();
+  await bar.click('[data-k="shift"]'); await bar.locator('#vShift').getByRole('heading', { name: 'Hand in my cash' }).waitFor();
   // A waiter's quick sale, by MoMo: the bar hands it over, the waiter taps "I got them", it closes.
   const w = await phone(360); await signInAs(w, 'waiter2@dev'); await w.waitForURL(/waiter\.html/);
   await w.click('#quick'); await w.waitForURL(/#quick/); await w.click('[data-p="dev-m-shot"]'); await w.click('#send');
@@ -895,8 +906,9 @@ test('stock, money and quick sales: finance buys drinks (in stock at once), the 
 
 test('people: the Human manager sets the DJ’s pay and a bonus and sends the month; a director approves; finance pays; the DJ sees the payslip, a notice and a team message', async () => {
   const hr = await phone(390); await signInAs(hr, 'hr@dev'); await hr.waitForURL(/hr\.html/);
-  await hr.click('.bnav [data-k="pay"]'); await hr.waitForSelector('[data-set="uid-dj"]');
-  await hr.click('[data-set="uid-dj"]'); await hr.fill('#sdS', '1500'); await hr.fill('#sdN', '024 455 5666'); await hr.fill('#sdNm', 'Dev DJ'); await hr.click('#sdGo');
+  // One line per person: tap the DJ, then their salary and payment details.
+  await hr.click('.bnav [data-k="pay"]'); await hr.click('[data-person="uid-dj"]');
+  await hr.click('.sheet [data-set="uid-dj"]'); await hr.fill('#sdS', '1500'); await hr.fill('#sdN', '024 455 5666'); await hr.fill('#sdNm', 'Dev DJ'); await hr.click('#sdGo');
   await hr.locator('#app').getByText(/MoMo 024\*\*\*5666/).first().waitFor();
   await hr.click('#pBonus'); await hr.selectOption('#piU', 'uid-dj'); await hr.fill('#piA', '200'); await hr.fill('#piR', 'Packed Saturday'); await hr.click('#piGo');
   await hr.locator('#app').getByText('GHS 1,700').first().waitFor();
@@ -923,7 +935,8 @@ test('people: the Human manager sets the DJ’s pay and a bonus and sends the mo
   // The Manager can't close tonight: hands it over; the Human manager takes it; a director can only look.
   const mg = await phone(390); await signInAs(mg, 'manager@dev'); await mg.waitForURL(/night\.html/);
   await mg.goto(`${base}/night.html#close`); await mg.waitForSelector('#clHand');
-  mg.once('dialog', dl => dl.accept('Family emergency')); await mg.click('#clHand');
+  // The reason is typed in the app's own writing panel (a quick reply is one tap), not a browser pop-up.
+  await mg.click('#clHand'); await mg.locator('.sheet .chip', { hasText: 'Family emergency' }).click(); await mg.click('#askGo');
   await mg.locator('#clMsg').getByText(/Handed over/).waitFor();
   await hr.goto(`${base}/hr.html#close`); await hr.click('#clAccept'); await hr.locator('#clMsg').getByText('You’re closing tonight.').waitFor();
   await d2.goto(`${base}/night.html#tonight`); await d2.locator('#toClose', { hasText: 'How closing is going' }).click();
@@ -945,7 +958,7 @@ test('tips: a waiter’s MoMo quick sale carries a tip for the DJ; the bar recor
   assert.ok(docs('tabs').some(t => t.payments?.[0]?.momoRef === '7712345601' && t.payments[0].amountPesewas === 3000), 'the sale is the drinks only');
   // The bar: a cash tip without a bill, kept by the bartender.
   const bar = await phone(390); await signInAs(bar, 'bar@dev'); await bar.waitForURL(/bar\.html/);
-  await bar.click('[data-k="sell"]'); await bar.click('#vSell #tipOnly');
+  await bar.click('[data-k="shift"]'); await bar.click('#vShift #tipOnly');
   await bar.waitForSelector('.sheet #tipTo option[value]:not([value=""])', { state: 'attached' });
   await bar.fill('.sheet #tipAmt', '15'); await bar.click('#tsGo');
   await bar.locator('#msgTop').getByText(/Tip GHS 15 recorded/).waitFor();
@@ -957,10 +970,11 @@ test('tips: a waiter’s MoMo quick sale carries a tip for the DJ; the bar recor
   await w.locator('.say').getByText('Closed').waitFor({ timeout: 10000 });
   // A QR guest adds a tip: the pay button shows drinks + tip.
   const g = await phone(360); await g.goto(`${base}/counter.html?s=0123456789abcdef0123456789abcdef`); await g.waitForSelector('#find');
-  await g.locator('[data-p]').first().click();
+  await g.locator('[data-p]').first().click(); await g.click('#dockBtn');
   await g.click('[data-tip="1000"]'); await g.waitForSelector('#tipWho:not([hidden])');
   assert.ok((await g.locator('#tipTo option').allTextContents()).every(t => !/Director/.test(t)), 'no directors to tip');
-  assert.match(await g.locator('#dock').textContent(), /tip GHS 10/);
+  assert.match(await g.locator('#orderTotals').textContent(), /Tip\s*GHS 10/);
+  assert.match(await g.textContent('#pay'), /Pay GHS 35/);
   // Finance pays the DJ's tips; the DJ sees them paid.
   const fin = await phone(390); await signInAs(fin, 'finance@dev'); await fin.waitForURL(/finance\.html/);
   await fin.click('.bnav [data-k="pay"]'); await fin.locator('a[href="#tips"]').click();
@@ -1025,9 +1039,9 @@ test('a night at the bar: tab without QR → bar → delivered → the customer 
   await w.context().setOffline(false); await w.click('[data-close]');
   // End of night: waiter report, bar count, cash count, front office, the close, finance.
   await w.click('[data-k="report"]'); await w.waitForSelector('#rpGo'); await w.click('#rpGo'); await w.getByText(/Report submitted/).waitFor();
-  await bar.click('[data-k="count"]'); await bar.waitForSelector('#cf');
-  for (const row of await bar.locator('[data-p]').all()) await row.locator('[data-n]').fill('0');
-  const reasons = bar.locator('[data-r]:not([hidden])');
+  await bar.click('[data-k="stock"]'); await bar.click('#closeCount'); await bar.waitForSelector('#vStock #cf');
+  for (const row of await bar.locator('#vStock [data-p]').all()) await row.locator('[data-n]').fill('0');
+  const reasons = bar.locator('#vStock [data-r]:not([hidden])');
   for (let i = 0; i < await reasons.count(); i++) await reasons.nth(i).selectOption('unknown');
   bar.once('dialog', d => d.accept()); await bar.click('#cfGo'); await bar.getByText(/Count submitted with \d+ differences/).waitFor();
   await cash.click('[data-k="cash"]'); await cash.fill('#cnt', '108'); await cash.locator('#whyBox').waitFor();
@@ -1037,8 +1051,9 @@ test('a night at the bar: tab without QR → bar → delivered → the customer 
   await fo.click('[data-k="report"]'); await fo.waitForSelector('#frGo'); await fo.click('#frGo'); await fo.getByText(/Submitted by/).waitFor();
   // The manager's screen: tonight's money, the tables, and Close the night. Nothing technical.
   const mgr = await phone(390); await signInAs(mgr, 'manager@dev'); await mgr.waitForURL(/night\.html/);
-  await mgr.locator('.pos-money').getByText('Expected').waitFor();
-  assert.match(await mgr.textContent('.pos-money'), /Received/); assert.match(await mgr.textContent('.pos-money'), /Still owed/);
+  // Tonight: the money received big, with what was sold and what's still owed under it.
+  await mgr.locator('.hero').getByText('Received tonight').waitFor();
+  assert.match(await mgr.textContent('#app'), /Sold/); assert.match(await mgr.textContent('#app'), /Still owed/);
   assert.equal(await mgr.locator('.bnav button').count(), 4, 'four buttons, nothing else');
   assert.equal(await mgr.locator('text=Site settings').count(), 0);
   await mgr.goto(`${base}/admin.html`); await mgr.waitForFunction(() => location.hash === '#members'); // only members and attendance there
