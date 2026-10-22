@@ -39,7 +39,8 @@ const problems = page => page.evaluate(() => {
   const out = [];
   const vis = el => { const r = el.getBoundingClientRect(), s = getComputedStyle(el); return r.width > 0 && r.height > 0 && s.visibility !== 'hidden' && s.display !== 'none' && !el.closest('[hidden]'); };
   const name = el => `${el.tagName.toLowerCase()}${el.id ? `#${el.id}` : ''}“${(el.innerText || el.value || el.getAttribute('aria-label') || el.placeholder || '').trim().slice(0, 24)}”`;
-  if (document.documentElement.scrollWidth > innerWidth + 1) out.push(`sideways scroll (${document.documentElement.scrollWidth}px wide)`);
+  // The phone is 390px wide. (On a phone a too-wide page zooms out, so compare with 390, not innerWidth.)
+  if (document.documentElement.scrollWidth > 391 || innerWidth > 391) out.push(`too wide for the phone: ${Math.max(document.documentElement.scrollWidth, innerWidth)}px (the bottom bar slips off the screen)`);
   for (const el of document.querySelectorAll('input:not([type=checkbox]):not([type=radio]):not([type=hidden]):not([type=file]), select, textarea')) {
     if (!vis(el)) continue;
     if (parseFloat(getComputedStyle(el).fontSize) < 16) out.push(`small typing text in ${name(el)}`);
@@ -64,14 +65,16 @@ const problems = page => page.evaluate(() => {
   return out;
 });
 
+// Every problem on every screen is collected, then reported together at the end of the test.
 async function check(page, what, { back = false } = {}) {
   await page.waitForFunction(() => !document.querySelector('.loading'), null, { timeout: 15000 }).catch(() => {});
   await page.waitForTimeout(300);
   const found = await problems(page);
   if (back) { const has = await page.locator('.back-btn').count(); if (!has) found.push('no ← Back on a screen that isn’t a main tab'); }
-  assert.deepEqual(found, [], `${what}: ${found.join('; ')}`);
-  assert.deepEqual(page.errors, [], `${what}: script errors`);
+  if (page.errors.length) found.push(`script errors: ${page.errors.splice(0).join(' | ')}`);
+  (page.found ||= []).push(...found.map(f => `${what}: ${f}`));
 }
+const verdict = page => assert.deepEqual(page.found || [], [], `\n  ${(page.found || []).join('\n  ')}`);
 
 // Main tabs (no back needed) and the screens under them (← Back needed), per role.
 const ROLES = [
@@ -92,6 +95,7 @@ for (const r of ROLES) {
     for (const t of r.tabs) { const b = page.locator(`.bnav [data-k="${t}"]`); if (await b.count()) { await b.click(); await check(page, `${r.who} ${t}`); } }
     for (const k of await page.$$eval('.bnav [data-k]', bs => bs.map(b => b.dataset.k).filter(k => k !== 'more'))) { if (!r.tabs.includes(k)) { await page.click(`.bnav [data-k="${k}"]`); await check(page, `${r.who} ${k}`); } }
     for (const s of r.subs) { await page.goto(`${base}/${r.page}#${s}`); await check(page, `${r.who} ${s}`, { back: s !== 'quick' }); }
+    verdict(page);
   });
 }
 
@@ -101,6 +105,7 @@ test('comfortable screens: guests (QR menu, review) and sign-in', async () => {
   assert.equal(await page.getAttribute('#phone', 'type'), 'tel'); assert.equal(await page.getAttribute('#pin', 'inputmode'), 'numeric');
   await page.goto(`${base}/counter.html?s=0123456789abcdef0123456789abcdef`); await page.waitForSelector('#find'); await check(page, 'QR menu');
   await page.goto(`${base}/review.html`); await check(page, 'review');
+  verdict(page);
 });
 
 test('going back: the phone’s back button closes a panel and stays on the screen; ← returns to where you came from', async () => {

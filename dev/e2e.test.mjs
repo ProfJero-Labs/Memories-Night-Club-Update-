@@ -906,8 +906,9 @@ test('stock, money and quick sales: finance buys drinks (in stock at once), the 
 
 test('people: the Human manager sets the DJ’s pay and a bonus and sends the month; a director approves; finance pays; the DJ sees the payslip, a notice and a team message', async () => {
   const hr = await phone(390); await signInAs(hr, 'hr@dev'); await hr.waitForURL(/hr\.html/);
-  await hr.click('.bnav [data-k="pay"]'); await hr.waitForSelector('[data-set="uid-dj"]');
-  await hr.click('[data-set="uid-dj"]'); await hr.fill('#sdS', '1500'); await hr.fill('#sdN', '024 455 5666'); await hr.fill('#sdNm', 'Dev DJ'); await hr.click('#sdGo');
+  // One line per person: tap the DJ, then their salary and payment details.
+  await hr.click('.bnav [data-k="pay"]'); await hr.click('[data-person="uid-dj"]');
+  await hr.click('.sheet [data-set="uid-dj"]'); await hr.fill('#sdS', '1500'); await hr.fill('#sdN', '024 455 5666'); await hr.fill('#sdNm', 'Dev DJ'); await hr.click('#sdGo');
   await hr.locator('#app').getByText(/MoMo 024\*\*\*5666/).first().waitFor();
   await hr.click('#pBonus'); await hr.selectOption('#piU', 'uid-dj'); await hr.fill('#piA', '200'); await hr.fill('#piR', 'Packed Saturday'); await hr.click('#piGo');
   await hr.locator('#app').getByText('GHS 1,700').first().waitFor();

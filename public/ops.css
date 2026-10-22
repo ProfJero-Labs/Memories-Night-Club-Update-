@@ -202,3 +202,7 @@ html.sheet-open, html.sheet-open body { overflow: hidden; }
 .lines-list .ln > span:last-child { white-space: nowrap; text-align: right; }
 .fold .group-h:first-of-type { margin-top: 4px; }
 .fold > summary .muted { font-weight: 400; margin-left: auto; }
+
+/* Every typing box is at least 16px (phones zoom in on smaller ones, and they're hard to read). */
+input:not([type=checkbox]):not([type=radio]), select, textarea { font-size: max(16px, 1em); }
+.staff-head .logo { min-height: 44px; min-width: 44px; display: inline-flex; align-items: center; }

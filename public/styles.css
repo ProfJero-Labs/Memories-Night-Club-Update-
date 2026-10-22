@@ -658,3 +658,4 @@ h1, h2, h3 { margin: 0; }
 /* Sign in: Show/Hide is a real, thumb-sized button beside the PIN. */
 .pin-show { min-height: 52px; min-width: 64px; border: 1px solid var(--line-2); border-radius: 10px; background: var(--ink-2); color: var(--paper); font: 600 15px var(--sans); cursor: pointer; }
 .pin-show[aria-pressed="true"] { background: var(--paper); color: var(--ink); }
+.signin .link { min-height: 44px; display: inline-flex; align-items: center; }
