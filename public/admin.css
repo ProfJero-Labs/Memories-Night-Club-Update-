@@ -149,3 +149,47 @@ details.more > summary { cursor: pointer; font-weight: 700; padding: 8px 0; }
 
 .acct-menu .acct-link { display: block; padding: 10px 12px; color: inherit; text-decoration: none; font: inherit; }
 .acct-menu .acct-link:hover, .acct-menu .acct-link:focus { background: rgba(255,255,255,.06); }
+
+/* ── Control room (admin.html, body.ctl): one navigation model with the other staff screens ──
+   Sections in the fixed bottom bar (.bnav, ops.css); the section's pages in one scrolling row under
+   the header, the chosen one underlined; detail screens get ← Back (.backbar, ops.css) instead. */
+.ctl .bnav[hidden] { display: none; }
+.ctl .bnav button { padding: 0 2px; letter-spacing: .04em; }
+.ctl .bnav button[aria-selected="true"] { color: var(--paper); box-shadow: inset 0 3px 0 var(--crimson); }
+.ctl.has-bnav .panel { padding-bottom: calc(96px + env(safe-area-inset-bottom)); }
+.ctl.has-bnav .savebar { bottom: calc(62px + env(safe-area-inset-bottom)); }
+.ctl .subtabs { position: sticky; top: 56px; z-index: 25; display: flex; flex-wrap: nowrap; gap: 0; overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: none; max-width: none; margin: 0; padding: 0 max(calc(var(--gutter) - 12px), calc((100% - 1400px) / 2 + var(--gutter) - 12px)); background: var(--ink); border-bottom: 1px solid var(--line); }
+.ctl .subtabs::-webkit-scrollbar { display: none; }
+.ctl .subtabs[hidden] { display: none; }
+.ctl .subtabs button { flex: 0 0 auto; min-height: 48px; padding: 0 12px; border: 0; border-bottom: 3px solid transparent; background: none; color: var(--muted); font: 600 15px var(--sans); letter-spacing: 0; white-space: nowrap; cursor: pointer; }
+.ctl .subtabs button:hover { color: var(--paper); }
+.ctl .subtabs [aria-pressed="true"] { background: none; color: var(--paper); border-color: transparent; border-bottom-color: var(--crimson); }
+.ctl .panel { padding-top: 22px; }
+.ctl .panel > .backbar:first-child { margin: -22px calc(-1 * var(--gutter)) 16px; }
+.ctl .sys-banner { margin-top: 0; }
+/* The night editor's parts: the same underlined row, never wrapping. */
+.ctl .sec-tabs { flex-wrap: nowrap; gap: 0; overflow-x: auto; scrollbar-width: none; margin: 0 calc(-1 * var(--gutter)) 18px; padding: 0 calc(var(--gutter) - 12px); border-bottom: 1px solid var(--line); }
+.ctl .sec-tabs::-webkit-scrollbar { display: none; }
+.ctl .sec-tabs button { flex: 0 0 auto; min-height: 48px; padding: 0 12px; border: 0; border-bottom: 3px solid transparent; background: none; color: var(--muted); font: 600 15px var(--sans); letter-spacing: 0; text-transform: none; white-space: nowrap; }
+.ctl .sec-tabs button[aria-pressed="true"] { background: none; color: var(--paper); border-color: transparent; border-bottom-color: var(--crimson); }
+/* Overview: numbers 2×2, then one line per night. */
+.ov-head { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; margin-bottom: 16px; }
+.ov-head h1 { margin: 0 auto 0 0; }
+.ov-links { display: flex; gap: 8px; }
+.ov-health { width: 100%; text-align: left; font: inherit; color: var(--paper); background: none; cursor: pointer; min-height: 52px; }
+.ov-health span { flex: 0 0 auto; text-align: right; } .ov-health span::after { content: ' ›'; font-size: 20px; }
+.ctl .ov-kpis { grid-template-columns: 1fr 1fr; margin-bottom: 14px; }
+.ov-kpis > div { padding: 14px; min-width: 0; }
+.ov-kpis b { font-size: clamp(22px, 6.4vw, 34px); overflow-wrap: anywhere; }
+.ov-kpis b small { font: 400 13px var(--sans); color: var(--muted); }
+.ov-kpis > .bad { grid-column: 1 / -1; background: rgba(224, 36, 94, .12); } .ov-kpis > .bad b { color: #ff7a9c; }
+.ov-nights { margin-bottom: 8px; }
+.ov-nights .t { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ov-nights .empty-row { margin: 0; }
+/* Forms: room between one field and the next (labels never sit on the box above). */
+.ctl .grid2 { gap: 18px 16px; }
+.ctl .card { gap: 16px; }
+.ctl .panel :where(details, form, div:not([class])) > .sfield + .sfield { margin-top: 16px; }
+.ctl .panel :where(form.card, .grid2, .card, .sec) > .sfield + .sfield { margin-top: 0; }
+.ctl .panel details.fold > .mid, .ctl .panel details.fold > [id$="M"] + .mid { margin-top: 14px; }
+.ctl .sfield .hint { margin-top: -2px; }

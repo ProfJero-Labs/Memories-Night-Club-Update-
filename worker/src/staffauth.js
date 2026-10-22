@@ -17,7 +17,7 @@
 //   tempPinExpires, pinSentAt, lastSignInAt, addedBy, updatedAt
 import { getDoc, setDoc, queryWhere, listDocs, signServiceJwt, googleAccessToken } from './lib/firestore.js';
 import { now, id, clean, normalizePhone, maskPhone, firstName } from './lib/util.js';
-import { requireRole, STAFF_ROLES, STAFF_ADMIN, canAssign, pinLength, uidOf, forgetStaffRecord } from './lib/auth.js';
+import { requireRole, STAFF_ROLES, STAFF_ADMIN, HR_ROLES, canAssign, pinLength, uidOf, forgetStaffRecord } from './lib/auth.js';
 import { sendSms, siteUrl } from './lib/notify.js';
 import { securitySignal } from './lib/monitor.js';
 import { ensureStaffMember, suspendStaffMember } from './members.js';
@@ -149,7 +149,11 @@ const staffView = d => {
 export async function listStaffPeople(env, user) {
   if (!requireRole(user, STAFF_ADMIN)) return FORBIDDEN;
   // The Event manager sees only the organisers (the accounts that are theirs to look after).
-  const all = (await listDocs(env, 'users')).map(staffView).filter(s => !s.removed && STAFF_ROLES.includes(s.role) && (user.role !== 'eventManager' || s.role === 'organiser'));
+  // The Human manager sees only the staff he looks after (waiters, bar, door, security, cashiers,
+  // DJs, MCs): no directors, no shares, nothing of the directors' side.
+  const mine = s => (user.role === 'eventManager' ? s.role === 'organiser' : user.role === 'hrManager' ? HR_ROLES.includes(s.role) : true);
+  const all = (await listDocs(env, 'users')).map(staffView).filter(s => !s.removed && STAFF_ROLES.includes(s.role) && mine(s))
+    .map(s => (['director', 'superAdmin'].includes(user.role) ? s : (({ sharePct, ...rest }) => rest)(s)));
   return { staff: all.sort((a, b) => (a.name || a.email).localeCompare(b.name || b.email)), roles: STAFF_ROLES.filter(r => canAssign(user.role, r)).map(r => ({ id: r, name: ROLE_NAMES[r] })) };
 }
 

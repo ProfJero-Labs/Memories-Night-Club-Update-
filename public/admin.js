@@ -132,22 +132,22 @@ const stock = () => OV.stockAdminView(panel);
 async function overview() {
   const d = await sapi('/api/admin/overview');
   const sys = can(ADMIN) ? await sapi('/api/admin/system').catch(() => null) : null;
-  const quick = [['counter', 'Bar orders', 'Menu, bars and table QR codes'], ['members', 'People', 'Staff & members: passes, no tickets'], ['attendance', 'Attendance', 'Who came in, by night'], ['system', 'System health', sys ? health(sys).label : 'Payment checks and alerts']]
-    .filter(([t]) => TABS.some(x => x[0] === t));
-  panel.innerHTML = `<h1>${can(CMS) ? 'Tonight & next' : 'Tickets & money'}</h1>
-  ${quick.length ? `<div class="quick">${quick.map(([t, l, sub]) => `<button type="button" class="quick-btn ${t === 'system' && sys ? health(sys).tone : ''}" data-quick="${t}"><b>${l}</b><span>${esc(sub)}</span></button>`).join('')}${can(CMS) ? `<a class="quick-btn" href="checkin.html"><b>Door</b><span>Scan tickets and passes</span></a><a class="quick-btn" href="bar.html"><b>Bar screen</b><span>Paid orders to hand over</span></a>` : ''}</div>` : ''}
-  <div class="kpis">
-      <div><span>Revenue (confirmed only)</span><b>${money(d.revenuePesewas)}</b></div>
+  const h = sys && health(sys);
+  const nightLine = n => [shortDate(n.date), `${n.tickets} ticket${n.tickets === 1 ? '' : 's'}`, n.comps ? `${n.comps} comp${n.comps === 1 ? '' : 's'}` : '', n.tables ? `${n.tables} table${n.tables === 1 ? '' : 's'}` : '', n.checkins ? `${n.checkins} in` : '', n.visibility === 'public' ? '' : 'private'].filter(Boolean).map(esc).join(' · ');
+  // The sections are in the bars; here only the numbers, the nights (tap one to open it) and the
+  // two screens that live outside the control room.
+  panel.innerHTML = `<div class="ov-head"><h1>${can(CMS) ? 'Tonight & next' : 'Tickets & money'}</h1>${can(CMS) ? '<div class="ov-links"><a class="sbtn ghost" href="checkin.html">Door ↗</a><a class="sbtn ghost" href="bar.html">Bar screen ↗</a></div>' : ''}</div>
+  ${h ? `<button type="button" class="health ov-health ${h.tone}" data-quick="system"><b>${esc(h.label)}</b><span>System</span></button>` : ''}
+  <div class="kpis ov-kpis">
+      <div><span>Revenue (confirmed)</span><b>${money(d.revenuePesewas)}</b></div>
+      <div><span>Pending payments</span><b>${d.pendingCheckouts}${d.staleCheckouts ? ` <small>(${d.staleCheckouts} over 30m)</small>` : ''}</b></div>
       <div><span>Memories’ share</span><b>${money(d.memoriesSharePesewas)}</b></div>
       <div><span>Organizers’ share</span><b>${money(d.organizerSharePesewas)}</b></div>
-      <div><span>Pending payments</span><b>${d.pendingCheckouts}${d.staleCheckouts ? ` <small style="font-weight:400">(${d.staleCheckouts} over 30m)</small>` : ''}</b></div>
-      <div><span>Failed payments</span><b>${d.failedCheckouts}</b></div>
+      ${d.failedCheckouts > 0 ? `<div class="bad"><span>Failed payments</span><b>${d.failedCheckouts}</b></div>` : ''}
     </div>
     ${d.funnel ? `<p class="funnel"><strong>Last 7 days:</strong> ${d.funnel.started} checkouts started · ${d.funnel.paid} paid${d.funnel.started ? ` (${Math.round(100 * d.funnel.paid / d.funnel.started)}%)` : ''} · ${d.funnel.abandoned} left at Paystack · ${d.funnel.failed} failed${d.funnel.waiting ? ` · ${d.funnel.waiting} paying now` : ''}</p>` : ''}
-    <div class="tbl-wrap"><table class="tbl"><thead><tr><th>Night</th><th>Date</th><th class="num">Tickets</th><th class="num">Comps</th><th class="num">Tables</th><th class="num">Revenue</th><th class="num">In the door</th><th></th></tr></thead><tbody>
-    ${d.nights.map(n => `<tr><td><strong>${esc(n.name)}</strong> ${n.visibility === 'public' ? '' : pill('private', 'grey')}</td><td>${esc(shortDate(n.date))}</td><td class="num">${n.tickets}</td><td class="num">${n.comps}</td><td class="num">${n.tables}</td><td class="num">${money(n.revenuePesewas)}</td><td class="num">${n.checkins}</td>
-      <td class="actions"><button class="sbtn" data-open="${esc(n.id)}">Open</button><a class="sbtn ghost" href="checkin.html?event=${encodeURIComponent(n.id)}">Door</a></td></tr>`).join('') || '<tr><td colspan="8" class="empty-row">No upcoming nights. Create one under Nights.</td></tr>'}
-    </tbody></table></div>`;
+    <h2>Coming up</h2>
+    <div class="rows ov-nights">${d.nights.map(n => `<button type="button" class="row-btn" data-open="${esc(n.id)}"><span class="t">${esc(n.name)}</span><span class="s">${nightLine(n)}</span><span class="r">${money(n.revenuePesewas)}</span></button>`).join('') || '<p class="empty-row">No upcoming nights. Create one under Nights.</p>'}</div>`;
   $$('[data-open]').forEach(b => b.onclick = () => show('nights', b.dataset.open));
   $$('[data-quick]').forEach(b => b.onclick = () => show(b.dataset.quick));
 }
@@ -364,7 +364,7 @@ async function nights(id, notice) {
     ${events.map(e => `<tr style="${new Date(e.date).getTime() < now - 12 * 3600e3 ? 'opacity:.55' : ''}"><td>${esc(shortDate(e.date))}</td><td><strong>${esc(e.name)}</strong></td>
       <td>${e.active === false ? pill('off', 'grey') : e.visibility === 'public' ? pill('live', 'green') : pill('private', 'amber')} ${e.soldOut ? pill('sold out', 'red') : ''} ${(e.ticketLines || []).length ? '' : pill('no lines', 'amber')} ${e.artwork ? '' : pill('no flyer', 'amber')}</td>
       <td class="actions"><button class="sbtn" data-edit="${esc(e.id)}">Edit</button></td></tr>`).join('') || '<tr><td colspan="4" class="empty-row">No nights yet.</td></tr>'}</tbody></table></div>`;
-  $('#new').onclick = () => night('new');
+  $('#new').onclick = () => show('nights', 'new');
   $$('[data-edit]').forEach(b => b.onclick = () => show('nights', b.dataset.edit));
 }
 
@@ -376,7 +376,7 @@ async function night(id, notice) {
   const d = isNew ? { event: { visibility: 'private', active: true, doors: '10PM', venue: '', ticketLines: [] }, ticketTypes: [], tablePackages: [], raffle: null } : await sapi(`/api/admin/events/${encodeURIComponent(id)}`);
   const orgs = (await sapi('/api/admin/organisers').catch(() => ({ organisers: [] }))).organisers;
   const e = d.event; let lines = [...(e.ticketLines || [])];
-  panel.innerHTML = `<div class="toolbar"><button class="sbtn ghost" id="back">← Nights</button>${isNew ? '' : `${e.visibility === 'public' && e.active !== false
+  panel.innerHTML = `${backBar('', 'nights')}<div class="toolbar">${isNew ? '' : `${e.visibility === 'public' && e.active !== false
   ? `<a class="sbtn ghost" target="_blank" href="event.html?id=${encodeURIComponent(e.id)}">Public page ↗</a>`
   : pill('private — not on the public site', 'amber')}<a class="sbtn ghost" href="checkin.html?event=${encodeURIComponent(e.id)}">Door ↗</a>`}</div>
     <h1>${isNew ? 'New night' : esc(e.name)}</h1>
@@ -443,7 +443,7 @@ async function night(id, notice) {
   $$('[data-sec-go]').forEach(b => b.onclick = () => openSec(b.dataset.secGo));
   openSec(!isNew && nightSecId === id && NIGHT_SECS.some(([k]) => k === nightSec) ? nightSec : 'details');
 
-  $('#back').onclick = () => show('nights');
+  bindBackBar(panel);
   const art = { artwork: e.artwork || '', heroImage: e.heroImage || '', heroVideo: e.heroVideo || '' };
   // Ticket design: the night's colours (from its flyer, or the palette it would get anyway) and style.
   let colors = designFor({ eventId: e.id || 'new', ticketColors: e.ticketColors }).colors;

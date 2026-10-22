@@ -21,19 +21,20 @@ async function load(note = '') {
   try { ({ bill: b, tip } = await api(`/api/guest/bill/${encodeURIComponent(token)}`)); }
   catch (e) { root.innerHTML = `<div class="say bad"><b>${e.status === 404 ? 'This bill link isn’t valid' : 'Couldn’t load your bill'}</b>${esc(e.status === 404 ? 'Ask your waiter to show it again.' : e.message)}</div>`; return; }
   const paid = ['paid', 'overpaid'].includes(b.status);
+  const due = b.balancePesewas >= 100 && !paid && b.status !== 'written_off';
   root.innerHTML = `<h1>${esc(b.label)}</h1><p class="lead">${esc(b.table)}${b.waiterFirstName ? ` · served by ${esc(b.waiterFirstName)}` : ''}</p>
     ${note ? `<div class="say ${note.kind}" role="status">${esc(note.text)}</div>` : ''}
-    <div class="lines-list">${b.lines.map(l => `<div class="ln"><span>${l.qty} × ${esc(l.name)} <small>@ ${money(l.unitPesewas)}</small></span><span>${money(l.amountPesewas)}</span></div>`).join('') || '<div class="ln"><span class="muted">Nothing on this bill yet.</span></div>'}
-      ${b.discountPesewas ? `<div class="ln"><span>Discount</span><span>−${money(b.discountPesewas)}</span></div>` : ''}
+    <div class="rcpt">${b.lines.map(l => `<div class="ln"><span>${l.qty} × ${esc(l.name)}<small>${money(l.unitPesewas)} each</small></span><span>${money(l.amountPesewas)}</span></div>`).join('') || '<div class="ln"><span class="muted">Nothing on this bill yet.</span></div>'}
+      ${b.discountPesewas ? `<div class="ln sub"><span>Discount</span><span>−${money(b.discountPesewas)}</span></div>` : ''}
       <div class="ln total"><span>Total</span><span>${money(b.totalPesewas)}</span></div>
-      ${b.payments.map(p => `<div class="ln"><span>Paid · ${esc(p.method)} <small>${esc(when(p.at))}</small></span><span>−${money(p.amountPesewas)}</span></div>`).join('')}
-      <div class="ln total"><span>${paid ? 'Paid in full' : 'To pay'}</span><span>${money(b.balancePesewas)}</span></div></div>
-    <p><span class="st ${esc(b.status)}">${esc(b.statusLabel)}</span></p>
-    ${!paid && b.balancePesewas >= 100 && b.status !== 'written_off' ? `${tipPart(tip)}<div class="field"><label for="ph">Your MoMo number (optional, for the receipt)</label><input id="ph" type="tel" inputmode="tel" placeholder="024 123 4567" value="${esc(pick.phone)}"></div>
-      <button class="big" id="pay">Pay now · ${money(b.balancePesewas + tipNow())}</button><p class="foot-small" style="margin:0">MoMo or card, by Paystack. Your waiter sees it the moment it’s confirmed.</p>` : ''}
-    ${paid ? '<div class="say good"><b>Thank you!</b>This page is your receipt. Show it to your waiter if they ask.</div><button class="big ghost" id="save">Save receipt</button><a class="big" href="review.html?s=bill" style="text-align:center;text-decoration:none">How was your night? Rate us</a>' : ''}`;
+      ${b.payments.map(p => `<div class="ln sub"><span>Paid · ${esc(p.method)}<small>${esc(when(p.at))}</small></span><span>−${money(p.amountPesewas)}</span></div>`).join('')}
+      <div class="ln due"><span>${paid ? 'Paid in full' : 'To pay'}</span><span>${money(b.balancePesewas)}</span></div></div>
+    <p style="margin:0"><span class="st ${esc(b.status)}">${esc(b.statusLabel)}</span></p>
+    ${due ? `<div class="pay-box">${tipPart(tip)}<div class="field"><label for="ph">Your MoMo number (optional, for the receipt)</label><input id="ph" type="tel" inputmode="tel" autocomplete="tel" placeholder="024 123 4567" value="${esc(pick.phone)}"></div>
+      <button class="big" id="pay" type="button">Pay ${money(b.balancePesewas + tipNow())}</button><p class="fine">MoMo or card, by Paystack. Your waiter sees it the moment it’s confirmed.</p></div>` : ''}
+    ${paid ? '<div class="say good"><b>Thank you!</b>This page is your receipt. Show it to your waiter if they ask.</div><button class="big ghost" id="save" type="button">Save receipt</button><a class="big ghost" href="review.html?s=bill" style="text-align:center;text-decoration:none">How was your night? Rate us</a>' : ''}`;
   $('#save') && ($('#save').onclick = () => print());
-  const payLabel = () => { $('#pay') && ($('#pay').textContent = `Pay now · ${money(b.balancePesewas + tipNow())}`); };
+  const payLabel = () => { $('#pay') && ($('#pay').textContent = `Pay ${money(b.balancePesewas + tipNow())}`); };
   document.querySelectorAll('[data-tip]').forEach(x => x.onclick = () => {
     pick.tip = x.dataset.tip === 'other' ? 'other' : Number(x.dataset.tip);
     document.querySelectorAll('[data-tip]').forEach(y => y.setAttribute('aria-pressed', String(y === x)));
@@ -62,9 +63,9 @@ function tipPart(tip) {
   const on = v => String(pick.tip === v);
   return `<div class="field"><span class="label" id="tipL">Add a tip? (optional)</span>
     <div class="tipseg" role="group" aria-labelledby="tipL">${TIPS.map(v => `<button type="button" data-tip="${v}" aria-pressed="${on(v)}">${v ? money(v) : 'No tip'}</button>`).join('')}<button type="button" data-tip="other" aria-pressed="${on('other')}">Other</button></div></div>
-    <div class="field" id="tipOther" ${pick.tip === 'other' ? '' : 'hidden'}><label for="tipAmt">Tip amount (GHS)</label><input id="tipAmt" inputmode="decimal" autocomplete="off" value="${esc(pick.other)}"></div>
+    <div class="field" id="tipOther" ${pick.tip === 'other' ? '' : 'hidden'}><label for="tipAmt">Tip amount (GHS)</label><input id="tipAmt" inputmode="decimal" autocomplete="off" placeholder="e.g. 15" value="${esc(pick.other)}"></div>
     <div class="field" id="tipWho" ${pick.tip ? '' : 'hidden'}><label for="tipTo">Tip for</label><select id="tipTo">${tip.people.map(p => `<option value="${esc(p.id)}" ${p.id === pick.to ? 'selected' : ''}>${esc(p.name)}${p.job ? ` · ${esc(p.job)}` : ''}</option>`).join('')}</select>
-      <p class="foot-small" style="margin:0">The whole tip goes to them, not to the club.</p></div>`;
+      <span class="hint">The whole tip goes to them, not to the club.</span></div>`;
 }
 
 async function confirmReturn() {

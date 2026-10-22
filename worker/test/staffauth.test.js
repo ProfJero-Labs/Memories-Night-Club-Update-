@@ -99,7 +99,9 @@ test('managers can add floor staff but not directors or finance; directors can; 
   assert.equal((await call(ctx.env, 'POST', '/api/admin/people/add', { claims: { role: 'waitStaff' }, body: { name: 'X', phone: '0245550106', role: 'waitStaff' } })).status, 403, 'a waiter can’t add staff');
   assert.match((await call(ctx.env, 'POST', '/api/admin/people/add', { ...ctx.MGR, body: { name: 'Dup', phone: '0245550104', role: 'barStaff' } })).data.error, /already uses that phone/);
   const list = await call(ctx.env, 'GET', '/api/admin/people', ctx.MGR);
-  assert.ok(list.data.staff.some(s => s.name === 'Fin Officer' && s.hasPin && s.pinStarter));
+  assert.ok(!list.data.staff.some(s => s.name === 'Fin Officer'), 'the Human manager sees only the staff he looks after');
+  const dirList = await call(ctx.env, 'GET', '/api/admin/people', { claims: { role: 'director' }, uid: 'dir1' });
+  assert.ok(dirList.data.staff.some(s => s.name === 'Fin Officer' && s.hasPin && s.pinStarter), 'a director sees everyone');
   assert.ok(!list.data.roles.some(r => ['director', 'finance', 'superAdmin', 'manager', 'hrManager', 'organiser'].includes(r.id)), 'the Human manager is only offered the staff jobs');
   assert.ok(['dj', 'mc', 'security'].every(r => list.data.roles.some(x => x.id === r)), 'including DJs and MCs');
   // The Manager (money and stock) no longer adds staff; the Event manager adds organisers only.

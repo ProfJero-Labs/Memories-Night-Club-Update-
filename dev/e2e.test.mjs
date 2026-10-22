@@ -652,7 +652,7 @@ test('scan to order: the bar QR opens the menu; pay; the pickup code shows only 
   await signInAs(bar, 'bar@dev');
   await bar.waitForURL(/bar\.html/); await bar.waitForSelector('.ord');
   // Bar staff make table QR cards themselves: "1-3" is three cards, each opening that table's menu.
-  await bar.click('#qr'); await bar.fill('#qrmT', '1-3');
+  await bar.click('#barSet'); await bar.click('#qr'); await bar.fill('#qrmT', '1-3');
   await bar.waitForFunction(() => document.querySelectorAll('.qrm .qr-card svg').length === 3);
   assert.match(await bar.textContent('#qrmLink'), /counter\.html\?s=[0-9a-f]{32}&t=1$/);
   await bar.click('#qrmClose');
@@ -758,7 +758,7 @@ test('promos: the control room starts an automatic promo and a code promo; guest
 test('staff sign-in: the Human manager adds a waitress; her PIN is texted and shown to them; she signs in with it straight away, stays signed in the next day, can change it; forgot PIN texts a new one', async () => {
   const mgr = await phone(390);
   await signInAs(mgr, 'hr@dev'); await mgr.waitForURL(/hr\.html/);
-  await mgr.click('.bnav [data-k="staff"]'); await mgr.waitForSelector('#aRole');
+  await mgr.click('.bnav [data-k="staff"]'); await mgr.click('#addBtn'); await mgr.waitForSelector('#aRole');
   assert.equal(await mgr.$eval('#aRole', e => e.value), '', 'no job is pre-selected');
   assert.ok(!(await mgr.$$eval('#aRole option', os => os.map(o => o.value))).some(v => ['superAdmin', 'director', 'finance', 'manager', 'hrManager'].includes(v)), 'the Human manager adds the staff, not managers, directors or finance');
   await mgr.fill('#aName', 'Abena Waitress'); await mgr.fill('#aPhone', '024 777 1001'); await mgr.selectOption('#aRole', 'waitStaff'); await mgr.click('#aBtn');
@@ -766,7 +766,9 @@ test('staff sign-in: the Human manager adds a waitress; her PIN is texted and sh
   const sms = store.sms.filter(x => x.to === '0247771001').at(-1).message;
   assert.match(sms, /Waiter \/ waitress/); const pin = /PIN: (\d{4})/.exec(sms)[1];
   assert.equal((await mgr.locator('.pincards .pinnum').first().textContent()).trim(), pin, 'the manager sees the same PIN');
-  assert.equal(await mgr.$eval('#aName', e => e.value), '', 'the form is ready for the next person');
+  assert.equal(await mgr.locator('#aName').count(), 0, 'the add panel closes once they are added');
+  await mgr.locator('[data-person]', { hasText: 'Abena Waitress' }).waitFor(); // she is on the list
+  await mgr.click('#addBtn'); assert.equal(await mgr.$eval('#aName', e => e.value), '', 'the form is ready for the next person');
 
   // She signs in with the texted PIN: nothing to choose first.
   const w = await phone(360);
@@ -866,7 +868,7 @@ test('stock, money and quick sales: finance buys drinks (in stock at once), the 
   await bar.click('#vSell [data-p="dev-m-beer"]'); await bar.click('#vSell #send'); await bar.click('#psGo');
   await bar.locator('#msgTop').getByText(/Cash GHS 25 recorded/).waitFor();
   assert.ok(docs('tabs').some(t => t.soldAtBar && t.status === 'closed' && t.payments[0].method === 'cash'));
-  await bar.locator('#vSell').getByRole('heading', { name: 'Hand in my cash' }).waitFor();
+  await bar.click('[data-k="shift"]'); await bar.locator('#vShift').getByRole('heading', { name: 'Hand in my cash' }).waitFor();
   // A waiter's quick sale, by MoMo: the bar hands it over, the waiter taps "I got them", it closes.
   const w = await phone(360); await signInAs(w, 'waiter2@dev'); await w.waitForURL(/waiter\.html/);
   await w.click('#quick'); await w.waitForURL(/#quick/); await w.click('[data-p="dev-m-shot"]'); await w.click('#send');
@@ -953,7 +955,7 @@ test('tips: a waiter’s MoMo quick sale carries a tip for the DJ; the bar recor
   assert.ok(docs('tabs').some(t => t.payments?.[0]?.momoRef === '7712345601' && t.payments[0].amountPesewas === 3000), 'the sale is the drinks only');
   // The bar: a cash tip without a bill, kept by the bartender.
   const bar = await phone(390); await signInAs(bar, 'bar@dev'); await bar.waitForURL(/bar\.html/);
-  await bar.click('[data-k="sell"]'); await bar.click('#vSell #tipOnly');
+  await bar.click('[data-k="shift"]'); await bar.click('#vShift #tipOnly');
   await bar.waitForSelector('.sheet #tipTo option[value]:not([value=""])', { state: 'attached' });
   await bar.fill('.sheet #tipAmt', '15'); await bar.click('#tsGo');
   await bar.locator('#msgTop').getByText(/Tip GHS 15 recorded/).waitFor();
@@ -1034,8 +1036,8 @@ test('a night at the bar: tab without QR → bar → delivered → the customer 
   await w.context().setOffline(false); await w.click('[data-close]');
   // End of night: waiter report, bar count, cash count, front office, the close, finance.
   await w.click('[data-k="report"]'); await w.waitForSelector('#rpGo'); await w.click('#rpGo'); await w.getByText(/Report submitted/).waitFor();
-  await bar.click('[data-k="count"]'); await bar.waitForSelector('#cf');
-  for (const row of await bar.locator('[data-p]').all()) await row.locator('[data-n]').fill('0');
+  await bar.click('[data-k="stock"]'); await bar.click('#closeCount'); await bar.waitForSelector('#vStock #cf');
+  for (const row of await bar.locator('#vStock [data-p]').all()) await row.locator('[data-n]').fill('0');
   const reasons = bar.locator('[data-r]:not([hidden])');
   for (let i = 0; i < await reasons.count(); i++) await reasons.nth(i).selectOption('unknown');
   bar.once('dialog', d => d.accept()); await bar.click('#cfGo'); await bar.getByText(/Count submitted with \d+ differences/).waitFor();

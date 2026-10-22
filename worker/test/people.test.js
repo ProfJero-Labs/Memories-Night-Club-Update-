@@ -185,3 +185,14 @@ test('closing the night: the Manager closes it, not a director; if the Manager c
   st = ok(await ctx.call('GET', '/api/ops/closing', { who: ctx.D1 }), 'after');
   assert.deepEqual([st.night.status, st.night.closedByName, st.closer.handover.acceptedByName], ['closed', 'Yaa Events', 'Yaa Events']);
 });
+
+test('the Human manager sees only the staff he looks after: no directors, no shares', async () => {
+  const ctx = setup();
+  const hr = ok(await ctx.call('GET', '/api/admin/people', { who: ctx.HR }), 'hr list');
+  const roles = hr.staff.map(s => s.role);
+  assert.ok(roles.includes('dj') && roles.includes('barStaff') && roles.includes('waitStaff'), 'his staff');
+  assert.ok(!roles.includes('director') && !roles.includes('manager') && !roles.includes('finance'), 'not the directors or other managers');
+  assert.ok(!JSON.stringify(hr).includes('sharePct'));
+  const d = ok(await ctx.call('GET', '/api/admin/people', { who: ctx.D1 }), 'director list');
+  assert.ok(d.staff.some(s => s.role === 'director'), 'a director still sees everyone');
+});

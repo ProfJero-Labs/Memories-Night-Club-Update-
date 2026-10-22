@@ -53,7 +53,7 @@ export async function staffView(el, user, notice = {}) {
 
   // ── The list ──
   const row = s => {
-    const flag = s.locked ? '<span class="pill red">PIN locked</span>' : !s.hasPin && may(s) ? '<span class="pill amber">No PIN</span>' : !s.phone ? '<span class="pill amber">No phone</span>' : '';
+    const flag = s.locked ? '<span class="flag bad">PIN locked</span>' : !s.hasPin && may(s) ? '<span class="flag warn">No PIN</span>' : !s.phone ? '<span class="flag warn">No phone</span>' : '';
     const sub = [s.uid === user.uid ? 'You' : '', s.canCollectCash ? 'Collects cash' : '', s.sharePct ? `${s.sharePct}% share` : '', seen(s)].filter(Boolean).join(' · ');
     return `<button type="button" class="row-btn" data-person="${esc(s.uid)}"><span class="t">${esc(s.name || s.email)}</span><span class="s">${esc(sub.charAt(0).toUpperCase() + sub.slice(1))}</span><span class="r">${flag}</span></button>`;
   };
@@ -110,9 +110,9 @@ export async function staffView(el, user, notice = {}) {
       body.innerHTML = `<h2>${esc(s.name || s.email)}</h2>
         <dl class="pfacts">
           ${fact('Job', esc(s.roleName))}
-          ${fact('Phone', s.phone ? `<a href="tel:${esc(s.phone)}">${esc(s.phone)}</a>` : '<span class="pill amber">No phone yet</span>')}
+          ${fact('Phone', s.phone ? `<a href="tel:${esc(s.phone)}">${esc(s.phone)}</a>` : '<span class="flag warn">No phone yet</span>')}
           ${fact('Last signed in', esc(s.lastSignInAt ? when(s.lastSignInAt) : s.hasPin ? 'Not yet' : 'No PIN yet'))}
-          ${s.locked ? fact('PIN', '<span class="pill red">Locked: send a new PIN</span>') : ''}
+          ${s.locked ? fact('PIN', '<span class="flag bad">Locked: send a new PIN</span>') : ''}
           ${s.role === 'director' ? fact('Share of the club', esc(`${s.sharePct || 0}%`)) : ''}
         </dl>
         ${can ? `<label class="check"><input type="checkbox" id="pCash" ${s.canCollectCash ? 'checked' : ''}> Can collect cash from customers</label>
