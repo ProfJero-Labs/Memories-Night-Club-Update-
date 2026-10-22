@@ -1048,8 +1048,9 @@ test('a night at the bar: tab without QR → bar → delivered → the customer 
   await fo.click('[data-k="report"]'); await fo.waitForSelector('#frGo'); await fo.click('#frGo'); await fo.getByText(/Submitted by/).waitFor();
   // The manager's screen: tonight's money, the tables, and Close the night. Nothing technical.
   const mgr = await phone(390); await signInAs(mgr, 'manager@dev'); await mgr.waitForURL(/night\.html/);
-  await mgr.locator('.pos-money').getByText('Expected').waitFor();
-  assert.match(await mgr.textContent('.pos-money'), /Received/); assert.match(await mgr.textContent('.pos-money'), /Still owed/);
+  // Tonight: the money received big, with what was sold and what's still owed under it.
+  await mgr.locator('.hero').getByText('Received tonight').waitFor();
+  assert.match(await mgr.textContent('#app'), /Sold/); assert.match(await mgr.textContent('#app'), /Still owed/);
   assert.equal(await mgr.locator('.bnav button').count(), 4, 'four buttons, nothing else');
   assert.equal(await mgr.locator('text=Site settings').count(), 0);
   await mgr.goto(`${base}/admin.html`); await mgr.waitForFunction(() => location.hash === '#members'); // only members and attendance there

@@ -150,9 +150,8 @@ export async function productsView(el, { canEdit = true } = {}) {
   const { products, units } = await sapi('/api/ops/products');
   const noCost = products.filter(p => !p.costPesewas).length, offSale = products.filter(p => !p.available).length;
   let show = 'all', find = '';
-  el.innerHTML = `<h1>Drinks and prices</h1><p class="lead">${canEdit ? 'Tap a drink to change its price or cost.' : 'Finance sets the prices. Tap a drink for its details.'}</p>
+  el.innerHTML = `<h1>Drinks and prices</h1><p class="lead">${canEdit ? `Tap a drink to change its price or cost.${noCost ? ` ${amber(`${noCost} without a cost`)}: the profit on ${noCost > 1 ? 'them' : 'it'} can’t be worked out.` : ''}` : 'Finance sets the prices. Tap a drink for its details.'}</p>
     ${canEdit ? '<button class="big" id="pAdd">Add a drink</button>' : ''}<div id="pMsg"></div>
-    ${noCost && canEdit ? `<div class="say warn"><b>${noCost} drink${noCost > 1 ? 's have' : ' has'} no cost yet</b>Add it, so the profit on ${noCost > 1 ? 'them' : 'it'} can be worked out.</div>` : ''}
     <div class="quick" role="group" aria-label="Show">${[['all', `All (${products.length})`], ['nocost', `No cost (${noCost})`], ['off', `Off sale (${offSale})`]].map(([k, l]) => `<button type="button" class="chip" data-show="${k}" aria-pressed="${k === 'all'}">${l}</button>`).join('')}</div>
     ${products.length > 10 ? '<input type="search" class="searchbox" id="pFind" placeholder="Find a drink" aria-label="Find a drink" autocomplete="off">' : ''}
     <div id="pList"></div>`;
