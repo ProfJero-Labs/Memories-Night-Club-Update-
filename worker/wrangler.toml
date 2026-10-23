@@ -4,6 +4,10 @@ name = "memories-paystack-verify"
 main = "src/index.js"
 compatibility_date = "2026-09-23"
 workers_dev = true
+# Keep the variables set in the Cloudflare dashboard when deploying. Without this, every deploy
+# (Workers Builds on each commit) replaces them with only the [vars] below, and anything that was
+# saved as a plain variable instead of a secret (e.g. a key) disappears.
+keep_vars = true
 # AsyncLocalStorage only (what Sentry needs). Deliberately not the broader nodejs_compat.
 compatibility_flags = ["nodejs_als"]
 
@@ -44,3 +48,8 @@ crons = ["0 3 * * *", "*/10 * * * *"]
 # Gives Sentry the deployed version id, so each error says which release caused it.
 [version_metadata]
 binding = "CF_VERSION_METADATA"
+
+# Keep the Worker's logs (Workers → memories-paystack-verify → Logs), so an error on a live request
+# can be read: every unexpected error is logged as "request failed" with its reason.
+[observability]
+enabled = true

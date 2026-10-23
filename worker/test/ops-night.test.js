@@ -565,3 +565,26 @@ test('tickets tonight (online and at the gate) for the Manager and the front off
   assert.equal(ok(await ctx.call('GET', '/api/ops/find-order?q=MEM-1-ABC', { who: ctx.M1 }), 'by reference').orders[0].what, '3 × Regular');
   assert.equal((await ctx.call('GET', '/api/ops/find-order?q=yaw', { who: ctx.W1 })).status, 403);
 });
+
+test('nicknames: customers see the name they know (bill, tips, receipt); records keep the official name', async () => {
+  const ctx = setup();
+  ctx.store.seed('users', 'w1', { ...ctx.store.get('users', 'w1').fields, nickname: 'Shatta' });
+  await openingCount(ctx);
+  const t = ok(await ctx.call('POST', '/api/ops/tabs/open', { who: ctx.W1, body: { table: '9', customerPhone: '0245559090' } }), 'tab');
+  const r = ok(await ctx.call('POST', '/api/ops/tabs/round', { who: ctx.W1, body: { tabId: t.id, lines: [{ productId: 'beer', qty: 1 }] } }), 'round');
+  await barMakes(ctx, r.id);
+  const tab = ok(await ctx.call('GET', `/api/ops/tab?id=${t.id}`, { who: ctx.W1 }), 'tab').tab;
+  const token = new URL(tab.billUrl).searchParams.get('t');
+  const bill = ok(await ctx.call('GET', `/api/guest/bill/${token}`), 'bill');
+  assert.equal(bill.bill.waiterFirstName, 'Shatta', 'the bill names the waiter as customers know her');
+  assert.ok(bill.tip.people.some(p => p.name === 'Shatta'), 'the tip list shows the nickname');
+  assert.ok(!bill.tip.people.some(p => /Efua/.test(p.name)), 'not the official name');
+  ok(await ctx.call('POST', '/api/ops/tabs/pay', { who: ctx.W1, body: { tabId: t.id, method: 'cash', amountPesewas: 2500 } }), 'cash');
+  ok(await ctx.call('POST', '/api/ops/tabs/text-bill', { who: ctx.W1, body: { tabId: t.id } }), 'receipt');
+  assert.match(ctx.store.sms.at(-1).message, /taken by Shatta/);
+  // Official: the staff's own tip list shows both; the tab and reports keep the full name.
+  const staffList = ok(await ctx.call('GET', '/api/ops/tips/people', { who: ctx.W2 }), 'staff tip list');
+  assert.ok(staffList.people.some(p => p.name === 'Efua Waiter (“Shatta”)'));
+  assert.equal(ctx.store.get('tabs', t.id).fields.waiterName, 'Efua Waiter');
+  assert.equal(ok(await ctx.call('GET', '/api/ops/waiters', { who: ctx.F1 }), 'finance').waiters[0].name, 'Efua Waiter');
+});

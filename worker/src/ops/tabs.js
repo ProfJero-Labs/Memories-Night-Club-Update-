@@ -94,7 +94,7 @@ export async function openTab(env, b, user) {
     await commitTx(env, [
       updateWrite(env, 'counters', key, { n }),
       updateWrite(env, 'tabs', tabId, { number: n, businessDate: date, stationId: st.id, stationName: st.fields.name, table: walkIn ? 'Walk-in' : table, customerName: clean(b.customerName, 60), customerPhone: phone,
-        waiterUid: uidOf(user), waiterName: user.name || '', status: 'open', billToken: id(), payments: [], discounts: [], createdAt: now(), broughtBy }),
+        waiterUid: uidOf(user), waiterName: user.name || '', waiterNickname: user.nickname || '', status: 'open', billToken: id(), payments: [], discounts: [], createdAt: now(), broughtBy }),
     ], tx);
     return n;
   });
@@ -389,7 +389,7 @@ async function recordMomo(env, b, user, tip = null) {
     const bill = billOf(t.fields, await roundsOf(env, tabId));
     if (amount > bill.balancePesewas) return { error: bill.balancePesewas ? `The balance is ${ghs(bill.balancePesewas)}. Record that amount; anything extra goes back to the customer.` : 'This tab is already paid.' };
     const payId = id(), at = now();
-    const pay = { id: payId, method: 'momo', amountPesewas: amount, at, businessDate: date, by: uidOf(user), byName: user.name || '', momoRef: ref, momoFrom: from };
+    const pay = { id: payId, method: 'momo', amountPesewas: amount, at, businessDate: date, by: uidOf(user), byName: user.name || '', byNick: user.nickname || '', momoRef: ref, momoFrom: from };
     await commitTx(env, [
       updateWrite(env, 'tabs', tabId, { ...t.fields, payments: [...(t.fields.payments || []), pay] }),
       updateWrite(env, 'audit_logs', id(), { action: 'MOMO_PAYMENT', actorUid: uidOf(user), actorName: user.name || '', tabId, amountPesewas: amount, momoRef: ref, ...(tip && !tip.none ? { tipPesewas: tip.amount, tipToUid: tip.to.uid } : {}), timestamp: at }),
@@ -429,7 +429,7 @@ export async function recordCash(env, b, user, tip = null) {
     const bill = billOf(t.fields, await roundsOf(env, tabId));
     if (amount > bill.balancePesewas) return { error: bill.balancePesewas ? `The balance is ${ghs(bill.balancePesewas)}. Record that, and give change from the cash.` : 'This tab is already paid.' };
     const payId = id(), at = now();
-    const pay = { id: payId, method: 'cash', amountPesewas: amount, at, businessDate: date, by: uidOf(user), byName: user.name || '', sessionId: sid };
+    const pay = { id: payId, method: 'cash', amountPesewas: amount, at, businessDate: date, by: uidOf(user), byName: user.name || '', byNick: user.nickname || '', sessionId: sid };
     await commitTx(env, [
       updateWrite(env, 'tabs', tabId, { ...t.fields, payments: [...(t.fields.payments || []), pay] }),
       updateWrite(env, 'cash_sessions', sid, { ...s.fields, payments: [...(s.fields.payments || []), { id: payId, tabId, tabNumber: t.fields.number, amountPesewas: amount, at }] }),
@@ -593,7 +593,7 @@ export function invoiceText(env, tab, bill) {
   if (bill.lines.length > 8) items.push(`+ ${bill.lines.length - 8} more on the link`);
   // Something left to pay: an INVOICE. Nothing left: a RECEIPT, saying how it was paid and who
   // recorded it, so a customer who hasn't paid can't be told they have without seeing who said so.
-  const how = (tab.payments || []).map(p => `${p.method === 'cash' ? 'Cash' : 'MoMo'} ${ghs(p.amountPesewas)}${p.method === 'digital' ? ' (confirmed by Paystack)' : p.byName ? ` (taken by ${String(p.byName).split(/\s+/)[0]})` : ''}`);
+  const how = (tab.payments || []).map(p => `${p.method === 'cash' ? 'Cash' : 'MoMo'} ${ghs(p.amountPesewas)}${p.method === 'digital' ? ' (confirmed by Paystack)' : p.byName ? ` (taken by ${p.byNick || String(p.byName).split(/\s+/)[0]})` : ''}`);
   const due = bill.balancePesewas > 0;
   return [due ? 'MEMORIES INVOICE' : 'MEMORIES RECEIPT', `Tab ${tab.number} · ${where}`, ...items,
     ...(bill.discountPesewas ? [`Discount -${ghs(bill.discountPesewas)}`] : []),
@@ -628,7 +628,7 @@ export async function publicBill(env, token) {
   // on this phone when the bar is taking app orders).
   const st = t.fields.status === 'open' && t.fields.stationId ? await getDoc(env, 'bar_stations', t.fields.stationId).catch(() => null) : null;
   const menuUrl = st?.fields?.open && /^[0-9a-f]{32}$/.test(st.fields.token || '') ? `counter.html?s=${st.fields.token}${t.fields.table && t.fields.table !== 'Walk-in' ? `&t=${encodeURIComponent(t.fields.table)}` : ''}` : '';
-  return { open: t.fields.status === 'open', menuUrl, bill: { label: `Tab ${t.fields.number}`, table: t.fields.table, waiterFirstName: String(t.fields.waiterName || '').split(/\s+/)[0], date: t.fields.businessDate, lines: bill.lines, grossPesewas: bill.grossPesewas, discountPesewas: bill.discountPesewas, totalPesewas: bill.totalPesewas, paidPesewas: bill.paidPesewas, balancePesewas: bill.balancePesewas, status: bill.status, statusLabel: PAY_LABEL[bill.status],
+  return { open: t.fields.status === 'open', menuUrl, bill: { label: `Tab ${t.fields.number}`, table: t.fields.table, waiterFirstName: t.fields.waiterNickname || String(t.fields.waiterName || '').split(/\s+/)[0], date: t.fields.businessDate, lines: bill.lines, grossPesewas: bill.grossPesewas, discountPesewas: bill.discountPesewas, totalPesewas: bill.totalPesewas, paidPesewas: bill.paidPesewas, balancePesewas: bill.balancePesewas, status: bill.status, statusLabel: PAY_LABEL[bill.status],
     payments: (t.fields.payments || []).map(p => ({ method: p.method === 'cash' ? 'Cash' : 'MoMo', amountPesewas: p.amountPesewas, at: p.at })), paying: !!(t.fields.pending && Date.now() - new Date(t.fields.pending.at).getTime() < 30 * 60e3) },
     // A tip with the payment: for their waiter by default, or anyone on the team.
     tip: { people: (await guestTipPeople(env)).people, defaultId: t.fields.waiterUid || '' } };

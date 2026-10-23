@@ -206,3 +206,16 @@ test('Media: the Human manager adds them (on payroll); they run the website and 
   const pay = await call(ctx.env, 'POST', '/api/ops/pay/details', { ...HR, body: { uid: r.data.uid, salaryPesewas: 200000 } });
   assert.equal(pay.status, 200, `Media is paid through the Human manager: ${pay.data.error || ''}`);
 });
+
+test('the Human manager gives a nickname when adding or changing someone', async () => {
+  const ctx = setup();
+  ctx.store.seed('users', 'hr2', { name: 'Hannah HR', phone: '0240000006', role: 'hrManager' });
+  const HR = { claims: { role: 'hrManager' }, uid: 'hr2' };
+  const r = await call(ctx.env, 'POST', '/api/admin/people/add', { ...HR, body: { name: 'Esi Adwoa Mensah', nickname: 'Mama Esi', phone: '0245550777', role: 'waitStaff' } });
+  assert.equal(r.status, 200, r.data.error);
+  assert.equal(ctx.store.get('users', r.data.uid).fields.nickname, 'Mama Esi');
+  assert.equal((await call(ctx.env, 'POST', '/api/admin/people/update', { ...HR, body: { uid: r.data.uid, nickname: 'Esi B' } })).status, 200);
+  const list = (await call(ctx.env, 'GET', '/api/admin/people', HR)).data.staff;
+  const esi = list.find(s => s.uid === r.data.uid);
+  assert.deepEqual([esi.name, esi.nickname], ['Esi Adwoa Mensah', 'Esi B'], 'the official name stays');
+});

@@ -55,6 +55,13 @@ Every screen follows the same few rules, so nothing new has to be learned on a b
   phone number (Staff → Change), then *Send PIN*.
 - A job change or removal works **at once**, on every phone, without waiting.
 
+## Nicknames
+
+Most staff are known to customers by a nickname. When adding or changing someone (Staff → *Change
+name, nickname, phone or job*), the Human manager can type it. Customers then see the nickname: on
+the tip list, on their bill ("your waiter: Shatta") and on receipts ("taken by Shatta"). Everything
+official keeps the full name: pay, reports, the night's accounts, approvals and records.
+
 ## Who does what
 
 | Job | Opens on | Does |

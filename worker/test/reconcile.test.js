@@ -118,12 +118,22 @@ test('health: shallow without the key, deep with it, 503 when a dependency is do
   const { store, env } = setup();
   const get = key => health(new Request('https://x.test/api/health', { headers: key ? { 'x-health-key': key } : {} }), env);
 
+  // Without the key: whether each setting is there (yes/no), never a value.
   let r = await get(null);
   assert.equal(r.status, 200);
-  assert.deepEqual(await r.json(), { ok: true });
+  const shallow = await r.json();
+  assert.equal(shallow.ok, true); assert.equal(shallow.checks, undefined, 'no deep checks without the key');
+  assert.deepEqual(Object.keys(shallow.configured).sort(), ['email', 'firebase', 'firebaseProject', 'paystack', 'sms']);
+  assert.ok(Object.values(shallow.configured).every(v => typeof v === 'boolean'));
+  const text = JSON.stringify(shallow);
+  for (const v of [env.FIREBASE_SERVICE_ACCOUNT_JSON, env.PAYSTACK_SECRET_KEY].filter(Boolean)) assert.ok(!text.includes(v), 'never a secret value');
 
   r = await get('wrong');
-  assert.deepEqual(await r.json(), { ok: true }, 'wrong key reveals nothing');
+  assert.equal((await r.json()).checks, undefined, 'a wrong key gets no deep checks');
+
+  // A missing database key shows up from a browser, and makes ok false.
+  const noKey = await (await health(new Request('https://x.test/api/health'), { ...env, FIREBASE_SERVICE_ACCOUNT_JSON: '' })).json();
+  assert.deepEqual([noKey.ok, noKey.configured.firebase], [false, false]);
 
   r = await get('secret-health-key');
   assert.equal(r.status, 200);
@@ -133,4 +143,11 @@ test('health: shallow without the key, deep with it, 503 when a dependency is do
   r = await get('secret-health-key');
   assert.equal(r.status, 503);
   assert.equal((await r.json()).checks.paystack, false);
+});
+
+test('a missing or broken database key says so plainly (it stops every database request)', async () => {
+  const { getDoc } = await import('../src/lib/firestore.js');
+  const { env } = setup();
+  await assert.rejects(getDoc({ ...env, FIREBASE_SERVICE_ACCOUNT_JSON: '' }, 'settings', 'site'), /FIREBASE_SERVICE_ACCOUNT_JSON is not set/);
+  await assert.rejects(getDoc({ ...env, FIREBASE_SERVICE_ACCOUNT_JSON: '{not json' }, 'settings', 'site'), /not valid JSON/);
 });
