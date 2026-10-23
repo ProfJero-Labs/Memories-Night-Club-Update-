@@ -80,7 +80,7 @@ export async function verifyStaff(req, env) {
       // Removed, or no staff role on file: no access, whatever the token still says.
       const f = rec.fields, role = f.admin === true ? 'superAdmin' : f.role;
       if (f.removed === true || !STAFF_ROLES.includes(role)) return null;
-      return { ...payload, uid, role, admin: role === 'superAdmin', name: f.name || '', phone: f.phone || '', email: payload.email || f.email || '' };
+      return { ...payload, uid, role, admin: role === 'superAdmin', name: f.name || '', nickname: f.nickname || '', phone: f.phone || '', email: payload.email || f.email || '' };
     }
     // Older accounts without a staff record yet: the token's role.
     if (payload.admin === true || STAFF_ROLES.includes(payload.role)) return { ...payload, uid };

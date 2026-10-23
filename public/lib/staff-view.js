@@ -57,11 +57,11 @@ export async function staffView(el, user, notice = {}) {
   const row = s => {
     const flag = s.locked ? '<span class="flag bad">PIN locked</span>' : !s.hasPin && may(s) ? '<span class="flag warn">No PIN</span>' : !s.phone ? '<span class="flag warn">No phone</span>' : '';
     const sub = [s.uid === user.uid ? 'You' : '', s.canCollectCash ? 'Collects cash' : '', s.sharePct ? `${s.sharePct}% share` : '', seen(s)].filter(Boolean).join(' · ');
-    return `<button type="button" class="row-btn" data-person="${esc(s.uid)}"><span class="t">${esc(s.name || s.email)}</span><span class="s">${esc(sub.charAt(0).toUpperCase() + sub.slice(1))}</span><span class="r">${flag}</span></button>`;
+    return `<button type="button" class="row-btn" data-person="${esc(s.uid)}"><span class="t">${esc(s.name || s.email)}${s.nickname ? ` <small class="muted">“${esc(s.nickname)}”</small>` : ''}</span><span class="s">${esc(sub.charAt(0).toUpperCase() + sub.slice(1))}</span><span class="r">${flag}</span></button>`;
   };
   const drawList = () => {
     const words = fold(q()).split(/\s+/).filter(Boolean);
-    const hit = s => { const hay = `${fold(s.name)} ${fold(s.email)} ${fold(s.roleName)} ${digits(s.phone)}`; return words.every(w => hay.includes(w) || (/\d/.test(w) && digits(s.phone).includes(digits(w)))); };
+    const hit = s => { const hay = `${fold(s.name)} ${fold(s.nickname)} ${fold(s.email)} ${fold(s.roleName)} ${digits(s.phone)}`; return words.every(w => hay.includes(w) || (/\d/.test(w) && digits(s.phone).includes(digits(w)))); };
     const shown = list.filter(hit);
     const groups = [...new Set(shown.map(s => s.role))].sort((a, b) => rank(a) - rank(b));
     $('#sList', el).innerHTML = !list.length ? `<p class="muted">No ${noun} yet. Tap “+ Add ${noun}” to add the first one.</p>`
@@ -75,7 +75,8 @@ export async function staffView(el, user, notice = {}) {
   // ── Add someone ──
   if ($('#addBtn', el)) $('#addBtn', el).onclick = () => {
     const { box, close } = sheet(`<form id="addForm" novalidate style="display:grid;gap:14px"><h2>Add ${noun}</h2>
-      <div class="sfield"><label for="aName">Full name</label><input id="aName" maxlength="80" autocomplete="off" autocapitalize="words"></div>
+      <div class="sfield"><label for="aName">Full name (official)</label><input id="aName" maxlength="80" autocomplete="off" autocapitalize="words"></div>
+      <div class="sfield"><label for="aNick">Nickname (optional)</label><input id="aNick" maxlength="30" autocomplete="off" placeholder="e.g. Shatta, Mama Esi"><span class="hint">The name customers know them by. It shows on tips, bills and receipts; pay and reports use the full name.</span></div>
       <div class="sfield"><label for="aPhone">Phone number (they sign in with it)</label><input id="aPhone" type="tel" inputmode="tel" autocomplete="off" placeholder="024 123 4567"></div>
       <div class="sfield"><label for="aRole">Job</label><select id="aRole">${roleOpts(roles.length === 1 ? roles[0].id : '')}</select></div>
       <label class="check"><input type="checkbox" id="aCash"> Can collect cash from customers</label>
@@ -93,7 +94,7 @@ export async function staffView(el, user, notice = {}) {
       if (['superAdmin', 'director'].includes(role) && !confirm(`Give ${v('#aName')} the ${roles.find(r => r.id === role).name} job? They’ll be able to change almost everything.`)) return;
       busy($('#aBtn', box), async () => {
         try {
-          const r = await sapi('/api/admin/people/add', { method: 'POST', body: { name: v('#aName'), phone: v('#aPhone'), role, canCollectCash: $('#aCash', box).checked } });
+          const r = await sapi('/api/admin/people/add', { method: 'POST', body: { name: v('#aName'), nickname: v('#aNick'), phone: v('#aPhone'), role, canCollectCash: $('#aCash', box).checked } });
           close(); await again({ pins: [r] });
         } catch (e) { say($('#addMsg', box), e.message, 'bad'); }
       }, 'Adding…');
@@ -112,6 +113,7 @@ export async function staffView(el, user, notice = {}) {
       body.innerHTML = `<h2>${esc(s.name || s.email)}</h2>
         <dl class="pfacts">
           ${fact('Job', esc(s.roleName))}
+          ${s.nickname ? fact('Nickname', `“${esc(s.nickname)}” (what customers see)`) : ''}
           ${fact('Phone', s.phone ? `<a href="tel:${esc(s.phone)}">${esc(s.phone)}</a>` : '<span class="flag warn">No phone yet</span>')}
           ${fact('Last signed in', esc(s.lastSignInAt ? when(s.lastSignInAt) : s.hasPin ? 'Not yet' : 'No PIN yet'))}
           ${s.locked ? fact('PIN', '<span class="flag bad">Locked: send a new PIN</span>') : ''}
@@ -119,7 +121,7 @@ export async function staffView(el, user, notice = {}) {
         </dl>
         ${can ? `<label class="check"><input type="checkbox" id="pCash" ${s.canCollectCash ? 'checked' : ''}> Can collect cash from customers</label>
         <div class="rows">
-          <button type="button" class="row-btn" data-edit><span class="t">Change name, phone or job</span><span class="s">${esc(s.roleName)}</span><span class="r"></span></button>
+          <button type="button" class="row-btn" data-edit><span class="t">Change name, nickname, phone or job</span><span class="s">${esc(s.roleName)}</span><span class="r"></span></button>
           <button type="button" class="row-btn" data-pin><span class="t">${s.hasPin ? 'Send a new PIN' : 'Send PIN'}</span><span class="s">${s.hasPin ? 'Their old PIN stops working' : 'Texted to their phone'}</span><span class="r"></span></button>
         </div>
         <div id="pinAsk"></div>
@@ -157,7 +159,8 @@ export async function staffView(el, user, notice = {}) {
     const edit = () => {
       const share = s.role === 'director' && user.role === 'superAdmin';
       body.innerHTML = `<form id="eForm" novalidate style="display:grid;gap:14px"><h2>Change ${esc(s.name)}</h2>
-        <div class="sfield"><label for="eName">Full name</label><input id="eName" maxlength="80" autocapitalize="words" value="${esc(s.name)}"></div>
+        <div class="sfield"><label for="eName">Full name (official)</label><input id="eName" maxlength="80" autocapitalize="words" value="${esc(s.name)}"></div>
+        <div class="sfield"><label for="eNick">Nickname (optional)</label><input id="eNick" maxlength="30" autocomplete="off" value="${esc(s.nickname || '')}" placeholder="e.g. Shatta"><span class="hint">The name customers know them by. It shows on tips, bills and receipts; pay and reports use the full name.</span></div>
         <div class="sfield"><label for="ePhone">Phone number</label><input id="ePhone" type="tel" inputmode="tel" value="${esc(s.phone)}"></div>
         <div class="sfield"><label for="eRole">Job</label><select id="eRole">${roleOpts(s.role)}</select></div>
         ${share ? `<div class="sfield"><label for="eShare">Their share of the club (%)</label><input id="eShare" inputmode="decimal" value="${esc(s.sharePct ?? '')}" placeholder="e.g. 35"></div>` : ''}
@@ -171,7 +174,7 @@ export async function staffView(el, user, notice = {}) {
         const role = $('#eRole', box).value;
         busy($('#eSave', box), async () => {
           try {
-            await sapi('/api/admin/people/update', { method: 'POST', body: { uid: s.uid, name: $('#eName', box).value, phone: $('#ePhone', box).value, role, ...($('#eShare', box) ? { sharePct: $('#eShare', box).value } : {}) } });
+            await sapi('/api/admin/people/update', { method: 'POST', body: { uid: s.uid, name: $('#eName', box).value, nickname: $('#eNick', box).value, phone: $('#ePhone', box).value, role, ...($('#eShare', box) ? { sharePct: $('#eShare', box).value } : {}) } });
             await done({ text: role !== s.role ? `Saved. ${s.name}’s new job works on their next tap.` : `Saved ${$('#eName', box).value.trim() || s.name}.` });
           } catch (err) { msg(err.message, 'bad'); }
         });

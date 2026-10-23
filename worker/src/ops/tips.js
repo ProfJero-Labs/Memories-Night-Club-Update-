@@ -34,13 +34,14 @@ const shortName = n => { const p = String(n || '').trim().split(/\s+/); return p
 
 export async function tipPeopleList(env) {
   return (await listDocs(env, 'users')).filter(tippable)
-    .map(d => ({ uid: d.id, name: d.fields.name || '', shortName: shortName(d.fields.name), role: d.fields.role, roleName: ROLE_NAMES[d.fields.role] || '' }))
+    .map(d => ({ uid: d.id, name: d.fields.name || '', nickname: d.fields.nickname || '', shortName: d.fields.nickname || shortName(d.fields.name), role: d.fields.role, roleName: ROLE_NAMES[d.fields.role] || '' }))
     .sort((a, b) => a.name.localeCompare(b.name));
 }
 // For staff screens (the pay sheet's "Tip for" list).
 export async function tipPeople(env, user) {
   if (!user || !STAFF_ROLES.includes(user.role) || user.role === 'organiser') return FORBIDDEN;
-  return { people: (await tipPeopleList(env)).map(({ uid, name, roleName }) => ({ uid, name, roleName })) };
+  // Staff see the official name, with the nickname customers use.
+  return { people: (await tipPeopleList(env)).map(({ uid, name, nickname, roleName }) => ({ uid, name: nickname ? `${name} (“${nickname}”)` : name, roleName })) };
 }
 // For the customer's bill link and the QR menu: short names and jobs only.
 export async function guestTipPeople(env) {

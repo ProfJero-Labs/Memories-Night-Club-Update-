@@ -142,9 +142,12 @@ export async function whoAmI(env, user) {
 }
 
 // ── Managers look after staff ──
+// A nickname: the name customers know them by (shown on tips, bills and receipts). Official
+// records, pay and reports keep the full name.
+const nick = v => clean(v, 30).replace(/[<>"]/g, '');
 const staffView = d => {
   const f = d.fields, role = roleOfRecord(f);
-  return { uid: d.id, name: f.name || '', phone: f.phone || '', email: f.email || '', role, roleName: ROLE_NAMES[role] || role, removed: f.removed === true, hasPin: !!f.pinHash, pinStarter: f.pinStarter === true, locked: f.pinLocked === true || (f.lockedUntil && new Date(f.lockedUntil).getTime() > Date.now()), lastSignInAt: f.lastSignInAt || '', canCollectCash: f.canCollectCash === true, ...(role === 'director' ? { sharePct: Number(f.sharePct || 0) } : {}) };
+  return { uid: d.id, name: f.name || '', nickname: f.nickname || '', phone: f.phone || '', email: f.email || '', role, roleName: ROLE_NAMES[role] || role, removed: f.removed === true, hasPin: !!f.pinHash, pinStarter: f.pinStarter === true, locked: f.pinLocked === true || (f.lockedUntil && new Date(f.lockedUntil).getTime() > Date.now()), lastSignInAt: f.lastSignInAt || '', canCollectCash: f.canCollectCash === true, ...(role === 'director' ? { sharePct: Number(f.sharePct || 0) } : {}) };
 };
 export async function listStaffPeople(env, user) {
   if (!requireRole(user, STAFF_ADMIN)) return FORBIDDEN;
@@ -183,7 +186,7 @@ export async function addStaffPerson(env, b, user) {
   const clash = await staffByPhone(env, phone);
   if (clash) return { error: `${clash.fields.name || clash.fields.email || 'Someone'} already uses that phone number.` };
   const uid = `st${id().slice(0, 24)}`;
-  const fields = { name, phone, email: clean(b.email, 120).toLowerCase(), role, admin: role === 'superAdmin', removed: false, canCollectCash: b.canCollectCash === true, addedBy: uidOf(user), createdAt: now(), updatedAt: now() };
+  const fields = { name, nickname: nick(b.nickname), phone, email: clean(b.email, 120).toLowerCase(), role, admin: role === 'superAdmin', removed: false, canCollectCash: b.canCollectCash === true, addedBy: uidOf(user), createdAt: now(), updatedAt: now() };
   await setDoc(env, 'users', uid, fields);
   await ensureStaffMember(env, { uid, name, phone, role }, user);
   await audit(env, user, 'STAFF_ADDED', { targetUid: uid, role, name });
@@ -200,6 +203,7 @@ export async function updateStaffPerson(env, b, user) {
   if (!STAFF_ROLES.includes(role) || !canAssign(user.role, role)) return { error: `Your role can’t make someone a ${ROLE_NAMES[role] || role}.`, status: 403 };
   if (rec.id === uidOf(user) && role !== oldRole) return { error: 'Ask another manager to change your own job.' };
   const name = b.name !== undefined ? clean(b.name, 80) : f.name;
+  const nickname = b.nickname !== undefined ? nick(b.nickname) : f.nickname || '';
   const phone = b.phone !== undefined ? normalizePhone(b.phone) : f.phone;
   if (!name) return { error: 'Add their name.' };
   if (b.phone !== undefined && !phone) return { error: 'Use a Ghana number, e.g. 024 123 4567.' };
@@ -216,7 +220,7 @@ export async function updateStaffPerson(env, b, user) {
     if (others + pct > 100) return { error: `The other directors already hold ${others}%. Shares can’t add up to more than 100%.` };
     sharePct = pct;
   }
-  await setDoc(env, 'users', rec.id, { ...f, name, phone, role, admin: role === 'superAdmin', canCollectCash: b.canCollectCash === undefined ? f.canCollectCash === true : b.canCollectCash === true, ...(sharePct != null ? { sharePct } : {}), updatedAt: now() });
+  await setDoc(env, 'users', rec.id, { ...f, name, nickname, phone, role, admin: role === 'superAdmin', canCollectCash: b.canCollectCash === undefined ? f.canCollectCash === true : b.canCollectCash === true, ...(sharePct != null ? { sharePct } : {}), updatedAt: now() });
   forgetStaffRecord(env, rec.id);
   if (role !== oldRole) { await revokeSessions(env, rec.id); await ensureStaffMember(env, { uid: rec.id, name, phone, role }, user); }
   await audit(env, user, 'STAFF_UPDATED', { targetUid: rec.id, from: oldRole, role, name });

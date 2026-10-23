@@ -122,8 +122,12 @@ export async function reconcilePayments(env, scheduledTime = Date.now()) {
 // GET /api/health + x-health-key: KEY  -> also proves Firestore and Paystack are reachable
 const json = (obj, status = 200) => new Response(JSON.stringify(obj), { status, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' } });
 
+const validJson = s => { try { const o = JSON.parse(s); return !!(o.client_email && o.private_key); } catch { return false; } };
 export async function health(req, env) {
-  if (!env.HEALTH_KEY || req.headers.get('x-health-key') !== env.HEALTH_KEY) return json({ ok: true });
+  // Without the key: only whether each setting is there (yes/no, never a value), so a missing key
+  // after a deploy shows from a browser: /api/health.
+  const configured = { firebase: !!env.FIREBASE_SERVICE_ACCOUNT_JSON && validJson(env.FIREBASE_SERVICE_ACCOUNT_JSON), firebaseProject: !!env.FIREBASE_PROJECT_ID, paystack: !!env.PAYSTACK_SECRET_KEY, sms: !!(env.SMS || env.SMS_WORKER_URL) && !!env.SMS_WORKER_KEY, email: !!env.BREVO_API_KEY };
+  if (!env.HEALTH_KEY || req.headers.get('x-health-key') !== env.HEALTH_KEY) return json({ ok: configured.firebase && configured.firebaseProject && configured.paystack, configured });
   const probe = async fn => { try { await fn(); return true; } catch { return false; } };
   const checks = {
     firestore: await probe(() => getDoc(env, 'settings', 'site')),

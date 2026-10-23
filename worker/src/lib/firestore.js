@@ -34,8 +34,14 @@ export function parseFields(fields = {}) { return Object.fromEntries(Object.entr
 
 // A JWT signed with the service account's key: Google access-token requests, and Firebase custom
 // tokens (staff who signed in with their phone and PIN; see staffauth.js).
+// The Firebase service account (a Worker secret). Missing or broken: say exactly that in the logs,
+// not a JSON error, since it stops every database request.
+function serviceAccount(env) {
+  if (!env.FIREBASE_SERVICE_ACCOUNT_JSON) throw new Error('FIREBASE_SERVICE_ACCOUNT_JSON is not set on this Worker (Cloudflare → Settings → Variables and Secrets, as a Secret).');
+  try { return JSON.parse(env.FIREBASE_SERVICE_ACCOUNT_JSON); } catch { throw new Error('FIREBASE_SERVICE_ACCOUNT_JSON is not valid JSON: paste the whole service-account key file as the secret.'); }
+}
 export async function signServiceJwt(env, payload) {
-  const sa = JSON.parse(env.FIREBASE_SERVICE_ACCOUNT_JSON);
+  const sa = serviceAccount(env);
   const keyPem = sa.private_key.replace(/-----BEGIN PRIVATE KEY-----|-----END PRIVATE KEY-----|\s/g, '');
   const key = await crypto.subtle.importKey('pkcs8', fromB64(keyPem), { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' }, false, ['sign']);
   const header = b64(JSON.stringify({ alg: 'RS256', typ: 'JWT' }));
@@ -48,7 +54,7 @@ const tokenCache = {};
 export async function googleAccessToken(env, scope = 'https://www.googleapis.com/auth/datastore') {
   const cached = tokenCache[scope];
   if (cached && cached.sa === env.FIREBASE_SERVICE_ACCOUNT_JSON && Date.now() < cached.expires - 60000) return cached.value;
-  const sa = JSON.parse(env.FIREBASE_SERVICE_ACCOUNT_JSON);
+  const sa = serviceAccount(env);
   const t = Math.floor(Date.now() / 1000);
   const assertion = await signServiceJwt(env, { iss: sa.client_email, scope, aud: 'https://oauth2.googleapis.com/token', iat: t, exp: t + 3600 });
   const r = await fetch('https://oauth2.googleapis.com/token', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer', assertion }) });
