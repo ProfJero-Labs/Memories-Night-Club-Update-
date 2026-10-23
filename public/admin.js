@@ -144,6 +144,7 @@ async function overview() {
       <div><span>Pending payments</span><b>${d.pendingCheckouts}${d.staleCheckouts ? ` <small>(${d.staleCheckouts} over 30m)</small>` : ''}</b></div>
       <div><span>Memories’ share</span><b>${money(d.memoriesSharePesewas)}</b></div>
       <div><span>Organizers’ share</span><b>${money(d.organizerSharePesewas)}</b></div>
+      ${d.serviceFeesPesewas ? `<div><span>Service fees (paid by customers)</span><b>${money(d.serviceFeesPesewas)}</b></div>` : ''}
       ${d.failedCheckouts > 0 ? `<div class="bad"><span>Failed payments</span><b>${d.failedCheckouts}</b></div>` : ''}
     </div>
     ${d.funnel ? `<p class="funnel"><strong>Last 7 days:</strong> ${d.funnel.started} checkouts started · ${d.funnel.paid} paid${d.funnel.started ? ` (${Math.round(100 * d.funnel.paid / d.funnel.started)}%)` : ''} · ${d.funnel.abandoned} left at Paystack · ${d.funnel.failed} failed${d.funnel.waiting ? ` · ${d.funnel.waiting} paying now` : ''}</p>` : ''}
@@ -776,7 +777,8 @@ async function settings() {
     <p class="muted" style="margin:0">One place for the details the whole site shows. Blank phone, email and map fields don’t appear; blank WhatsApp and social fields go back to the club’s own.</p>
     <div class="grid2">${f('venue', 'Venue')}${f('address', 'Address line')}${f('nightsLine', 'Nights line', 'e.g. Friday + Saturday')}${f('doorsLine', 'Doors line', 'e.g. Doors 10PM')}
       ${f('phone', 'Public phone', 'Confirm the real number before filling this in.', 'tel')}${f('whatsapp', 'WhatsApp number', '', 'tel')}${f('email', 'Public email', '', 'email')}${f('instagram', 'Instagram handle', '@handle')}${f('facebook', 'Facebook page', 'Page name, e.g. memoriesnightclub.gh')}${f('tiktok', 'TikTok handle', '@handle')}
-      ${f('mapUrl', 'Map link', 'Google Maps share link. Blank = search for the venue.', 'url')}</div>
+      ${f('mapUrl', 'Map link', 'Google Maps share link. Blank = search for the venue.', 'url')}
+      <div class="sfield"><label for="s-fee">Service fee (%)</label><input id="s-fee" type="number" inputmode="decimal" min="0" max="20" step="0.5" value="${esc(s.serviceFeePercent ?? 5)}"><span class="hint">Customers pay this on top of anything paid online or by MoMo through the site (tickets, tables, drinks). Not on cash. 0 turns it off.</span></div></div>
     <div class="img-drop"><div class="thumb wide" id="heroT" style="background-image:url('${esc(s.heroImage || '')}')"></div><div class="sfield"><label for="heroF">Homepage hero image (optional)</label><input id="heroF" type="file" accept="image/jpeg,image/png,image/webp"><span class="hint">Shown behind the homepage hero when the next night has no hero image of its own, and when nothing is on sale.</span></div></div>
     ${videoField('sVid', 'Homepage video (optional)', 'MP4 or WebM, up to 60 MB; a short silent loop. Plays behind the homepage hero when the next night has no video of its own.', s.heroVideo)}
     <div class="grid2"><div class="sfield"><label for="s-lines">Default lines (one per line)</label><textarea id="s-lines" style="min-height:160px">${esc((s.defaultLines || []).join('\n'))}</textarea><span class="hint">Used for any night without its own lines.</span></div>
@@ -789,6 +791,7 @@ async function settings() {
     ev.preventDefault();
     const body = Object.fromEntries(['venue', 'address', 'nightsLine', 'doorsLine', 'phone', 'whatsapp', 'email', 'instagram', 'facebook', 'tiktok', 'mapUrl'].map(k => [k, val(`#s-${k}`)]));
     body.heroImage = hero; body.heroVideo = heroVideo; body.defaultLines = $('#s-lines').value.split('\n').map(x => x.trim().toUpperCase()).filter(Boolean); body.closedDates = $('#s-closed').value.split(/\s+/).filter(Boolean);
+    body.serviceFeePercent = $('#s-fee').value;
     try { await sapi('/api/admin/settings', { method: 'POST', body }); flash($('#sMsg'), 'Saved. Live on the site now.'); } catch (err) { flash($('#sMsg'), err.message, true); }
   };
 }

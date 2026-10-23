@@ -42,7 +42,7 @@ export async function nightAccounts(env, user, { date } = {}) {
     const counted = !!sheet.closing;
     const rows = sheet.rows.map(r => {
       const left = r.counted ?? r.expected;
-      const gone = r.opening + r.received + r.transferIn + r.returns - r.transferOut - r.waste - left;
+      const gone = r.opening + r.received + r.transferIn + r.returns + (r.corrections || 0) - r.transferOut - r.waste - left;
       return { name: r.name, gone, missing: counted && r.difference < 0 ? -r.difference : 0, extra: counted && r.difference > 0 ? r.difference : 0, unit: price[r.productId] || 0 };
     }).filter(r => r.gone || r.missing || r.extra);
     bars.push({

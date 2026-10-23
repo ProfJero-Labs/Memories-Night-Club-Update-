@@ -4,6 +4,7 @@ import { getDoc, setDoc, deleteDoc, listDocs, queryWhere, queryRecent, commitTx,
 import { now, id, clean, normalizePhone, ticketToken, displayCode, dateKey, firstName, TICKET_STYLES, cleanTicketColors, generatePassword } from './lib/util.js';
 import { requireRole, ADMIN, CMS, TICKET_MONEY, MONEY, STAFF_ROLES, uidOf, forgetStaffRecord } from './lib/auth.js';
 import { sendSms, sendEmail, siteUrl } from './lib/notify.js';
+import { MAX_FEE_PERCENT } from './lib/fee.js';
 import { getSettings, DEFAULT_SETTINGS, SETTINGS_FIELDS, isOver, autoStyleFor } from './public.js';
 import { openRaffleForEvent, raffleSpotWrites } from './raffle.js';
 import { balanceMessage } from './checkout.js';
@@ -107,6 +108,8 @@ export async function adminOverview(env, user) {
     staleCheckouts: stale,
     failedCheckouts: failed,
     funnel,
+    // The service fee customers paid on top (lib/fee.js), on payments Paystack confirmed.
+    serviceFeesPesewas: checkouts.filter(c => c.fields.status === 'issued').reduce((s, c) => s + Number(c.fields.feePesewas || 0), 0),
   };
 }
 
@@ -320,6 +323,7 @@ export async function adminInstallments(env, user) {
 //  • plan: a pay-in-bits order that sold out before the last payment (everything paid is owed);
 //  • overpay: more paid on a plan than the ticket costs.
 // Staff refund in the Paystack dashboard, then mark it here with a note. Nothing here moves money.
+// The amount is everything the customer paid, the service fee too.
 export async function listRefunds(env, user) {
   if (!requireRole(user, MONEY)) return FORBIDDEN;
   const [flagged, plans] = await Promise.all([
@@ -330,7 +334,7 @@ export async function listRefunds(env, user) {
   const who = f => ({ buyerName: f.buyerName || f.name || '', buyerPhone: f.buyerPhone || f.phone || '', eventName: f.eventName || '' });
   const refunds = [
     ...flagged.filter(c => !(c.fields.kind === 'installment_topup' && soldOutPlans.has(c.fields.planId)))
-      .map(c => ({ source: 'checkout', id: c.id, reason: c.fields.error || 'refund_required', amountPesewas: Number(c.fields.amountPesewas || 0), ...who(c.fields), planId: c.fields.planId || '', at: c.fields.createdAt || '' })),
+      .map(c => ({ source: 'checkout', id: c.id, reason: c.fields.error || 'refund_required', amountPesewas: Number(c.fields.chargePesewas ?? c.fields.amountPesewas ?? 0), ...who(c.fields), planId: c.fields.planId || '', at: c.fields.createdAt || '' })),
     ...plans.filter(p => p.fields.status === 'sold_out' && p.fields.refundStatus !== 'refunded')
       .map(p => ({ source: 'plan', id: p.id, reason: 'sold_out_after_payment', amountPesewas: Number(p.fields.paidPesewas || 0), ...who(p.fields), planId: p.id, at: p.fields.updatedAt || '' })),
     ...plans.filter(p => Number(p.fields.overpaidPesewas || 0) > 0 && p.fields.overpayRefundStatus !== 'refunded')
@@ -392,6 +396,11 @@ export async function updateSettings(env, b, user) {
     const lines = (Array.isArray(b.defaultLines) ? b.defaultLines : []).map(l => clean(l, 48)).filter(Boolean);
     if (lines.length > 12) return { error: 'Keep it to 12 lines or fewer.' };
     data.defaultLines = lines;
+  }
+  if (b?.serviceFeePercent !== undefined && b.serviceFeePercent !== '') {
+    const pct = Number(b.serviceFeePercent);
+    if (!Number.isFinite(pct) || pct < 0 || pct > MAX_FEE_PERCENT) return { error: `The service fee is a percentage from 0 to ${MAX_FEE_PERCENT}.` };
+    data.serviceFeePercent = Math.round(pct * 100) / 100;
   }
   if (b?.closedDates !== undefined) data.closedDates = (Array.isArray(b.closedDates) ? b.closedDates : []).filter(d => /^\d{4}-\d{2}-\d{2}$/.test(d)).slice(0, 200);
   const next = { ...DEFAULT_SETTINGS, ...cur, ...data, updatedAt: now() };

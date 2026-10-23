@@ -1,5 +1,5 @@
 // tables.html: page script (kept out of the HTML so the CSP can forbid inline scripts).
-import { chrome, normalizePhone, api, esc, params, money, img, $, $$, errorState, shortDate, doors, remember, forgetButton, bindForget } from '../app.js';
+import { chrome, normalizePhone, api, esc, params, money, img, $, $$, errorState, shortDate, doors, remember, forgetButton, bindForget, loadFee, feePct, feeOn } from '../app.js';
 chrome('tables');
 const root = $('#root');
 const S = { eventId: params.get('event') || '', pkg: '', bottles: {}, step: 1, ...(({ name = '', phone = '', email = '' }) => ({ name, phone, email }))(remember.get()) };
@@ -52,12 +52,13 @@ function render() {
       <h2 class="display">Your table</h2>
       <div class="receipt"><h3>${esc(B.event.name)}</h3><span class="kicker" style="color:var(--teal)">${esc(shortDate(B.event.date))} · ${esc(doors(B.event))}</span>
         <div class="r" style="margin-top:8px"><b>${esc(pkg().name)}</b><b>${money(pkg().pricePesewas)}</b></div>${lines}
-        <div class="r t"><span>Total</span><span>${money(total())}</span></div></div>
+        ${feeOn(total()) ? `<div class="r"><span>Service fee (${feePct()}%)</span><span>${money(feeOn(total()))}</span></div>` : ''}
+        <div class="r t"><span>Total to pay</span><span>${money(total() + feeOn(total()))}</span></div></div>
       <div class="field" id="fName"><label for="name">Booking name</label><input id="name" autocomplete="name" value="${esc(S.name)}" required></div>
       <div class="field" id="fPhone"><label for="phone">Phone</label><input id="phone" type="tel" inputmode="tel" autocomplete="tel" placeholder="024 123 4567" value="${esc(S.phone)}" required><span class="hint">We text your confirmation here.</span></div>
       ${forgetButton()}
       <div class="notice" id="err" hidden role="alert"></div>
-      <button class="btn red block" type="submit" id="pay">Pay ${money(total())} <span class="arrow">→</span></button>
+      <button class="btn red block" type="submit" id="pay">Pay ${money(total() + feeOn(total()))} <span class="arrow">→</span></button>
       <p class="foot-small" style="margin:0">Paid in full by Paystack (MoMo or card). Your table is held once it’s paid.</p></form>`;
     $('#rev').onsubmit = pay;
     bindForget(document, ['name', 'phone'], () => { S.name = S.phone = S.email = ''; });
@@ -93,10 +94,11 @@ async function pay(ev) {
   try {
     const d = await api('/api/table-checkout/initiate', { method: 'POST', body: { eventId: B.event.id, packageId: S.pkg, name: S.name, phone: S.phone, email: S.email || undefined, bottles: Object.entries(S.bottles).map(([id, quantity]) => ({ id, quantity })) } });
     location.href = d.authorizationUrl;
-  } catch (e) { err.hidden = false; err.textContent = e.message; btn.disabled = false; btn.innerHTML = `Pay ${money(total())} <span class="arrow">→</span>`; }
+  } catch (e) { err.hidden = false; err.textContent = e.message; btn.disabled = false; btn.innerHTML = `Pay ${money(total() + feeOn(total()))} <span class="arrow">→</span>`; }
 }
 
 async function load() {
+  await loadFee();
   try { events = (await api('/api/events')).events.filter(e => !e.soldOut); }
   catch (e) { return errorState(root, e.message, load); }
   if (!events.length) { root.innerHTML = '<div class="state-msg"><h2 class="display">No nights on sale yet.</h2><p>Tables open when the next night drops.</p><a class="btn red" href="private.html">Book an event</a></div>'; return; }

@@ -2,7 +2,7 @@
 //   checkout.html?event={id}&type={typeId}&qty={n}[&promo={code}]   (the ticket was chosen on tickets.html)
 // Promos: automatic ones are already in the price; a code (typed, or from a ?promo= link an
 // influencer shared) is checked by the Worker, which always sets the price that's charged.
-import { chrome, normalizePhone, api, esc, params, money, $, $$, errorState, remember, claims, shortDate, time, forgetButton, bindForget, BITS_ACK_TEXT, pickPromo } from '../app.js';
+import { chrome, normalizePhone, api, esc, params, money, $, $$, errorState, remember, claims, shortDate, time, forgetButton, bindForget, BITS_ACK_TEXT, pickPromo, loadFee, feePct, feeOn } from '../app.js';
 import { ticketHTML } from '../ticket-art.js';
 chrome();
 
@@ -87,11 +87,12 @@ function shell() {
     <aside class="aside" aria-label="Your ticket, live"><p class="kicker" style="margin-bottom:14px">Your ticket · live preview</p><div data-preview></div></aside>
   </div>`;
   bind(); refreshPreview();
+  loadFee().then(() => { if ($('#sum')) { drawSum(); syncPay(); } });
 }
 
 function drawSum() {
   $('#sum').innerHTML = `<div class="r"><span>${qty} × ${esc(T.name)} · ${esc(B.event.name)}</span>${Q.promo ? `<s class="muted">${money(Q.full)}</s>` : `<b>${money(Q.full)}</b>`}</div>
-    ${Q.promo ? `<div class="r promo-line"><span><span class="promo-tag">${esc(Q.promo.name)}</span> ${esc(Q.promo.label)}</span><span>−${money(Q.full - Q.total)}</span></div><div class="r t"><span>You pay</span><span>${money(Q.total)}</span></div>` : ''}`;
+    ${Q.promo ? `<div class="r promo-line"><span><span class="promo-tag">${esc(Q.promo.name)}</span> ${esc(Q.promo.label)}</span><span>−${money(Q.full - Q.total)}</span></div><div class="r t"><span>You pay</span><span>${money(Q.total)}</span></div>` : ''}<div id="sumFee"></div>`;
   const dep = $('#dep'); if (dep) dep.max = String(total() / 100);
 }
 // Ask the Worker for the exact price (with the code, if one is applied). Quietly keeps the page's
@@ -115,7 +116,9 @@ function syncPay() {
     ? 'That’s the full price. Pay in full to get your ticket straight away.'
     : `Any amount from ${money(100)} up to ${money(total())}.`;
   $('#depHint').textContent = hint;
-  $('#pay').innerHTML = payAmount() > 0 ? `Pay ${money(payAmount())}${bits ? ' now' : ''} <span class="arrow">→</span>` : 'Pay <span class="arrow">→</span>';
+  const fee = feeOn(payAmount());
+  if ($('#sumFee')) $('#sumFee').innerHTML = fee ? `<div class="r"><span>Service fee (${feePct()}%)</span><span>${money(fee)}</span></div><div class="r t"><span>Total to pay${bits ? ' now' : ''}</span><span>${money(payAmount() + fee)}</span></div>` : '';
+  $('#pay').innerHTML = payAmount() > 0 ? `Pay ${money(payAmount() + fee)}${bits ? ' now' : ''} <span class="arrow">→</span>` : 'Pay <span class="arrow">→</span>';
 }
 function syncLine() {
   $$('.line-btn').forEach(x => x.setAttribute('aria-checked', String(x.dataset.line === S.line)));

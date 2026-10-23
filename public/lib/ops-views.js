@@ -209,9 +209,10 @@ export async function stockAdminView(el, date, stationId, { role = '' } = {}) {
   if (!sid) { el.innerHTML = '<div class="empty-box"><b>No bars yet</b>Add one under Setup → Bar orders.</div>'; return; }
   const [s, dl] = await Promise.all([sapi(`/api/ops/stock?stationId=${encodeURIComponent(sid)}${date ? `&date=${date}` : ''}`), sapi(`/api/ops/stock/deliveries?stationId=${encodeURIComponent(sid)}`).catch(() => ({ deliveries: [] }))]);
   const ok = t => `<b style="color:#6fcfae">${t}</b>`;
-  const dlState = x => (x.status === 'pending' ? amber(x.byBar ? 'Waiting for finance or the manager' : 'Waiting for the bar to confirm') : x.status === 'rejected' ? '<b class="diff-neg">Didn’t arrive</b>' : x.purchase ? ok('Bought: in stock') : x.confirmedQty !== x.qty ? amber(`Bar counted ${x.confirmedQty}`) : ok('Confirmed by the bar'));
-  const dlLine = x => `<div class="ln"><span><b>${x.qty} × ${esc(x.productName)}</b><br><small>${esc(x.recordedByName)} ${when(x.recordedAt)}${x.supplier ? ` · ${esc(x.supplier)}${x.reference ? ` · ${esc(x.reference)}` : ''}` : ''}${x.confirmedByName ? ` · confirmed by ${esc(x.confirmedByName)} ${when(x.confirmedAt)}` : ''}${x.confirmNote ? ` · ${esc(x.confirmNote)}` : ''}</small><br>${dlState(x)}</span>
-    <span>${x.canConfirm ? `<button class="sbtn" data-dl="${esc(x.id)}">Confirm ${x.qty}</button>` : ''}</span></div>`;
+  const dlState = x => (x.status === 'removed' ? `<b class="diff-neg">Deleted by ${esc(x.removedByName)} ${when(x.removedAt)}: ${esc(x.removeReason)}</b>` : x.edits?.length ? `${amber(`Changed from ${x.edits[0].fromQty} by ${esc(x.edits.at(-1).byName)}: ${esc(x.edits.at(-1).reason)}`)}<br>${dlState0(x)}` : dlState0(x));
+  const dlState0 = x => (x.status === 'pending' ? amber(x.byBar ? 'Waiting for finance or the manager' : 'Waiting for the bar to confirm') : x.status === 'rejected' ? '<b class="diff-neg">Didn’t arrive</b>' : x.purchase ? ok('Bought: in stock') : x.confirmedQty !== x.qty ? amber(`Bar counted ${x.confirmedQty}`) : ok('Confirmed by the bar'));
+  const dlLine = x => `<div class="ln"><span><b${x.status === 'removed' ? ' style="text-decoration:line-through"' : ''}>${x.qty} × ${esc(x.productName)}</b>${x.totalCostPesewas != null ? ` · ${money(x.totalCostPesewas)}` : ''}<br><small>${esc(x.recordedByName)} ${when(x.recordedAt)}${x.supplier ? ` · ${esc(x.supplier)}${x.reference ? ` · ${esc(x.reference)}` : ''}` : ''}${x.confirmedByName ? ` · confirmed by ${esc(x.confirmedByName)} ${when(x.confirmedAt)}` : ''}${x.confirmNote ? ` · ${esc(x.confirmNote)}` : ''}</small><br>${dlState(x)}</span>
+    <span>${x.canConfirm ? `<button class="sbtn" data-dl="${esc(x.id)}">Confirm ${x.qty}</button>` : ''}${x.canFix ? `<button class="sbtn ghost" data-fix="${esc(x.id)}">Fix</button>` : ''}</span></div>`;
   const pending = dl.deliveries.filter(x => x.status === 'pending'), done = dl.deliveries.filter(x => x.status !== 'pending');
   const oc = s.openingCount, needsExplain = oc && oc.differences.length && !oc.explanation;
   const odd = r => r.difference || r.low;
@@ -257,7 +258,7 @@ export async function stockAdminView(el, date, stationId, { role = '' } = {}) {
   $('#rcv', el).onclick = () => receive();
   $$('[data-sk]', el).forEach(b => b.onclick = () => {
     const r = s.rows.find(x => x.productId === b.dataset.sk), mine = dl.deliveries.filter(x => x.productId === r.productId || x.productName === r.name);
-    const ledger = [['Opening', r.opening], ['Received', r.received], ['Moved in from another bar', r.transferIn], ['Returned to the bar', r.returns], ['Handed out (sold)', -r.issued], ['Broken or spilled', -r.waste], ['Moved out to another bar', -r.transferOut]];
+    const ledger = [['Opening', r.opening], ['Received', r.received], ['Moved in from another bar', r.transferIn], ['Returned to the bar', r.returns], ['Handed out (sold)', -r.issued], ['Broken or spilled', -r.waste], ['Moved out to another bar', -r.transferOut], ['Fixed by finance', r.corrections || 0]];
     const { box, close } = sheet(`<h2>${esc(r.name)}</h2><p class="muted" style="margin:0">${esc(s.station.name)} · ${esc(dayName(s.date))}${r.lowStock ? ` · buy more at ${r.lowStock}` : ''}</p>
       <div class="hero-row" style="margin-top:12px"><div class="hero"><span>Should be here</span><b>${r.expected}</b></div><div class="hero ${r.difference < 0 ? 'bad' : ''}"><span>Counted</span><b>${r.counted ?? '—'}</b></div></div>
       ${r.difference ? `<div class="say ${r.difference < 0 ? 'bad' : 'warn'}"><b>${esc(diffWord(r.difference))}</b>${esc(s.reasons[r.reason] || 'No reason given')}${r.note ? ` · ${esc(r.note)}` : ''}</div>` : r.counted != null ? '<div class="say good">The count matches.</div>' : ''}
@@ -267,10 +268,34 @@ export async function stockAdminView(el, date, stationId, { role = '' } = {}) {
       ${ledger.some(([k, n]) => !n && k !== 'Opening') ? `<p class="muted" style="margin:0">Nothing ${ledger.filter(([k, n]) => !n && k !== 'Opening').map(([k]) => k.toLowerCase().replace(/ \(sold\)/, '')).join(', ')}.</p>` : ''}
       ${mine.length ? `<h3 class="group-h">New stock, last 7 days</h3><div class="lines-list">${mine.map(dlLine).join('')}</div>` : ''}
       <div id="skM"></div>
+      ${dl.canFix ? '<button class="mid" id="skSet">Set the number in the bar</button>' : ''}
       ${products.some(p => p.tracked && p.id === r.productId) ? `<div class="sheet-dock"><button class="big" id="skAdd">${buyer ? 'Record this drink bought' : 'Add new stock of this drink'}</button></div>` : ''}`, { label: r.name });
     $$('[data-dl]', box).forEach(x => x.onclick = confirmDl(x, close));
     $('#skAdd', box) && ($('#skAdd', box).onclick = () => { close(); setTimeout(() => receive(r.productId), 60); });
+    $$('[data-fix]', box).forEach(x => x.onclick = () => { close(); setTimeout(() => fixEntry(x.dataset.fix), 60); });
+    $('#skSet', box) && ($('#skSet', box).onclick = () => { close(); setTimeout(() => setLevel(r), 60); });
   });
+  // Finance fixes a mistake: change the number (or what was paid), or delete an entry made twice.
+  const fixEntry = did => {
+    const x = dl.deliveries.find(d => d.id === did); if (!x) return;
+    const n = x.status === 'confirmed' ? x.confirmedQty ?? x.qty : x.qty;
+    const { box, close } = sheet(`<h2>Fix: ${n} × ${esc(x.productName)}</h2><p class="muted" style="margin:0">${esc(x.recordedByName)} ${when(x.recordedAt)}. The bar’s stock is put right, and the change is kept with your name and reason.</p>
+      <div class="sfield"><label for="fxQ">The right number</label><input id="fxQ" inputmode="numeric" pattern="[0-9]*" autocomplete="off" value="${esc(n)}"></div>
+      ${moneyField('fxC', 'Total paid (GHS)', x.totalCostPesewas != null ? String(x.totalCostPesewas / 100) : '')}
+      <div class="sfield"><label for="fxR">Why</label><input id="fxR" maxlength="200" placeholder="e.g. entered twice, typed 240 not 24"></div>
+      <div id="fxM"></div><div class="sheet-dock" style="display:grid;gap:8px"><button class="big" id="fxGo">Save the change</button><button class="mid red" id="fxDel">Delete this entry</button></div>`, { label: 'Fix stock entry' });
+    const go = async (btn, body, msg) => { try { await busy(btn, () => sapi('/api/ops/stock/fix', { method: 'POST', body: { id: did, reason: $('#fxR', box).value, ...body } })); close(); await again(); say($('#stMsg', el), msg, 'good'); } catch (e) { say($('#fxM', box), e.message, 'bad'); } };
+    $('#fxGo', box).onclick = () => go($('#fxGo', box), { qty: Number($('#fxQ', box).value), totalCostPesewas: $('#fxC', box).value ? ghsIn($('#fxC', box).value) : '' }, 'Changed. The bar’s stock is put right.');
+    $('#fxDel', box).onclick = () => go($('#fxDel', box), { action: 'remove' }, 'Deleted. The bar’s stock is put right.');
+  };
+  const setLevel = r => {
+    const { box, close } = sheet(`<h2>${esc(r.name)}: how many are there?</h2><p class="muted" style="margin:0">${esc(s.station.name)}. The records say ${r.expected}. The difference goes in as a correction, with your name and reason.</p>
+      <div class="sfield"><label for="slQ">How many are in the bar now</label><input id="slQ" inputmode="numeric" pattern="[0-9]*" autocomplete="off" value="${esc(r.expected)}"></div>
+      <div class="sfield"><label for="slR">Why</label><input id="slR" maxlength="200" placeholder="e.g. recounted the store"></div>
+      <div id="slM"></div><div class="sheet-dock"><button class="big" id="slGo">Save</button></div>`, { label: 'Set the number' });
+    $('#slGo', box).onclick = async () => { try { const res = await busy($('#slGo', box), () => sapi('/api/ops/stock/set-level', { method: 'POST', body: { stationId: sid, productId: r.productId, qty: Number($('#slQ', box).value), reason: $('#slR', box).value } })); close(); await again(); say($('#stMsg', el), res.unchanged ? 'That’s already the number.' : `Saved: ${r.name} is now ${res.qty}.`, 'good'); } catch (e) { say($('#slM', box), e.message, 'bad'); } };
+  };
+  $$('[data-fix]', el).forEach(b => b.onclick = () => fixEntry(b.dataset.fix));
 }
 
 // ── Money: is the club making money? Tonight / this week / this month ──
@@ -307,6 +332,9 @@ export async function moneyView(el, period = 'today') {
         <span>${e.removed ? `<s>${money(e.amountPesewas)}</s>` : money(e.amountPesewas)}${e.canRemove ? `<br><button class="sbtn" data-rmexp="${esc(e.id)}">Take off</button>` : ''}</span></div>`).join('')}</div>` : '<p class="muted" style="margin:0">No expenses recorded.</p>'}</details>
     ${m.purchases.length ? `<details class="fold"><summary>Drinks bought (${m.purchases.length})</summary><div class="lines-list">${m.purchases.map(x => lineRow(`<b>${x.qty} × ${esc(x.productName)}</b>`, money(x.costPesewas), `${esc(dayName(x.date))} · ${esc(x.recordedByName)}${x.supplier ? ` · ${esc(x.supplier)}` : ''}`)).join('')}</div></details>` : ''}
     ${m.byNight.length > 1 ? `<details class="fold"><summary>Night by night</summary><div class="lines-list">${m.byNight.map(r => lineRow(esc(dayName(r.date)), signed(r.profitPesewas), `in ${money(r.inPesewas)} · out ${money(r.outPesewas)}`)).join('')}</div></details>` : ''}
+    ${m.serviceFees?.totalPesewas ? `<details class="fold"><summary>Service fees: ${money(m.serviceFees.totalPesewas)}</summary><div class="lines-list">
+      ${lineRow(`Paid on top of ${m.serviceFees.payments} online / MoMo payment${m.serviceFees.payments > 1 ? 's' : ''}`, money(m.serviceFees.totalPesewas))}</div>
+      <p class="muted" style="margin:0">${esc(m.serviceFees.note)}</p></details>` : ''}
     ${m.tips?.totalPesewas ? `<details class="fold"><summary>Tips for staff</summary><div class="lines-list">
       ${lineRow(`Tips given (${m.tips.count})`, money(m.tips.totalPesewas))}${lineRow('MoMo / card: came into the club’s account', money(m.tips.momoPesewas + m.tips.digitalPesewas))}${lineRow('Cash: the staff kept it', money(m.tips.cashPesewas))}
       <div class="ln total"><span>Still to pay out to staff</span><span>${money(m.tips.owedPesewas)}</span></div></div>
@@ -651,7 +679,7 @@ export async function eodView(el, date, { canSignOff = false } = {}) {
       ${R.waiters.map(w => `<tr><td><strong>${esc(w.name)}</strong>${w.explanation ? `<br><small class="muted">“${esc(w.explanation)}”</small>` : ''}</td><td class="num">${w.figures.receivedQty}</td><td class="num">${w.figures.deliveredQty}</td><td class="num">${w.figures.returnedQty}</td><td class="num">${w.figures.brokenQty}</td><td class="num">${w.figures.withYouQty}</td><td class="num">${money(w.figures.salesPesewas)}</td><td class="num">${money(w.figures.cashCollectedPesewas)}</td></tr>`).join('') || '<tr><td colspan="8" class="empty-row">None.</td></tr>'}</tbody></table></div>
     <h2>Cash</h2><div class="tbl-wrap"><table class="tbl"><thead><tr><th>Who</th><th class="num">Float</th><th class="num">Taken</th><th class="num">Expected</th><th class="num">Counted</th><th>Difference</th></tr></thead><tbody>
       ${R.cash.map(c => `<tr><td>${esc(c.name)}</td><td class="num">${money(c.floatPesewas)}</td><td class="num">${money(c.takenPesewas)}</td><td class="num">${money(c.expectedPesewas)}</td><td class="num">${c.countedPesewas != null ? money(c.countedPesewas) : 'Not counted'}</td><td>${c.differencePesewas ? `<span class="diff-neg">${esc(cashWord(c.differencePesewas))}</span>` : c.countedPesewas != null ? 'Matches' : ''}</td></tr>`).join('') || '<tr><td colspan="6" class="empty-row">No cash shifts.</td></tr>'}</tbody></table></div>
-    ${R.bars.map(b => `<h2>Bar stock · ${esc(b.station)}</h2><div class="tbl-wrap"><table class="tbl"><thead><tr><th>Drink</th><th class="num">Opening</th><th class="num">Received</th><th class="num">Handed out</th><th class="num">Free</th><th class="num">Broken</th><th class="num">Expected</th><th class="num">Counted</th></tr></thead><tbody>${b.rows.map(rw => `<tr><td>${esc(rw.name)}</td><td class="num">${rw.opening}</td><td class="num">${rw.received + rw.transferIn + rw.returns}</td><td class="num">${rw.issued}</td><td class="num">${rw.comps}</td><td class="num">${rw.waste}</td><td class="num">${rw.expected}</td><td class="num">${rw.counted ?? '—'}${rw.difference ? ` <span class="${rw.difference < 0 ? 'diff-neg' : 'diff-pos'}">(${rw.difference > 0 ? '+' : ''}${rw.difference})</span>` : ''}</td></tr>`).join('')}</tbody></table></div>`).join('')}
+    ${R.bars.map(b => `<h2>Bar stock · ${esc(b.station)}</h2><div class="tbl-wrap"><table class="tbl"><thead><tr><th>Drink</th><th class="num">Opening</th><th class="num">Received</th><th class="num">Handed out</th><th class="num">Free</th><th class="num">Broken</th><th class="num">Expected</th><th class="num">Counted</th></tr></thead><tbody>${b.rows.map(rw => `<tr><td>${esc(rw.name)}</td><td class="num">${rw.opening}</td><td class="num">${rw.received + rw.transferIn + rw.returns}${rw.corrections ? ` <small>(fixed ${rw.corrections > 0 ? '+' : ''}${rw.corrections})</small>` : ''}</td><td class="num">${rw.issued}</td><td class="num">${rw.comps}</td><td class="num">${rw.waste}</td><td class="num">${rw.expected}</td><td class="num">${rw.counted ?? '—'}${rw.difference ? ` <span class="${rw.difference < 0 ? 'diff-neg' : 'diff-pos'}">(${rw.difference > 0 ? '+' : ''}${rw.difference})</span>` : ''}</td></tr>`).join('')}</tbody></table></div>`).join('')}
     <h2>Front office</h2>${R.frontOffice.missing ? '<div class="say warn">Front office report not submitted.</div>' : ''}<p>${R.frontOffice.figures.ticketsChecked} tickets checked · ${R.frontOffice.figures.admitted} people in · ${R.frontOffice.figures.tablesArrived} of ${R.frontOffice.figures.tablesBooked} table bookings arrived · ${R.frontOffice.figures.openIssues} issues still open</p>
     <div class="btn-row"><button class="mid" id="print">Print / save as PDF</button><button class="mid" id="csv">Download for Excel (CSV)</button></div>
     ${canSignOff && !r.financeApprovedAt ? `<h2>Sign off</h2><div class="sfield"><label for="soN">Note (optional)</label><input id="soN" maxlength="400"></div><div id="soM"></div><button class="big" id="soGo">I’ve checked this report: sign off</button>` : ''}

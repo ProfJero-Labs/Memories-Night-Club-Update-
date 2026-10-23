@@ -2,7 +2,7 @@
 // what's left, and one big Pay now (MoMo or card on Paystack). The link can only show and pay this
 // bill; prices come from the Worker. Back from Paystack (?reference=), the payment is confirmed on
 // the server before it shows as paid.
-import { api, esc, money, params, $ } from '../app.js';
+import { api, esc, money, params, $, loadFee, feePct, feeOn } from '../app.js';
 
 const root = $('#root');
 const token = params.get('t') || '';
@@ -17,6 +17,7 @@ const tipNow = () => (pick.tip === 'other' ? ghsIn(pick.other) : pick.tip);
 
 async function load(note = '') {
   clearTimeout(timer);
+  await loadFee();
   let b, tip, open = false, menuUrl = '';
   try { ({ bill: b, tip, open, menuUrl } = await api(`/api/guest/bill/${encodeURIComponent(token)}`)); }
   catch (e) { root.innerHTML = `<div class="say bad"><b>${e.status === 404 ? 'This bill link isn’t valid' : 'Couldn’t load your bill'}</b>${esc(e.status === 404 ? 'Ask your waiter to show it again.' : e.message)}</div>`; return; }
@@ -31,14 +32,14 @@ async function load(note = '') {
       <div class="ln due"><span>${paid ? 'Paid in full' : 'To pay'}</span><span>${money(b.balancePesewas)}</span></div></div>
     <p style="margin:0"><span class="st ${esc(b.status)}">${esc(b.statusLabel)}</span></p>
     ${due ? `<div class="pay-box">${tipPart(tip)}<div class="field"><label for="ph">Your MoMo number (optional, for the receipt)</label><input id="ph" type="tel" inputmode="tel" autocomplete="tel" placeholder="024 123 4567" value="${esc(pick.phone)}"></div>
-      <button class="big" id="pay" type="button">Pay ${money(b.balancePesewas + tipNow())}</button><p class="fine">MoMo or card, by Paystack. Your waiter sees it the moment it’s confirmed.</p></div>` : ''}
+      <button class="big" id="pay" type="button">Pay ${money(b.balancePesewas + tipNow() + feeOn(b.balancePesewas))}</button><p class="fine">${feeOn(b.balancePesewas) ? `Includes a ${feePct()}% service fee (${money(feeOn(b.balancePesewas))}) for paying online. ` : ''}MoMo or card, by Paystack. Your waiter sees it the moment it’s confirmed.</p></div>` : ''}
     ${paid ? `<div class="say good"><b>Thank you!</b>${open ? 'Paid so far. Staying? Your table stays open: order more any time and it’s added to this bill.' : 'This page is your receipt. Show it to your waiter if they ask.'}</div>
       ${open && menuUrl ? `<a class="big" href="${esc(menuUrl)}" style="text-align:center;text-decoration:none">Order more drinks</a>` : ''}
       ${open ? `<p class="fine" style="margin:0">${menuUrl ? 'Or call' : 'Want more? Call'} ${b.waiterFirstName ? esc(b.waiterFirstName) : 'your waiter'}: new drinks show on this page to pay.</p>` : ''}
       <button class="big ghost" id="save" type="button">Save receipt</button>
       <p class="foot-small" style="text-align:center;margin:10px 0 0">How was your night? <a href="review.html?s=bill&back=${encodeURIComponent(`bill.html?t=${token}`)}">Rate us</a> (optional)</p>` : ''}`;
   $('#save') && ($('#save').onclick = () => print());
-  const payLabel = () => { $('#pay') && ($('#pay').textContent = `Pay ${money(b.balancePesewas + tipNow())}`); };
+  const payLabel = () => { $('#pay') && ($('#pay').textContent = `Pay ${money(b.balancePesewas + tipNow() + feeOn(b.balancePesewas))}`); };
   document.querySelectorAll('[data-tip]').forEach(x => x.onclick = () => {
     pick.tip = x.dataset.tip === 'other' ? 'other' : Number(x.dataset.tip);
     document.querySelectorAll('[data-tip]').forEach(y => y.setAttribute('aria-pressed', String(y === x)));

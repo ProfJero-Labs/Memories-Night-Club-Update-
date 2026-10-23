@@ -180,9 +180,14 @@ any paid booking it finds and texts the people on the alert list if it can't.
 - **New stock during the night** (manager): recorded on Stock; finance sees it, and the bartender
   taps **Got 12** (or *Different number*, with what happened) before it counts. Stock a bartender
   records needs finance or a manager to confirm. Nobody confirms their own.
-- **Moved between bars**, **broken**: recorded by the bar, the manager or finance. Nothing in the
-  stock records is ever deleted.
-- **Expected stock** = opening + received + moved in + returned − handed out − broken − moved out.
+- **Moved between bars**, **broken**: recorded by the bar, the manager or finance.
+- **Fixing a mistake** (finance; a director or the admin too): on Stock, tap **Fix** on the entry
+  (or tap the drink, then the entry). Change the number or the amount paid, or **Delete this entry**
+  (e.g. it was entered twice). Say why. To put a drink's number right after a recount, tap the
+  drink → **Set the number in the bar**. The bar's stock is corrected (on the night of the entry),
+  drinks bought in the money report follow, and the entry stays on record crossed out with who
+  deleted it and why. Every fix is in *Who changed what*. Managers and the bar can't fix entries.
+- **Expected stock** = opening + received + moved in + returned ± fixed by finance − handed out − broken − moved out.
   Stock carries on from night to night even without a count.
 - **When the bar opens (Friday, Saturday):** the bartender taps **Count the stock I met** and enters
   what's there. Sales don't wait for it. Any difference against the system ("3 fewer Club beer") is
@@ -197,6 +202,21 @@ any paid booking it finds and texts the people on the alert list if it can't.
 - **Closing count:** the bar types what it counts; any difference shows straight away ("3 fewer than
   expected") and needs a reason. A submitted count is locked; a correction needs approval from
   someone else, and the first count is kept.
+
+## The service fee (5%)
+
+- Customers pay a **5% service fee on top** of anything they pay **through the site**: tickets, table
+  bookings, pay in bits, the gate's MoMo sales, a tab's bill link or the waiter's MoMo prompt, and
+  the bar's QR orders. **Cash is not charged.** MoMo sent straight to the club's number and recorded
+  by a waiter isn't charged either (it doesn't go through the site).
+- The customer sees it before paying ("Service fee (5%) · Total to pay"); texts and receipts say
+  "incl. GHS X service fee". The front office and waiters see the full amount in the prompt message.
+- The fee is kept **apart**: a GHS 100 ticket is still GHS 100 of ticket money, and a GHS 50 bill is
+  still GHS 50 paid on the bill, so the night's accounts and the shares don't change. The fee shows
+  on its own: **Money → Service fees** (finance, directors, manager) and on the control room's
+  overview. Paystack must confirm the whole amount (price + fee) or nothing is issued.
+- The admin changes the percentage in **Control room → Settings → Service fee (%)** (0 turns it off,
+  up to 20).
 
 ## Money and expenses
 

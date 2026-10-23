@@ -72,6 +72,8 @@ export class MockFirestore {
     this.paystackInits = []; // body of every /transaction/initialize call
     this.sms = [];    // { to, message } — every sendSms() call the code under test made
     this.emails = []; // { to, subject } — every sendBrevo() call the code under test made
+    // No service fee unless a test turns it on (test/fee.test.js does), so amounts elsewhere stay simple.
+    this.seed('settings', 'site', { serviceFeePercent: 0 });
   }
 
   key(col, id) { return `${col}/${id}`; }

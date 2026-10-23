@@ -15,6 +15,7 @@ import { issueTabPayment } from './ops/tabs.js';
 import { issueGateSale } from './gate.js';
 import { bookingAlert } from './ops/alerts.js';
 import { livePromos, bestPromo, promoRecord, promoCountFields } from './promos.js';
+import { serviceFee, feeNote } from './lib/fee.js';
 
 // Smallest payment accepted anywhere: GHS 1.
 export const MIN_TOPUP_PESEWAS = 100;
@@ -67,7 +68,7 @@ async function ticketContext(env, b) {
   const best = bestPromo(await livePromos(env, ev.id), { ticketTypeId: tt.id, unit, qty, code: b.promoCode });
   if (best.codeError) return { error: best.codeError };
   const full = unit * qty;
-  return { ev, tt, qty, buyerName, buyerPhone, buyerEmail: clean(b.buyerEmail, 120), identityLine, totalPesewas: full - best.discountPesewas, promo: promoRecord(best, full) };
+  return { ev, tt, qty, buyerName, buyerPhone, buyerEmail: clean(b.buyerEmail, 120), identityLine, totalPesewas: full - best.discountPesewas, promo: promoRecord(best, full), settings };
 }
 
 // ── Pay in full ──
@@ -75,15 +76,17 @@ export async function initiateTicket(env, b) {
   const c = await ticketContext(env, b); if (c.error) return c;
   const reference = paymentRef(), claim = claimSecret();
   const shares = sharesFor(env, c.ev.fields, c.totalPesewas);
+  const fee = await serviceFee(env, c.totalPesewas, c.settings), charge = c.totalPesewas + fee.feePesewas;
   await setDoc(env, 'pending_checkouts', reference, {
+    ...fee, chargePesewas: charge,
     reference, claimHash: await sha256Hex(claim), kind: 'ticket', eventId: c.ev.id, eventName: c.ev.fields.name || '', ticketTypeId: c.tt.id, ticketTypeName: c.tt.fields.name || 'Ticket',
     admits: Number(c.tt.fields.admits || 1), quantity: c.qty, amountPesewas: c.totalPesewas, buyerName: c.buyerName, buyerPhone: c.buyerPhone,
     buyerEmail: c.buyerEmail, identityLine: c.identityLine, status: 'pending', createdAt: now(), shares, promo: c.promo,
   });
   try {
-    const payload = { email: payEmail(env, c.buyerEmail, c.buyerPhone), amount: c.totalPesewas, currency: 'GHS', reference, callback_url: returnUrl(env), metadata: { kind: 'ticket', eventId: c.ev.id, ticketTypeId: c.tt.id, quantity: c.qty, promo: c.promo?.name || '' } };
+    const payload = { email: payEmail(env, c.buyerEmail, c.buyerPhone), amount: charge, currency: 'GHS', reference, callback_url: returnUrl(env), metadata: { kind: 'ticket', eventId: c.ev.id, ticketTypeId: c.tt.id, quantity: c.qty, promo: c.promo?.name || '', serviceFee: fee.feePesewas } };
     const p = await paystack(env, '/transaction/initialize', { method: 'POST', body: JSON.stringify(payload) });
-    return { reference, authorizationUrl: p.authorization_url, claim };
+    return { reference, authorizationUrl: p.authorization_url, claim, amountPesewas: c.totalPesewas, feePesewas: fee.feePesewas, chargePesewas: charge };
   } catch (e) {
     await setDoc(env, 'pending_checkouts', reference, { reference, kind: 'ticket', eventId: c.ev.id, status: 'failed', error: 'payment_initialization_failed', failedAt: now() });
     throw e;
@@ -96,6 +99,8 @@ export async function initiateTicket(env, b) {
 // started with another Paystack key). Nothing was paid. After 30 minutes it's closed as such, so the
 // payment check stops retrying it; before that it stays pending (the page may still be opening).
 const NOT_AT_PAYSTACK_MS = 30 * 60e3;
+// What Paystack was asked for: the amount, any tip and the service fee (older checkouts: the amount).
+export const chargeOf = f => Number(f.chargePesewas ?? f.amountPesewas);
 async function confirmCharge(env, pending, reference, { waiting = false } = {}) {
   let payment;
   try { payment = await paystack(env, `/transaction/verify/${encodeURIComponent(reference)}`); }
@@ -107,7 +112,7 @@ async function confirmCharge(env, pending, reference, { waiting = false } = {}) 
     return { status: 'failed', error: 'This payment was never made. Start again.' };
   }
   if (payment.status !== 'success') return { status: payment.status === 'failed' || (payment.status === 'abandoned' && !waiting) ? 'failed' : 'pending', error: payment.status === 'failed' ? 'Payment was not successful.' : undefined };
-  if (payment.currency !== 'GHS' || Number(payment.amount) !== Number(pending.fields.amountPesewas)) {
+  if (payment.currency !== 'GHS' || Number(payment.amount) !== chargeOf(pending.fields)) {
     await setDoc(env, 'pending_checkouts', reference, { ...pending.fields, status: 'failed', error: 'amount_mismatch' });
     return { status: 'failed', error: 'Payment amount did not match. Contact us with your reference.' };
   }
@@ -208,14 +213,16 @@ export async function initiateTable(env, b) {
   if (!(amount > 0)) return { error: 'This table isn’t available any more.' };
   const reference = paymentRef();
   const shares = sharesFor(env, ev.fields, amount);
+  const fee = await serviceFee(env, amount), charge = amount + fee.feePesewas;
   await setDoc(env, 'pending_checkouts', reference, {
+    ...fee, chargePesewas: charge,
     reference, kind: 'table', eventId: b.eventId, eventName: ev.fields.name || '', packageId: b.packageId, packageName: pkg.fields.name || '',
     packagePricePesewas: Number(pkg.fields.pricePesewas || 0), bottles: bottleItems, amountPesewas: amount, buyerName: name, buyerPhone: phone,
     buyerEmail: clean(b.email, 120), status: 'pending', createdAt: now(), shares,
   });
-  const payload = { email: payEmail(env, b.email, phone), amount, currency: 'GHS', reference, callback_url: returnUrl(env), metadata: { kind: 'table', eventId: b.eventId, packageId: b.packageId } };
+  const payload = { email: payEmail(env, b.email, phone), amount: charge, currency: 'GHS', reference, callback_url: returnUrl(env), metadata: { kind: 'table', eventId: b.eventId, packageId: b.packageId, serviceFee: fee.feePesewas } };
   const p = await paystack(env, '/transaction/initialize', { method: 'POST', body: JSON.stringify(payload) });
-  return { reference, authorizationUrl: p.authorization_url };
+  return { reference, authorizationUrl: p.authorization_url, amountPesewas: amount, feePesewas: fee.feePesewas, chargePesewas: charge };
 }
 
 export async function fulfillTable(env, reference) {
@@ -258,10 +265,10 @@ export async function fulfillTable(env, reference) {
     return { status: 'issued', orderId };
   });
   if (result.status === 'issued' && !result.already) {
-    await sendSms(env, P.buyerPhone, `MEMORIES\nTable confirmed: ${P.packageName}, ${P.eventName}.\nTotal paid ${money(P.amountPesewas)}.\nAt the door: ${tableCode(result.orderId)}, or give your name.`);
+    await sendSms(env, P.buyerPhone, `MEMORIES\nTable confirmed: ${P.packageName}, ${P.eventName}.\nTotal paid ${money(chargeOf(P))}${feeNote(P.feePesewas, money)}.\nAt the door: ${tableCode(result.orderId)}, or give your name.`);
     const ev = await getDoc(env, 'events', P.eventId).catch(() => null);
     await bookingAlert(env, { ...P, code: tableCode(result.orderId), nightLabel: ev?.fields?.date ? formatAccra(ev.fields.date, { weekday: 'short', day: 'numeric', month: 'short' }) : '' });
-    await sendEmail(env, P.buyerEmail, 'Your Memories table is confirmed', [`${P.packageName} · ${P.eventName}`, `Total paid: ${money(P.amountPesewas)}`, `At the door, show ${tableCode(result.orderId)} or give your name.`, `Payment reference: ${reference}`]);
+    await sendEmail(env, P.buyerEmail, 'Your Memories table is confirmed', [`${P.packageName} · ${P.eventName}`, `Total paid: ${money(chargeOf(P))}${feeNote(P.feePesewas, money)}`, `At the door, show ${tableCode(result.orderId)} or give your name.`, `Payment reference: ${reference}`]);
   }
   delete result.already;
   return result;
@@ -308,14 +315,16 @@ export async function startInstallmentTopup(env, planId, amountPesewas, email) {
     evolveitSharePct: planShares.evolveitSharePct,
     organizerSharePct: planShares.organizerSharePct,
   }, Number(env.EVOLVEIT_SHARE_PCT));
+  const fee = await serviceFee(env, amountPesewas), charge = amountPesewas + fee.feePesewas;
   await setDoc(env, 'pending_checkouts', reference, {
+    ...fee, chargePesewas: charge,
     reference, kind: 'installment_topup', planId, amountPesewas, status: 'pending', createdAt: now(),
     shares: { ...topupShares, planShares },
   });
   try {
-    const payload = { email, amount: amountPesewas, currency: 'GHS', reference, callback_url: returnUrl(env), metadata: { kind: 'installment_topup', planId } };
+    const payload = { email, amount: charge, currency: 'GHS', reference, callback_url: returnUrl(env), metadata: { kind: 'installment_topup', planId, serviceFee: fee.feePesewas } };
     const p = await paystack(env, '/transaction/initialize', { method: 'POST', body: JSON.stringify(payload) });
-    return { reference, authorizationUrl: p.authorization_url, planId };
+    return { reference, authorizationUrl: p.authorization_url, planId, amountPesewas, feePesewas: fee.feePesewas, chargePesewas: charge };
   } catch (e) {
     await setDoc(env, 'pending_checkouts', reference, { reference, kind: 'installment_topup', planId, amountPesewas, status: 'failed', error: 'payment_initialization_failed', failedAt: now() });
     throw e;

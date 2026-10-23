@@ -71,6 +71,12 @@ export async function api(path, { method = 'GET', body, token, headers: extra, r
 // ── Settings (one document drives every phone/email/Instagram on the site) ──
 let settingsP;
 export const getSettings = () => (settingsP ||= api('/api/settings').then(d => d.settings).catch(() => ({})));
+// The service fee the customer pays on top of anything paid online or by MoMo (the Worker charges
+// it; the admin sets the percentage in Settings). Shown before paying, so the total is no surprise.
+let FEE_PCT = 5;
+export const loadFee = () => getSettings().then(s => { const n = Number(s?.serviceFeePercent); if (Number.isFinite(n) && n >= 0) FEE_PCT = n; return FEE_PCT; });
+export const feePct = () => FEE_PCT;
+export const feeOn = pesewas => Math.round(Number(pesewas || 0) * FEE_PCT / 100);
 const digits = s => String(s || '').replace(/\D/g, '');
 export const waLink = n => { const d = digits(n); return d ? `https://wa.me/${d.startsWith('0') ? '233' + d.slice(1) : d}` : ''; };
 const handle = h => String(h || '').trim().replace(/^@/, '').replace(/^https?:\/\/[^/]+\//, '').replace(/\/$/, '');

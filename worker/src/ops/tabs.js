@@ -25,6 +25,7 @@ import { addMoves, stockError } from './stock.js';
 import { prepareTip, tipFields, textTip, phoneOf, guestTipPeople } from './tips.js';
 import { paymentAlert } from './alerts.js';
 import { momoPrompt } from '../lib/momo.js';
+import { serviceFee } from '../lib/fee.js';
 
 export const BOSS = ['superAdmin', 'director', 'manager'];
 export const WAITERS = [...BOSS, 'waitStaff', 'eventManager'];             // the Event manager serves tables too
@@ -554,14 +555,16 @@ export async function checkoutTab(env, b, user) {
     if (bill.balancePesewas < 100) return { error: bill.balancePesewas ? 'Less than GHS 1 is left. Take it in cash.' : 'Nothing to pay. Close the tab.' };
     const reference = paymentRef();
     const host = new URL(env.PUBLIC_SITE_URL || 'https://memoriesnightclub.com').hostname.replace(/^www\./, '');
-    await setDoc(env, 'pending_checkouts', reference, { reference, kind: 'tab', tabId: t.id, eventName: `Tab ${t.fields.number}`, amountPesewas: bill.balancePesewas, buyerPhone: phone, prompt: true, status: 'pending', createdAt: now(), by: uidOf(user) });
+    // The customer pays the service fee on top (lib/fee.js); the bill gets the balance.
+    const fee = await serviceFee(env, bill.balancePesewas), charge = bill.balancePesewas + fee.feePesewas;
+    await setDoc(env, 'pending_checkouts', reference, { reference, kind: 'tab', tabId: t.id, eventName: `Tab ${t.fields.number}`, amountPesewas: bill.balancePesewas, ...fee, chargePesewas: charge, buyerPhone: phone, prompt: true, status: 'pending', createdAt: now(), by: uidOf(user) });
     await setDoc(env, 'tabs', t.id, { ...fields, closeWhenPaid: true, closeAskedByName: user.name || '' });
-    const prompt = await momoPrompt(env, { phone, amountPesewas: bill.balancePesewas, reference, email: `tab-${phone}@${host}`, metadata: { kind: 'tab', tabId: t.id } });
+    const prompt = await momoPrompt(env, { phone, amountPesewas: charge, reference, email: `tab-${phone}@${host}`, metadata: { kind: 'tab', tabId: t.id } });
     if (!prompt) await setDoc(env, 'pending_checkouts', reference, { reference, kind: 'tab', tabId: t.id, status: 'failed', error: 'prompt_not_sent', failedAt: now() });
     const sent = await sendSms(env, phone, invoiceText(env, fields, bill));
     await audit(env, user, 'TAB_CHECKOUT_MOMO', { tabId: t.id, amountPesewas: bill.balancePesewas, prompt });
-    return { method: 'momo', prompt, reference: prompt ? reference : '', invoiceSent: sent, phoneHint: maskPhone(phone), amountPesewas: bill.balancePesewas, billUrl: siteUrl(env, `/bill.html?t=${t.fields.billToken}`),
-      message: prompt ? `A MoMo prompt for ${ghs(bill.balancePesewas)} is on ${maskPhone(phone)}. They approve it, or pay from the invoice text.` : `The invoice is texted to ${maskPhone(phone)}: they pay from its link, or scan the QR.` };
+    return { method: 'momo', prompt, reference: prompt ? reference : '', invoiceSent: sent, phoneHint: maskPhone(phone), amountPesewas: bill.balancePesewas, feePesewas: fee.feePesewas, chargePesewas: charge, billUrl: siteUrl(env, `/bill.html?t=${t.fields.billToken}`),
+      message: prompt ? `A MoMo prompt for ${ghs(charge)}${fee.feePesewas ? ` (bill ${ghs(bill.balancePesewas)} + ${ghs(fee.feePesewas)} service fee)` : ''} is on ${maskPhone(phone)}. They approve it, or pay from the invoice text.` : `The invoice is texted to ${maskPhone(phone)}: they pay from its link, or scan the QR.` };
   }
   // Cash: what's left, into the waiter's cash for the night; then the tab closes.
   if (bill.balancePesewas > 0) {
@@ -657,12 +660,14 @@ export async function startBillPayment(env, token, b) {
   }
   const reference = paymentRef(), phone = normalizePhone(b?.phone) || t.fields.customerPhone || '';
   const host = new URL(env.PUBLIC_SITE_URL || 'https://memoriesnightclub.com').hostname.replace(/^www\./, '');
-  // The charge is the bill plus the tip; the tip is split off again when Paystack confirms it.
-  await setDoc(env, 'pending_checkouts', reference, { reference, kind: 'tab', tabId: t.id, eventName: `Tab ${t.fields.number}`, amountPesewas: bill.balancePesewas + tipPesewas, ...(tipPesewas ? { tipPesewas, tipToUid, tipToName: tip.to.name, tipToRole: tip.to.role } : {}), buyerPhone: phone, status: 'pending', createdAt: now() });
+  // The charge is the bill plus the tip plus the service fee (on the bill only); the tip is split
+  // off again when Paystack confirms it, and the fee never reaches the bill.
+  const fee = await serviceFee(env, bill.balancePesewas), charge = bill.balancePesewas + tipPesewas + fee.feePesewas;
+  await setDoc(env, 'pending_checkouts', reference, { reference, kind: 'tab', tabId: t.id, eventName: `Tab ${t.fields.number}`, amountPesewas: bill.balancePesewas + tipPesewas, ...fee, chargePesewas: charge, ...(tipPesewas ? { tipPesewas, tipToUid, tipToName: tip.to.name, tipToRole: tip.to.role } : {}), buyerPhone: phone, status: 'pending', createdAt: now() });
   try {
-    const d = await paystackInit(env, { email: validEmail(b?.email) ? b.email : `tab-${phone || t.id.slice(0, 8)}@${host}`, amount: bill.balancePesewas + tipPesewas, currency: 'GHS', reference, callback_url: siteUrl(env, `/bill.html?t=${t.fields.billToken}`), metadata: { kind: 'tab', tabId: t.id } });
+    const d = await paystackInit(env, { email: validEmail(b?.email) ? b.email : `tab-${phone || t.id.slice(0, 8)}@${host}`, amount: charge, currency: 'GHS', reference, callback_url: siteUrl(env, `/bill.html?t=${t.fields.billToken}`), metadata: { kind: 'tab', tabId: t.id, serviceFee: fee.feePesewas } });
     await setDoc(env, 'tabs', t.id, { ...t.fields, pending: { reference, amountPesewas: bill.balancePesewas, tipPesewas, tipToUid, at: now(), url: d.authorization_url } });
-    return { authorizationUrl: d.authorization_url, reference };
+    return { authorizationUrl: d.authorization_url, reference, feePesewas: fee.feePesewas, chargePesewas: charge };
   } catch (e) {
     await setDoc(env, 'pending_checkouts', reference, { reference, kind: 'tab', tabId: t.id, status: 'failed', error: 'payment_initialization_failed', failedAt: now() });
     throw e;

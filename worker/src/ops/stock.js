@@ -7,7 +7,8 @@
 // Stock is a ledger, never edited: stock_moves/{id}
 //   productId, stationId, qty (+ in, − out), kind, businessDate, ref, reason, note, by, byName, at
 //   kinds: received (+, from a supplier), transfer_in (+), transfer_out (−), return_in (+, a waiter
-//   brought drinks back), issue (−, handed to a waiter or a QR customer), waste (−, broken/spilled)
+//   brought drinks back), issue (−, handed to a waiter or a QR customer), waste (−, broken/spilled),
+//   correction (±, finance fixed a mistake: a deleted or changed entry, or the number set by hand)
 // A drink leaves the bar's stock exactly once: when the bar hands it over (issue). A sale or a
 // payment never moves stock, so nothing is deducted twice.
 //
@@ -20,6 +21,11 @@
 //   at once. During the night the manager adds stock: finance sees it, and the bar confirms it
 //   arrived before it counts. Stock the bar records needs finance or a manager to confirm.
 // Who recorded it, who confirmed it, and any difference in the number are kept.
+//
+// Mistakes (an entry made twice, a wrong number): finance deletes the entry or changes its number,
+// or sets the number of a drink in a bar by hand. Nothing is erased: the entry is marked deleted
+// (or changed) with who, when and why, and a correction move puts the bar's stock right (on the
+// night the entry was for, so that night's figures are right too). Every fix is in the change log.
 //
 // The bar's count when it opens (Friday, Saturday): compared with what the system says is left.
 // A difference never stops sales; it is flagged for the manager to explain (the manager has the
@@ -146,7 +152,9 @@ export async function recordReceived(env, b, user) {
 const deliveryView = d => ({ id: d.id, productId: d.fields.productId, productName: d.fields.productName, stationId: d.fields.stationId, stationName: d.fields.stationName, qty: d.fields.qty, confirmedQty: d.fields.confirmedQty ?? null,
   purchase: !!d.fields.purchase, totalCostPesewas: d.fields.totalCostPesewas ?? null, recordedRole: d.fields.recordedRole || '',
   supplier: d.fields.supplier || '', reference: d.fields.reference || '', status: d.fields.status, byBar: !!d.fields.byBar, recordedByName: d.fields.recordedByName || '', recordedAt: d.fields.recordedAt,
-  confirmedByName: d.fields.confirmedByName || '', confirmedAt: d.fields.confirmedAt || '', note: d.fields.note || '', confirmNote: d.fields.confirmNote || '' });
+  confirmedByName: d.fields.confirmedByName || '', confirmedAt: d.fields.confirmedAt || '', note: d.fields.note || '', confirmNote: d.fields.confirmNote || '',
+  removedByName: d.fields.removedByName || '', removedAt: d.fields.removedAt || '', removeReason: d.fields.removeReason || '',
+  edits: (d.fields.edits || []).map(e => ({ fromQty: e.fromQty, toQty: e.toQty, fromCostPesewas: e.fromCostPesewas ?? null, toCostPesewas: e.toCostPesewas ?? null, reason: e.reason, byName: e.byName, at: e.at })) });
 // Who may confirm: never the person who recorded it; what the bar recorded needs finance or a manager.
 const canConfirm = (user, f) => f.recordedBy !== uidOf(user) && (f.byBar ? requireRole(user, STOCK_APPROVERS) : requireRole(user, STOCK_HANDS));
 
@@ -157,8 +165,8 @@ export async function listDeliveries(env, user, { stationId } = {}) {
   const since = Date.now() - 7 * 864e5;
   const rows = all.filter(d => d.fields.status === 'pending' || new Date(d.fields.confirmedAt || d.fields.recordedAt).getTime() > since)
     .sort((a, b) => String(b.fields.recordedAt).localeCompare(String(a.fields.recordedAt))).slice(0, 100)
-    .map(d => ({ ...deliveryView(d), canConfirm: d.fields.status === 'pending' && !!canConfirm(user, d.fields) }));
-  return { deliveries: rows, pending: rows.filter(d => d.status === 'pending').length, forMe: rows.filter(d => d.canConfirm).length };
+    .map(d => ({ ...deliveryView(d), canConfirm: d.fields.status === 'pending' && !!canConfirm(user, d.fields), canFix: d.fields.status !== 'removed' && !!requireRole(user, STOCK_FIXERS) }));
+  return { deliveries: rows, canFix: !!requireRole(user, STOCK_FIXERS), pending: rows.filter(d => d.status === 'pending').length, forMe: rows.filter(d => d.canConfirm).length };
 }
 
 // Confirm what arrived (the number actually there; a different number needs a note), or say it didn't come.
@@ -190,6 +198,65 @@ export async function decideDelivery(env, b, user) {
   await logChange(env, user, { kind: 'stock', refId: f.productId, refName: f.productName, field: res.confirmed ? `new stock confirmed at ${f.stationName}` : `new stock refused at ${f.stationName}`, from: f.qty, to: res.confirmed ? res.qty : 0, note: clean(b?.note, 200) });
   await audit(env, user, res.confirmed ? 'STOCK_DELIVERY_CONFIRMED' : 'STOCK_DELIVERY_REJECTED', { deliveryId: did, recordedQty: f.qty, qty: res.qty ?? 0 });
   return res;
+}
+
+// ── Fixing mistakes ──
+export const STOCK_FIXERS = ['finance', 'director', 'superAdmin'];
+const NOT_FIXER = { error: 'Only finance (or a director) can delete or change stock entries.', status: 403 };
+// Delete an entry (action: 'remove'), or change its number and what was paid ({ qty, totalCostPesewas }).
+// A reason is required. What the entry put into the bar's stock is corrected.
+export async function fixDelivery(env, b, user) {
+  if (!requireRole(user, STOCK_FIXERS)) return NOT_FIXER;
+  const did = String(b?.id || ''), reason = clean(b?.reason, 200), remove = b?.action === 'remove';
+  if (!reason) return { error: remove ? 'Say why it’s deleted, e.g. “entered twice”.' : 'Say why it’s changed, e.g. “typed 240, it was 24”.' };
+  const res = await withTransaction(env, async tx => {
+    const d = foundFields(await batchGet(env, [`stock_deliveries/${did}`], tx), `/stock_deliveries/${did}`);
+    if (!d) return { error: 'Entry not found.', status: 404 };
+    const f = d.fields, at = now(), by = { uid: uidOf(user), name: user.name || '' };
+    if (f.status === 'removed') return { error: `Already deleted by ${f.removedByName || 'someone'}.` };
+    // What this entry has put into the bar's stock so far (pending or refused: nothing).
+    const inStock = f.status === 'confirmed' ? Number(f.confirmedQty ?? f.qty) : 0;
+    if (remove) {
+      await commitTx(env, [updateWrite(env, 'stock_deliveries', did, { ...f, status: 'removed', removedFrom: f.status, removedBy: by.uid, removedByName: by.name, removedAt: at, removeReason: reason })], tx);
+      return { f, delta: -inStock, removed: true };
+    }
+    if (f.status === 'rejected') return { error: 'This stock was marked as not arrived. If it came, record it again.' };
+    const qty = int(b?.qty);
+    if (!(qty >= 1 && qty <= 10000)) return { error: 'The right number: a whole number from 1. To take it off completely, delete it.' };
+    const cost = b?.totalCostPesewas === '' || b?.totalCostPesewas == null ? undefined : int(b.totalCostPesewas);
+    if (cost !== undefined && !(cost >= 0)) return { error: 'The amount paid must be a number.' };
+    const fromQty = f.status === 'confirmed' ? inStock : Number(f.qty), totalCost = cost !== undefined ? cost : f.totalCostPesewas ?? null;
+    if (qty === fromQty && totalCost === (f.totalCostPesewas ?? null)) return { error: 'Nothing changed.' };
+    const next = { ...f, qty, ...(f.status === 'confirmed' ? { confirmedQty: qty } : {}), totalCostPesewas: totalCost, unitCostPesewas: totalCost == null ? null : Math.round(totalCost / qty),
+      edits: [...(f.edits || []), { fromQty, toQty: qty, fromCostPesewas: f.totalCostPesewas ?? null, toCostPesewas: totalCost, reason, by: by.uid, byName: by.name, at }] };
+    await commitTx(env, [updateWrite(env, 'stock_deliveries', did, next)], tx);
+    return { f, delta: f.status === 'confirmed' ? qty - inStock : 0, changed: true, fromQty, qty };
+  });
+  if (res.error) return res;
+  const { f, delta } = res;
+  if (delta) await addMoves(env, [{ productId: f.productId, productName: f.productName, stationId: f.stationId, qty: delta, kind: 'correction', reason: res.removed ? 'entry_deleted' : 'entry_changed', note: reason, deliveryId: did, businessDate: f.businessDate || bizDate() }], user);
+  await logChange(env, user, { kind: 'stock', refId: f.productId, refName: f.productName, field: res.removed ? `stock entry deleted (${f.stationName})` : `stock entry changed (${f.stationName})`, from: res.removed ? Number(f.qty) : res.fromQty, to: res.removed ? 0 : res.qty, note: reason });
+  await audit(env, user, res.removed ? 'STOCK_ENTRY_DELETED' : 'STOCK_ENTRY_CHANGED', { deliveryId: did, productId: f.productId, stockChange: delta, reason });
+  return { ...(res.removed ? { removed: true } : { changed: true, qty: res.qty }), stockChange: delta };
+}
+
+// Set how many of a drink are in a bar now (e.g. after a recount). The difference from what the
+// records say goes in as a correction, with the reason.
+export async function setStockLevel(env, b, user) {
+  if (!requireRole(user, STOCK_FIXERS)) return NOT_FIXER;
+  const [p, st] = await Promise.all([product(env, b?.productId), station(env, b?.stationId)]);
+  if (!p) return { error: 'Pick the drink.' }; if (!st) return { error: 'Pick the bar.' };
+  const qty = int(b?.qty); if (!(qty >= 0 && qty <= 100000)) return { error: 'How many are there? A whole number (0 if none).' };
+  const reason = clean(b?.reason, 200); if (!reason) return { error: 'Say why, e.g. “recounted the store”.' };
+  const { rows } = await sheetFor(env, st, bizDate(), { withComps: false });
+  const r = rows.find(x => x.productId === p.id);
+  if (!r) return { error: `${p.name} isn’t counted at the bar. Turn on “Count it at the bar” for it first.` };
+  const delta = qty - r.expected;
+  if (!delta) return { unchanged: true, qty };
+  await addMoves(env, [{ productId: p.id, productName: p.name, stationId: st.id, qty: delta, kind: 'correction', reason: 'set_level', note: reason }], user);
+  await logChange(env, user, { kind: 'stock', refId: p.id, refName: p.name, field: `number in ${st.name} set by hand`, from: r.expected, to: qty, note: reason });
+  await audit(env, user, 'STOCK_LEVEL_SET', { productId: p.id, stationId: st.id, from: r.expected, to: qty, reason });
+  return { set: true, from: r.expected, qty, stockChange: delta };
 }
 
 export async function recordTransfer(env, b, user) {
@@ -251,8 +318,9 @@ async function sheetFor(env, st, d, { withComps = true } = {}) {
   const rows = items.filter(i => i.fields.tracked !== false).map(i => {
     const mv = moves.filter(m => m.fields.productId === i.id), sum = k => mv.filter(m => m.fields.kind === k).reduce((n, m) => n + Math.abs(Number(m.fields.qty)), 0);
     const r = { productId: i.id, name: i.fields.name, category: i.fields.category || 'Drinks', unit: i.fields.unit || 'bottle', lowStock: Number(i.fields.lowStock || 0),
-      opening: opening.counts[i.id] ?? 0, received: sum('received'), transferIn: sum('transfer_in'), returns: sum('return_in'), transferOut: sum('transfer_out'), issued: sum('issue'), comps: comps[i.id] || 0, waste: sum('waste') };
-    r.expected = r.opening + r.received + r.transferIn + r.returns - r.issued - r.waste - r.transferOut;
+      opening: opening.counts[i.id] ?? 0, received: sum('received'), transferIn: sum('transfer_in'), returns: sum('return_in'), transferOut: sum('transfer_out'), issued: sum('issue'), comps: comps[i.id] || 0, waste: sum('waste'),
+      corrections: mv.filter(m => m.fields.kind === 'correction').reduce((n, m) => n + Number(m.fields.qty || 0), 0) };
+    r.expected = r.opening + r.received + r.transferIn + r.returns + r.corrections - r.issued - r.waste - r.transferOut;
     if (counted[i.id]) { r.counted = Number(counted[i.id].counted); r.difference = r.counted - r.expected; r.reason = counted[i.id].reason || ''; r.note = counted[i.id].note || ''; }
     r.low = r.lowStock > 0 && (r.counted ?? r.expected) <= r.lowStock;
     return r;

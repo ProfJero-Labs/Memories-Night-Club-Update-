@@ -80,6 +80,8 @@ export async function opsRoute(m, p, u, b, env, user) {
     case '/api/ops/stock/received': return stock.recordReceived(env, b, user);
     case '/api/ops/stock/explain': return stock.explainCount(env, b, user);
     case '/api/ops/stock/delivery': return stock.decideDelivery(env, b, user);
+    case '/api/ops/stock/fix': return stock.fixDelivery(env, b, user);
+    case '/api/ops/stock/set-level': return stock.setStockLevel(env, b, user);
     case '/api/ops/quick-sale': return tabs.quickSale(env, b, user);
     case '/api/ops/stock/transfer': return stock.recordTransfer(env, b, user);
     case '/api/ops/stock/waste': return stock.recordWaste(env, b, user);

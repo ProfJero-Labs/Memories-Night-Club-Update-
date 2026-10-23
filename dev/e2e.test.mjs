@@ -636,7 +636,7 @@ test('scan to order: the bar QR opens the menu; pay; the pickup code shows only 
   assert.match(await g.textContent('#dockBtn'), /View order.*3 drinks · GHS 60/);
   // Step 2: the order panel. Pay without a number: the field says so, the panel stays open.
   await g.click('#dockBtn'); await g.waitForSelector('#order:not([hidden])');
-  assert.match(await g.textContent('#pay'), /Pay GHS 60/);
+  assert.match(await g.textContent('#pay'), /Pay GHS 63/, 'GHS 60 of drinks + the 5% service fee');
   await g.fill('#ph', ''); await g.click('#pay'); await g.locator('#order .field.bad').getByText(/MoMo number/).first().waitFor();
   // The phone's back button closes the panel; the basket is kept.
   await g.goBack(); await g.waitForSelector('#order', { state: 'hidden' });
@@ -732,7 +732,7 @@ test('promos: the control room starts an automatic promo and a code promo; guest
   await g.fill('#code', 'kojo30'); await g.click('#applyCode');
   await g.locator('#sum').getByText('Kojo’s fans').waitFor();
   assert.match(await g.textContent('#sum'), /GHS 70/);
-  assert.match(await g.textContent('#pay'), /Pay GHS 70/);
+  assert.match(await g.textContent('#pay'), /Pay GHS 73\.5/);
   await g.fill('#phone', '024 555 3030'); await g.click('#pay');
   await g.waitForURL(/dev\/paystack/); await g.getByRole('button', { name: 'Pay' }).click();
   await g.waitForURL(/ticket\.html/, { timeout: 20000 });
@@ -928,6 +928,33 @@ test('stock, money and quick sales: finance buys drinks (in stock at once), the 
   assert.deepEqual([...fin.errors, ...mgr.errors, ...dir.errors, ...bar.errors, ...w.errors, ...g.errors], []);
 });
 
+test('finance fixes stock: a purchase entered twice is deleted (kept, marked deleted), and the number of a drink is set by hand', async () => {
+  const fin = await phone(390); await signInAs(fin, 'finance@dev'); await fin.waitForURL(/finance\.html/);
+  await fin.click('[data-k="stock"]');
+  for (let i = 0; i < 2; i++) {
+    await fin.click('#rcv'); await fin.selectOption('#rvP', 'dev-m-water'); await fin.fill('#rvQ', '7'); await fin.fill('#rvC', '70'); await fin.fill('#rvS', 'Voltic'); await fin.click('#rvGo');
+    await fin.locator('#stMsg').getByText(/in the bar’s stock/).waitFor();
+  }
+  const twice = docs('stock_deliveries').filter(d => d.productId === 'dev-m-water' && d.qty === 7 && d.supplier === 'Voltic');
+  assert.equal(twice.length, 2);
+  await fin.locator('summary', { hasText: 'New stock, last 7 days' }).click();
+  await fin.locator(`[data-fix="${twice[1].id}"]`).click();
+  await fin.click('#fxDel'); await fin.locator('#fxM').getByText(/Say why/).waitFor();
+  await fin.fill('#fxR', 'entered twice'); await fin.click('#fxDel');
+  await fin.locator('#stMsg').getByText(/Deleted\. The bar’s stock is put right/).waitFor();
+  const gone = docs('stock_deliveries').find(d => d.id === twice[1].id);
+  assert.deepEqual([gone.status, gone.removeReason], ['removed', 'entered twice'], 'kept, marked deleted');
+  assert.ok(docs('stock_moves').some(m => m.kind === 'correction' && m.deliveryId === twice[1].id && m.qty === -7), 'the bar’s stock is corrected');
+  await fin.locator('summary', { hasText: 'New stock, last 7 days' }).click();
+  await fin.locator('#app, body').getByText(/Deleted by Esi|Deleted by/).first().waitFor();
+  // Set the number of water in the bar by hand.
+  await fin.locator('[data-sk="dev-m-water"]').click(); await fin.click('#skSet');
+  await fin.fill('#slQ', '3'); await fin.fill('#slR', 'recounted the store'); await fin.click('#slGo');
+  await fin.locator('#stMsg').getByText(/is now 3/).waitFor();
+  await fin.locator('[data-sk="dev-m-water"]').getByText('3', { exact: true }).waitFor();
+  assert.deepEqual(fin.errors, []);
+});
+
 test('people: the Human manager sets the DJ’s pay and a bonus and sends the month; a director approves; finance pays; the DJ sees the payslip, a notice and a team message', async () => {
   const hr = await phone(390); await signInAs(hr, 'hr@dev'); await hr.waitForURL(/hr\.html/);
   // One line per person: tap the DJ, then their salary and payment details.
@@ -998,7 +1025,7 @@ test('tips: a waiter’s MoMo quick sale carries a tip for the DJ; the bar recor
   await g.click('[data-tip="1000"]'); await g.waitForSelector('#tipWho:not([hidden])');
   assert.ok((await g.locator('#tipTo option').allTextContents()).every(t => !/Director/.test(t)), 'no directors to tip');
   assert.match(await g.locator('#orderTotals').textContent(), /Tip\s*GHS 10/);
-  assert.match(await g.textContent('#pay'), /Pay GHS 35/);
+  assert.match(await g.textContent('#pay'), /Pay GHS 36\.25/);
   // Finance pays the DJ's tips; the DJ sees them paid.
   const fin = await phone(390); await signInAs(fin, 'finance@dev'); await fin.waitForURL(/finance\.html/);
   await fin.click('.bnav [data-k="pay"]'); await fin.locator('a[href="#tips"]').click();
@@ -1088,7 +1115,7 @@ test('a night at the bar: tab without QR → bar → delivered → the customer 
   await w.click('[data-close]');
   const cust = await phone(360);
   await cust.goto(`${base}/bill.html?t=${token}`, { waitUntil: 'networkidle' });
-  assert.match(await cust.textContent('#root'), /2 × Club beer/); assert.match(await cust.textContent('#pay'), /GHS 80/);
+  assert.match(await cust.textContent('#root'), /2 × Club beer/); assert.match(await cust.textContent('#pay'), /GHS 84/); assert.match(await cust.textContent('#root'), /5% service fee \(GHS 4\)/, 'the bill page says why it is GHS 84');
   await cust.click('#pay'); await cust.waitForURL(/dev\/paystack/); await cust.getByRole('button', { name: 'Pay' }).click();
   await cust.waitForURL(/bill\.html/); await cust.getByText('Payment confirmed. Thank you!').waitFor({ timeout: 20000 });
   // Paid, but staying: the table stays open and they can order more from the bar menu.

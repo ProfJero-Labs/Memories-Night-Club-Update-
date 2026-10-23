@@ -4,7 +4,7 @@
 // payment → show it at the bar. Paying cash? Order at the bar as usual.
 // A search box finds a drink even with small spelling mistakes (drinkMatch). "My night" shows
 // everything paid tonight from the customer's phone (asked with the id of an order they paid).
-import { api, esc, money, normalizePhone, $, $$ } from '../app.js';
+import { api, esc, money, normalizePhone, $, $$, loadFee, feePct, feeOn } from '../app.js';
 import { drinkMatch, drinkMatchAny } from '../lib/shared.js';
 
 const app = $('#app');
@@ -76,6 +76,7 @@ function showOrder(orderId) {
 
 // ── The menu ──
 async function start() {
+  await loadFee();
   clearTimeout(timer);
   const open = store.get('mem-bar-order');
   // An order waiting at the bar: its pickup code shows, but the menu is never locked behind it
@@ -95,7 +96,7 @@ async function start() {
   const total = () => Object.entries(cart).reduce((a, [id, q]) => a + q * price(id), 0);
   const count = () => Object.values(cart).reduce((a, q) => a + q, 0);
   const drinks = n => `${n} drink${n === 1 ? '' : 's'}`;
-  const grand = () => total() + (total() ? tipNow() : 0);
+  const grand = () => total() + (total() ? tipNow() + feeOn(total()) : 0);
   // A drink not in the basket shows one "+ Add"; once added, the − n + stepper.
   const control = i => (cart[i.id]
     ? `<div class="stepper"><button type="button" data-m="${esc(i.id)}" aria-label="One fewer ${esc(i.name)}">−</button><span aria-live="polite" aria-label="${cart[i.id]} in your order">${cart[i.id]}</span><button type="button" data-p="${esc(i.id)}" aria-label="One more ${esc(i.name)}">+</button></div>`
@@ -156,7 +157,7 @@ async function start() {
 
   const orderItems = () => `<div class="op-items">${Object.keys(cart).map(id => r.items.find(i => i.id === id)).filter(Boolean).map(i => `<div class="drink"><div class="grow">${esc(i.name)}<small>${money(i.pricePesewas)} each</small></div>${control(i)}<span class="line-t">${money(cart[i.id] * i.pricePesewas)}</span></div>`).join('')}
     <button type="button" class="more" id="addMore">+ Add more drinks</button></div>`;
-  const totals = () => `<div class="r"><span>${drinks(count())}</span><span>${money(total())}</span></div>${tipNow() ? `<div class="r"><span>Tip</span><span>${money(tipNow())}</span></div>` : ''}<div class="r t"><span>Total</span><span>${money(grand())}</span></div>`;
+  const totals = () => `<div class="r"><span>${drinks(count())}</span><span>${money(total())}</span></div>${tipNow() ? `<div class="r"><span>Tip</span><span>${money(tipNow())}</span></div>` : ''}${feeOn(total()) ? `<div class="r"><span>Service fee (${feePct()}%)</span><span>${money(feeOn(total()))}</span></div>` : ''}<div class="r t"><span>Total</span><span>${money(grand())}</span></div>`;
   const payLabel = () => { const b = $('#pay'); if (!b.disabled) b.textContent = `Pay ${money(grand())}`; };
   const refreshOrder = () => { $('#orderItems').innerHTML = orderItems(); $('#orderTotals').innerHTML = totals(); payLabel(); bindItems(); };
   const bindItems = () => {

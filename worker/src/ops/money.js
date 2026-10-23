@@ -98,6 +98,9 @@ export async function moneyReport(env, user, q = {}) {
     queryRecent(env, 'orders', 'createdAt', since, 10000), queryRecent(env, 'stock_deliveries', 'recordedAt', since, 5000), queryRecent(env, 'expenses', 'createdAt', since, 5000),
     listDocs(env, 'menu_items'), queryRecent(env, 'tips', 'at', since, 10000),
   ]);
+  // The service fee customers paid on top of online and MoMo payments (lib/fee.js), by night paid.
+  const feesIn = (await queryRecent(env, 'pending_checkouts', 'createdAt', since, 10000).catch(() => []))
+    .map(d => d.fields).filter(f => f.status === 'issued' && Number(f.feePesewas) > 0 && inRange(nightKey(f.issuedAt || f.createdAt)));
   const cost = Object.fromEntries(items.map(i => [i.id, Number(i.fields.costPesewas || 0)]));
   const rounds = roundsRaw.map(r => ({ id: r.id, ...r.fields })).filter(r => r.status !== 'cancelled');
   const tabs = tabsRaw.map(t => ({ id: t.id, ...t.fields })).filter(t => inRange(t.businessDate));
@@ -164,6 +167,7 @@ export async function moneyReport(env, user, q = {}) {
     purchases: buys.sort((a, b) => String(b.recordedAt).localeCompare(String(a.recordedAt))).slice(0, 50).map(d => ({ id: d.id, date: d.businessDate || nightKey(d.recordedAt), productName: d.productName, qty: d.confirmedQty ?? d.qty, costPesewas: buyCost(d), recordedByName: d.recordedByName, supplier: d.supplier || '' })),
     expenses: expenses.sort((a, b) => b.date.localeCompare(a.date) || String(b.createdAt).localeCompare(String(a.createdAt))).slice(0, 100).map(e => ({ id: e.id, date: e.date, category: e.category, categoryLabel: EXPENSE_CATEGORIES[e.category] || e.category, description: e.description, amountPesewas: e.amountPesewas, paidWith: PAID_WITH[e.paidWith] || '', recordedByName: e.recordedByName, removed: !!e.removed, approval: e.approval || '', decisionNote: e.decisionNote || '', decidedByName: e.decidedByName || '', removedReason: e.removedReason || '', removedByName: e.removedByName || '', canRemove: !e.removed && (e.recordedBy === uidOf(user) || !!requireRole(user, ['finance', 'director', 'superAdmin'])) })),
     byNight: [...days.values()].filter(d => d.inPesewas || d.outPesewas).map(d => ({ ...d, profitPesewas: d.inPesewas - d.outPesewas })).sort((a, b) => b.date.localeCompare(a.date)),
+    serviceFees: { totalPesewas: sum(feesIn, f => f.feePesewas), payments: feesIn.length, note: 'Paid by customers on top of online and MoMo payments. Kept apart from the drinks and tables money above.' },
     tips: { ...tipsIn, note: 'Tips are the staff’s money: not in money in or profit. MoMo and card tips came into the club’s account; finance pays them out.' },
     summary: `${p.label}: ${ghs(moneyIn)} in, ${ghs(moneyOut)} out, ${moneyIn - moneyOut >= 0 ? `${ghs(moneyIn - moneyOut)} profit` : `${ghs(moneyOut - moneyIn)} loss`}.`,
   };

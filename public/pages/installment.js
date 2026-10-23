@@ -1,6 +1,7 @@
 // installment.html: page script. Look up an order by phone, or code + phone, then pay the rest.
-import { chrome, api, esc, params, money, $, $$, shortDate, time, normalizePhone, claims, remember } from '../app.js';
+import { chrome, api, esc, params, money, $, $$, shortDate, time, normalizePhone, claims, remember, loadFee, feePct, feeOn } from '../app.js';
 chrome();
+loadFee();
 const root = $('#root');
 
 function planCard(p) {
@@ -76,7 +77,7 @@ function bind() {
   $$('form[data-resend]').forEach(f => { f.onsubmit = ev => { ev.preventDefault(); neutral(f, '/api/installments/resend-link', { planId: f.dataset.resend, phone: $('input', f).value }); }; });
   $$('form[data-plan]').forEach(f => {
     const input = $('input', f), note = $('.notice', f), btn = $('button[type=submit]', f);
-    const sync = () => { const v = Math.round(Number(input.value || 0) * 100); btn.innerHTML = v ? `Pay ${money(v)} <span class="arrow">→</span>` : 'Pay <span class="arrow">→</span>'; };
+    const sync = () => { const v = Math.round(Number(input.value || 0) * 100); btn.innerHTML = v ? `Pay ${money(v + feeOn(v))}${feeOn(v) ? ` <small>(incl. ${feePct()}% fee)</small>` : ''} <span class="arrow">→</span>` : 'Pay <span class="arrow">→</span>'; };
     $$('[data-amt]', f).forEach(b => b.onclick = () => { input.value = Number(b.dataset.amt) / 100; sync(); });
     input.oninput = sync;
     f.onsubmit = async ev => {
