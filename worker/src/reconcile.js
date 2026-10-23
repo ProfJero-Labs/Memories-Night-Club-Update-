@@ -25,9 +25,11 @@ import { logError } from './lib/log.js';
 const WINDOW_MS = 72 * 3600_000;          // how far back to look at checkouts
 const SETTLE_MS = 3 * 60_000;             // give the webhook and return page 3 minutes first
 const FRESH_MS = 2 * 3600_000;            // younger than this: retried on every run
-const MAX_FULFIL_PER_RUN = 40;            // keeps one run well inside Worker limits
+// Each recovery is a few outgoing requests (Paystack + Firestore). A Worker on Cloudflare's free
+// plan may make only 50 per run, so a run fixes at most this many and leaves the rest to the next.
+const MAX_FULFIL_PER_RUN = 10;
 const PAYSTACK_LOOKBACK_MS = 6 * 3600_000; // how far back to list Paystack payments
-const PAYSTACK_PAGES = 5;                 // up to 500 payments per run
+const PAYSTACK_PAGES = 3;                 // up to 300 payments per run
 const REF_PREFIX = 'MEM-';                // references this system creates (see paymentRef)
 
 const ageOf = f => { const t = Date.parse(f.createdAt); return Number.isFinite(t) ? Date.now() - t : 0; };
@@ -107,10 +109,12 @@ export async function reconcilePayments(env, scheduledTime = Date.now()) {
     if (env.HEARTBEAT_URL) await fetch(env.HEARTBEAT_URL).catch(e => logError('heartbeat failed', e));
   } catch (e) {
     summary.ok = false; summary.errors++;
+    // The reason, in a few words (never a key): shown on the System panel and in the text.
+    summary.error = String(e?.message || e).replace(/Bearer\s+\S+/g, 'Bearer …').slice(0, 160);
     logError('reconcilePayments failed', e);
     await reportError(env, 'reconcile.run', e);
     // One "the checker itself is broken" text per hour at most.
-    await alertOnce(env, `run_failed_${Math.floor(Date.now() / 3600_000)}`, 'MEMORIES: the automatic payment check could not run. Payments still work, but nobody is watching them. Check Cloudflare logs.').catch(() => {});
+    await alertOnce(env, `run_failed_${Math.floor(Date.now() / 3600_000)}`, `MEMORIES: the automatic payment check could not run (${summary.error}). Payments still work, but nobody is watching them. It tries again in 10 minutes.`).catch(() => {});
   }
   // What the control room's System panel shows: when the last check ran and how it went.
   await setDoc(env, 'system', 'reconcile', { ...summary, at: new Date() }).catch(e => logError('reconcile status write failed', e));

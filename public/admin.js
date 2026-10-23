@@ -200,7 +200,7 @@ async function system() {
   panel.innerHTML = `<h1>System</h1>
     <div class="health ${h.tone}"><b>${esc(h.label)}</b><span>Checked every minute while this page is open. Alerts also go to the alert phones.</span>${'Notification' in window && Notification.permission !== 'granted' ? '<button type="button" class="sbtn" id="sysNotify">Notify me on this device</button>' : ''}</div>
     <div class="card"><div class="toolbar" style="margin:0"><strong>Payment check</strong> ${state}</div>
-      ${r ? `<p style="margin:0">Last run ${esc(when(r.at))}: ${r.checked} checked, ${r.recovered} fixed automatically, ${r.alerts} alerts, ${r.errors} errors.</p>` : '<p style="margin:0">No run recorded yet. It starts within 10 minutes of the Worker being deployed.</p>'}
+      ${r ? `<p style="margin:0">Last run ${esc(when(r.at))}: ${r.checked} checked, ${r.recovered} fixed automatically, ${r.alerts} alerts, ${r.errors} errors.${r.ok === false ? ` <b>It failed${r.error ? `: ${esc(r.error)}` : ''}.</b>` : ' It ran fine.'}</p>` : '<p style="margin:0">No run recorded yet. It starts within 10 minutes of the Worker being deployed.</p>'}
       ${r?.stale ? '<p class="msg err" style="margin:0">The check hasn’t run for over 30 minutes. Check the Worker’s cron in Cloudflare.</p>' : ''}
       <p class="hint" style="margin:0;color:var(--muted)">Every 10 minutes it finishes paid orders that missed their ticket, and texts the alert phones about anything a person must fix.</p></div>
     <h2>Set up</h2><div class="toolbar">${setup.map(([l, on]) => pill(`${l}: ${on ? 'on' : 'off'}`, on ? 'green' : 'amber')).join(' ')}</div>

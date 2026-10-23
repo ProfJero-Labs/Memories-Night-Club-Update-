@@ -151,3 +151,16 @@ test('a missing or broken database key says so plainly (it stops every database 
   await assert.rejects(getDoc({ ...env, FIREBASE_SERVICE_ACCOUNT_JSON: '' }, 'settings', 'site'), /FIREBASE_SERVICE_ACCOUNT_JSON is not set/);
   await assert.rejects(getDoc({ ...env, FIREBASE_SERVICE_ACCOUNT_JSON: '{not json' }, 'settings', 'site'), /not valid JSON/);
 });
+
+test('when the payment check can’t run, the System panel and the alert say why (never a key)', async () => {
+  const { store, env } = setup();
+  env.ALERT_PHONES = '0240000001';
+  store.paystackListDown = true;
+  const s = await reconcilePayments(env);
+  assert.equal(s.ok, false);
+  assert.match(s.error, /Paystack list failed/);
+  assert.match(store.get('system', 'reconcile').fields.error, /Paystack list failed/);
+  const text = store.sms.map(x => x.message).join('\n');
+  assert.match(text, /could not run \(Paystack list failed/);
+  assert.ok(!text.includes(env.PAYSTACK_SECRET_KEY), 'no key in the text');
+});
