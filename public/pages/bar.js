@@ -5,7 +5,7 @@ import { $, $$, esc, money } from '../app.js';
 import { requireStaff, staffHeader, sapi } from '../staff.js';
 import { openQrMaker } from '../lib/qrcard.js';
 import { ask, sheet } from '../lib/ops-ui.js';
-const user = await requireStaff(['superAdmin', 'director', 'manager', 'eventManager', 'barStaff']);
+const user = await requireStaff(['superAdmin', 'director', 'manager', 'eventManager', 'barManager', 'barStaff']);
 staffHeader(user, 'Bar');
 // The guest has paid: only the Manager can cancel it (a refund). Nothing sells past zero, so the drinks are there.
 const canCancel = ['superAdmin', 'manager'].includes(user.role);

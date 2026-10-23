@@ -23,10 +23,10 @@ import { securitySignal } from './lib/monitor.js';
 import { ensureStaffMember, suspendStaffMember } from './members.js';
 
 const FORBIDDEN = { error: 'You can’t do that with your role.', status: 403 };
-export const ROLE_NAMES = { superAdmin: 'System admin', director: 'Director', manager: 'Manager', hrManager: 'Human manager', finance: 'Finance officer', eventManager: 'Event manager', doorStaff: 'Front office', security: 'Security', barStaff: 'Bartender', waitStaff: 'Waiter / waitress', cashier: 'Cashier', dj: 'DJ', mc: 'MC', organiser: 'Organiser' };
+export const ROLE_NAMES = { superAdmin: 'System admin', director: 'Director', manager: 'Manager', hrManager: 'Human manager', finance: 'Finance officer', eventManager: 'Event manager', media: 'Media', doorStaff: 'Front office', security: 'Security', barManager: 'Bar manager', barStaff: 'Bartender', waitStaff: 'Waiter / waitress', cashier: 'Cashier', dj: 'DJ', mc: 'MC', organiser: 'Organiser' };
 // Teams, for notices and the message board.
 export const TEAMS = { managers: 'Managers', bar: 'Bar', floor: 'Floor', door: 'Door and security', entertainment: 'DJs and MCs', office: 'Office' };
-export const teamOf = role => ({ superAdmin: 'managers', director: 'managers', manager: 'managers', hrManager: 'managers', eventManager: 'managers', finance: 'office', cashier: 'office', barStaff: 'bar', waitStaff: 'floor', doorStaff: 'door', security: 'door', dj: 'entertainment', mc: 'entertainment' }[role] || '');
+export const teamOf = role => ({ superAdmin: 'managers', director: 'managers', manager: 'managers', hrManager: 'managers', eventManager: 'managers', finance: 'office', cashier: 'office', barManager: 'bar', barStaff: 'bar', waitStaff: 'floor', doorStaff: 'door', security: 'door', dj: 'entertainment', mc: 'entertainment', media: 'office' }[role] || '');
 const TEMP_PIN_MS = 30 * 60e3, LOCK_MS = 15 * 60e3;
 const SIGN_IN_FAIL = 'That phone number and PIN don’t match.';
 const audit = (env, user, action, data) => setDoc(env, 'audit_logs', id(), { action, actorUid: uidOf(user) || null, ...data, timestamp: now() });

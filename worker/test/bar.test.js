@@ -35,7 +35,7 @@ async function payFor(store, env) {
 
 test('QR links open the order page by query string (works on any host); a table on the card reaches the bar screen', async () => {
   const { store, env } = setup();
-  const boss = { role: 'eventManager' };
+  const boss = { role: 'superAdmin', admin: true }; // bar setup is the administrator's
   const setupRes = await call(env, 'GET', '/api/admin/bar-setup', { claims: boss });
   assert.equal(setupRes.data.stations[0].url, `https://memoriesnightclub.test/counter.html?s=${TOKEN}`);
   const q0 = await call(env, 'GET', '/api/bar/queue', { claims: BAR });

@@ -53,6 +53,8 @@ export function seed(store, origin) {
     ['director2@dev', 'uid-director2', { role: 'director', admin: false }, 'Dev Director Two', '0200000014'],
     ['events@dev', 'uid-events', { role: 'eventManager', admin: false }, 'Dev Event Manager', '0200000015'],
     ['dj@dev', 'uid-dj', { role: 'dj', admin: false }, 'Dev DJ', '0200000016'],
+    ['media@dev', 'uid-media', { role: 'media', admin: false }, 'Dev Media', '0200000017'],
+    ['barmgr@dev', 'uid-barmgr', { role: 'barManager', admin: false }, 'Dev Bar Manager', '0200000018'],
     ['guest@dev', 'uid-guest', {}, 'Guest', ''],
   ];
   store.claims = {};
@@ -61,7 +63,7 @@ export function seed(store, origin) {
   const hashes = { 4: pinHash('2580'), 6: pinHash('258025') };
   for (const [email, uid, claims, name, phone] of staff) {
     store.authUsers.push({ email, localId: uid }); store.claims[uid] = claims;
-    const long = ['superAdmin', 'director', 'manager', 'hrManager', 'finance'].includes(claims.role);
+    const long = ['superAdmin', 'director', 'manager', 'hrManager', 'finance', 'barManager'].includes(claims.role);
     if (claims.role) store.seed('users', uid, { email, role: claims.role, admin: claims.admin === true, name, phone, pinSalt: salt, pinHash: hashes[long ? 6 : 4], pinSetAt: new Date().toISOString(), ...({ 'uid-director': { sharePct: 35 }, 'uid-director2': { sharePct: 65 } }[uid] || {}) });
   }
   // Every staff account is a member (no ticket at the gate). Organiser A's, linked to their sign-in:

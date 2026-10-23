@@ -22,7 +22,7 @@ function setup() {
   };
   return { store, env, call };
 }
-const MANAGER = { role: 'eventManager' };
+const MANAGER = { role: 'media' }; // promos are part of the website: Media and the administrator
 const addPromo = (ctx, body) => ctx.call('POST', '/api/admin/promos', { claims: MANAGER, body: { eventId: 'n1', ...body } });
 const buy = (ctx, extra = {}) => ctx.call('POST', '/api/checkout/initiate', { body: { eventId: 'n1', ticketTypeId: 'reg', quantity: 1, buyerName: 'Ama', buyerPhone: '0241234567', ...extra } });
 

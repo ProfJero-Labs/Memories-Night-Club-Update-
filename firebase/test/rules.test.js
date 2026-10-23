@@ -81,9 +81,10 @@ test('flyer uploads: site staff only, images only, under 8 MB; anyone can view',
   await assertFails(uploadBytes(ref(st(), 'event-art/a.jpg'), img, { contentType: 'image/jpeg' }));
   await assertFails(uploadBytes(ref(st('new', {}), 'event-art/a.jpg'), img, { contentType: 'image/jpeg' }));
   await assertFails(uploadBytes(ref(st('door', { role: 'doorStaff' }), 'event-art/a.jpg'), img, { contentType: 'image/jpeg' }));
-  await assertFails(uploadBytes(ref(st('em', { role: 'eventManager' }), 'event-art/a.svg'), img, { contentType: 'image/svg+xml' }));
-  await assertFails(uploadBytes(ref(st('em', { role: 'eventManager' }), 'elsewhere/a.jpg'), img, { contentType: 'image/jpeg' }));
-  await assertSucceeds(uploadBytes(ref(st('em', { role: 'eventManager' }), 'event-art/a.jpg'), img, { contentType: 'image/jpeg' }));
+  await assertFails(uploadBytes(ref(st('md', { role: 'media' }), 'event-art/a.svg'), img, { contentType: 'image/svg+xml' }));
+  await assertFails(uploadBytes(ref(st('md', { role: 'media' }), 'elsewhere/a.jpg'), img, { contentType: 'image/jpeg' }));
+  await assertSucceeds(uploadBytes(ref(st('md', { role: 'media' }), 'event-art/a.jpg'), img, { contentType: 'image/jpeg' }));
+  await assertFails(uploadBytes(ref(st('em', { role: 'eventManager' }), 'event-art/b.jpg'), img, { contentType: 'image/jpeg' }), 'flyers are Media’s now, not the Event manager’s');
   await assertSucceeds(uploadBytes(ref(st('boss', { admin: true, role: 'superAdmin' }), 'event-art/b.webp'), img, { contentType: 'image/webp' }));
   await assertSucceeds(getBytes(ref(st(), 'event-art/a.jpg')));
 });
@@ -93,10 +94,10 @@ test('hero videos: site staff only, MP4/WebM/MOV only, under 60 MB', async () =>
   const st = (uid, claims) => (uid ? env.authenticatedContext(uid, claims) : env.unauthenticatedContext()).storage();
   await assertFails(uploadBytes(ref(st(), 'event-art/v.mp4'), clip, { contentType: 'video/mp4' }));
   await assertFails(uploadBytes(ref(st('door', { role: 'doorStaff' }), 'event-art/v.mp4'), clip, { contentType: 'video/mp4' }));
-  await assertFails(uploadBytes(ref(st('em', { role: 'eventManager' }), 'event-art/v.avi'), clip, { contentType: 'video/x-msvideo' }));
-  await assertSucceeds(uploadBytes(ref(st('em', { role: 'eventManager' }), 'event-art/v.mp4'), clip, { contentType: 'video/mp4' }));
+  await assertFails(uploadBytes(ref(st('md', { role: 'media' }), 'event-art/v.avi'), clip, { contentType: 'video/x-msvideo' }));
+  await assertSucceeds(uploadBytes(ref(st('md', { role: 'media' }), 'event-art/v.mp4'), clip, { contentType: 'video/mp4' }));
   await assertSucceeds(uploadBytes(ref(st('adm', { role: 'superAdmin', admin: true }), 'event-art/v.webm'), clip, { contentType: 'video/webm' }));
   await assertFails(uploadBytes(ref(st('mgr', { role: 'manager' }), 'event-art/v2.webm'), clip, { contentType: 'video/webm' }), 'managers run the night; the site is the administrator’s');
-  await assertFails(uploadBytes(ref(st('em', { role: 'eventManager' }), 'event-art/big.jpg'), new Uint8Array(9 * 1024 * 1024), { contentType: 'image/jpeg' }), 'images still capped at 8 MB');
+  await assertFails(uploadBytes(ref(st('md', { role: 'media' }), 'event-art/big.jpg'), new Uint8Array(9 * 1024 * 1024), { contentType: 'image/jpeg' }), 'images still capped at 8 MB');
   await assertSucceeds(getBytes(ref(st(), 'event-art/v.mp4')));
 });

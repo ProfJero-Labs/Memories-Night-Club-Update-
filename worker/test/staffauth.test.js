@@ -188,3 +188,21 @@ test('the system admin adds and changes anyone: manager, director, finance, anot
   assert.equal((await call(ctx.env, 'POST', '/api/admin/people/reset-pin', { ...ADM, body: { uid: added.finance } })).status, 200);
   assert.equal(ctx.store.get('users', added.superAdmin).fields.admin, true);
 });
+
+test('Media: the Human manager adds them (on payroll); they run the website and the nights; the Event manager no longer does', async () => {
+  const ctx = setup();
+  ctx.store.seed('users', 'hr1', { name: 'Hannah HR', phone: '0240000005', role: 'hrManager' });
+  const HR = { claims: { role: 'hrManager' }, uid: 'hr1' };
+  const r = await call(ctx.env, 'POST', '/api/admin/people/add', { ...HR, body: { name: 'Kwame Media', phone: '0245550321', role: 'media' } });
+  assert.equal(r.status, 200, r.data.error);
+  assert.match(ctx.store.sms.at(-1).message, /Media/);
+  const asMedia = { claims: { role: 'media' }, uid: r.data.uid };
+  const night = await call(ctx.env, 'POST', '/api/admin/events', { ...asMedia, body: { name: 'Media Night', date: '2099-03-01T22:00:00Z' } });
+  assert.equal(night.status, 200, night.data.error);
+  assert.equal((await call(ctx.env, 'POST', '/api/admin/events', { claims: { role: 'eventManager' }, body: { name: 'X', date: '2099-03-02T22:00:00Z' } })).status, 403, 'the Event manager no longer edits the website');
+  assert.equal((await call(ctx.env, 'POST', '/api/admin/settings', { ...asMedia, body: { venue: 'x' } })).status, 403, 'site settings stay the administrator’s');
+  assert.equal((await call(ctx.env, 'GET', '/api/admin/overview', asMedia)).status, 403, 'ticket money is the Event manager’s');
+  assert.equal((await call(ctx.env, 'POST', '/api/checkin', { ...asMedia, body: { token: 'x' } })).status, 403, 'not the door');
+  const pay = await call(ctx.env, 'POST', '/api/ops/pay/details', { ...HR, body: { uid: r.data.uid, salaryPesewas: 200000 } });
+  assert.equal(pay.status, 200, `Media is paid through the Human manager: ${pay.data.error || ''}`);
+});

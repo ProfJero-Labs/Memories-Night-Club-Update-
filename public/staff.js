@@ -4,9 +4,9 @@ import { onUser, idToken, signOutUser } from './firebase.js';
 import { api, esc, CREDIT } from './app.js';
 
 export const roleOf = claims => (claims?.admin === true ? 'superAdmin' : claims?.role || '');
-export const ROLE_LABEL = { superAdmin: 'System admin', director: 'Director', manager: 'Manager', hrManager: 'Human manager', finance: 'Finance officer', eventManager: 'Event manager', doorStaff: 'Front office', security: 'Security', barStaff: 'Bartender', waitStaff: 'Waiter / waitress', cashier: 'Cashier', dj: 'DJ', mc: 'MC', organiser: 'Organiser' };
+export const ROLE_LABEL = { superAdmin: 'System admin', director: 'Director', manager: 'Manager', hrManager: 'Human manager', finance: 'Finance officer', eventManager: 'Event manager', media: 'Media', doorStaff: 'Front office', security: 'Security', barManager: 'Bar manager', barStaff: 'Bartender', waitStaff: 'Waiter / waitress', cashier: 'Cashier', dj: 'DJ', mc: 'MC', organiser: 'Organiser' };
 // Each job opens on its own screen.
-const HOMES = { manager: 'night.html', director: 'night.html', hrManager: 'hr.html', organiser: 'organiser.html', doorStaff: 'checkin.html', security: 'checkin.html', barStaff: 'bar.html', waitStaff: 'waiter.html', cashier: 'cashier.html', finance: 'finance.html', dj: 'me.html', mc: 'me.html' };
+const HOMES = { manager: 'night.html', director: 'night.html', hrManager: 'hr.html', organiser: 'organiser.html', doorStaff: 'checkin.html', security: 'checkin.html', barManager: 'bar.html', barStaff: 'bar.html', waitStaff: 'waiter.html', cashier: 'cashier.html', finance: 'finance.html', dj: 'me.html', mc: 'me.html' };
 export const home = role => HOMES[role] || 'admin.html';
 // Resolves with the signed-in staff user (role and name from their staff record), or sends them on.
 export function requireStaff(allowed) {

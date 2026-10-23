@@ -4,7 +4,7 @@ rules_version = '2';
 service firebase.storage {
   match /b/{bucket}/o {
     function cms() {
-      return request.auth != null && (request.auth.token.admin == true || request.auth.token.role == 'eventManager');
+      return request.auth != null && (request.auth.token.admin == true || request.auth.token.role == 'media');
     }
     match /event-art/{file} {
       allow read: if true;

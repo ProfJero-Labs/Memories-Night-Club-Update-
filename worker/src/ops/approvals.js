@@ -12,8 +12,8 @@ import { FORBIDDEN, bizDate, who, audit, int, ghs } from './common.js';
 const BOSS = ['superAdmin', 'director', 'manager'];
 // Who may approve which kind.
 // The Human manager is on the floor (free drinks, discounts); the Event manager can give discounts.
-const APPROVERS = { comp: [...BOSS, 'hrManager'], discount: [...BOSS, 'hrManager', 'eventManager'], write_off: [...BOSS, 'finance'], cash_out: [...BOSS, 'finance'], count_correction: STOCK };
-const REQUESTERS = { comp: [...BOSS, 'hrManager', 'waitStaff', 'barStaff'], discount: [...BOSS, 'hrManager', 'eventManager', 'waitStaff', 'cashier'], write_off: [...BOSS, 'waitStaff', 'cashier'], cash_out: [...BOSS, 'cashier', 'waitStaff', 'finance'], count_correction: [...STOCK, 'barStaff'] };
+const APPROVERS = { comp: [...BOSS, 'hrManager'], discount: [...BOSS, 'hrManager', 'eventManager'], write_off: [...BOSS, 'finance'], cash_out: [...BOSS, 'finance'], count_correction: [...STOCK, 'barManager'] };
+const REQUESTERS = { comp: [...BOSS, 'hrManager', 'waitStaff', 'barManager', 'barStaff'], discount: [...BOSS, 'hrManager', 'eventManager', 'waitStaff', 'cashier'], write_off: [...BOSS, 'waitStaff', 'cashier'], cash_out: [...BOSS, 'cashier', 'waitStaff', 'finance'], count_correction: [...STOCK, 'barManager', 'barStaff'] };
 export const APPROVAL_LABEL = { comp: 'Free drink', discount: 'Discount', write_off: 'Unpaid tab written off', cash_out: 'Cash out', count_correction: 'Stock count correction' };
 
 async function roundsOf(env, tabId) { return (await queryWhere(env, 'rounds', [{ field: 'tabId', value: tabId }])).map(r => ({ id: r.id, ...r.fields })); }

@@ -6,22 +6,25 @@
 //   Organisers: their own night's Entrance, Check and Counts.
 import { $, $$, esc } from '../app.js';
 import { requireStaff, sapi } from '../staff.js';
-import { sheet, say, st, every, bottomNav, busy, when, ask, backBar, bindBackBar, upcomingBookings } from '../lib/ops-ui.js';
+import { sheet, say, st, every, bottomNav, busy, when, ask, backBar, bindBackBar, upcomingBookings, money } from '../lib/ops-ui.js';
 import { sellView, checkView, tableStock, countsView } from '../lib/gate-views.js';
+import { ticketsView, findOrderView } from '../lib/ops-views.js';
 
 const user = await requireStaff(['superAdmin', 'director', 'manager', 'eventManager', 'doorStaff', 'security', 'organiser']);
 const role = user.role;
-const views = { entrance: $('#vEntrance'), sell: $('#vSell'), check: $('#vCheck'), counts: $('#vCounts'), tables: $('#vTables'), issues: $('#vIssues'), report: $('#vReport') };
+const views = { entrance: $('#vEntrance'), sell: $('#vSell'), check: $('#vCheck'), counts: $('#vCounts'), tables: $('#vTables'), issues: $('#vIssues'), report: $('#vReport'), find: $('#vFind'), tickets: $('#vTickets') };
 const items = role === 'security' ? [['check', 'Check'], ['entrance', 'Entrance'], ['issues', 'Issues']]
   : role === 'organiser' ? [['entrance', 'Entrance'], ['check', 'Check'], ['counts', 'Counts']]
   : [['entrance', 'Entrance'], ['sell', 'Sell'], ['check', 'Check'], ['tables', 'Tables'], ['more', 'More']];
 const tabs = items.map(i => i[0]).filter(k => k !== 'more');
-const subs = role === 'security' || role === 'organiser' ? [] : ['issues', 'report', 'counts'];
+const subs = role === 'security' || role === 'organiser' ? [] : ['issues', 'report', 'counts', 'find', 'tickets'];
 const home = tabs[0];
 let stop = null, current = '';
 const nav = bottomNav(items, k => { if (k === 'more') more(); else location.hash = k; });
 function more() {
   const { box, close } = sheet(`<h2>More</h2><div class="rows">
+    <button class="row-btn" type="button" data-more="find"><span class="t">Find an order</span><span class="s">A table booking or tickets: by code, phone or name</span></button>
+    <button class="row-btn" type="button" data-more="tickets"><span class="t">Tickets sold</span><span class="s">Online and at the gate, tonight</span></button>
     <button class="row-btn" type="button" data-more="counts"><span class="t">Counts</span><span class="s">Who came in tonight and how: online, gate, tables, members</span></button>
     <button class="row-btn" type="button" data-more="issues"><span class="t">Issues</span><span class="s">Incidents and handovers</span></button>
     <button class="row-btn" type="button" data-more="report"><span class="t">End of night</span><span class="s">The front office report for the Manager</span></button></div>`, { label: 'More' });
@@ -34,7 +37,7 @@ function go(k, again = false) {
   current = k;
   nav.setActive(tabs.includes(k) ? k : 'more'); if (stop) { stop(); stop = null; }
   for (const [key, el] of Object.entries(views)) el.hidden = key !== k;
-  $('#nightBox').hidden = ['issues', 'report'].includes(k);
+  $('#nightBox').hidden = ['issues', 'report', 'find', 'tickets'].includes(k);
   if (!again) scrollTo(0, 0);
   const el = views[k], fail = e => { el.innerHTML = `${subs.includes(k) ? backBar() : ''}<div class="say bad">${esc(e.status === 0 ? 'No connection. Pull down to try again.' : e.message)}</div>`; bindBackBar(el); };
   const back = () => { if (subs.includes(k)) { el.insertAdjacentHTML('afterbegin', backBar('', home)); bindBackBar(el); } };
@@ -44,6 +47,8 @@ function go(k, again = false) {
   if (k === 'tables') stop = every(15000, tables);
   if (k === 'issues') issues().then(back).catch(fail);
   if (k === 'report') report().then(back).catch(fail);
+  if (k === 'find' && !again) findOrderView(el).then(back).catch(fail);
+  if (k === 'tickets') ticketsView(el).then(back).catch(fail);
 }
 addEventListener('hashchange', () => go(location.hash.slice(1)));
 // A different night: the gate views show that night.
@@ -96,6 +101,7 @@ async function report() {
   const el = views.report; el.innerHTML = '<div class="loading">Loading…</div>';
   const d = await sapi('/api/ops/front-report'), f = d.figures;
   el.innerHTML = `<h1 style="font:400 30px/1 var(--display);text-transform:uppercase;margin:0">End of night</h1><p class="lead">Check the numbers, hand over open issues, then submit.</p>
+    <div class="nums"><div><span>Tickets sold</span><b>${f.ticketsSold ?? 0}</b></div><div><span>Online</span><b>${f.ticketsOnline ?? 0}</b></div><div><span>At the gate</span><b>${f.ticketsAtGate ?? 0}</b></div><div><span>Gate cash</span><b>${money(f.gateCashPesewas || 0)}</b></div><div><span>Gate MoMo</span><b>${money(f.gateMomoPesewas || 0)}</b></div>${f.guestList ? `<div><span>Guest list</span><b>${f.guestList}</b></div>` : ''}</div>
     <div class="nums"><div><span>Tickets checked</span><b>${f.ticketsChecked}</b></div><div><span>People in</span><b>${f.admitted}</b></div><div><span>Tables arrived</span><b>${f.tablesArrived} / ${f.tablesBooked}</b></div><div class="${f.openIssues ? 'warn' : 'good'}"><span>Open issues</span><b>${f.openIssues}</b></div></div>
     ${d.submitted ? `<div class="say good"><b>Submitted by ${esc(d.submitted.byName)} at ${when(d.submitted.at)}</b>${esc(d.submitted.note || '')}</div>` : `
       <div class="sfield"><label for="frN">Anything the manager should know</label><textarea id="frN" rows="3" maxlength="600"></textarea></div><div id="frM"></div><button class="big" id="frGo">Submit front office report</button>`}`;

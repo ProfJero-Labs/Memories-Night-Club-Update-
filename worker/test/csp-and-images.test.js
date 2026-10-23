@@ -35,7 +35,7 @@ test('CSP: no unsafe-inline scripts; connect-src names the API host, not all of 
 
 test('event images must be this project’s own uploads; an image a night already has still saves', async () => {
   const { store, env } = createMockEnv();
-  const token = await idToken({ role: 'eventManager' });
+  const token = await idToken({ role: 'media' });
   const save = body => worker.fetch(new Request('https://api.test/api/admin/events', { method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: JSON.stringify({ name: 'N', date: '2099-01-01T22:00:00Z', ...body }) }), env).then(async r => ({ status: r.status, data: await r.json() }));
   const own = `https://firebasestorage.googleapis.com/v0/b/${env.FIREBASE_PROJECT_ID}.firebasestorage.app/o/event-art%2F1-flyer.webp?alt=media&token=x`;
   const ok = await save({ artwork: own });
@@ -50,7 +50,7 @@ test('event images must be this project’s own uploads; an image a night alread
 
 test('a night’s ticket design is saved validated and served to the public event and ticket', async () => {
   const { store, env } = createMockEnv();
-  const token = await idToken({ role: 'eventManager' });
+  const token = await idToken({ role: 'media' });
   const save = body => worker.fetch(new Request('https://api.test/api/admin/events', { method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: JSON.stringify({ name: 'N', date: '2099-01-01T22:00:00Z', visibility: 'public', ...body }) }), env).then(r => r.json());
   const { eventId } = await save({ ticketStyle: 'stamp', ticketColors: { accent: '#dba63e', dark: '#1f180a', light: '#f3ede2' } });
   let ev = store.get('events', eventId).fields;

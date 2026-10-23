@@ -15,6 +15,7 @@ import { billOf } from './tabs.js';
 import { cashFigures } from './cash.js';
 import { stockSheet } from './stock.js';
 import { tipsOn, tipTotals } from './tips.js';
+import { ticketsTonight } from './orders.js';
 
 const BOSS = ['superAdmin', 'director', 'manager'];
 const sum = (arr, f) => arr.reduce((n, x) => n + Number(f(x) || 0), 0);
@@ -69,8 +70,25 @@ export function waiterFigures(uid, data) {
     cancelledRounds: data.rounds.filter(r => r.waiterUid === uid && r.status === 'cancelled').length,
   };
 }
+// Every waiter's report for a night, side by side, for finance (and the managers and directors):
+// their sales, what's paid and unpaid, cash and MoMo they took, drinks still with them, breakages,
+// free drinks, tips, and the report they submitted (with its explanation) or that it's missing.
+export async function waitersReport(env, user, { date } = {}) {
+  if (!requireRole(user, REPORTS)) return FORBIDDEN;
+  const d = dateOr(date), data = await nightData(env, d);
+  const ids = [...new Set([...data.tabs.map(t => t.waiterUid), ...data.rounds.map(r => r.waiterUid)])].filter(Boolean);
+  const nameOf = uid => data.tabs.find(t => t.waiterUid === uid)?.waiterName || data.rounds.find(r => r.waiterUid === uid)?.waiterName || 'Waiter';
+  const waiters = ids.map(uid => {
+    const rep = data.reports.find(r => r.uid === uid && r.kind === 'waiter');
+    return { uid, name: nameOf(uid), tabs: data.tabs.filter(t => t.waiterUid === uid).length, ...waiterFigures(uid, data),
+      report: rep ? { at: rep.at || rep.submittedAt || '', explanation: rep.explanation || '' } : null };
+  }).sort((a, b) => b.salesPesewas - a.salesPesewas);
+  const t = k => waiters.reduce((n, w) => n + Number(w[k] || 0), 0);
+  return { date: d, waiters, totals: { salesPesewas: t('salesPesewas'), paidPesewas: t('paidPesewas'), unpaidPesewas: t('unpaidPesewas'), cashCollectedPesewas: t('cashCollectedPesewas'), momoRecordedPesewas: t('momoRecordedPesewas'), withYouPesewas: t('withYouPesewas'), brokenPesewas: t('brokenPesewas') }, missing: waiters.filter(w => !w.report).length };
+}
+
 // Waiters and bartenders (their quick sales and cash) both have one.
-const REPORTERS = ['waitStaff', 'barStaff', 'eventManager', ...BOSS];
+const REPORTERS = ['waitStaff', 'barManager', 'barStaff', 'eventManager', ...BOSS];
 export async function myReport(env, user, { date } = {}) {
   if (!requireRole(user, REPORTERS)) return FORBIDDEN;
   const d = dateOr(date), data = await nightData(env, d);
@@ -101,7 +119,10 @@ async function frontOfficeFigures(env, date) {
     booked += tables.length; arrived += tables.filter(o => o.fields.arrivedAt).length;
   }
   const open = (await queryWhere(env, 'incidents', [{ field: 'status', value: 'open' }])).length + (await queryWhere(env, 'incidents', [{ field: 'status', value: 'handed_over' }])).length;
-  return { nights: events.map(e => e.fields.name), ticketsChecked: checked, admitted, tablesBooked: booked, tablesArrived: arrived, openIssues: open };
+  // Tickets sold for the night (online and at the gate), so the front office's report has them too.
+  const t = await ticketsTonight(env, { role: 'superAdmin', admin: true }, { date });
+  const sold = { ticketsSold: t.totals.ticketsSold, ticketsOnline: t.nights.reduce((n, x) => n + x.online.tickets, 0), ticketsAtGate: t.nights.reduce((n, x) => n + x.gate.tickets, 0), guestList: t.nights.reduce((n, x) => n + x.guestList, 0), gateCashPesewas: t.totals.gateCashPesewas, gateMomoPesewas: t.totals.gateMomoPesewas, ticketsValuePesewas: t.nights.reduce((n, x) => n + x.ticketsValuePesewas, 0) };
+  return { nights: events.map(e => e.fields.name), ticketsChecked: checked, admitted, tablesBooked: booked, tablesArrived: arrived, openIssues: open, ...sold };
 }
 export async function frontOfficeReport(env, user, { date } = {}) {
   if (!requireRole(user, ['doorStaff', 'security', ...BOSS])) return FORBIDDEN;
