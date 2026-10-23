@@ -36,7 +36,7 @@ const STEPS_ACCEPTED = 2;           // and is accepted for the current and the 2
 const GATE_TTL_MS = 5 * 60_000, GATE_TRIES = 5;
 const ACTIVATE_TTL_MS = 48 * 3600_000;
 const MAX_PASSES = 3;               // phones per member; a 4th retires the oldest
-const ROLE_DEPT = { superAdmin: 'Management', director: 'Directors', manager: 'Management', hrManager: 'Management', finance: 'Finance', eventManager: 'Events', media: 'Media', security: 'Security', cashier: 'Cash', dj: 'Entertainment', mc: 'Entertainment', doorStaff: 'Door', barStaff: 'Bar', waitStaff: 'Floor (waitstaff)', organiser: 'Organiser' };
+const ROLE_DEPT = { superAdmin: 'Management', director: 'Directors', manager: 'Management', hrManager: 'Management', finance: 'Finance', eventManager: 'Events', media: 'Media', security: 'Security', cashier: 'Cash', dj: 'Entertainment', mc: 'Entertainment', doorStaff: 'Door', barManager: 'Bar', barStaff: 'Bar', waitStaff: 'Floor (waitstaff)', organiser: 'Organiser' };
 const audit = (env, user, action, data) => setDoc(env, 'audit_logs', id(), { action, actorUid: uidOf(user), ...data, timestamp: now() });
 
 // ── Validity ──

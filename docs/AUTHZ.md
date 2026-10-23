@@ -134,3 +134,9 @@ directors, the three managers, Media and finance; `GET /api/ops/waiters?date=` (
 and report) for the system admin, directors, the Manager and finance. See `docs/ROLES.md` for the
 whole map, role by role.
 
+Also: `GET /api/ops/accounts?date=` (the night's accounts) for the system admin, directors, the
+Manager, finance and the bar manager; `GET /api/ops/tickets?date=` (tickets sold) for the system
+admin, the Manager, the Human manager, the Event manager, the front office and finance;
+`GET /api/ops/find-order?q=` for the system admin, directors, the three managers, the front office,
+security, finance and the bar manager (phones are never shown in full).
+

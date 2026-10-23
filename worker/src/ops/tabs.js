@@ -28,7 +28,7 @@ import { momoPrompt } from '../lib/momo.js';
 
 export const BOSS = ['superAdmin', 'director', 'manager'];
 export const WAITERS = [...BOSS, 'waitStaff', 'eventManager'];             // the Event manager serves tables too
-export const BAR_HANDS = [...BOSS, 'barStaff'];
+export const BAR_HANDS = [...BOSS, 'barManager', 'barStaff'];
 export const CASH_TAKERS = [...BOSS, 'cashier'];
 const MAX_LINES = 20, MAX_QTY = 30;
 
@@ -115,7 +115,7 @@ export async function myTabs(env, user, { all = false } = {}) {
 export async function getTab(env, user, tabId) {
   const t = await getDoc(env, 'tabs', String(tabId || ''));
   if (!t) return { error: 'Tab not found.', status: 404 };
-  if (!mineOrBoss(user, t.fields) && !requireRole(user, ['cashier', 'finance', 'barStaff', 'hrManager', 'eventManager'])) return FORBIDDEN;
+  if (!mineOrBoss(user, t.fields) && !requireRole(user, ['cashier', 'finance', 'barManager', 'barStaff', 'hrManager', 'eventManager'])) return FORBIDDEN;
   const view = tabView({ id: t.id, ...t.fields }, await roundsOf(env, t.id));
   view.billUrl = siteUrl(env, `/bill.html?t=${t.fields.billToken}`);
   return { tab: view };
@@ -340,7 +340,7 @@ export async function barRound(env, b, user) {
 async function staffRecord(env, user) { return (await getDoc(env, 'users', uidOf(user)))?.fields || {}; }
 // Waiters and bartenders record what customers paid them; cashiers and managers too; anyone else
 // only if a manager ticked "Can collect cash" on their staff record.
-export const PAY_TAKERS = [...CASH_TAKERS, 'waitStaff', 'barStaff', 'eventManager'];
+export const PAY_TAKERS = [...CASH_TAKERS, 'waitStaff', 'barManager', 'barStaff', 'eventManager'];
 export async function canTakeCash(env, user) { return requireRole(user, PAY_TAKERS) || (await staffRecord(env, user)).canCollectCash === true; }
 export const METHOD_LABEL = { cash: 'Cash', momo: 'MoMo (to the club’s number)', digital: 'MoMo / card (paid on the bill link)' };
 

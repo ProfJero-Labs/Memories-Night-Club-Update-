@@ -47,7 +47,7 @@ async function buyTicket(page, { name, line, event = 'dev-afro', type }) {
 }
 
 // Staff sign in with phone + PIN (dev seed: 2580, or 258025 for managers, directors, finance, admin).
-const STAFF = { 'media@dev': ['0200000017', '2580'], 'admin@dev': ['0200000001', '258025'], 'manager@dev': ['0200000002', '258025'], 'door@dev': ['0200000003', '2580'], 'bar@dev': ['0200000004', '2580'], 'orga@dev': ['0245552020', '2580'], 'orgb@dev': ['0200000006', '2580'], 'waiter@dev': ['0200000007', '2580'], 'waiter2@dev': ['0200000008', '2580'], 'cashier@dev': ['0200000009', '2580'], 'finance@dev': ['0200000010', '258025'], 'security@dev': ['0200000011', '2580'], 'director@dev': ['0200000012', '258025'], 'hr@dev': ['0200000013', '258025'], 'director2@dev': ['0200000014', '258025'], 'events@dev': ['0200000015', '2580'], 'dj@dev': ['0200000016', '2580'] };
+const STAFF = { 'barmgr@dev': ['0200000018', '258025'], 'media@dev': ['0200000017', '2580'], 'admin@dev': ['0200000001', '258025'], 'manager@dev': ['0200000002', '258025'], 'door@dev': ['0200000003', '2580'], 'bar@dev': ['0200000004', '2580'], 'orga@dev': ['0245552020', '2580'], 'orgb@dev': ['0200000006', '2580'], 'waiter@dev': ['0200000007', '2580'], 'waiter2@dev': ['0200000008', '2580'], 'cashier@dev': ['0200000009', '2580'], 'finance@dev': ['0200000010', '258025'], 'security@dev': ['0200000011', '2580'], 'director@dev': ['0200000012', '258025'], 'hr@dev': ['0200000013', '258025'], 'director2@dev': ['0200000014', '258025'], 'events@dev': ['0200000015', '2580'], 'dj@dev': ['0200000016', '2580'] };
 async function signInAs(page, email) {
   if (!/login\.html/.test(page.url())) await page.goto(`${base}/login.html`);
   await page.waitForSelector('#pinForm');
@@ -1039,6 +1039,32 @@ test('roles: Media runs the nights in the control room; the manager adds an expe
   await fin.click('.bnav [data-k="reports"]'); await fin.click('[data-goto="waiters"]');
   await fin.locator('h1', { hasText: 'Waiters' }).waitFor();
   assert.deepEqual([...media.errors, ...mgr.errors, ...fin.errors], []);
+});
+
+test('bar manager and front office: the night’s accounts; find a table order by its code; tickets sold tonight', async () => {
+  const bm = await phone(390); await signInAs(bm, 'barmgr@dev'); await bm.waitForURL(/bar\.html/);
+  await bm.click('.bnav [data-k="accounts"]');
+  await bm.locator('#vAccounts h1', { hasText: 'Night accounts' }).waitFor();
+  assert.match(await bm.textContent('#vAccounts'), /The drinks should bring/);
+  assert.match(await bm.textContent('#vAccounts'), /Each person who sold tonight/);
+  await bm.click('.bnav [data-k="waiters"]'); await bm.locator('#vWaiters').getByText(/Cash from waiters and bartenders/).waitFor();
+  // A table booked online that nobody could find: the front office finds it by its code.
+  const today = new Date().toISOString();
+  const ev = docs('events').find(e => e.active !== false) || { id: 'dev-dnd' };
+  store.seed('orders', 'zq7tab0001', { eventId: ev.id, kind: 'table', packageName: 'Gold table', amountPesewas: 250000, status: 'confirmed', buyerName: 'Nana Find', buyerPhone: '0277001122', bottles: [{ name: 'Moët', quantity: 1 }], createdAt: today });
+  const fo = await phone(390); await signInAs(fo, 'door@dev'); await fo.waitForURL(/checkin\.html/);
+  await fo.evaluate(() => { location.hash = 'find'; }); await fo.waitForSelector('#foQ');
+  await fo.fill('#foQ', 'TBL-ZQ7TAB'); await fo.click('#foForm button');
+  await fo.locator('#foOut .tcard', { hasText: 'Nana Find' }).waitFor();
+  assert.match(await fo.textContent('#foOut'), /Gold table/); assert.match(await fo.textContent('#foOut'), /1 × Moët/);
+  await fo.evaluate(() => { location.hash = 'tickets'; }); await fo.locator('#vTickets h1', { hasText: 'Tickets' }).waitFor();
+  const mgr = await phone(390); await signInAs(mgr, 'manager@dev'); await mgr.waitForURL(/night\.html/);
+  await mgr.click('.bnav [data-k="more"]'); await mgr.click('[data-more="tickets"]');
+  await mgr.locator('h1', { hasText: 'Tickets' }).waitFor();
+  assert.match(await mgr.textContent('#app'), /Tickets sold/);
+  await mgr.click('.bnav [data-k="more"]'); await mgr.click('[data-more="accounts"]');
+  await mgr.locator('h1', { hasText: 'Night accounts' }).waitFor();
+  assert.deepEqual([...bm.errors, ...fo.errors, ...mgr.errors], []);
 });
 
 test('a night at the bar: tab without QR → bar → delivered → the customer pays on their phone → another round paid in cash at the cashier → reports, counts, the close and finance’s report', async () => {

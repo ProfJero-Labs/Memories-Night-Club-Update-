@@ -747,3 +747,94 @@ export async function waitersView(el, date) {
     </div>`).join('') || '<div class="empty-box"><b>No waiters that night</b></div>'}</div>`;
   bindDate(el, v => waitersView(el, v), 'wDate');
 }
+
+// ── Night accounts (the bar manager; the Manager, directors and finance too) ──
+// 1. count what's left → 2. what the drinks should bring → 3. what accounts for it → 4. each seller.
+export async function accountsView(el, date, { onCount, onCash } = {}) {
+  el.innerHTML = '<div class="loading">Loading…</div>';
+  const a = await sapi(`/api/ops/accounts${date ? `?date=${encodeURIComponent(date)}` : ''}`), m = a.money;
+  const line = (label, value, cls = '') => `<div class="ln ${cls}"><span>${label}</span><span>${money(value)}</span></div>`;
+  const gap = a.missingAtBarPesewas + a.cashShortPesewas;
+  const tone = s => (s === 'short' ? 'bad' : s === 'check' ? 'warn' : 'done');
+  el.innerHTML = `<h1>Night accounts</h1>${dateBar(a.date, 'acDate')}
+    <ol class="acc-steps">
+      <li class="${a.steps.counted ? 'done' : ''}"><b>1. Count what’s left at the bar</b><span>${a.steps.counted ? `Done${a.bars.map(b => b.countedByName ? ` · ${esc(b.name)} by ${esc(b.countedByName)}` : '').join('')}` : 'Not yet: the money below is from the records until the bar counts.'}</span>${!a.steps.counted && onCount ? '<button class="mid" id="acCount">Count now</button>' : ''}</li>
+      <li class="${a.steps.cashIn ? 'done' : ''}"><b>2. Collect everyone’s cash</b><span>${a.steps.cashIn ? 'Everyone has handed in their cash.' : 'Some cash isn’t counted or handed in yet (see below).'}</span>${!a.steps.cashIn && onCash ? '<button class="mid" id="acCash">Receive cash</button>' : ''}</li>
+      <li class="done"><b>3. Check the result</b><span>Below.</span></li>
+    </ol>
+    <section class="pos-money">
+      <div class="big-line"><span>The drinks should bring</span><b>${money(a.shouldMakePesewas)}</b></div>
+      <div class="big-line good"><span>Received</span><b>${money(m.receivedPesewas)}</b></div>
+      <div class="big-line ${m.owedPesewas ? 'bad' : ''}"><span>Customers still owe</span><b>${money(m.owedPesewas)}</b></div>
+      <div class="big-line ${gap ? 'bad' : 'good'}"><span>Short</span><b>${money(gap)}</b></div>
+      <p class="how">${gap ? `${a.missingAtBarPesewas ? `Drinks missing at the bar ${money(a.missingAtBarPesewas)}` : ''}${a.missingAtBarPesewas && a.cashShortPesewas ? ' · ' : ''}${a.cashShortPesewas ? `Cash missing ${money(a.cashShortPesewas)}` : ''}. Who it is: see the names below.` : 'Everything adds up.'}</p>
+    </section>
+    <details class="fold"><summary>How it adds up</summary><div class="lines-list">
+      ${line('Drinks that left the bar (from the count), at today’s prices', a.shouldMakePesewas, 'total')}
+      ${line('Cash recorded', m.cashPesewas)}${line('MoMo recorded (check on the MoMo statement)', m.momoPesewas)}${line('Paid online (confirmed by Paystack)', m.onlinePesewas)}
+      ${line('Customers still owe', m.owedPesewas)}${m.freePesewas ? line('Free drinks (approved)', m.freePesewas) : ''}${m.brokenPesewas ? line('Broken by staff (recorded)', m.brokenPesewas) : ''}${m.discountsPesewas ? line('Discounts (approved)', m.discountsPesewas) : ''}${m.writtenOffPesewas ? line('Written off (approved)', m.writtenOffPesewas) : ''}${m.pendingReturnsPesewas ? line('On their way back to the bar', m.pendingReturnsPesewas) : ''}${m.stillAtBarPesewas ? line('Billed but still at the bar (taken off)', -m.stillAtBarPesewas) : ''}
+      ${line('Drinks missing at the bar', a.missingAtBarPesewas, a.missingAtBarPesewas ? 'bad' : '')}
+      ${a.extraAtBarPesewas ? line('More at the bar than the records', a.extraAtBarPesewas) : ''}${a.otherDifferencePesewas ? line('Other difference (price changes, unrecorded sales)', a.otherDifferencePesewas) : ''}
+    </div></details>
+    ${a.bars.filter(b => b.missing.length).map(b => `<div class="say bad"><b>${esc(b.name)}: drinks missing</b>${b.missing.map(x => `${x.qty} × ${esc(x.name)} (${money(x.valuePesewas)})`).join(', ')}. The bar explains these at the count.</div>`).join('')}
+    <h2>Each person who sold tonight</h2>
+    <div class="cards">${a.sellers.map(s => `<div class="tcard ${tone(s.state)}" style="cursor:default">
+      <span class="row"><span class="t" style="font-size:20px">${esc(s.name)}</span>${st(s.state === 'short' ? 'cancelled' : s.state === 'check' ? 'waiting' : 'delivered', s.state === 'short' ? 'Not aligned' : s.state === 'check' ? 'To check' : 'All good')}</span>
+      <div class="lines-list">
+        ${line('Drinks taken from the bar', s.takenPesewas)}
+        ${line('Paid in cash', s.cashPesewas)}${s.momoPesewas ? line('Paid by MoMo', s.momoPesewas) : ''}${s.onlinePesewas ? line('Paid online', s.onlinePesewas) : ''}
+        ${s.owedPesewas ? line('Customers still owe', s.owedPesewas, 'bad') : ''}${s.freePesewas ? line('Free drinks', s.freePesewas) : ''}${s.brokenPesewas ? line('Broken', s.brokenPesewas) : ''}
+        ${s.cash ? `<div class="ln"><span>Their cash: recorded ${money(s.cash.recordedPesewas)} · counted ${s.cash.countedPesewas == null ? '—' : money(s.cash.countedPesewas)} · handed in ${s.cash.receivedPesewas == null ? '—' : money(s.cash.receivedPesewas)}</span><span></span></div>` : ''}
+      </div>
+      ${s.flags.map(f => `<span class="sub acc-flag ${f.level}">${f.level === 'bad' ? '⚠ ' : ''}${esc(f.text)}</span>`).join('')}
+    </div>`).join('') || '<div class="empty-box"><b>No sales recorded that night</b></div>'}</div>
+    ${a.app ? `<p class="muted">App orders (QR): ${a.app.orders}, ${money(a.app.valuePesewas)}, all paid online before they were made.</p>` : ''}`;
+  bindDate(el, v => accountsView(el, v, { onCount, onCash }), 'acDate');
+  $('#acCount', el) && ($('#acCount', el).onclick = onCount);
+  $('#acCash', el) && ($('#acCash', el).onclick = onCash);
+}
+
+// ── Tickets tonight (the Manager, the front office): sold online and at the gate, tables, came in ──
+export async function ticketsView(el, date) {
+  el.innerHTML = '<div class="loading">Loading…</div>';
+  const d = await sapi(`/api/ops/tickets${date ? `?date=${encodeURIComponent(date)}` : ''}`), t = d.totals;
+  el.innerHTML = `<h1>Tickets</h1>${dateBar(d.date, 'tkDate')}
+    <div class="nums"><div><span>Tickets sold</span><b>${t.ticketsSold}</b></div><div class="good"><span>Tickets and tables</span><b>${money(t.valuePesewas)}</b></div><div><span>Came in</span><b>${t.cameIn}</b></div><div><span>Tables booked</span><b>${t.tablesBooked}</b></div></div>
+    ${d.nights.map(n => `<div class="tcard" style="cursor:default"><span class="t" style="font-size:20px">${esc(n.name)}</span>
+      <div class="lines-list">
+        <div class="ln"><span>Online (paid on Paystack)</span><span>${n.online.tickets} · ${money(n.online.valuePesewas)}</span></div>
+        <div class="ln"><span>At the gate: cash</span><span>${money(n.gate.cashPesewas)}</span></div>
+        <div class="ln"><span>At the gate: MoMo</span><span>${money(n.gate.momoPesewas)}</span></div>
+        <div class="ln"><span>At the gate: tickets</span><span>${n.gate.tickets}</span></div>
+        ${n.guestList ? `<div class="ln"><span>Guest list (free)</span><span>${n.guestList}</span></div>` : ''}
+        ${n.byType.map(x => `<div class="ln"><span>${esc(x.name)}</span><span>${x.sold} sold · ${money(x.valuePesewas)}</span></div>`).join('')}
+        <div class="ln"><span>Tables booked (${n.tables.arrived} arrived)</span><span>${n.tables.booked} · ${money(n.tables.valuePesewas)}</span></div>
+      </div>
+      ${n.gate.sellers.length ? `<span class="sub">Sold at the gate by: ${n.gate.sellers.map(s => `${esc(s.name)} ${s.tickets} (cash ${money(s.cashPesewas)}, MoMo ${money(s.momoPesewas)})`).join(' · ')}</span>` : ''}
+    </div>`).join('') || '<div class="empty-box"><b>No night on that date</b></div>'}`;
+  bindDate(el, v => ticketsView(el, v), 'tkDate');
+}
+
+// ── Find an order: a table booking or tickets, by code, phone or name ──
+export async function findOrderView(el, q = '') {
+  el.innerHTML = `<h1>Find an order</h1><p class="lead">A table booking or tickets: type the code (e.g. TBL-AB12CD), the customer’s phone number, or their name.</p>
+    <form id="foForm" class="sfield" style="display:grid;grid-template-columns:1fr auto;gap:8px" novalidate><input id="foQ" placeholder="TBL-…, 024…, or a name" value="${esc(q)}" autocomplete="off" aria-label="Code, phone or name"><button class="mid" type="submit">Find</button></form>
+    <div id="foOut"></div>`;
+  const run = async query => {
+    const out = $('#foOut', el); out.innerHTML = '<div class="loading">Looking…</div>';
+    try {
+      const r = await sapi(`/api/ops/find-order?q=${encodeURIComponent(query)}`);
+      out.innerHTML = r.orders.map(o => `<div class="tcard ${o.arrived ? 'done' : ''}" style="cursor:default">
+        <span class="row"><span class="t" style="font-size:20px">${esc(o.name || 'Guest')}</span><span class="sub">${esc(o.code)}</span></span>
+        <span><b>${esc(o.what)}</b> · ${esc(o.night)}${o.nightDate ? ` · ${esc(dayName(String(o.nightDate).slice(0, 10)))}` : ''}</span>
+        ${o.bottles.length ? `<span>Bottles: ${o.bottles.map(b => `${b.quantity} × ${esc(b.name)}`).join(', ')}${o.kind === 'table' ? (o.bottlesServed ? ' · served' : ' · not served yet') : ''}</span>` : ''}
+        <div class="lines-list"><div class="ln"><span>Paid</span><span>${money(o.amountPesewas)}</span></div><div class="ln"><span>How</span><span>${esc(o.paid)}</span></div>
+          ${o.promo ? `<div class="ln"><span>Promo</span><span>${esc(o.promo)}</span></div>` : ''}<div class="ln"><span>Phone</span><span>…${esc(o.phoneLast4)}</span></div>
+          ${o.kind === 'table' ? `<div class="ln"><span>Table</span><span>${o.tableNumber ? `Table ${esc(o.tableNumber)}` : 'No number yet'}${o.guestsArrived ? ` · ${o.guestsArrived} people in` : ''}</span></div>` : `<div class="ln"><span>Tickets</span><span>${o.tickets}</span></div>`}
+          <div class="ln"><span>Arrived</span><span>${o.arrived ? when(o.arrivedAt) : 'Not yet'}</span></div><div class="ln"><span>Booked</span><span>${esc(String(o.bookedAt).slice(0, 10))}</span></div></div>
+      </div>`).join('') || `<div class="empty-box"><b>Nothing found for “${esc(query)}”</b>Check the code or try the phone number.</div>`;
+    } catch (e) { say(out, e.message, 'bad'); }
+  };
+  $('#foForm', el).onsubmit = ev => { ev.preventDefault(); const v = $('#foQ', el).value.trim(); if (v) run(v); };
+  if (q) run(q); else $('#foQ', el).focus();
+}

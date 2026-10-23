@@ -15,6 +15,7 @@ import { billOf } from './tabs.js';
 import { cashFigures } from './cash.js';
 import { stockSheet } from './stock.js';
 import { tipsOn, tipTotals } from './tips.js';
+import { ticketsTonight } from './orders.js';
 
 const BOSS = ['superAdmin', 'director', 'manager'];
 const sum = (arr, f) => arr.reduce((n, x) => n + Number(f(x) || 0), 0);
@@ -87,7 +88,7 @@ export async function waitersReport(env, user, { date } = {}) {
 }
 
 // Waiters and bartenders (their quick sales and cash) both have one.
-const REPORTERS = ['waitStaff', 'barStaff', 'eventManager', ...BOSS];
+const REPORTERS = ['waitStaff', 'barManager', 'barStaff', 'eventManager', ...BOSS];
 export async function myReport(env, user, { date } = {}) {
   if (!requireRole(user, REPORTERS)) return FORBIDDEN;
   const d = dateOr(date), data = await nightData(env, d);
@@ -118,7 +119,10 @@ async function frontOfficeFigures(env, date) {
     booked += tables.length; arrived += tables.filter(o => o.fields.arrivedAt).length;
   }
   const open = (await queryWhere(env, 'incidents', [{ field: 'status', value: 'open' }])).length + (await queryWhere(env, 'incidents', [{ field: 'status', value: 'handed_over' }])).length;
-  return { nights: events.map(e => e.fields.name), ticketsChecked: checked, admitted, tablesBooked: booked, tablesArrived: arrived, openIssues: open };
+  // Tickets sold for the night (online and at the gate), so the front office's report has them too.
+  const t = await ticketsTonight(env, { role: 'superAdmin', admin: true }, { date });
+  const sold = { ticketsSold: t.totals.ticketsSold, ticketsOnline: t.nights.reduce((n, x) => n + x.online.tickets, 0), ticketsAtGate: t.nights.reduce((n, x) => n + x.gate.tickets, 0), guestList: t.nights.reduce((n, x) => n + x.guestList, 0), gateCashPesewas: t.totals.gateCashPesewas, gateMomoPesewas: t.totals.gateMomoPesewas, ticketsValuePesewas: t.nights.reduce((n, x) => n + x.ticketsValuePesewas, 0) };
+  return { nights: events.map(e => e.fields.name), ticketsChecked: checked, admitted, tablesBooked: booked, tablesArrived: arrived, openIssues: open, ...sold };
 }
 export async function frontOfficeReport(env, user, { date } = {}) {
   if (!requireRole(user, ['doorStaff', 'security', ...BOSS])) return FORBIDDEN;

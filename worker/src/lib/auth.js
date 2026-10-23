@@ -21,15 +21,18 @@ import { getDoc } from './firestore.js';
 //   dj, mc       entertainment: their own page (notices, team messages, pay, feedback)
 //   doorStaff    front office: tickets, entry, table bookings and arrivals, customer issues
 //   security     entry checks and incidents
+//   barManager   the lead bartender: everything a bartender does, plus approving stock (deliveries,
+//                counts and corrections), receiving the cash of waiters and bar staff, and the
+//                night's accounts (what left the bar vs what was paid, seller by seller)
 //   barStaff     bartender: the bar queue, handovers, wastage, the stock count
 //   waitStaff    waiters and waitresses: their tables, tabs, rounds and report
 //   cashier      money received: cash payments, the cash shift
 //   organiser    an outside organiser: their own nights
-export const STAFF_ROLES = ['superAdmin', 'director', 'manager', 'hrManager', 'finance', 'eventManager', 'media', 'doorStaff', 'security', 'barStaff', 'waitStaff', 'cashier', 'dj', 'mc', 'organiser'];
+export const STAFF_ROLES = ['superAdmin', 'director', 'manager', 'hrManager', 'finance', 'eventManager', 'media', 'doorStaff', 'security', 'barManager', 'barStaff', 'waitStaff', 'cashier', 'dj', 'mc', 'organiser'];
 export const MANAGERS = ['manager', 'hrManager', 'eventManager'];
 export const ADMIN = ['superAdmin'];                                           // site settings, system status
 export const CMS = ['superAdmin', 'media'];                                    // the website and the nights: nights, tickets, promos, draws, comps, uploads
-export const NIGHTS_VIEW = ['superAdmin', 'director', 'manager', 'hrManager', 'eventManager', 'media', 'finance']; // the nights coming up (read only)
+export const NIGHTS_VIEW = ['superAdmin', 'director', 'manager', 'hrManager', 'eventManager', 'media', 'finance', 'barManager']; // the nights coming up (read only)
 export const TICKET_MONEY = ['superAdmin', 'eventManager'];                    // ticket sales and payments (read); not the director's
 export const MONEY = ['superAdmin'];                                           // refunds, pay in bits, SMS, members, attendance (the ticket side; not the director's)
 export const DOOR = ['superAdmin', 'director', 'manager', 'eventManager', 'doorStaff', 'security', 'organiser'];
@@ -40,7 +43,7 @@ export const STAFF_ADMIN = ['superAdmin', 'director', 'hrManager', 'eventManager
 export const CUSTOMER_CARE = ['superAdmin', 'director', 'manager', 'hrManager']; // customers: payments tonight, top customers, reviews
 // Who may give which role: only a super admin makes admins; directors add managers and finance; the
 // Human manager adds the staff; the Event manager adds organisers.
-export const HR_ROLES = ['doorStaff', 'security', 'barStaff', 'waitStaff', 'cashier', 'dj', 'mc', 'media'];
+export const HR_ROLES = ['doorStaff', 'security', 'barManager', 'barStaff', 'waitStaff', 'cashier', 'dj', 'mc', 'media'];
 export function canAssign(actorRole, role) {
   if (actorRole === 'superAdmin') return STAFF_ROLES.includes(role);
   if (actorRole === 'director') return STAFF_ROLES.includes(role) && role !== 'superAdmin';
@@ -49,7 +52,7 @@ export function canAssign(actorRole, role) {
   return false;
 }
 // Longer PINs for the roles that control money, stock or staff.
-export const pinLength = role => (['superAdmin', 'director', 'manager', 'hrManager', 'finance'].includes(role) ? 6 : 4);
+export const pinLength = role => (['superAdmin', 'director', 'manager', 'hrManager', 'finance', 'barManager'].includes(role) ? 6 : 4);
 
 // The staff record is the authority on the role, so a change or removal applies on the very next
 // request (a sign-in token lasts up to an hour). Records are cached for a few seconds per Worker.

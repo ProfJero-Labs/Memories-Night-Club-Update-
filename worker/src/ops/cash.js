@@ -87,8 +87,10 @@ const FROM_WAITERS = ['waitStaff', 'eventManager'];
 export async function receiveCash(env, b, user) {
   const s = await getDoc(env, 'cash_sessions', String(b?.id || ''));
   if (!s) return { error: 'Cash shift not found.', status: 404 };
-  const asBar = user.role === 'barStaff';
-  if (asBar ? !FROM_WAITERS.includes(s.fields.role) : !requireRole(user, CASH_RECEIVERS)) return { error: asBar ? 'The bar receives cash from waiters; the Manager receives the rest.' : 'The Manager receives the cash.', status: 403 };
+  // The bar takes waiters' cash; the bar manager takes the waiters' and the bartenders'.
+  const asBar = ['barStaff', 'barManager'].includes(user.role);
+  const fromWho = user.role === 'barManager' ? [...FROM_WAITERS, 'barStaff'] : FROM_WAITERS;
+  if (asBar ? !fromWho.includes(s.fields.role) : !requireRole(user, CASH_RECEIVERS)) return { error: asBar ? 'The bar receives cash from waiters; the Manager receives the rest.' : 'The Manager receives the cash.', status: 403 };
   if (s.fields.uid === uidOf(user)) return { error: 'Someone else must receive your own cash.' };
   if (s.fields.status === 'open') return { error: `${s.fields.name} hasn’t counted their cash yet.` };
   if (s.fields.receivedAt) return { error: `Already received by ${s.fields.receivedByName}.` };
@@ -109,8 +111,9 @@ export async function receiveCash(env, b, user) {
 
 // The bar's list: waiters who have counted their cash and are handing it to the bar.
 export async function waiterCash(env, user, { date } = {}) {
-  if (!requireRole(user, ['barStaff', ...CASH_RECEIVERS])) return FORBIDDEN;
-  const all = (await queryWhere(env, 'cash_sessions', [{ field: 'date', value: dateOr(date) }])).filter(x => FROM_WAITERS.includes(x.fields.role));
+  if (!requireRole(user, ['barStaff', 'barManager', ...CASH_RECEIVERS])) return FORBIDDEN;
+  const from = user.role === 'barManager' ? [...FROM_WAITERS, 'barStaff'] : FROM_WAITERS;
+  const all = (await queryWhere(env, 'cash_sessions', [{ field: 'date', value: dateOr(date) }])).filter(x => from.includes(x.fields.role) && x.fields.uid !== uidOf(user));
   return { waiting: all.filter(x => x.fields.status !== 'open' && !x.fields.receivedAt).map(x => view(x.id, x.fields)), stillWith: all.filter(x => x.fields.status === 'open' && cashFigures(x.fields).expectedPesewas).map(x => view(x.id, x.fields)),
     received: all.filter(x => x.fields.receivedAt).map(x => view(x.id, x.fields)) };
 }

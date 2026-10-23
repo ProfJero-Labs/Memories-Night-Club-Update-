@@ -20,7 +20,7 @@ import { prepareTip, tipFields, textTip, phoneOf, guestTipPeople } from './ops/t
 import { paymentAlert } from './ops/alerts.js';
 
 const FORBIDDEN = { error: 'Forbidden.', status: 403 };
-export const BAR = ['superAdmin', 'director', 'manager', 'eventManager', 'barStaff', 'waitStaff'];
+export const BAR = ['superAdmin', 'director', 'manager', 'eventManager', 'barManager', 'barStaff', 'waitStaff'];
 export const PAID_CANCELLERS = ['superAdmin', 'manager']; // a paid order cancelled (a refund): the Manager only
 const MAX_LINES = 20, MAX_QTY = 20;
 const PICKUP = '23456789ABCDEFGHJKMNPQRSTUVWXYZ'; // no 0/O, 1/I/L: read across a loud bar

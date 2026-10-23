@@ -60,6 +60,7 @@ Every screen follows the same few rules, so nothing new has to be learned on a b
 | Job | Opens on | Does |
 |---|---|---|
 | Waiter / waitress | **Tables** | *Quick sale* (drinks → Cash or MoMo), *Open a table* (number or no table, customer's name and phone), add drinks, *I got them* when the bar hands them over, *Send invoice (SMS)*, *Show bill (QR)*, *Customer paid* (cash or MoMo), close, *Bookings*, *My report* (sold, cash, MoMo, hand in my cash, submit) |
+| Bar manager | **Bar** (Orders · Sell · Sellers · Stock · Accounts) | Everything a bartender does, plus: approves what the bar recorded (new stock, counts and corrections), receives the cash of waiters **and** bartenders and hands it all to the Manager, and the **Night accounts** (below). |
 | Bartender | **Bar** | Waiter orders (Start → Ready → Hand to the waiter), confirm drinks a waiter took, drinks coming back, app (QR) orders; **Sell** (quick sale over the counter for cash or MoMo, my sales tonight, hand in my cash, my report); Stock (*Count the stock I met* when the bar opens, confirm new stock the manager added, record new stock, broken, move to another bar, mark a drink finished); Count (closing count) |
 | Cashier | **Cashier** | Find a bill, record cash, receipts; My cash: open with the float, put cash in the safe, refund or pay out (manager approves), count the cash at the end |
 | Front office | **Door** | Entrance (scan tickets, search), staff and members (code in their app, or *let in by name* if their phone is dead), Tables (arrivals, table number, people), Issues, end-of-night Report |
@@ -303,6 +304,34 @@ never in sales, money in or profit.
 - **Performance reviews**: the Human manager reviews the staff; the directors review the managers,
   the Human manager included.
 - Directors see all of it on **To approve**; finance sees what's ready on **To pay**.
+
+## Night accounts (bar manager; the Manager, directors and finance can see them too)
+
+Three steps, on Bar → **Accounts**:
+1. **Count what's left at the bar.** The closing count, as usual (Stock → Count).
+2. **Collect everyone's cash.** Waiters and bartenders count their cash; the bar manager receives
+   it (Sellers), then hands it all to the Manager (Accounts → *My own cash*).
+3. **Check the result.** The screen shows, in big numbers:
+   - **The drinks should bring:** every drink that left the bar (from the count), at today's prices.
+   - **Received:** cash, MoMo and online payments.
+   - **Customers still owe:** unpaid tables, by name.
+   - **Short:** drinks missing at the bar (fewer counted than the records say) plus cash missing
+     (counted or handed in less than recorded). If it's GHS 0, everything adds up.
+
+Then **each person who sold tonight**: drinks they took from the bar, what was paid (cash, MoMo,
+online), what their customers still owe, and their cash (recorded, counted, handed in). Anyone not
+aligned is red, with the reason in plain words, e.g. "Cash short: counted GHS 80, recorded GHS 100"
+or "Unpaid and still open: Tab 5 GHS 30". *How it adds up* shows every line of the sum (free
+drinks, breakages and discounts that were approved count as accounted for).
+
+## Tickets sold, and finding an order
+
+- **Tickets tonight** (Manager: More; front office: More): tickets sold online and at the gate (cash
+  and MoMo, by seller), by ticket type, the guest list, tables booked, and how many came in. The
+  front office's end-of-night report shows the same ticket numbers.
+- **Find an order** (Manager, front office, bar manager and others): type a table code (TBL-…), the
+  customer's phone or their name. It shows the night, what was bought (package, bottles), what was
+  paid and how, whether they arrived, and the table number. Phones show only the last four digits.
 
 ## Cash
 

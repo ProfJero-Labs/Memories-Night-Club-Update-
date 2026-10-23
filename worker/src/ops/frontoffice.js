@@ -30,7 +30,7 @@ async function bookingRows(env, e) {
   return out;
 }
 export async function tablesTonight(env, user, { date } = {}) {
-  if (!requireRole(user, [...FRONT, 'waitStaff', 'barStaff'])) return FORBIDDEN;
+  if (!requireRole(user, [...FRONT, 'waitStaff', 'barManager', 'barStaff'])) return FORBIDDEN;
   const d = dateOr(date);
   const all = (await listDocs(env, 'events')).filter(e => e.fields.date && e.fields.active !== false);
   const last = new Date(Date.parse(`${d}T12:00:00Z`) + UPCOMING_DAYS * 864e5).toISOString().slice(0, 10);
@@ -52,7 +52,7 @@ export async function updateTableBooking(env, b, user) {
   const o = await getDoc(env, 'orders', String(b?.orderId || ''));
   if (!o || o.fields.kind !== 'table') return { error: 'Booking not found.', status: 404 };
   const f = { ...o.fields };
-  if (b.bottlesServed !== undefined) { if (!requireRole(user, [...FRONT, 'waitStaff', 'barStaff'])) return FORBIDDEN; f.bottlesServed = b.bottlesServed === true; f.bottlesServedByName = user.name || ''; f.bottlesServedAt = now(); }
+  if (b.bottlesServed !== undefined) { if (!requireRole(user, [...FRONT, 'waitStaff', 'barManager', 'barStaff'])) return FORBIDDEN; f.bottlesServed = b.bottlesServed === true; f.bottlesServedByName = user.name || ''; f.bottlesServedAt = now(); }
   if (b.tableNumber !== undefined || b.guestsArrived !== undefined) {
     if (!requireRole(user, FRONT)) return FORBIDDEN;
     if (b.tableNumber !== undefined) f.tableNumber = clean(b.tableNumber, 20);

@@ -7,7 +7,7 @@ import { sapi, when } from '../staff.js';
 import { sheet, say, busy } from './ops-ui.js';
 
 // Jobs in the order people think of them (the boss first, outside organisers last).
-const ORDER = ['superAdmin', 'director', 'manager', 'hrManager', 'finance', 'eventManager', 'media', 'doorStaff', 'security', 'barStaff', 'waitStaff', 'cashier', 'dj', 'mc', 'organiser'];
+const ORDER = ['superAdmin', 'director', 'manager', 'hrManager', 'finance', 'eventManager', 'media', 'doorStaff', 'security', 'barManager', 'barStaff', 'waitStaff', 'cashier', 'dj', 'mc', 'organiser'];
 const rank = r => { const i = ORDER.indexOf(r); return i < 0 ? 99 : i; };
 const plural = n => (n === 1 ? '1 person' : `${n} people`);
 const digits = s => String(s || '').replace(/\D/g, '').replace(/^233/, '0');
@@ -24,6 +24,7 @@ const ROLE_KEY = `<details class="fold"><summary>What each job can do</summary><
   <dt>DJ / MC</dt><dd>Their page: notices, team messages, pay slips, feedback.</dd>
   <dt>Front office</dt><dd>Tickets at the entrance, table bookings and arrivals, customer issues.</dd>
   <dt>Security</dt><dd>Checks tickets at the entrance and records incidents.</dd>
+  <dt>Bar manager</dt><dd>The lead bartender: everything a bartender does, approves the bar’s stock, receives the waiters’ and bartenders’ cash, and does the night’s accounts.</dd>
   <dt>Bartender</dt><dd>Prepares orders, hands drinks to waiters, records breakages, counts stock.</dd>
   <dt>Waiter / waitress</dt><dd>Opens tabs for tables, sends rounds to the bar, shares bills, “My report”.</dd>
   <dt>Cashier</dt><dd>Takes cash payments and counts the cash at the end of the shift.</dd>

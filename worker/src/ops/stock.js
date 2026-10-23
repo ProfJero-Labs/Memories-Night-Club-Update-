@@ -33,8 +33,9 @@ import { requireRole, STOCK, uidOf } from '../lib/auth.js';
 import { FORBIDDEN, bizDate, dateOr, who, audit, logChange, closedError, int } from './common.js';
 import { approvedPurchase, notePurchaseReceived } from './purchases.js';
 
-export const STOCK_HANDS = [...STOCK, 'barStaff'];           // may record deliveries, transfers, breakages, counts
-const MENU_READERS = [...STOCK, 'barStaff', 'waitStaff', 'cashier', 'eventManager'];
+export const STOCK_HANDS = [...STOCK, 'barManager', 'barStaff']; // may record deliveries, transfers, breakages, counts
+export const STOCK_APPROVERS = [...STOCK, 'barManager'];          // confirm what the bar recorded; review counts
+const MENU_READERS = [...STOCK, 'barManager', 'barStaff', 'waitStaff', 'cashier', 'eventManager'];
 export const UNITS = ['bottle', 'can', 'glass', 'shot', 'jug', 'pack', 'item'];
 export const WASTE_REASONS = { broken: 'Broken', spilled: 'Spilled', expired: 'Expired / bad', other: 'Other' };
 export const COUNT_REASONS = { not_recorded: 'Sold or given but not recorded', broken: 'Broken, not recorded', miscount: 'Counted wrong earlier', delivery: 'Delivery not recorded', unknown: 'Don’t know' };
@@ -147,7 +148,7 @@ const deliveryView = d => ({ id: d.id, productId: d.fields.productId, productNam
   supplier: d.fields.supplier || '', reference: d.fields.reference || '', status: d.fields.status, byBar: !!d.fields.byBar, recordedByName: d.fields.recordedByName || '', recordedAt: d.fields.recordedAt,
   confirmedByName: d.fields.confirmedByName || '', confirmedAt: d.fields.confirmedAt || '', note: d.fields.note || '', confirmNote: d.fields.confirmNote || '' });
 // Who may confirm: never the person who recorded it; what the bar recorded needs finance or a manager.
-const canConfirm = (user, f) => f.recordedBy !== uidOf(user) && (f.byBar ? requireRole(user, STOCK) : requireRole(user, STOCK_HANDS));
+const canConfirm = (user, f) => f.recordedBy !== uidOf(user) && (f.byBar ? requireRole(user, STOCK_APPROVERS) : requireRole(user, STOCK_HANDS));
 
 // New stock for one bar (or every bar): waiting to be confirmed, and the last week's confirmed or refused.
 export async function listDeliveries(env, user, { stationId } = {}) {
@@ -364,7 +365,7 @@ export async function explainCount(env, b, user) {
 
 // Manager or finance looks at a submitted count (not the person who counted it).
 export async function reviewCount(env, b, user) {
-  if (!requireRole(user, STOCK)) return FORBIDDEN;
+  if (!requireRole(user, STOCK_APPROVERS)) return FORBIDDEN;
   const docId = `${dateOr(b?.date)}__${String(b?.stationId || '')}__closing`;
   const c = await getDoc(env, 'stock_counts', docId);
   if (!c) return { error: 'That count isn’t in yet.', status: 404 };

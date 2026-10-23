@@ -216,3 +216,13 @@ input:not([type=checkbox]):not([type=radio]), select, textarea { font-size: max(
 .qr-big { background: #fff; padding: 16px; justify-self: center; width: min(100%, 300px); }
 .qr-big svg { display: block; width: 100%; height: auto; }
 .tcard-open { display: grid; gap: 6px; width: 100%; min-height: 48px; padding: 0; border: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+
+/* Night accounts: the three steps, and flags on each seller */
+.acc-steps { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.acc-steps li { display: grid; gap: 4px; padding: 12px; border: 1px solid var(--line); }
+.acc-steps li.done { border-color: #2f6b56; } .acc-steps li span { color: var(--muted); font-size: 14px; }
+.acc-steps li .mid { justify-self: start; }
+.acc-flag { display: block; } .acc-flag.bad { color: #ff7a9c; font-weight: 700; } .acc-flag.warn { color: #ffb36b; } .acc-flag.info { color: var(--muted); }
+.ln.bad span:last-child { color: #ff7a9c; }
+.pos-money .big-line b { white-space: nowrap; }
+.pos-money .big-line span { min-width: 0; }

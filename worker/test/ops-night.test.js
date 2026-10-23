@@ -13,7 +13,7 @@ function setup() {
   store.seed('bar_stations', 'main', { name: 'Main bar', token: 'a'.repeat(32), open: true });
   store.seed('menu_items', 'beer', { name: 'Club beer', category: 'Beer', unit: 'bottle', pricePesewas: 2500, costPesewas: 1200, available: true, tracked: true });
   store.seed('menu_items', 'shot', { name: 'Tequila shot', category: 'Shots', unit: 'shot', pricePesewas: 3000, available: true, tracked: true });
-  const people = { w1: ['Efua Waiter', 'waitStaff'], w2: ['Kojo Waiter', 'waitStaff'], b1: ['Ama Bartender', 'barStaff'], c1: ['Yaw Cashier', 'cashier'], m1: ['Akos Manager', 'manager'], f1: ['Esi Finance', 'finance'], fo: ['Kofi Front', 'doorStaff'] };
+  const people = { w1: ['Efua Waiter', 'waitStaff'], w2: ['Kojo Waiter', 'waitStaff'], b1: ['Ama Bartender', 'barStaff'], c1: ['Yaw Cashier', 'cashier'], m1: ['Akos Manager', 'manager'], f1: ['Esi Finance', 'finance'], fo: ['Kofi Front', 'doorStaff'], bm: ['Bimpe Bar Manager', 'barManager'] };
   for (const [uid, [name, role]] of Object.entries(people)) store.seed('users', uid, { name, role, phone: `02400000${Object.keys(people).indexOf(uid)}0` });
   const as = uid => ({ uid, role: people[uid][1] });
   const call = async (method, path, { body, who } = {}) => {
@@ -23,8 +23,8 @@ function setup() {
     const text = await r.text();
     return { status: r.status, text, data: JSON.parse(text || '{}') };
   };
-  const W1 = as('w1'), W2 = as('w2'), B1 = as('b1'), C1 = as('c1'), M1 = as('m1'), F1 = as('f1'), FO = as('fo');
-  return { store, env, call, W1, W2, B1, C1, M1, F1, FO };
+  const W1 = as('w1'), W2 = as('w2'), B1 = as('b1'), C1 = as('c1'), M1 = as('m1'), F1 = as('f1'), FO = as('fo'), BM = as('bm');
+  return { store, env, call, W1, W2, B1, C1, M1, F1, FO, BM };
 }
 const ok = (r, what) => { assert.ok(r.status === 200, `${what}: ${r.status} ${r.data.error || ''}`); return r.data; };
 async function barMakes(ctx, rid) {
@@ -475,4 +475,93 @@ test('managers see the nights coming up (read only): tickets sold and left per t
   assert.deepEqual([n.ticketsSold, n.tablesBooked, n.tickets[0].sold, n.tickets[0].left], [3, 1, 3, 40]);
   assert.equal((await ctx.call('GET', '/api/ops/nights', { who: ctx.W1 })).status, 403);
   assert.equal((await ctx.call('POST', '/api/admin/events', { who: ctx.M1, body: { name: 'X', date: soon } })).status, 403, 'managers see the nights; Media changes them');
+});
+
+test('night accounts: the bar manager counts what’s left; the system shows what the drinks should bring, what accounts for it, and who isn’t aligned', async () => {
+  const ctx = setup();
+  await openingCount(ctx); // 50 beer (GHS 25), 20 shots (GHS 30)
+  // Efua: 2 beers, paid cash GHS 50, but she counts only GHS 40.
+  const t1 = ok(await ctx.call('POST', '/api/ops/tabs/open', { who: ctx.W1, body: { table: '1' } }), 'tab 1');
+  const r1 = ok(await ctx.call('POST', '/api/ops/tabs/round', { who: ctx.W1, body: { tabId: t1.id, lines: [{ productId: 'beer', qty: 2 }] } }), 'round 1');
+  await barMakes(ctx, r1.id);
+  ok(await ctx.call('POST', '/api/ops/tabs/round-action', { who: ctx.W1, body: { roundId: r1.id, action: 'delivered' } }), 'delivered');
+  ok(await ctx.call('POST', '/api/ops/tabs/pay', { who: ctx.W1, body: { tabId: t1.id, method: 'cash', amountPesewas: 5000 } }), 'cash');
+  // Kojo: a shot, not paid, tab still open.
+  const t2 = ok(await ctx.call('POST', '/api/ops/tabs/open', { who: ctx.W2, body: { table: '2' } }), 'tab 2');
+  const r2 = ok(await ctx.call('POST', '/api/ops/tabs/round', { who: ctx.W2, body: { tabId: t2.id, lines: [{ productId: 'shot', qty: 1 }] } }), 'round 2');
+  await barMakes(ctx, r2.id);
+  // Before the count: live, nothing missing yet, the count step not done.
+  let a = ok(await ctx.call('GET', '/api/ops/accounts', { who: ctx.BM }), 'accounts (live)');
+  assert.equal(a.steps.counted, false);
+  // The bar counts: 47 beers (records say 48: one missing), 19 shots (right).
+  ok(await ctx.call('POST', '/api/ops/stock/count', { who: ctx.B1, body: { stationId: 'main', kind: 'closing', lines: [{ productId: 'beer', counted: 47, reason: 'unknown' }, { productId: 'shot', counted: 19 }] } }), 'closing count');
+  assert.match((await ctx.call('POST', '/api/ops/cash/close', { who: ctx.W1, body: { countedPesewas: 4000 } })).data.error, /less than expected/);
+  ok(await ctx.call('POST', '/api/ops/cash/close', { who: ctx.W1, body: { countedPesewas: 4000, explanation: 'Gave change wrong' } }), 'Efua counts her cash');
+  assert.equal((await ctx.call('GET', '/api/ops/accounts', { who: ctx.W1 })).status, 403, 'waiters don’t see the night’s accounts');
+  assert.equal((await ctx.call('GET', '/api/ops/accounts', { who: ctx.B1 })).status, 403, 'nor does a bartender');
+  a = ok(await ctx.call('GET', '/api/ops/accounts', { who: ctx.BM }), 'accounts');
+  assert.equal(a.steps.counted, true);
+  assert.equal(a.shouldMakePesewas, 10500, '3 beers (GHS 75) + 1 shot (GHS 30) left the bar');
+  assert.deepEqual([a.money.cashPesewas, a.money.owedPesewas, a.money.receivedPesewas], [5000, 3000, 5000]);
+  assert.equal(a.missingAtBarPesewas, 2500, 'one beer missing at the bar');
+  assert.deepEqual(a.bars[0].missing, [{ name: 'Club beer', qty: 1, valuePesewas: 2500 }]);
+  assert.equal(a.otherDifferencePesewas, 0, 'everything else is accounted for');
+  assert.equal(a.cashShortPesewas, 1000);
+  const efua = a.sellers.find(x => x.name === 'Efua Waiter'), kojo = a.sellers.find(x => x.name === 'Kojo Waiter');
+  assert.equal(efua.state, 'short'); assert.match(efua.flags.map(f => f.text).join(' | '), /Cash short: counted GHS 40, recorded GHS 50 \(GHS 10 short\)/);
+  assert.deepEqual([efua.takenPesewas, efua.cashPesewas, efua.owedPesewas], [5000, 5000, 0]);
+  assert.equal(kojo.state, 'short'); assert.match(kojo.flags.map(f => f.text).join(' | '), /Unpaid and still open: Tab 2 GHS 30/);
+  // The Manager and finance see the same accounts.
+  for (const who of [ctx.M1, ctx.F1]) assert.equal(ok(await ctx.call('GET', '/api/ops/accounts', { who }), 'accounts').shouldMakePesewas, 10500);
+});
+
+test('the bar manager: approves what the bar recorded, receives bartenders’ and waiters’ cash, and hands it to the Manager', async () => {
+  const ctx = setup();
+  await openingCount(ctx);
+  // A bartender's quick sale in cash, then the bartender counts their cash.
+  const q = await ctx.call('POST', '/api/ops/quick-sale', { who: ctx.B1, body: { stationId: 'main', fromBar: true, method: 'cash', lines: [{ productId: 'beer', qty: 1 }] } });
+  assert.equal(q.status, 200, q.data.error);
+  ok(await ctx.call('POST', '/api/ops/cash/close', { who: ctx.B1, body: { countedPesewas: 2500 } }), 'bartender counts');
+  // A waiter's cash too.
+  const t = ok(await ctx.call('POST', '/api/ops/tabs/open', { who: ctx.W1, body: { table: '3' } }), 'tab');
+  const r = ok(await ctx.call('POST', '/api/ops/tabs/round', { who: ctx.W1, body: { tabId: t.id, lines: [{ productId: 'shot', qty: 1 }] } }), 'round');
+  await barMakes(ctx, r.id);
+  ok(await ctx.call('POST', '/api/ops/tabs/pay', { who: ctx.W1, body: { tabId: t.id, method: 'cash', amountPesewas: 3000 } }), 'cash');
+  ok(await ctx.call('POST', '/api/ops/cash/close', { who: ctx.W1, body: { countedPesewas: 3000 } }), 'waiter counts');
+  const list = ok(await ctx.call('GET', '/api/ops/cash/waiters', { who: ctx.BM }), 'cash to receive');
+  assert.deepEqual(list.waiting.map(x => x.name).sort(), ['Ama Bartender', 'Efua Waiter'], 'bartenders and waiters hand their cash to the bar manager');
+  for (const x of list.waiting) ok(await ctx.call('POST', '/api/ops/cash/receive', { who: ctx.BM, body: { id: x.id, receivedPesewas: x.countedPesewas } }), `receive ${x.name}`);
+  const mine = ok(await ctx.call('GET', '/api/ops/cash', { who: ctx.BM }), 'my cash');
+  assert.equal(mine.session?.expectedPesewas ?? mine.expectedPesewas, 5500, 'it is all in the bar manager’s cash, for the Manager');
+  // A bartender can’t receive another bartender’s cash.
+  assert.equal(ok(await ctx.call('GET', '/api/ops/cash/waiters', { who: ctx.B1 }), 'bar list').waiting.length, 0);
+  // Stock: the bar manager reviews the closing count (not their own).
+  ok(await ctx.call('POST', '/api/ops/stock/count', { who: ctx.B1, body: { stationId: 'main', kind: 'closing', lines: [{ productId: 'beer', counted: 49 }, { productId: 'shot', counted: 19 }] } }), 'count');
+  const rv = await ctx.call('POST', '/api/ops/stock/review', { who: ctx.BM, body: { stationId: 'main' } });
+  assert.notEqual(rv.status, 403, `the bar manager reviews counts: ${rv.data.error || ''}`);
+});
+
+test('tickets tonight (online and at the gate) for the Manager and the front office; find any table or ticket order by code, phone or name', async () => {
+  const ctx = setup();
+  const tonight = new Date().toISOString();
+  ctx.store.seed('events', 'n1', { name: 'Afrobeats Friday', date: tonight, visibility: 'public', active: true });
+  ctx.store.seed('orders', 'o1', { eventId: 'n1', kind: 'ticket', ticketTypeName: 'Regular', quantity: 3, amountPesewas: 30000, status: 'confirmed', buyerName: 'Ama Owusu', buyerPhone: '0241112233', reference: 'MEM-1-ABC', createdAt: tonight });
+  ctx.store.seed('orders', 'o2', { eventId: 'n1', kind: 'ticket', ticketTypeName: 'Regular', quantity: 1, amountPesewas: 12000, status: 'confirmed', channel: 'gate', paidWith: 'cash', soldByName: 'Kofi Front', buyerPhone: '0249998877', createdAt: tonight });
+  ctx.store.seed('orders', 'tb9x2kq1zz', { eventId: 'n1', kind: 'table', packageName: 'VIP table', amountPesewas: 300000, status: 'confirmed', buyerName: 'Yaw Mensah', buyerPhone: '0205556677', bottles: [{ name: 'Hennessy', quantity: 2 }], createdAt: tonight });
+  const night = (await ctx.call('GET', '/api/ops/tickets', { who: ctx.M1 })).data;
+  assert.equal(night.totals.ticketsSold, 4); assert.equal(night.nights[0].online.tickets, 3); assert.equal(night.nights[0].gate.tickets, 1);
+  assert.equal(night.nights[0].gate.cashPesewas, 12000); assert.equal(night.nights[0].tables.booked, 1);
+  assert.equal((await ctx.call('GET', '/api/ops/tickets', { who: ctx.FO })).status, 200, 'the front office sees it too');
+  assert.equal((await ctx.call('GET', '/api/ops/tickets', { who: ctx.W1 })).status, 403);
+  const rep = ok(await ctx.call('GET', '/api/ops/front-report', { who: ctx.FO }), 'front office report').figures;
+  assert.deepEqual([rep.ticketsSold, rep.ticketsOnline, rep.ticketsAtGate, rep.gateCashPesewas], [4, 3, 1, 12000]);
+  // Find the table order: by its code, the phone, or the name.
+  for (const q of ['TBL-TB9X2K', '020 555 6677', 'yaw men']) {
+    const f = ok(await ctx.call('GET', `/api/ops/find-order?q=${encodeURIComponent(q)}`, { who: ctx.FO }), `find ${q}`);
+    assert.equal(f.orders.length, 1, q); assert.equal(f.orders[0].what, 'VIP table');
+    assert.deepEqual(f.orders[0].bottles, [{ name: 'Hennessy', quantity: 2 }]); assert.equal(f.orders[0].phoneLast4, '6677');
+    assert.ok(!JSON.stringify(f).includes('0205556677'), 'never the full phone');
+  }
+  assert.equal(ok(await ctx.call('GET', '/api/ops/find-order?q=MEM-1-ABC', { who: ctx.M1 }), 'by reference').orders[0].what, '3 × Regular');
+  assert.equal((await ctx.call('GET', '/api/ops/find-order?q=yaw', { who: ctx.W1 })).status, 403);
 });

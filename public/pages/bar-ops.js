@@ -8,14 +8,18 @@ import { $, $$, esc } from '../app.js';
 import { requireStaff, sapi } from '../staff.js';
 import { sheet, say, st, every, bottomNav, busy, ghsIn, moneyField, money, when, ask } from '../lib/ops-ui.js';
 import { drinkPicker, paySheet, handInCash, tipSheet, tipSaid } from '../lib/sell.js';
+import { accountsView } from '../lib/ops-views.js';
 
-const user = await requireStaff(['superAdmin', 'director', 'manager', 'eventManager', 'barStaff']);
-const canStock = ['superAdmin', 'director', 'manager', 'finance', 'barStaff'].includes(user.role);
+const user = await requireStaff(['superAdmin', 'director', 'manager', 'eventManager', 'barManager', 'barStaff']);
+// The bar manager: everything the bar does, plus the night's accounts and everyone's cash.
+const lead = user.role === 'barManager';
+const canStock = ['superAdmin', 'director', 'manager', 'finance', 'barManager', 'barStaff'].includes(user.role);
 let station = sessionStorage.getItem('bar-station') || '', view = 'orders', stop = null, seen = null;
-const canSell = ['superAdmin', 'director', 'manager', 'barStaff'].includes(user.role);
-const views = { orders: $('#vOrders'), sell: $('#vSell'), waiters: $('#vWaiters'), stock: $('#vStock'), shift: $('#vShift') };
+const canSell = ['superAdmin', 'director', 'manager', 'barManager', 'barStaff'].includes(user.role);
+const views = { orders: $('#vOrders'), sell: $('#vSell'), waiters: $('#vWaiters'), stock: $('#vStock'), shift: $('#vShift'), accounts: $('#vAccounts') };
 // Four jobs, four tabs. The counts (the stock I met, the closing count) live under Stock.
-const nav = bottomNav([['orders', 'Orders'], ...(canSell ? [['sell', 'Sell']] : []), ['waiters', 'Waiters'], ['stock', 'Stock'], ...(canSell ? [['shift', 'My shift']] : [])], k => go(k));
+// The bar manager's fifth tab is Accounts (their own cash is handed in from there: My shift).
+const nav = bottomNav([['orders', 'Orders'], ...(canSell ? [['sell', 'Sell']] : []), ['waiters', lead ? 'Sellers' : 'Waiters'], ['stock', 'Stock'], ...(lead ? [['accounts', 'Accounts']] : canSell ? [['shift', 'My shift']] : [])], k => go(k));
 document.addEventListener('bar-station', e => { if (e.detail !== station) { station = e.detail; seen = null; go(view); } });
 const top = (t, kind = 'good') => say($('#msgTop'), t, kind);
 $('#msgTop').onclick = () => { $('#msgTop').innerHTML = ''; }; // a tap clears a message
@@ -38,6 +42,15 @@ function go(k) {
   if (k === 'waiters') stop = every(15000, waitersView);
   if (k === 'stock') stockView();
   if (k === 'shift') shiftView();
+  if (k === 'accounts') accounts();
+}
+
+// ── The night's accounts (bar manager): count → what it should bring → who isn't aligned ──
+async function accounts() {
+  const el = views.accounts;
+  el.innerHTML = '<div id="accV"></div><button class="big ghost" id="toShift" style="margin-top:16px">My own cash: hand it all to the Manager</button>';
+  $('#toShift', el).onclick = () => go('shift');
+  try { await accountsView($('#accV', el), undefined, { onCount: () => go('stock'), onCash: () => go('waiters') }); } catch (e) { el.innerHTML = `<div class="say bad">${esc(e.message)}</div>`; }
 }
 const lines = r => r.lines.map(l => `${l.qty} × ${esc(l.name)}`).join(', ');
 
@@ -50,7 +63,7 @@ async function waitersView(alive = () => true) {
   waitersData = d;
   const total = d.waiters.reduce((n, w) => n + w.givenPesewas, 0), unpaid = d.waiters.reduce((n, w) => n + w.unpaidPesewas, 0);
   // Cash from waiters: the bar is its custodian, and hands it all to the Manager.
-  const cashPart = `<h2 style="margin:0">Cash from waiters</h2>
+  const cashPart = `<h2 style="margin:0">Cash from waiters${lead ? ' and bartenders' : ''}</h2>
     ${c.waiting.map(x => `<div class="tcard warn" style="cursor:default"><span class="row"><span class="t" style="font-size:18px">${esc(x.name)}</span><span class="amt">${money(x.countedPesewas)}</span></span>
       ${x.differencePesewas ? `<span class="sub">${money(Math.abs(x.differencePesewas))} ${x.differencePesewas < 0 ? 'less' : 'more'} than their sales: ${esc(x.explanation)}</span>` : ''}
       <span class="btn-row"><button class="mid okc" type="button" data-rc="${esc(x.id)}">Received</button></span></div>`).join('') || '<p class="muted" style="margin:0">No cash waiting to be handed over.</p>'}
