@@ -7,7 +7,7 @@ import { sapi, when } from '../staff.js';
 import { sheet, say, busy } from './ops-ui.js';
 
 // Jobs in the order people think of them (the boss first, outside organisers last).
-const ORDER = ['superAdmin', 'director', 'manager', 'hrManager', 'finance', 'eventManager', 'doorStaff', 'security', 'barStaff', 'waitStaff', 'cashier', 'dj', 'mc', 'organiser'];
+const ORDER = ['superAdmin', 'director', 'manager', 'hrManager', 'finance', 'eventManager', 'media', 'doorStaff', 'security', 'barStaff', 'waitStaff', 'cashier', 'dj', 'mc', 'organiser'];
 const rank = r => { const i = ORDER.indexOf(r); return i < 0 ? 99 : i; };
 const plural = n => (n === 1 ? '1 person' : `${n} people`);
 const digits = s => String(s || '').replace(/\D/g, '').replace(/^233/, '0');
@@ -19,7 +19,8 @@ const ROLE_KEY = `<details class="fold"><summary>What each job can do</summary><
   <dt>Manager</dt><dd>Purchases, sales, stock and counts, cash from the staff, customers, approvals, closing the night.</dd>
   <dt>Human manager</dt><dd>The floor and customers (tables, reviews, complaints) and the people: staff accounts, members, salaries, bonuses, loans, notices, feedback, reviews.</dd>
   <dt>Finance officer</dt><dd>Prices and costs, purchases, money, bills and budget, paying (once a director approves), end-of-day report.</dd>
-  <dt>Event manager</dt><dd>Nights, tickets, promos, bookings, organiser accounts, table service and discounts.</dd>
+  <dt>Event manager</dt><dd>Ticket money, organiser accounts, the door and gate sales, table service and discounts.</dd>
+  <dt>Media</dt><dd>The website and the nights: nights, tickets, promos, draws, guest lists, flyers and videos, event requests.</dd>
   <dt>DJ / MC</dt><dd>Their page: notices, team messages, pay slips, feedback.</dd>
   <dt>Front office</dt><dd>Tickets at the entrance, table bookings and arrivals, customer issues.</dd>
   <dt>Security</dt><dd>Checks tickets at the entrance and records incidents.</dd>

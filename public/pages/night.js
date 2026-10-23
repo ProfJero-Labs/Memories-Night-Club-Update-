@@ -15,7 +15,7 @@
 import { $, $$, esc } from '../app.js';
 import { requireStaff, staffHeader, sapi } from '../staff.js';
 import { bottomNav, sheet, say, st, every, money, when, ask, backBar, bindBackBar, upcomingBookings } from '../lib/ops-ui.js';
-import { salesView, closingView, approvalsView, productsView, stockAdminView, eodListView, eodView, moneyView, expenseSheet, explainSheet, budgetView, paymentsView, commissionsView, toApproveView, purchasesView, cashReceiveView, feedbackInboxView } from '../lib/ops-views.js';
+import { expensesView, nightsView, salesView, closingView, approvalsView, productsView, stockAdminView, eodListView, eodView, moneyView, expenseSheet, explainSheet, budgetView, paymentsView, commissionsView, toApproveView, purchasesView, cashReceiveView, feedbackInboxView } from '../lib/ops-views.js';
 import { payView, reviewsView, perfView } from '../lib/people-views.js';
 import { staffView } from '../lib/staff-view.js';
 
@@ -59,6 +59,8 @@ async function route() {
     if (key === 'purchases') { app.innerHTML = `${back()}<div id="puv"></div>`; bindBack(); return await purchasesView($('#puv')); }
     if (key === 'cash') { app.innerHTML = `${back()}<div id="crv"></div>`; bindBack(); return await cashReceiveView($('#crv')); }
     if (key === 'stock') { app.innerHTML = `${back()}<div id="kv"></div>`; bindBack(); return await stockAdminView($('#kv'), undefined, undefined, { role: user.role }); }
+    if (key === 'expenses') { app.innerHTML = `${back()}<div id="exv"></div>`; bindBack(); return await expensesView($('#exv')); }
+    if (key === 'nights') { app.innerHTML = `${back()}<div id="nv"></div>`; bindBack(); return await nightsView($('#nv')); }
     if (key === 'money') { app.innerHTML = `${director ? '' : back()}<div id="mv"></div>`; bindBack(); return await moneyView($('#mv')); }
     stop = every(10000, alive => tonight(alive).catch(e => alive() && fail(e)));
   } catch (e) { fail(e); }
@@ -170,8 +172,8 @@ function more() {
     ['Floor', [['tables', 'Tables', 'Open tables and what they owe'], ['reviews', 'Customer reviews', 'What customers say'], ...(user.role === 'superAdmin' ? [['@admin.html', 'Control room', 'Site, nights, settings']] : [])]],
   ] : [
     ['Tonight', [['payments', 'Payments tonight', 'Every payment, with details'], ['cash', 'Cash from the staff', 'Receive each person’s counted cash'], ['approvals', 'Approvals', 'Everything asked tonight'], ['sales', 'Tonight in detail', 'By waiter, by bar, by drink']]],
-    ['Stock and money', [['purchases', 'Buying drinks', 'Ask; finance and a director approve'], ['stock', 'Stock', 'New stock, counts, differences'], ['money', 'Money', 'In, out, profit; expenses'], ['prices', 'Drinks & prices', 'Set by finance'], ['commissions', 'Commissions', 'Who brought the big tables']]],
-    ['Records', [['reports', 'Past nights', 'End-of-day reports'], ['@admin.html#members', 'Members', 'Members and passes']]],
+    ['Stock and money', [['expenses', 'Expenses', 'What was spent; add one'], ['purchases', 'Buying drinks', 'Ask; finance and a director approve'], ['stock', 'Stock', 'New stock, counts, differences'], ['money', 'Money', 'In, out, profit'], ['prices', 'Drinks & prices', 'Set by finance'], ['commissions', 'Commissions', 'Who brought the big tables']]],
+    ['Records', [['nights', 'Nights coming up', 'Tickets sold, tables booked'], ['reports', 'Past nights', 'End-of-day reports'], ['@admin.html#members', 'Members', 'Members and passes']]],
   ];
   const { box, close } = sheet(`<h2>More</h2>${groups.map(([g, items]) => `<p class="group-h">${esc(g)}</p><div class="more-list">${items.map(([k, l, sub]) => `<button type="button" data-more="${esc(k)}"><b>${esc(l)}</b><span>${esc(sub)}</span></button>`).join('')}</div>`).join('')}`, { label: 'More', full: true });
   $$('[data-more]', box).forEach(b => b.onclick = () => { close(); const k = b.dataset.more; if (k.startsWith('@')) location.href = k.slice(1); else location.hash = k; });

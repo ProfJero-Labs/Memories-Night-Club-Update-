@@ -437,3 +437,42 @@ test('cash chain: a waiter takes cash (no setting needed), hands it to the bar; 
   // Finance sees the cash in the night's sales.
   assert.equal(ok(await ctx.call('GET', '/api/ops/sales', { who: ctx.F1 }), 'sales').totals.cashPesewas, 8000);
 });
+
+test('finance sees each waiter’s night side by side: sales, paid, cash, MoMo, and whether their report is in', async () => {
+  const ctx = setup();
+  await openingCount(ctx);
+  const t1 = ok(await ctx.call('POST', '/api/ops/tabs/open', { who: ctx.W1, body: { table: '1' } }), 'tab 1');
+  const r1 = ok(await ctx.call('POST', '/api/ops/tabs/round', { who: ctx.W1, body: { tabId: t1.id, lines: [{ productId: 'beer', qty: 2 }] } }), 'round 1');
+  await barMakes(ctx, r1.id);
+  ok(await ctx.call('POST', '/api/ops/tabs/round-action', { who: ctx.W1, body: { roundId: r1.id, action: 'delivered' } }), 'delivered');
+  ok(await ctx.call('POST', '/api/ops/tabs/pay', { who: ctx.W1, body: { tabId: t1.id, method: 'cash', amountPesewas: 5000 } }), 'cash');
+  const t2 = ok(await ctx.call('POST', '/api/ops/tabs/open', { who: ctx.W2, body: { table: '2' } }), 'tab 2');
+  const r2 = ok(await ctx.call('POST', '/api/ops/tabs/round', { who: ctx.W2, body: { tabId: t2.id, lines: [{ productId: 'shot', qty: 1 }] } }), 'round 2');
+  await barMakes(ctx, r2.id);
+  ok(await ctx.call('POST', '/api/ops/tabs/pay', { who: ctx.W2, body: { tabId: t2.id, method: 'momo', amountPesewas: 3000, momoRef: 'MM1234567' } }), 'momo');
+  ok(await ctx.call('POST', '/api/ops/my-report', { who: ctx.W1, body: {} }), 'Efua’s report');
+  assert.equal((await ctx.call('GET', '/api/ops/waiters', { who: ctx.W1 })).status, 403, 'a waiter sees only their own report');
+  const d = ok(await ctx.call('GET', '/api/ops/waiters', { who: ctx.F1 }), 'finance');
+  const efua = d.waiters.find(w => w.name === 'Efua Waiter'), kojo = d.waiters.find(w => w.name === 'Kojo Waiter');
+  assert.deepEqual([efua.salesPesewas, efua.cashCollectedPesewas, efua.unpaidPesewas, !!efua.report], [5000, 5000, 0, true]);
+  assert.deepEqual([kojo.salesPesewas, kojo.momoRecordedPesewas, !!kojo.report], [3000, 3000, false]);
+  assert.equal(d.missing, 1);
+  assert.deepEqual([d.totals.salesPesewas, d.totals.paidPesewas], [8000, 8000]);
+});
+
+test('managers see the nights coming up (read only): tickets sold and left per type, tables booked; waiters don’t', async () => {
+  const ctx = setup();
+  const soon = new Date(Date.now() + 3 * 864e5).toISOString(), past = new Date(Date.now() - 5 * 864e5).toISOString();
+  ctx.store.seed('events', 'n1', { name: 'Afrobeats Friday', date: soon, doors: '10PM', venue: 'Memories', visibility: 'public', active: true });
+  ctx.store.seed('events', 'old', { name: 'Last week', date: past, visibility: 'public', active: true });
+  ctx.store.seed('ticket_types', 'reg', { eventId: 'n1', name: 'Regular', pricePesewas: 10000, remaining: 40, active: true });
+  ctx.store.seed('orders', 'o1', { eventId: 'n1', kind: 'ticket', ticketTypeId: 'reg', quantity: 3, status: 'confirmed' });
+  ctx.store.seed('orders', 'o2', { eventId: 'n1', kind: 'ticket', ticketTypeId: 'reg', quantity: 2, status: 'pending' });
+  ctx.store.seed('orders', 'o3', { eventId: 'n1', kind: 'table', status: 'confirmed' });
+  const d = ok(await ctx.call('GET', '/api/ops/nights', { who: ctx.M1 }), 'nights');
+  assert.deepEqual(d.nights.map(n => n.name), ['Afrobeats Friday'], 'only nights to come');
+  const n = d.nights[0];
+  assert.deepEqual([n.ticketsSold, n.tablesBooked, n.tickets[0].sold, n.tickets[0].left], [3, 1, 3, 40]);
+  assert.equal((await ctx.call('GET', '/api/ops/nights', { who: ctx.W1 })).status, 403);
+  assert.equal((await ctx.call('POST', '/api/admin/events', { who: ctx.M1, body: { name: 'X', date: soon } })).status, 403, 'managers see the nights; Media changes them');
+});

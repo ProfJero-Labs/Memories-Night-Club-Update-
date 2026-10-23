@@ -9,11 +9,12 @@ import { staffView } from './lib/staff-view.js';
 import { backBar, bindBackBar, goBack } from './lib/ops-ui.js';
 import { uploadImage } from './firebase.js';
 
-// The control room is the administrator's (everything technical), the events manager's (nights,
-// tickets, promos, bar setup) and the directors' (money and reports). Managers use night.html.
-const ADMIN = ['superAdmin'], CMS = ['superAdmin', 'eventManager'], TICKET_MONEY = ['superAdmin', 'eventManager'], MONEY = ['superAdmin'], MEMBERS = ['superAdmin', 'director', 'manager', 'hrManager', 'eventManager'];
+// The control room is the administrator's (everything technical), Media's (the website and the
+// nights: tickets, promos, draws, guest lists, event requests) and the Event manager's (ticket
+// money, organisers, the night's approvals). Managers use night.html.
+const ADMIN = ['superAdmin'], CMS = ['superAdmin', 'media'], TICKET_MONEY = ['superAdmin', 'eventManager'], MONEY = ['superAdmin'], MEMBERS = ['superAdmin', 'director', 'manager', 'hrManager', 'eventManager'];
 // The managers and directors come here for members and attendance only (each sees just those tabs).
-const user = await requireStaff(['superAdmin', 'eventManager', 'director', 'manager', 'hrManager']);
+const user = await requireStaff(['superAdmin', 'eventManager', 'media', 'director', 'manager', 'hrManager']);
 staffHeader(user, 'Control room');
 const can = roles => roles.includes(user.role);
 // The night itself (sales, closing, approvals, drinks, stock) is on night.html for managers and
@@ -23,7 +24,7 @@ const TABS = [
   ['today', 'Today’s sales', REPORTS], ['closing', 'Close the night', [...BOSS, 'eventManager']], ['approvals', 'Approvals', [...REPORTS, 'eventManager']], ['eod', 'End-of-day reports', MONEY],
   ['products', 'Drinks & prices', REPORTS], ['stock', 'Stock', REPORTS],
   ['overview', 'Tickets & nights', TICKET_MONEY], ['nights', 'Nights', CMS], ['payments', 'Payments', TICKET_MONEY], ['bookings', 'Orders', TICKET_MONEY], ['requests', 'Event requests', CMS],
-  ['system', 'System', ADMIN], ['members', 'Members', MEMBERS], ['attendance', 'Attendance', MEMBERS], ['bits', 'Pay in bits', MONEY], ['refunds', 'Refunds', MONEY], ['counter', 'Bar orders', CMS], ['bar', 'Table bottles', CMS], ['settings', 'Site settings', ADMIN], ['staff', can(['eventManager']) ? 'Organisers' : 'Staff', ['superAdmin', 'eventManager']],
+  ['system', 'System', ADMIN], ['members', 'Members', MEMBERS], ['attendance', 'Attendance', MEMBERS], ['bits', 'Pay in bits', MONEY], ['refunds', 'Refunds', MONEY], ['counter', 'Bar orders', ADMIN], ['bar', 'Table bottles', CMS], ['settings', 'Site settings', ADMIN], ['staff', can(['eventManager']) ? 'Organisers' : 'Staff', ['superAdmin', 'eventManager']],
 ].filter(t => can(t[2]));
 // Five places, not ten: related tabs sit together behind one button, with their own row underneath.
 const GROUPS = [['tonight', can(CMS) ? 'Tonight' : 'Tickets', ['today', 'overview', 'closing', 'approvals', 'system']], ['nights', 'Nights', ['nights', 'requests']], ['money', 'Money', ['eod', 'payments', 'bookings', 'bits', 'refunds']], ['people', 'People', ['staff', 'members', 'attendance']], ['setup', 'Setup', ['products', 'stock', 'counter', 'bar', 'settings']]]

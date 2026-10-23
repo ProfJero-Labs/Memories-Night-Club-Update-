@@ -6,19 +6,20 @@ import assert from 'node:assert/strict';
 import { createMockEnv, idToken } from './mock-firestore.js';
 import worker from '../src/index.js';
 
-// Technical areas (the site, nights, settings) are the administrator's and the events manager's;
-// directors see the money; managers run the night only (their routes are under /api/ops/).
-const ALL = ['superAdmin', 'director', 'manager', 'eventManager', 'doorStaff', 'organiser'];
-const CMS = ['superAdmin', 'eventManager'];
+// The website and the nights are the administrator's and Media's; ticket money is the Event
+// manager's; managers run the night only (their routes are under /api/ops/).
+const ALL = ['superAdmin', 'director', 'manager', 'eventManager', 'media', 'doorStaff', 'organiser'];
+const CMS = ['superAdmin', 'media'];
+const DOORS = ALL.filter(r => r !== 'media'); // Media runs the website, not the door
 const TICKET_MONEY = ['superAdmin', 'eventManager']; // not the director: tickets are the events side
 const MONEY = ['superAdmin']; // the ticket side: not the director's
 const SUPER = ['superAdmin'];
 
 export const MATRIX = [
-  ['POST', '/api/checkin', ALL, { token: 'x' }],
-  ['GET', '/api/door/events', ALL],
-  ['GET', '/api/door/summary?eventId=e1', ALL.filter(r => r !== 'organiser')],
-  ['GET', '/api/door/search?eventId=e1&q=am', ALL.filter(r => r !== 'organiser')],
+  ['POST', '/api/checkin', DOORS, { token: 'x' }],
+  ['GET', '/api/door/events', DOORS],
+  ['GET', '/api/door/summary?eventId=e1', DOORS.filter(r => r !== 'organiser')],
+  ['GET', '/api/door/search?eventId=e1&q=am', DOORS.filter(r => r !== 'organiser')],
   ['POST', '/api/send-sms', MONEY, { recipients: [], message: 'x' }],
   ['GET', '/api/balance', MONEY],
   ['POST', '/api/admin/sms/send', MONEY, { recipients: [], message: 'x' }],
@@ -115,7 +116,7 @@ test('a night can only be handed to a real organiser account; the organiser list
   const { store, env } = createMockEnv();
   store.seed('users', 'org-1', { email: 'promoter@x.com', role: 'organiser' });
   store.seed('users', 'door-1', { email: 'door@x.com', role: 'doorStaff' });
-  const token = await idToken({ role: 'eventManager' });
+  const token = await idToken({ role: 'media' });
   const post = async body => (await worker.fetch(new Request('https://api.test/api/admin/events', { method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: JSON.stringify({ name: 'N', date: '2099-01-01T22:00:00Z', ...body }) }), env)).status;
   assert.equal(await post({ organiserId: 'org-1' }), 200);
   assert.equal(await post({ organiserId: 'door-1' }), 400, 'not an organiser');

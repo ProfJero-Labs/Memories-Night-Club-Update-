@@ -16,6 +16,7 @@ import * as purchases from './purchases.js';
 import * as director from './director.js';
 import * as reviews from './reviews.js';
 import * as tips from './tips.js';
+import * as nights from './nights.js';
 
 export async function opsRoute(m, p, u, b, env, user) {
   const q = k => u.searchParams.get(k) || undefined;
@@ -62,6 +63,8 @@ export async function opsRoute(m, p, u, b, env, user) {
       case '/api/ops/commissions': return commission.commissions(env, user, { month: q('month') });
       case '/api/ops/budget': return budget.monthBudget(env, user, { month: q('month') });
       case '/api/ops/money': return money.moneyReport(env, user, { period: q('period'), from: q('from'), to: q('to') });
+      case '/api/ops/nights': return nights.upcomingNights(env, user);
+      case '/api/ops/waiters': return closing.waitersReport(env, user, { date: q('date') });
     }
     return undefined;
   }

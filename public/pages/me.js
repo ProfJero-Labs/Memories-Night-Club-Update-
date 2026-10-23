@@ -8,7 +8,7 @@ import { $, $$, esc } from '../app.js';
 import { requireStaff, staffHeader, sapi, ROLE_LABEL, home } from '../staff.js';
 import { say, every, bottomNav, busy, money, when, dayName, backBar, bindBackBar, growAll } from '../lib/ops-ui.js';
 
-const user = await requireStaff(['superAdmin', 'director', 'manager', 'hrManager', 'finance', 'eventManager', 'doorStaff', 'security', 'barStaff', 'waitStaff', 'cashier', 'dj', 'mc']);
+const user = await requireStaff(['superAdmin', 'director', 'manager', 'hrManager', 'finance', 'eventManager', 'media', 'doorStaff', 'security', 'barStaff', 'waitStaff', 'cashier', 'dj', 'mc']);
 staffHeader(user, 'My page');
 const app = $('#app');
 // Someone whose work screen is elsewhere (the Human manager, a waiter…) can always get back to it.

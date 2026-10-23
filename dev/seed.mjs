@@ -53,6 +53,7 @@ export function seed(store, origin) {
     ['director2@dev', 'uid-director2', { role: 'director', admin: false }, 'Dev Director Two', '0200000014'],
     ['events@dev', 'uid-events', { role: 'eventManager', admin: false }, 'Dev Event Manager', '0200000015'],
     ['dj@dev', 'uid-dj', { role: 'dj', admin: false }, 'Dev DJ', '0200000016'],
+    ['media@dev', 'uid-media', { role: 'media', admin: false }, 'Dev Media', '0200000017'],
     ['guest@dev', 'uid-guest', {}, 'Guest', ''],
   ];
   store.claims = {};

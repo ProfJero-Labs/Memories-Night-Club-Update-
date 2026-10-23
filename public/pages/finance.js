@@ -5,11 +5,12 @@
 //   Money: in, out, profit; expenses; bills and the month's budget (finance sets them).
 //   Stock: record drinks bought, stock the manager added, the bar's counts and the manager's
 //     explanations; drinks, prices, costs and stock limits.
-//   Reports: end of day, sign-off; the night's checks (staff reports, cash, approvals).
+//   Reports: end of day, sign-off; each waiter's night and report; the night's checks (staff
+//     reports, cash, approvals).
 import { $, $$, esc } from '../app.js';
 import { requireStaff, staffHeader, sapi } from '../staff.js';
 import { bottomNav, money, backBar, bindBackBar } from '../lib/ops-ui.js';
-import { salesView, closingView, approvalsView, stockAdminView, eodListView, eodView, productsView, changesView, moneyView, budgetView, paymentsView, commissionsView, purchasesView, cashReceiveView, tipsView } from '../lib/ops-views.js';
+import { waitersView, salesView, closingView, approvalsView, stockAdminView, eodListView, eodView, productsView, changesView, moneyView, budgetView, paymentsView, commissionsView, purchasesView, cashReceiveView, tipsView } from '../lib/ops-views.js';
 import { payView } from '../lib/people-views.js';
 
 const user = await requireStaff(['finance', 'superAdmin', 'director', 'manager']);
@@ -24,7 +25,7 @@ const sub = (label, to, html) => { app.innerHTML = `${back(label, to)}<div id="s
 
 async function route() {
   const [k, arg] = location.hash.slice(1).split('/');
-  const group = { report: 'reports', check: 'reports', prices: 'stock', budget: 'money', payments: 'money', commissions: 'pay', salaries: 'pay', purchases: 'pay', cash: 'pay', tips: 'pay' }[k] || k || 'today';
+  const group = { report: 'reports', check: 'reports', waiters: 'reports', prices: 'stock', budget: 'money', payments: 'money', commissions: 'pay', salaries: 'pay', purchases: 'pay', cash: 'pay', tips: 'pay' }[k] || k || 'today';
   nav.setActive(group); scrollTo(0, 0);
   try {
     if (k === 'pay') return await toPay();
@@ -34,11 +35,12 @@ async function route() {
     if (k === 'cash') return await sub('To pay', 'pay', el => cashReceiveView(el));
     if (k === 'tips') return await sub('To pay', 'pay', el => tipsView(el));
     if (k === 'check') { app.innerHTML = `${back('Reports', 'reports')}<div id="cl"></div><div id="ap" style="margin-top:20px"></div>`; bindBack(); await closingView($('#cl'), undefined, { canClose: false }); await approvalsView($('#ap')); return; }
+    if (k === 'waiters') return await sub('Reports', 'reports', el => waitersView(el, arg));
     if (k === 'money') return await moneyView(app);
     if (k === 'budget') return await sub('Money', 'money', el => budgetView(el));
     if (k === 'payments') return await sub('Money', 'money', el => paymentsView(el));
     if (k === 'stock') { app.innerHTML = '<div id="sk"></div><button class="big ghost" id="toPrices" style="margin-top:16px">Drinks, prices, costs and stock limits</button>'; $('#toPrices').onclick = () => { location.hash = 'prices'; }; return await stockAdminView($('#sk'), undefined, undefined, { role: user.role }); }
-    if (k === 'reports') { app.innerHTML = '<button class="big ghost" data-goto="check">The night’s checks: staff reports, cash, approvals</button><div id="rl"></div>'; bindBack(); return await eodListView($('#rl'), { canSignOff }); }
+    if (k === 'reports') { app.innerHTML = '<button class="big ghost" data-goto="waiters">Waiters, one by one: sales, cash, MoMo, their reports</button><button class="big ghost" data-goto="check">The night’s checks: staff reports, cash, approvals</button><div id="rl"></div>'; bindBack(); return await eodListView($('#rl'), { canSignOff }); }
     if (k === 'report' && arg) return await eodView(app, arg, { canSignOff });
     if (k === 'prices') { app.innerHTML = `${back('Stock', 'stock')}<div id="pr"></div><div id="ch" style="margin-top:20px"></div>`; bindBack(); await productsView($('#pr'), { canEdit: ['finance', 'superAdmin'].includes(user.role) }); await changesView($('#ch')); return; }
     return await salesView(app);

@@ -13,7 +13,7 @@
 // as tickets, so the webhook, the return page and the reconciliation job all complete it.
 import { getDoc, setDoc, listDocs, queryWhere, batchGet, commitTx, updateWrite, foundFields, withTransaction } from './lib/firestore.js';
 import { now, id, clean, normalizePhone, money, paymentRef, validEmail, nightKey } from './lib/util.js';
-import { requireRole, CMS, uidOf } from './lib/auth.js';
+import { requireRole, ADMIN, uidOf } from './lib/auth.js';
 import { sendSms, siteUrl } from './lib/notify.js';
 import { addMoves, saveProduct, stockLeft, stockError } from './ops/stock.js';
 import { prepareTip, tipFields, textTip, phoneOf, guestTipPeople } from './ops/tips.js';
@@ -216,7 +216,7 @@ export async function barUpdate(env, user, b) {
 
 // ── Control room: stations and the menu ──
 export async function barSetup(env, user) {
-  if (!requireRole(user, CMS)) return FORBIDDEN;
+  if (!requireRole(user, ADMIN)) return FORBIDDEN;
   const [stations, items] = await Promise.all([listDocs(env, 'bar_stations'), listDocs(env, 'menu_items')]);
   return {
     stations: stations.map(s => ({ id: s.id, name: s.fields.name, open: s.fields.open !== false, url: stationUrl(env, s.fields.token) })).sort((a, b) => a.name.localeCompare(b.name)),
@@ -224,7 +224,7 @@ export async function barSetup(env, user) {
   };
 }
 export async function upsertStation(env, b, user) {
-  if (!requireRole(user, CMS)) return FORBIDDEN;
+  if (!requireRole(user, ADMIN)) return FORBIDDEN;
   const name = clean(b?.name, 40); if (!name) return { error: 'Name the bar, e.g. Main bar.' };
   const existing = b?.id ? await getDoc(env, 'bar_stations', String(b.id)) : null;
   if (b?.id && !existing) return { error: 'Bar not found.', status: 404 };

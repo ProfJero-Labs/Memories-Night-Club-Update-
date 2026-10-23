@@ -69,6 +69,23 @@ export function waiterFigures(uid, data) {
     cancelledRounds: data.rounds.filter(r => r.waiterUid === uid && r.status === 'cancelled').length,
   };
 }
+// Every waiter's report for a night, side by side, for finance (and the managers and directors):
+// their sales, what's paid and unpaid, cash and MoMo they took, drinks still with them, breakages,
+// free drinks, tips, and the report they submitted (with its explanation) or that it's missing.
+export async function waitersReport(env, user, { date } = {}) {
+  if (!requireRole(user, REPORTS)) return FORBIDDEN;
+  const d = dateOr(date), data = await nightData(env, d);
+  const ids = [...new Set([...data.tabs.map(t => t.waiterUid), ...data.rounds.map(r => r.waiterUid)])].filter(Boolean);
+  const nameOf = uid => data.tabs.find(t => t.waiterUid === uid)?.waiterName || data.rounds.find(r => r.waiterUid === uid)?.waiterName || 'Waiter';
+  const waiters = ids.map(uid => {
+    const rep = data.reports.find(r => r.uid === uid && r.kind === 'waiter');
+    return { uid, name: nameOf(uid), tabs: data.tabs.filter(t => t.waiterUid === uid).length, ...waiterFigures(uid, data),
+      report: rep ? { at: rep.at || rep.submittedAt || '', explanation: rep.explanation || '' } : null };
+  }).sort((a, b) => b.salesPesewas - a.salesPesewas);
+  const t = k => waiters.reduce((n, w) => n + Number(w[k] || 0), 0);
+  return { date: d, waiters, totals: { salesPesewas: t('salesPesewas'), paidPesewas: t('paidPesewas'), unpaidPesewas: t('unpaidPesewas'), cashCollectedPesewas: t('cashCollectedPesewas'), momoRecordedPesewas: t('momoRecordedPesewas'), withYouPesewas: t('withYouPesewas'), brokenPesewas: t('brokenPesewas') }, missing: waiters.filter(w => !w.report).length };
+}
+
 // Waiters and bartenders (their quick sales and cash) both have one.
 const REPORTERS = ['waitStaff', 'barStaff', 'eventManager', ...BOSS];
 export async function myReport(env, user, { date } = {}) {

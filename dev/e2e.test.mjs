@@ -47,7 +47,7 @@ async function buyTicket(page, { name, line, event = 'dev-afro', type }) {
 }
 
 // Staff sign in with phone + PIN (dev seed: 2580, or 258025 for managers, directors, finance, admin).
-const STAFF = { 'admin@dev': ['0200000001', '258025'], 'manager@dev': ['0200000002', '258025'], 'door@dev': ['0200000003', '2580'], 'bar@dev': ['0200000004', '2580'], 'orga@dev': ['0245552020', '2580'], 'orgb@dev': ['0200000006', '2580'], 'waiter@dev': ['0200000007', '2580'], 'waiter2@dev': ['0200000008', '2580'], 'cashier@dev': ['0200000009', '2580'], 'finance@dev': ['0200000010', '258025'], 'security@dev': ['0200000011', '2580'], 'director@dev': ['0200000012', '258025'], 'hr@dev': ['0200000013', '258025'], 'director2@dev': ['0200000014', '258025'], 'events@dev': ['0200000015', '2580'], 'dj@dev': ['0200000016', '2580'] };
+const STAFF = { 'media@dev': ['0200000017', '2580'], 'admin@dev': ['0200000001', '258025'], 'manager@dev': ['0200000002', '258025'], 'door@dev': ['0200000003', '2580'], 'bar@dev': ['0200000004', '2580'], 'orga@dev': ['0245552020', '2580'], 'orgb@dev': ['0200000006', '2580'], 'waiter@dev': ['0200000007', '2580'], 'waiter2@dev': ['0200000008', '2580'], 'cashier@dev': ['0200000009', '2580'], 'finance@dev': ['0200000010', '258025'], 'security@dev': ['0200000011', '2580'], 'director@dev': ['0200000012', '258025'], 'hr@dev': ['0200000013', '258025'], 'director2@dev': ['0200000014', '258025'], 'events@dev': ['0200000015', '2580'], 'dj@dev': ['0200000016', '2580'] };
 async function signInAs(page, email) {
   if (!/login\.html/.test(page.url())) await page.goto(`${base}/login.html`);
   await page.waitForSelector('#pinForm');
@@ -1020,6 +1020,25 @@ test('sign-in: an email typed in the phone box goes to the email form', async ()
   assert.equal(await p.$eval('#email', e => e.value), 'manager@dev');
   await p.fill('#pw', 'memories-dev'); await p.click('#goEmail'); await p.waitForURL(/night\.html/);
   assert.deepEqual(p.errors, []);
+});
+
+test('roles: Media runs the nights in the control room; the manager adds an expense and sees the nights; finance sees each waiter', async () => {
+  const media = await phone(390); await signInAs(media, 'media@dev'); await media.waitForURL(/admin\.html/);
+  await media.locator('[data-group="nights"][aria-selected="true"]').waitFor();
+  assert.equal(await media.locator('[data-group]', { hasText: 'Money' }).count(), 0, 'no money for Media');
+  assert.equal(await media.evaluate(() => [...document.querySelectorAll('[data-tab]')].some(b => /settings|system|counter/.test(b.dataset.tab))), false, 'no site settings, system or bar setup');
+  const mgr = await phone(390); await signInAs(mgr, 'manager@dev'); await mgr.waitForURL(/night\.html/);
+  await mgr.click('.bnav [data-k="more"]'); await mgr.click('[data-more="expenses"]');
+  await mgr.locator('h1', { hasText: 'Expenses' }).waitFor();
+  await mgr.click('#exAdd'); await mgr.selectOption('#exCat', 'supplies'); await mgr.fill('#exDesc', 'Ice for the bar'); await mgr.fill('#exAmt', '40'); await mgr.click('#exGo');
+  await mgr.locator('.tcard', { hasText: 'Ice for the bar' }).waitFor();
+  await mgr.click('.bnav [data-k="more"]'); await mgr.click('[data-more="nights"]');
+  await mgr.locator('h1', { hasText: 'Nights coming up' }).waitFor();
+  assert.ok(await mgr.locator('.tcard').count() >= 1, 'the dev night is listed');
+  const fin = await phone(390); await signInAs(fin, 'finance@dev'); await fin.waitForURL(/finance\.html/);
+  await fin.click('.bnav [data-k="reports"]'); await fin.click('[data-goto="waiters"]');
+  await fin.locator('h1', { hasText: 'Waiters' }).waitFor();
+  assert.deepEqual([...media.errors, ...mgr.errors, ...fin.errors], []);
 });
 
 test('a night at the bar: tab without QR → bar → delivered → the customer pays on their phone → another round paid in cash at the cashier → reports, counts, the close and finance’s report', async () => {

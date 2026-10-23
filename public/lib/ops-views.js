@@ -679,3 +679,71 @@ export async function changesView(el) {
     ${changes.map(c => `<tr><td>${esc(new Date(c.at).toLocaleString('en-GB', { timeZone: 'Africa/Accra', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }))}</td><td>${esc(c.byName)}</td><td><strong>${esc(c.refName)}</strong> · ${esc(c.field)}${c.note ? `<br><small class="muted">${esc(c.note)}</small>` : ''}</td><td>${v(c.field, c.from)} → ${v(c.field, c.to)}</td></tr>`).join('') || '<tr><td colspan="4" class="empty-row">No changes yet.</td></tr>'}</tbody></table></div>`;
   labelTables(el);
 }
+
+// ── Expenses (the manager and finance): what was spent, tonight / this week / this month ──
+// Above the month's limit an expense waits for a director, and doesn't count until approved.
+export async function expensesView(el, period = 'today') {
+  el.innerHTML = '<div class="loading">Loading…</div>';
+  const m = await sapi(`/api/ops/money?period=${encodeURIComponent(period)}`);
+  const list = m.expenses || [], live = list.filter(e => !e.removed);
+  const counted = live.filter(e => !['pending', 'refused'].includes(e.approval));
+  const total = counted.reduce((n, e) => n + Number(e.amountPesewas || 0), 0);
+  const waiting = live.filter(e => e.approval === 'pending');
+  const state = e => (e.removed ? st('cancelled', 'Taken off') : e.approval === 'pending' ? st('waiting', 'Waiting for a director') : e.approval === 'refused' ? st('cancelled', 'Refused') : st('delivered', 'Counted'));
+  el.innerHTML = `<h1>Expenses</h1>
+    <div class="seg" role="tablist" aria-label="Period" style="grid-template-columns:repeat(3,1fr)">${[['today', 'Tonight'], ['week', '7 days'], ['month', 'This month']].map(([k, l]) => `<button type="button" class="mid ${k === period ? 'on' : ''}" data-per="${k}" role="tab" aria-selected="${k === period}">${l}</button>`).join('')}</div>
+    <div class="nums"><div><span>Spent (${esc(m.period?.label || '')})</span><b>${money(total)}</b></div><div class="${waiting.length ? 'warn' : ''}"><span>Waiting for a director</span><b>${waiting.length}</b></div></div>
+    <button class="big" id="exAdd">Add an expense</button><div id="exMsgTop"></div>
+    <div class="cards">${list.map(e => `<div class="tcard ${e.removed || e.approval === 'refused' ? 'done' : e.approval === 'pending' ? 'warn' : ''}" style="cursor:default">
+      <span class="row"><span class="t" style="font-size:18px">${esc(e.categoryLabel)}</span><span class="amt">${money(e.amountPesewas)}</span></span>
+      <span>${esc(e.description || '')}</span>
+      <span class="row"><span class="sub">${esc(e.date)} · ${esc(e.paidWith)} · ${esc(e.recordedByName || '')}</span>${state(e)}</span>
+      ${e.removed ? `<span class="sub">Taken off by ${esc(e.removedByName)}: “${esc(e.removedReason)}”</span>` : ''}${e.decisionNote ? `<span class="sub">${esc(e.decidedByName)}: “${esc(e.decisionNote)}”</span>` : ''}
+      ${e.canRemove ? `<span class="btn-row"><button class="mid" data-rm="${esc(e.id)}">Take it off</button></span>` : ''}</div>`).join('') || '<div class="empty-box"><b>No expenses</b>Tap “Add an expense” when money is spent.</div>'}</div>`;
+  $$('[data-per]', el).forEach(b => b.onclick = () => expensesView(el, b.dataset.per));
+  $('#exAdd', el).onclick = () => expenseSheet(m, r => { expensesView(el, period).then(() => say($('#exMsgTop', el), r?.needsApproval ? 'Saved. It’s above the limit, so it waits for a director.' : 'Expense saved.')); });
+  $$('[data-rm]', el).forEach(b => b.onclick = async () => {
+    const reason = prompt('Why take it off? (e.g. typed twice)'); if (!reason) return;
+    try { await sapi('/api/ops/expenses/remove', { method: 'POST', body: { id: b.dataset.rm, reason } }); expensesView(el, period); } catch (e) { say($('#exMsgTop', el), e.message, 'bad'); }
+  });
+}
+
+// ── Nights coming up (read only): what's on, tickets sold and left, tables booked ──
+export async function nightsView(el) {
+  el.innerHTML = '<div class="loading">Loading…</div>';
+  const { nights } = await sapi('/api/ops/nights');
+  const day = d => new Date(d).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'Africa/Accra' });
+  el.innerHTML = `<h1>Nights coming up</h1><p class="lead">What’s on, and how it’s selling. Nights are set up by Media.</p>
+    <div class="cards">${nights.map(n => `<div class="tcard" style="cursor:default">
+      <span class="row"><span class="t" style="font-size:20px">${esc(n.name)}</span><span class="sub">${esc(day(n.date))} · ${when(n.date)}</span></span>
+      <span class="sub">${n.doors ? `Doors ${esc(n.doors)} · ` : ''}${esc(n.venue || '')}${n.onSite ? '' : ' · not on the website'}</span>
+      <span class="row"><span><b>${n.ticketsSold}</b> tickets sold</span><span><b>${n.tablesBooked}</b> table${n.tablesBooked === 1 ? '' : 's'} booked</span></span>
+      ${n.tickets.length ? `<div class="lines-list">${n.tickets.map(t => `<div class="ln"><span>${esc(t.name)} · ${money(t.pricePesewas)}</span><span>${t.sold} sold${t.left !== null ? ` · ${t.left} left` : ''}</span></div>`).join('')}</div>` : ''}
+    </div>`).join('') || '<div class="empty-box"><b>No nights coming up</b>Media adds them on the website.</div>'}</div>`;
+}
+
+// ── Waiters, one by one (finance): each waiter's night and the report they submitted ──
+export async function waitersView(el, date) {
+  el.innerHTML = '<div class="loading">Loading…</div>';
+  const d = await sapi(`/api/ops/waiters${date ? `?date=${encodeURIComponent(date)}` : ''}`), t = d.totals;
+  el.innerHTML = `<h1>Waiters</h1>${dateBar(d.date, 'wDate')}
+    <p class="lead">${d.waiters.length} waiter${d.waiters.length === 1 ? '' : 's'} worked${d.missing ? ` · <b>${d.missing} report${d.missing > 1 ? 's' : ''} missing</b>` : d.waiters.length ? ' · every report is in' : ''}.</p>
+    <div class="nums"><div><span>Sales</span><b>${money(t.salesPesewas)}</b></div><div class="good"><span>Paid</span><b>${money(t.paidPesewas)}</b></div><div class="${t.unpaidPesewas ? 'bad' : ''}"><span>Unpaid</span><b>${money(t.unpaidPesewas)}</b></div><div><span>Cash taken</span><b>${money(t.cashCollectedPesewas)}</b></div><div><span>MoMo recorded</span><b>${money(t.momoRecordedPesewas)}</b></div><div class="${t.withYouPesewas ? 'warn' : ''}"><span>Drinks not delivered</span><b>${money(t.withYouPesewas)}</b></div></div>
+    <div class="cards">${d.waiters.map(w => `<div class="tcard ${w.report ? (w.unpaidPesewas || w.withYouQty ? 'warn' : 'done') : 'warn'}" style="cursor:default">
+      <span class="row"><span class="t" style="font-size:20px">${esc(w.name)}</span>${w.report ? st('delivered', `Report in ${when(w.report.at)}`) : st('waiting', 'No report yet')}</span>
+      <div class="lines-list">
+        <div class="ln"><span>Tables served</span><span>${w.tabs}</span></div>
+        <div class="ln"><span>Sales</span><span>${money(w.salesPesewas)}</span></div>
+        <div class="ln"><span>Paid</span><span>${money(w.paidPesewas)}</span></div>
+        ${w.unpaidPesewas ? `<div class="ln"><span>Unpaid (${w.unpaidTabs.map(u => `Tab ${u.number}`).join(', ')})</span><span>${money(w.unpaidPesewas)}</span></div>` : ''}
+        <div class="ln"><span>Cash they took</span><span>${money(w.cashCollectedPesewas)}</span></div>
+        <div class="ln"><span>MoMo they recorded</span><span>${money(w.momoRecordedPesewas)}</span></div>
+        ${w.withYouQty ? `<div class="ln"><span>Drinks not delivered (${w.withYou.map(x => `${x.qty} × ${esc(x.name)}`).join(', ')})</span><span>${money(w.withYouPesewas)}</span></div>` : ''}
+        ${w.brokenQty ? `<div class="ln"><span>Broken (${w.brokenQty})</span><span>${money(w.brokenPesewas)}</span></div>` : ''}
+        ${w.freeQty ? `<div class="ln"><span>Free drinks (${w.freeQty})</span><span>${money(w.freePesewas)}</span></div>` : ''}
+        ${w.tipsPesewas ? `<div class="ln"><span>Tips (theirs)</span><span>${money(w.tipsPesewas)}</span></div>` : ''}
+      </div>
+      ${w.report?.explanation ? `<span class="sub">They wrote: “${esc(w.report.explanation)}”</span>` : ''}
+    </div>`).join('') || '<div class="empty-box"><b>No waiters that night</b></div>'}</div>`;
+  bindDate(el, v => waitersView(el, v), 'wDate');
+}

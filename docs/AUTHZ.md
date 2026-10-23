@@ -123,9 +123,14 @@ removal applies at once. Each row is covered by `worker/test/staffauth.test.js` 
 
 | Area | Who | Routes |
 |---|---|---|
-| The site: nights, tickets, promos, draws, bar setup, comps, event requests, uploads | System admin, events manager | `/api/admin/events…`, `/ticket-types`, `/table-packages`, `/bottles`, `/comps`, `/raffles`, `/requests`, `/promos`, `/bar/setup`; Storage uploads |
+| The website and the nights: nights, tickets, promos, draws, comps, event requests, bottles sold online, uploads | System admin, Media (bar station setup: system admin only) | `/api/admin/events…`, `/ticket-types`, `/table-packages`, `/bottles`, `/comps`, `/raffles`, `/requests`, `/promos`, `/bar/setup`; Storage uploads |
 | Site settings, system health | System admin | `/api/admin/settings`, `/api/admin/system` |
 | Ticket money (read) | System admin, events manager (not the director) | `/api/admin/overview`, `/orders`, `/payments`, `/events` (list), `/settlements` (list) |
 | Money: refunds, pay in bits, SMS, members, attendance, organiser settlements | System admin (not the director: the ticket side) | `/api/admin/refunds…`, `/installments…`, `/sms…`, `/members…`, `/attendance`, `/settlements` |
 | The night: sales, tables, approvals, closing, drinks & prices, stock, staff | System admin, director, manager (finance for reports and stock) | `/api/ops/*`, `/api/admin/people*` |
+
+New in this version: `GET /api/ops/nights` (the nights coming up, read only) for the system admin,
+directors, the three managers, Media and finance; `GET /api/ops/waiters?date=` (each waiter's night
+and report) for the system admin, directors, the Manager and finance. See `docs/ROLES.md` for the
+whole map, role by role.
 

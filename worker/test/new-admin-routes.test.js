@@ -34,7 +34,7 @@ test('updateSettings applies only the whitelisted fields, and getSettings reflec
 
 // ── Private-night request workflow ──
 
-test('updatePrivateRequest is forbidden for a role below eventManager', async () => {
+test('updatePrivateRequest is forbidden for a role below Media', async () => {
   const { env } = createMockEnv();
   const r = await updatePrivateRequest(env, 'req1', { status: 'ACCEPTED' }, { uid: 'u1', role: 'doorStaff' });
   assert.equal(r.error, 'Forbidden.');
@@ -47,7 +47,7 @@ test('accepting a request SMS+emails the customer exactly once, not on a second 
     name: 'Ama', phone: '0555000111', email: 'ama@example.com',
     eventType: 'Launch', status: 'NEW', createdAt: new Date().toISOString(),
   });
-  const admin = { uid: 'staff-1', role: 'eventManager' };
+  const admin = { uid: 'staff-1', role: 'media' };
 
   const r1 = await updatePrivateRequest(env, 'req1', { status: 'ACCEPTED' }, admin);
   assert.equal(r1.error, undefined);
@@ -81,7 +81,7 @@ test('adding a note without changing status does not send any notification', asy
     name: 'Yaw', phone: '0555000333', email: 'yaw@example.com',
     eventType: 'Reunion', status: 'NEW', createdAt: new Date().toISOString(),
   });
-  const r = await updatePrivateRequest(env, 'req3', { note: 'Following up by phone Friday.' }, { uid: 'staff-1', role: 'eventManager' });
+  const r = await updatePrivateRequest(env, 'req3', { note: 'Following up by phone Friday.' }, { uid: 'staff-1', role: 'media' });
   assert.equal(r.error, undefined);
   assert.equal(store.sms.length, 0);
   assert.equal(store.emails.length, 0);

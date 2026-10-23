@@ -13,8 +13,11 @@ import { getDoc } from './firestore.js';
 //                people: staff accounts, members, salaries, bonuses, deductions, loans, notices,
 //                feedback and performance reviews
 //   finance      prices, stock, money, reports and the end-of-day report
-//   eventManager the Event manager: nights, tickets, tables, promos, bar setup, organiser
-//                accounts, table service and discounts
+//   eventManager the Event manager: ticket money, organiser accounts, the door and gate sales,
+//                table service and discounts (the website and the nights are Media's)
+//   media        Media: the website and the nights: nights, tickets, table packages, bottles sold
+//                online, promos, draws, guest lists (comps), flyers and videos, event requests.
+//                Staff on payroll (the Human manager adds them)
 //   dj, mc       entertainment: their own page (notices, team messages, pay, feedback)
 //   doorStaff    front office: tickets, entry, table bookings and arrivals, customer issues
 //   security     entry checks and incidents
@@ -22,10 +25,11 @@ import { getDoc } from './firestore.js';
 //   waitStaff    waiters and waitresses: their tables, tabs, rounds and report
 //   cashier      money received: cash payments, the cash shift
 //   organiser    an outside organiser: their own nights
-export const STAFF_ROLES = ['superAdmin', 'director', 'manager', 'hrManager', 'finance', 'eventManager', 'doorStaff', 'security', 'barStaff', 'waitStaff', 'cashier', 'dj', 'mc', 'organiser'];
+export const STAFF_ROLES = ['superAdmin', 'director', 'manager', 'hrManager', 'finance', 'eventManager', 'media', 'doorStaff', 'security', 'barStaff', 'waitStaff', 'cashier', 'dj', 'mc', 'organiser'];
 export const MANAGERS = ['manager', 'hrManager', 'eventManager'];
 export const ADMIN = ['superAdmin'];                                           // site settings, system status
-export const CMS = ['superAdmin', 'eventManager'];                             // run the site: nights, tickets, promos, bar setup
+export const CMS = ['superAdmin', 'media'];                                    // the website and the nights: nights, tickets, promos, draws, comps, uploads
+export const NIGHTS_VIEW = ['superAdmin', 'director', 'manager', 'hrManager', 'eventManager', 'media', 'finance']; // the nights coming up (read only)
 export const TICKET_MONEY = ['superAdmin', 'eventManager'];                    // ticket sales and payments (read); not the director's
 export const MONEY = ['superAdmin'];                                           // refunds, pay in bits, SMS, members, attendance (the ticket side; not the director's)
 export const DOOR = ['superAdmin', 'director', 'manager', 'eventManager', 'doorStaff', 'security', 'organiser'];
@@ -36,7 +40,7 @@ export const STAFF_ADMIN = ['superAdmin', 'director', 'hrManager', 'eventManager
 export const CUSTOMER_CARE = ['superAdmin', 'director', 'manager', 'hrManager']; // customers: payments tonight, top customers, reviews
 // Who may give which role: only a super admin makes admins; directors add managers and finance; the
 // Human manager adds the staff; the Event manager adds organisers.
-export const HR_ROLES = ['doorStaff', 'security', 'barStaff', 'waitStaff', 'cashier', 'dj', 'mc'];
+export const HR_ROLES = ['doorStaff', 'security', 'barStaff', 'waitStaff', 'cashier', 'dj', 'mc', 'media'];
 export function canAssign(actorRole, role) {
   if (actorRole === 'superAdmin') return STAFF_ROLES.includes(role);
   if (actorRole === 'director') return STAFF_ROLES.includes(role) && role !== 'superAdmin';
