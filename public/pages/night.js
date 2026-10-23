@@ -14,7 +14,7 @@
 // manager explains them). The manager adds expenses from Tonight; the director sees Money.
 import { $, $$, esc } from '../app.js';
 import { requireStaff, staffHeader, sapi } from '../staff.js';
-import { bottomNav, sheet, say, st, every, money, when, ask, backBar, bindBackBar } from '../lib/ops-ui.js';
+import { bottomNav, sheet, say, st, every, money, when, ask, backBar, bindBackBar, upcomingBookings } from '../lib/ops-ui.js';
 import { salesView, closingView, approvalsView, productsView, stockAdminView, eodListView, eodView, moneyView, expenseSheet, explainSheet, budgetView, paymentsView, commissionsView, toApproveView, purchasesView, cashReceiveView, feedbackInboxView } from '../lib/ops-views.js';
 import { payView, reviewsView, perfView } from '../lib/people-views.js';
 import { staffView } from '../lib/staff-view.js';
@@ -132,13 +132,16 @@ const tableRow = tb => `<button type="button" class="pos-row" data-tab="${esc(tb
 function bindRows() { $$('[data-tab]', app).forEach(b => b.onclick = () => tableSheet(b.dataset.tab)); }
 
 async function tables(alive = () => true) {
-  const { tabs } = await sapi('/api/ops/tabs?all=1');
+  const [{ tabs }, booked] = await Promise.all([sapi('/api/ops/tabs?all=1'), sapi('/api/ops/tables').catch(() => ({ tables: [], upcoming: [] }))]);
   if (!alive()) return;
   const open = tabs.filter(t => t.status === 'open'), done = tabs.filter(t => t.status !== 'open');
   const owed = open.reduce((n, t) => n + t.bill.balancePesewas, 0);
   app.innerHTML = `${director ? back() : ''}<h1>Tables</h1><p class="lead">${open.length} open · ${money(owed)} still to pay</p>
     <div class="pos-tables">${open.map(tableRow).join('') || '<p class="muted">No open tables.</p>'}</div>
-    ${done.length ? `<details class="fold"><summary>Finished tonight (${done.length})</summary><div class="pos-tables">${done.map(tableRow).join('')}</div></details>` : ''}`;
+    ${done.length ? `<details class="fold"><summary>Finished tonight (${done.length})</summary><div class="pos-tables">${done.map(tableRow).join('')}</div></details>` : ''}
+    <h2>Booked tables</h2>
+    ${booked.tables.length ? `<div class="group-h">Tonight · ${booked.tables.length} booked, ${booked.tables.filter(t => t.arrived).length} here</div><div class="rows">${booked.tables.map(t => `<div class="row-btn plain"><span class="t">${esc(t.name)} · ${esc(t.packageName)}</span><span class="s">${esc(t.code)} · phone …${esc(t.phoneLast4)} · ${t.arrived ? `arrived${t.tableNumber ? `, table ${esc(t.tableNumber)}` : ''}` : 'not here yet'}</span></div>`).join('')}</div>` : '<p class="muted" style="margin:0">No tables booked for tonight.</p>'}
+    <details class="fold" ${booked.upcoming.length ? 'open' : ''}><summary>Coming nights (${booked.upcoming.length})</summary>${upcomingBookings(booked.upcoming)}</details>`;
   bindRows();
   bindBack();
 }

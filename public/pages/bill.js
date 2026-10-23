@@ -17,8 +17,8 @@ const tipNow = () => (pick.tip === 'other' ? ghsIn(pick.other) : pick.tip);
 
 async function load(note = '') {
   clearTimeout(timer);
-  let b, tip;
-  try { ({ bill: b, tip } = await api(`/api/guest/bill/${encodeURIComponent(token)}`)); }
+  let b, tip, open = false, menuUrl = '';
+  try { ({ bill: b, tip, open, menuUrl } = await api(`/api/guest/bill/${encodeURIComponent(token)}`)); }
   catch (e) { root.innerHTML = `<div class="say bad"><b>${e.status === 404 ? 'This bill link isn’t valid' : 'Couldn’t load your bill'}</b>${esc(e.status === 404 ? 'Ask your waiter to show it again.' : e.message)}</div>`; return; }
   const paid = ['paid', 'overpaid'].includes(b.status);
   const due = b.balancePesewas >= 100 && !paid && b.status !== 'written_off';
@@ -32,7 +32,11 @@ async function load(note = '') {
     <p style="margin:0"><span class="st ${esc(b.status)}">${esc(b.statusLabel)}</span></p>
     ${due ? `<div class="pay-box">${tipPart(tip)}<div class="field"><label for="ph">Your MoMo number (optional, for the receipt)</label><input id="ph" type="tel" inputmode="tel" autocomplete="tel" placeholder="024 123 4567" value="${esc(pick.phone)}"></div>
       <button class="big" id="pay" type="button">Pay ${money(b.balancePesewas + tipNow())}</button><p class="fine">MoMo or card, by Paystack. Your waiter sees it the moment it’s confirmed.</p></div>` : ''}
-    ${paid ? '<div class="say good"><b>Thank you!</b>This page is your receipt. Show it to your waiter if they ask.</div><button class="big ghost" id="save" type="button">Save receipt</button><a class="big ghost" href="review.html?s=bill" style="text-align:center;text-decoration:none">How was your night? Rate us</a>' : ''}`;
+    ${paid ? `<div class="say good"><b>Thank you!</b>${open ? 'Paid so far. Staying? Your table stays open: order more any time and it’s added to this bill.' : 'This page is your receipt. Show it to your waiter if they ask.'}</div>
+      ${open && menuUrl ? `<a class="big" href="${esc(menuUrl)}" style="text-align:center;text-decoration:none">Order more drinks</a>` : ''}
+      ${open ? `<p class="fine" style="margin:0">${menuUrl ? 'Or call' : 'Want more? Call'} ${b.waiterFirstName ? esc(b.waiterFirstName) : 'your waiter'}: new drinks show on this page to pay.</p>` : ''}
+      <button class="big ghost" id="save" type="button">Save receipt</button>
+      <p class="foot-small" style="text-align:center;margin:10px 0 0">How was your night? <a href="review.html?s=bill&back=${encodeURIComponent(`bill.html?t=${token}`)}">Rate us</a> (optional)</p>` : ''}`;
   $('#save') && ($('#save').onclick = () => print());
   const payLabel = () => { $('#pay') && ($('#pay').textContent = `Pay ${money(b.balancePesewas + tipNow())}`); };
   document.querySelectorAll('[data-tip]').forEach(x => x.onclick = () => {
@@ -53,7 +57,7 @@ async function load(note = '') {
     catch (e) { btn.disabled = false; payLabel(); load({ kind: 'bad', text: e.message }); }
   });
   // Still open: refresh now and then, so new rounds and the waiter's cash show up (not while they type).
-  if (!paid) timer = setTimeout(function again() { if (document.activeElement?.matches('input, select')) { timer = setTimeout(again, 5000); return; } load(); }, 15000);
+  if (!paid || open) timer = setTimeout(function again() { if (document.activeElement?.matches('input, select')) { timer = setTimeout(again, 5000); return; } load(); }, 15000);
 }
 
 // A tip, on top of the bill: for their waiter, or anyone on the team they pick.

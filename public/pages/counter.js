@@ -38,7 +38,7 @@ async function myNight() {
     <p class="foot-small" style="text-align:center">Everything paid tonight from ${esc(n.phoneHint)}.</p>
     ${n.items.map(i => `<div class="summary"><div class="r"><span><b>${esc(new Date(i.at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', timeZone: 'Africa/Accra' }))}</b> · ${esc(i.where)} · ${esc(i.how)}</span></div>
       ${i.lines.map(l => `<div class="r"><span>${l.qty} × ${esc(l.name)}</span></div>`).join('')}<div class="r t"><span>${i.leftPesewas ? `Still to pay ${money(i.leftPesewas)}` : 'Total'}</span><span>${money(i.totalPesewas)}</span></div></div>`).join('') || msg('Nothing yet tonight.')}
-    <div class="row-actions"><a class="btn red" href="${esc(again())}">Back to the menu</a><a class="btn" href="review.html?s=qr">Rate your night</a></div>`;
+    <div class="row-actions"><a class="btn red" href="${esc(again())}&view=menu">Order more</a></div><p class="foot-small" style="text-align:center;margin:10px 0 0">How was your night? <a href="review.html?s=qr&back=${encodeURIComponent(again())}">Rate us</a> (optional)</p>`;
 }
 const msg = (t, k = '') => `<div class="notice ${k}" role="status">${esc(t)}</div>`;
 const dock = (sum, label, fn) => {
@@ -60,12 +60,13 @@ function showOrder(orderId) {
     if (['paid', 'delivered'].includes(o.status)) store.set('mem-bar-paid', { id: orderId, at: Date.now() });
     if (o.status === 'paid') {
       app.innerHTML = `<p class="kicker red" style="text-align:center">Show this at the bar</p><div class="pickup" aria-label="Pickup code">${esc(o.pickupCode)}</div>${lines}
-        <p class="foot-small">We’ve also texted you the code. <a href="receipt.html?code=${esc(o.receiptCode)}">Receipt</a></p>`;
+        <p class="foot-small">We’ve also texted you the code. <a href="receipt.html?code=${esc(o.receiptCode)}">Receipt</a></p>
+        <div class="row-actions"><a class="btn" href="${esc(again())}&view=menu">Order more while you wait</a></div>`;
       navigator.wakeLock?.request('screen').catch(() => {});
       timer = setTimeout(poll, 8000); return;
     }
     store.set('mem-bar-order', null);
-    if (o.status === 'delivered') { app.innerHTML = `${msg('Collected. Enjoy!', 'ok')}<div class="row-actions"><a class="btn red" href="${esc(again())}">Order again</a><a class="btn" href="review.html?s=qr">Rate your night</a><a class="btn" href="receipt.html?code=${esc(o.receiptCode)}">Receipt</a></div>`; return; }
+    if (o.status === 'delivered') { app.innerHTML = `${msg('Collected. Enjoy!', 'ok')}<div class="row-actions"><a class="btn red" href="${esc(again())}&view=menu">Order more</a><a class="btn" href="receipt.html?code=${esc(o.receiptCode)}">Receipt</a></div><p class="foot-small" style="text-align:center;margin:10px 0 0">How was your night? <a href="review.html?s=qr&back=${encodeURIComponent(again())}">Rate us</a> (optional)</p>`; return; }
     if (o.status === 'payment_failed') { app.innerHTML = `${msg('Payment didn’t go through. Nothing was taken.', 'bad')}<div class="row-actions"><a class="btn red" href="${esc(again())}">Try again</a></div>`; return; }
     if (o.status === 'refund_due' || o.status === 'refunded') { app.innerHTML = `${msg(o.status === 'refunded' ? 'You’ve been refunded for this order.' : 'The bar couldn’t make your order. You’re owed a refund: staff will sort it. Keep this page, or the receipt.', 'bad')}${o.receiptCode ? `<a class="btn" href="receipt.html?code=${esc(o.receiptCode)}">Receipt</a>` : ''}`; return; }
     app.innerHTML = `${msg('This order was cancelled. Nothing was taken.')}<a class="btn red" href="${esc(again())}">Start again</a>`;
@@ -77,7 +78,9 @@ function showOrder(orderId) {
 async function start() {
   clearTimeout(timer);
   const open = store.get('mem-bar-order');
-  if (open && (!fromQr || qs.get('reference'))) return showOrder(open);
+  // An order waiting at the bar: its pickup code shows, but the menu is never locked behind it
+  // (view=menu orders more; view=order goes back to the code).
+  if (open && qs.get('view') !== 'menu' && (!fromQr || qs.get('reference') || qs.get('view') === 'order')) return showOrder(open);
   if (!station) { app.innerHTML = msg('Scan the QR code at the bar to order.'); return; }
   store.set('mem-bar-station', station); store.set('mem-bar-spot', spot || null);
   let r;
@@ -204,7 +207,8 @@ async function start() {
 
   // ── Step 1: the menu ──
   const draw = () => {
-    app.innerHTML = `${lastPaid() ? `<a class="night-link" href="${esc(again())}&view=night">My night: what I’ve spent</a>` : ''}
+    const waiting = store.get('mem-bar-order');
+    app.innerHTML = `${waiting ? `<a class="night-link" href="${esc(again())}&view=order">Your order at the bar: show the pickup code →</a>` : ''}${lastPaid() ? `<a class="night-link" href="${esc(again())}&view=night">My night: what I’ve spent</a>` : ''}
       <div class="find-bar"><label class="sr" for="find">Search drinks</label><input id="find" type="search" placeholder="Search drinks, e.g. Guinness" autocomplete="off" autocapitalize="off" spellcheck="false" enterkeyhint="search" value="${esc(query)}">
         ${cats.length > 1 ? `<nav class="chips" id="chips" aria-label="Drink groups" ${query.trim() ? 'hidden' : ''}>${cats.map(c => `<a href="#${catId(c)}">${esc(c)}</a>`).join('')}</nav>` : ''}</div>
       <div id="menuList">${list()}</div>`;

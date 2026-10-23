@@ -5,7 +5,8 @@ import { sheet, say, busy, money, moneyField, ghsIn, pasteMomoButton } from './o
 
 // Draws a drink list into `el`. products: from /api/ops/products?stationId=… (with `left`).
 // onSend(lines, total) runs when the big button is tapped; it may throw to show an error.
-export function drinkPicker(el, products, { title = 'Pick drinks', top = '', button = n => `Send to bar · ${n}`, onSend, onBack } = {}) {
+// topEl: a form shown above the drinks that keeps what was typed while drinks are added.
+export function drinkPicker(el, products, { title = 'Pick drinks', top = '', topEl = null, button = n => `Send to bar · ${n}`, onSend, onBack } = {}) {
   const menu = products.filter(p => p.pricePesewas > 0);
   const cart = {};
   const cats = [...new Set(menu.map(p => p.category))];
@@ -13,12 +14,13 @@ export function drinkPicker(el, products, { title = 'Pick drinks', top = '', but
   const cap = p => Math.min(30, p.left == null ? 30 : p.left);
   const draw = () => {
     const total = Object.entries(cart).reduce((n, [id, q]) => n + q * menu.find(p => p.id === id).pricePesewas, 0), count = Object.values(cart).reduce((a, b) => a + b, 0);
-    el.innerHTML = `${onBack ? '<div class="backbar"><button type="button" class="back-btn" data-back aria-label="Back">←<span>Back</span></button></div>' : ''}<h1>${esc(title)}</h1>${top}
+    el.innerHTML = `${onBack ? '<div class="backbar"><button type="button" class="back-btn" data-back aria-label="Back">←<span>Back</span></button></div>' : ''}<h1>${esc(title)}</h1>${top}${topEl ? '<div data-top></div>' : ''}
       ${cats.map(c => `<h3 class="cat-h">${esc(c)}</h3>${menu.filter(p => p.category === c).map(p => `<div class="pick ${out(p) ? 'out' : ''}"><div class="grow">${esc(p.name)}<small>${money(p.pricePesewas)}${out(p) ? ' · finished' : p.left != null && p.left <= 5 ? ` · only ${p.left} left` : ''}</small></div>
         ${out(p) ? '' : `<div class="qstep"><button type="button" data-m="${esc(p.id)}" aria-label="One fewer ${esc(p.name)}">−</button><span>${cart[p.id] || 0}</span><button type="button" data-p="${esc(p.id)}" aria-label="One more ${esc(p.name)}" ${(cart[p.id] || 0) >= cap(p) ? 'disabled' : ''}>+</button></div>`}</div>`).join('')}`).join('')}
       <div id="pkMsg"></div>
       <div class="dock"><button class="big" id="send" ${count ? '' : 'disabled'}>${count ? esc(button(`${count} drink${count > 1 ? 's' : ''} · ${money(total)}`)) : 'Pick drinks'}</button></div>`;
     $('[data-back]', el) && ($('[data-back]', el).onclick = onBack);
+    if (topEl) $('[data-top]', el).replaceWith(topEl);
     $$('[data-p],[data-m]', el).forEach(b => b.onclick = () => {
       const id = b.dataset.p || b.dataset.m, p = menu.find(x => x.id === id);
       cart[id] = Math.max(0, Math.min(cap(p), (cart[id] || 0) + (b.dataset.p ? 1 : -1))); if (!cart[id]) delete cart[id];

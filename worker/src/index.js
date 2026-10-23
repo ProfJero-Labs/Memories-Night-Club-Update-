@@ -170,6 +170,14 @@ async function route(req, env, ctx) {
   if (!user) return fail(req, env, 'Sign in again.', 401);
   if (m === 'GET' && p === '/api/ops/me') return reply(req, env, await staffauth.whoAmI(env, user));
   if (m === 'POST' && p === '/api/ops/change-pin') return reply(req, env, await staffauth.changeMyPin(env, user, await body(req)));
+  // A waiter waiting on the MoMo prompt they sent when closing a tab: asks Paystack, records it once paid.
+  if (m === 'GET' && p === '/api/ops/tabs/charge') {
+    if (!requireRole(user, ['superAdmin', 'director', 'manager', 'waitStaff', 'eventManager'])) return fail(req, env, 'Forbidden.', 403);
+    const ref = new URL(req.url).searchParams.get('ref') || '', pc = ref ? await getDoc(env, 'pending_checkouts', ref) : null;
+    if (!pc || pc.fields.kind !== 'tab' || !pc.fields.prompt) return fail(req, env, 'Not found.', 404);
+    const r = await fulfill(env, ref), t = await getDoc(env, 'tabs', pc.fields.tabId);
+    return ok(req, env, { status: r.status, error: r.error, tabStatus: t?.fields?.status || '' });
+  }
   if (p.startsWith('/api/ops/')) {
     const r = await opsRoute(m, p, new URL(req.url), m === 'POST' ? await body(req) : {}, env, user);
     if (r !== undefined) return reply(req, env, r);

@@ -109,31 +109,47 @@ The Door screen is where the entrance is run. Phone numbers are the main ID: a p
 
 ## A customer orders from a waiter (no QR)
 
-1. Waiter: **Open a table** → table number (or **Walk-in**), and the customer's name and phone if
-   they want the invoice by text → **Add drinks** → **Send to bar**.
+Every step is one tap, and the waiter is never stuck on one table.
+
+1. **New tab**: one screen has the drinks, the table (empty if they're standing) and, if they
+   like, the customer's phone → **Send to bar**. The waiter is straight back on **My tables**,
+   free to open another tab or do a **Quick sale**.
 2. Bar: the order appears with the table, tab number and waiter. **Start** → **Ready** →
    **Hand to Efua**. At that moment the drinks leave the bar's stock.
    - If the waiter picks the drinks up without the bartender tapping anything, the waiter taps
      **I took them from the bar**. The bar sees "Efua says they took Tab 3" and taps **Confirm**
-     (the drinks leave the stock) or **Not taken** (back on the list). Nothing leaves the stock
-     until the bar confirms. **Handed over tonight** lists every order that left the bar.
-3. Waiter: **I got them ✓** (one tap). Drinks the customer didn't take: **Send back to bar** (the
-   bar taps *Got them back*). Broken: **Broken** (off the bill, shows in the waiter's report).
-4. **Show bill to customer**: the customer scans the QR (or gets the link by text), sees every
-   drink and pays with **Pay now** (MoMo or card on Paystack). It shows as paid only once Paystack
-   confirms it on the server. If drinks are added while they pay, the new drinks stay owed.
-   **Send invoice (SMS)** texts the customer every drink, the total, what's paid and what's left,
-   with the pay link.
-5. Cash or MoMo to the club's number: the waiter taps **Customer paid** → **Cash** or **MoMo**.
-   For MoMo, type the **transaction ID** from the MoMo text (and the number it came from, if you
-   like). The same ID can't be recorded twice, and Today's sales lists every MoMo ID for finance
-   to check against the MoMo statement. Cash goes in the waiter's cash for the night (their
-   report). The cashier can also take cash.
-6. **Close tab** when everything is delivered and paid.
-- More rounds: **Add drinks** again on the same tab. Part payments are fine.
-- Free drink, money off, or a customer who can't pay: **Ask the manager**. Nothing changes until
-  someone else approves it.
-- Customers who prefer the QR at the bar still order the old way; both use the same menu and stock.
+     (the drinks leave the stock) or **Not taken** (back on the list).
+3. Waiter: **I got them ✓**. The drinks are on the tab.
+4. Back on the tab (tap it on My tables): **Add drinks** or **Close tab**.
+   - **Return or swap**: on a delivered order. Pick the drink and how many → **Swap** (it goes
+     back to the bar and the menu opens for the new drink) or **Just return it**. It comes off the
+     bill when the bar taps *Got them back*. **Broken**: off the bill, in the waiter's report.
+   On **My tables** every open tab shows **Add drinks** and **Close tab** right on it.
+5. **Close tab** asks one question: **Cash or MoMo?** (Every order must be collected first, so
+   the bill is final.)
+   - **Cash** → **Got GHS … cash · close**: it goes in the waiter's cash for the night, the tab
+     closes, and the receipt is texted if there's a number.
+   - **MoMo** → a MoMo prompt goes to the customer's phone and the invoice (every drink, the total
+     and a pay link) is texted to them. They approve the prompt, or pay from the link, or scan the
+     QR on the waiter's screen. The tab closes by itself once Paystack confirms the payment; the
+     waiter can go back to My tables meanwhile.
+- **More** on a tab: show the QR to pay, text the invoice now, a part payment or MoMo sent to the
+  club's number (with its transaction ID), and **Ask the manager** (a free drink, money off, or a
+  customer who can't pay; nothing changes until someone else approves it).
+- The bar's **Waiters** tab shows every waiter's tables tonight: the drinks the bar gave them,
+  table by table, and what's still unpaid.
+- Customers who prefer the QR at the bar still order that way; both use the same menu and stock.
+
+## Table bookings reach the team
+
+A table booked online shows straight away on the waiter's **Bookings**, the front office's
+**Tables** and the manager's **Tables** screens: tonight's, and **Coming up** for the next 30
+nights (who, which table, the door code, bottles paid). The event managers and managers are also
+texted who booked it (name, phone, table, night, bottles, door code). Anyone who doesn't want
+these texts: set `bookingAlerts: false` on their staff record.
+
+If a guest pays but the booking doesn't appear: the payment check runs every 10 minutes, finishes
+any paid booking it finds and texts the people on the alert list if it can't.
 
 ## Discounted tickets (promos)
 
@@ -298,19 +314,26 @@ never in sales, money in or profit.
 
 ## Closing the night
 
-1. **Waiters** submit *My report*. Drinks still with them, or unpaid bills, need an explanation.
-2. **Bar** submits the closing count.
-3. **Cashier** submits the cash count.
-4. **Front office** submits its report (open issues handed over or explained).
-5. **Manager**: Control room → Tonight → *Close the night*. Each step shows who has finished.
-   Review the differences, decide the approvals, then **Close the night and send the report**. If
-   something is missing, it asks first and lists it in the report.
-6. The **end-of-day report** is saved and emailed to the finance email (set it under End-of-day
-   reports → *Where the report is sent*). If the email can't be sent, the screen says so: the
-   report is always saved in the system.
-7. **Finance** opens it (Finance → Reports), checks it, and signs it off. The person who closed the
-   night can't sign off for finance. A closed night is locked: no new drinks or stock entries for
-   it. An unpaid bill can still be paid later, or written off with approval.
+Four steps, and nothing blocks the close:
+
+1. **Every tab closed, paid or owed.** That is the waiter's report: there is nothing else to
+   submit. **Close tab** → Cash, MoMo, or **They can't pay now: customer owes** (their name and
+   phone; they're texted the invoice to pay later, and the Manager sees it under what's owed).
+2. **Cash in: waiters → the bar → the Manager.** The bar person is the custodian of the drinks,
+   so the cash goes there. The waiter: *My report* → **Hand GHS … to the bar**. The bar person:
+   *Waiters* tab → *Cash from waiters* → **Received** (a different amount needs a note). It joins
+   the bar person's own cash, and they **Hand all my cash to the Manager** (My shift); the Manager
+   confirms it. Waiters take cash without any setting.
+3. **The bar counts its stock** (Stock → the closing count).
+4. **Close**: Control room → Tonight → *Close the night*. The end-of-day report is saved and sent
+   to finance (email set under End-of-day reports → *Where the report is sent*). Anything not done
+   yet is listed in it. Finance opens it (Finance → Reports) and signs it off; the person who
+   closed the night can't sign off for finance. Finance's **Today** shows cash and MoMo up front.
+
+Closing is for the accounts only. It never stops anyone working: staff can keep opening tabs,
+selling, taking payments and counting stock after it. A night can be closed at any time, and
+closed again later (**Close again and send the updated report**). Each close saves a new version
+of the report.
 
 ## Setting up for live use
 

@@ -16,7 +16,7 @@
 // Nothing is sold past zero: every order is checked against what's left at the bar (stockError).
 // Quick sale: one go, no table: drinks + Cash or MoMo. From a waiter it goes to the bar like any
 // order and the waiter confirms they got the drinks; from the bar it's served and closed at once.
-import { getDoc, setDoc, queryWhere, batchGet, commitTx, updateWrite, foundFields, withTransaction, listDocs } from '../lib/firestore.js';
+import { getDoc, setDoc, queryWhere, batchGet, commitTx, updateWrite, foundFields, withTransaction, listDocs, deleteDoc } from '../lib/firestore.js';
 import { now, id, clean, normalizePhone, maskPhone, paymentRef, validEmail } from '../lib/util.js';
 import { requireRole, uidOf } from '../lib/auth.js';
 import { sendSms, siteUrl } from '../lib/notify.js';
@@ -24,6 +24,7 @@ import { FORBIDDEN, bizDate, who, audit, closedError, ghs, int } from './common.
 import { addMoves, stockError } from './stock.js';
 import { prepareTip, tipFields, textTip, phoneOf, guestTipPeople } from './tips.js';
 import { paymentAlert } from './alerts.js';
+import { momoPrompt } from '../lib/momo.js';
 
 export const BOSS = ['superAdmin', 'director', 'manager'];
 export const WAITERS = [...BOSS, 'waitStaff', 'eventManager'];             // the Event manager serves tables too
@@ -145,6 +146,38 @@ export async function addRound(env, b, user) {
   return { id: rid, totalPesewas: lines.reduce((n, l) => n + l.qty * l.unitPesewas, 0) };
 }
 
+// The waiter's one step: take the order → it goes to the bar (the invoice is texted when the tab
+// is closed; sendInvoice: true texts it now too). A new table is opened with it (a table number, or none: standing at the bar);
+// with tabId the drinks go on that table and the updated invoice is texted again.
+//   { tabId? | table, stationId, customerPhone, customerName }, lines
+export async function takeOrder(env, b, user) {
+  if (!requireRole(user, WAITERS)) return FORBIDDEN;
+  let tabId = String(b?.tabId || ''), opened = false;
+  if (!tabId) {
+    const table = clean(b?.table, 30);
+    const o = await openTab(env, { ...b, table, walkIn: !table }, user);
+    if (o.error) return o;
+    tabId = o.id; opened = true;
+  } else if (b?.customerPhone) {
+    const t = await getDoc(env, 'tabs', tabId), phone = normalizePhone(b.customerPhone);
+    if (!phone) return { error: 'That phone number doesn’t look right. Use a Ghana number, or leave it blank.' };
+    if (t && mineOrBoss(user, t.fields) && t.fields.customerPhone !== phone) await setDoc(env, 'tabs', t.id, { ...t.fields, customerPhone: phone });
+  }
+  const r = await addRound(env, { ...b, tabId }, user);
+  if (r.error) {
+    // Nothing was ordered: don't leave an empty table behind.
+    if (opened) await deleteDoc(env, 'tabs', tabId).catch(() => {});
+    return r;
+  }
+  const t = await getDoc(env, 'tabs', tabId);
+  let invoice = { sent: false, phoneHint: '' };
+  if (b?.sendInvoice === true && t?.fields?.customerPhone) {
+    const bill = billOf(t.fields, await roundsOf(env, t.id));
+    invoice = { sent: await sendSms(env, t.fields.customerPhone, invoiceText(env, t.fields, bill)), phoneHint: maskPhone(t.fields.customerPhone) };
+  }
+  return { tabId, roundId: r.id, number: t?.fields?.number, totalPesewas: r.totalPesewas, invoice };
+}
+
 // Waiter steps on a round: cancel (before the bar starts), got them, delivered, broken, send back.
 export async function waiterRound(env, b, user) {
   if (!requireRole(user, WAITERS)) return FORBIDDEN;
@@ -215,6 +248,50 @@ export async function barRounds(env, user, { stationId }) {
     // Everything that left this bar tonight, newest first: who took it, when, who confirmed.
     handedOver: all.filter(r => r.handedAt && ['handed', 'received', 'delivered'].includes(r.status)).sort((a, b) => String(b.handedAt).localeCompare(String(a.handedAt))).slice(0, 40).map(roundView),
   };
+}
+
+// The bar's view of each waiter tonight: every drink this bar has given them (handed over, less
+// what came back to the bar), on which tab, and how much of those tabs is still unpaid. Drinks
+// still waiting for the waiter's "I got them" are counted as given (they left the bar).
+export async function barWaiters(env, user, { stationId }) {
+  if (!requireRole(user, BAR_HANDS)) return FORBIDDEN;
+  const stations = (await listDocs(env, 'bar_stations')).sort((a, b) => a.fields.name.localeCompare(b.fields.name));
+  const st = stations.find(s => s.id === stationId) || stations[0];
+  if (!st) return { stationId: null, waiters: [] };
+  const date = bizDate();
+  const given = (await queryWhere(env, 'rounds', [{ field: 'stationId', value: st.id }, { field: 'businessDate', value: date }]))
+    .map(r => ({ id: r.id, ...r.fields })).filter(r => r.handedAt && ['handed', 'received', 'delivered'].includes(r.status));
+  const tabIds = [...new Set(given.map(r => r.tabId).filter(Boolean))];
+  const tabs = new Map();
+  for (const tid of tabIds) {
+    const t = await getDoc(env, 'tabs', tid); if (!t) continue;
+    tabs.set(tid, { t: { id: t.id, ...t.fields }, bill: billOf(t.fields, await roundsOf(env, tid)) });
+  }
+  const people = new Map();
+  for (const r of given) {
+    const w = people.get(r.waiterUid) || { uid: r.waiterUid, name: r.waiterName || 'Waiter', givenQty: 0, givenPesewas: 0, notConfirmedQty: 0, tabs: new Map() };
+    const tab = w.tabs.get(r.tabId) || { id: r.tabId, number: r.tabNumber, table: r.table || '', given: new Map(), givenPesewas: 0, lastAt: '' };
+    for (const l of r.lines) {
+      const n = Math.max(0, l.qty - (l.returnedQty || 0)); if (!n) continue;
+      const k = `${l.productId}|${l.unitPesewas}`, cur = tab.given.get(k) || { name: l.name, qty: 0, amountPesewas: 0 };
+      cur.qty += n; cur.amountPesewas += n * l.unitPesewas; tab.given.set(k, cur);
+      tab.givenPesewas += n * l.unitPesewas; w.givenQty += n; w.givenPesewas += n * l.unitPesewas;
+      if (r.status === 'handed') w.notConfirmedQty += n;
+    }
+    if (String(r.handedAt) > tab.lastAt) tab.lastAt = r.handedAt;
+    w.tabs.set(r.tabId, tab); people.set(r.waiterUid, w);
+  }
+  const waiters = [...people.values()].map(w => {
+    const list = [...w.tabs.values()].map(x => {
+      const info = tabs.get(x.id), b = info?.bill;
+      return { id: x.id, number: x.number, table: x.table, quick: !!info?.t.quick, status: info?.t.status || 'open', payStatus: b?.status || 'unpaid', payLabel: PAY_LABEL[b?.status || 'unpaid'],
+        totalPesewas: b?.totalPesewas || 0, paidPesewas: b?.paidPesewas || 0, balancePesewas: b?.balancePesewas || 0,
+        given: [...x.given.values()], givenPesewas: x.givenPesewas, lastAt: x.lastAt };
+    }).sort((a, b) => String(b.lastAt).localeCompare(String(a.lastAt)));
+    return { uid: w.uid, name: w.name, givenQty: w.givenQty, givenPesewas: w.givenPesewas, notConfirmedQty: w.notConfirmedQty,
+      unpaidPesewas: list.reduce((n, t) => n + (t.status === 'open' ? t.balancePesewas : 0), 0), openTabs: list.filter(t => t.status === 'open').length, tabs: list };
+  }).sort((a, b) => b.givenPesewas - a.givenPesewas);
+  return { stationId: st.id, stationName: st.fields.name, date, waiters };
 }
 
 const issueMoves = (rid, f) => f.lines.map(l => ({ productId: l.productId, productName: l.name, stationId: f.stationId, qty: -l.qty, kind: 'issue', ref: rid, tabId: f.tabId, toWaiterUid: f.waiterUid, toWaiterName: f.waiterName, businessDate: f.businessDate }));
@@ -440,17 +517,89 @@ export async function closeTab(env, b, user) {
   return { closed: true };
 }
 
+// Close the tab: the waiter asks "cash or MoMo?".
+//   cash → the waiter takes what's left, the tab closes, and the receipt is texted (if there's a number).
+//   momo → a MoMo prompt goes to the customer's phone and the invoice with its pay link is texted; the
+//          tab closes by itself once Paystack confirms the payment (closeWhenPaid).
+// Drinks must all be collected first ("I got them"), so the bill is final.
+//   { tabId, method: 'cash' | 'momo', phone }
+export async function checkoutTab(env, b, user) {
+  if (!requireRole(user, WAITERS)) return FORBIDDEN;
+  const t = await getDoc(env, 'tabs', String(b?.tabId || ''));
+  if (!t) return { error: 'Tab not found.', status: 404 };
+  if (!mineOrBoss(user, t.fields)) return { error: 'This is another waiter’s tab.', status: 403 };
+  if (t.fields.status !== 'open') return { error: 'This tab is already closed.' };
+  const rounds = await roundsOf(env, t.id);
+  const out = rounds.filter(r => !['delivered', 'cancelled'].includes(r.status));
+  if (out.length) return { error: `${out.length === 1 ? 'One order isn’t' : `${out.length} orders aren’t`} collected yet. Tap “I got them” (or cancel it) first, so the bill is final.` };
+  const phone = b?.phone ? normalizePhone(b.phone) : t.fields.customerPhone || '';
+  if (b?.phone && !phone) return { error: 'That phone number doesn’t look right. Fix it, or leave it empty.' };
+  const fields = { ...t.fields, customerPhone: phone };
+  if (phone !== t.fields.customerPhone) await setDoc(env, 'tabs', t.id, fields);
+  const bill = billOf(fields, rounds);
+  // They can't pay now: the tab closes as a debt the customer owes, with who they are, so it can be
+  // collected (the bill link still works, and the Manager sees it under what's owed).
+  if (b?.method === 'debt') {
+    if (bill.balancePesewas <= 0) return { error: 'Nothing is owed on this tab. Close it.' };
+    const name = clean(b?.customerName, 60) || t.fields.customerName || '';
+    if (!name) return { error: 'Who owes it? Type the customer’s name.' };
+    if (!phone) return { error: 'Type the customer’s phone number, so the debt can be collected.' };
+    await setDoc(env, 'tabs', t.id, { ...fields, customerName: name, status: 'owed', debt: { name, phone, note: clean(b?.note, 200), amountPesewas: bill.balancePesewas, by: uidOf(user), byName: user.name || '', at: now() }, closedAt: now(), closedByName: user.name || '' });
+    await sendSms(env, phone, invoiceText(env, fields, bill));
+    await audit(env, user, 'TAB_CLOSED_AS_DEBT', { tabId: t.id, amountPesewas: bill.balancePesewas });
+    return { method: 'debt', closed: true, owedPesewas: bill.balancePesewas, phoneHint: maskPhone(phone) };
+  }
+  if (b?.method === 'momo') {
+    if (!phone) return { error: 'Type the customer’s MoMo number: the prompt and the invoice go to it.' };
+    if (bill.balancePesewas < 100) return { error: bill.balancePesewas ? 'Less than GHS 1 is left. Take it in cash.' : 'Nothing to pay. Close the tab.' };
+    const reference = paymentRef();
+    const host = new URL(env.PUBLIC_SITE_URL || 'https://memoriesnightclub.com').hostname.replace(/^www\./, '');
+    await setDoc(env, 'pending_checkouts', reference, { reference, kind: 'tab', tabId: t.id, eventName: `Tab ${t.fields.number}`, amountPesewas: bill.balancePesewas, buyerPhone: phone, prompt: true, status: 'pending', createdAt: now(), by: uidOf(user) });
+    await setDoc(env, 'tabs', t.id, { ...fields, closeWhenPaid: true, closeAskedByName: user.name || '' });
+    const prompt = await momoPrompt(env, { phone, amountPesewas: bill.balancePesewas, reference, email: `tab-${phone}@${host}`, metadata: { kind: 'tab', tabId: t.id } });
+    if (!prompt) await setDoc(env, 'pending_checkouts', reference, { reference, kind: 'tab', tabId: t.id, status: 'failed', error: 'prompt_not_sent', failedAt: now() });
+    const sent = await sendSms(env, phone, invoiceText(env, fields, bill));
+    await audit(env, user, 'TAB_CHECKOUT_MOMO', { tabId: t.id, amountPesewas: bill.balancePesewas, prompt });
+    return { method: 'momo', prompt, reference: prompt ? reference : '', invoiceSent: sent, phoneHint: maskPhone(phone), amountPesewas: bill.balancePesewas, billUrl: siteUrl(env, `/bill.html?t=${t.fields.billToken}`),
+      message: prompt ? `A MoMo prompt for ${ghs(bill.balancePesewas)} is on ${maskPhone(phone)}. They approve it, or pay from the invoice text.` : `The invoice is texted to ${maskPhone(phone)}: they pay from its link, or scan the QR.` };
+  }
+  // Cash: what's left, into the waiter's cash for the night; then the tab closes.
+  if (bill.balancePesewas > 0) {
+    const r = await recordPayment(env, { tabId: t.id, method: 'cash', amountPesewas: bill.balancePesewas }, user);
+    if (r.error) return r;
+  }
+  const c = await closeTab(env, { tabId: t.id }, user);
+  if (c.error) return c;
+  let receipt = false;
+  if (phone && bill.totalPesewas) { const fresh = await getDoc(env, 'tabs', t.id); receipt = await sendSms(env, phone, invoiceText(env, fresh.fields, billOf(fresh.fields, rounds))); }
+  return { method: 'cash', closed: true, cashPesewas: bill.balancePesewas, receiptSent: receipt, phoneHint: phone ? maskPhone(phone) : '' };
+}
+
+// After a MoMo payment: a tab the waiter asked to close, now fully paid, closes by itself.
+async function closeIfPaid(env, tabId) {
+  const t = await getDoc(env, 'tabs', tabId);
+  if (!t || !((t.fields.status === 'open' && t.fields.closeWhenPaid) || t.fields.status === 'owed')) return false;
+  const rounds = await roundsOf(env, tabId), bill = billOf(t.fields, rounds);
+  if (bill.balancePesewas > 0 || rounds.some(r => !['delivered', 'cancelled'].includes(r.status))) return false;
+  await setDoc(env, 'tabs', tabId, { ...t.fields, status: 'closed', closedAt: now(), closedByName: t.fields.status === 'owed' ? `${t.fields.closedByName || 'Waiter'} (debt paid by MoMo)` : `${t.fields.closeAskedByName || 'Waiter'} (paid by MoMo)` });
+  return true;
+}
+
 // The invoice by text: every drink with its price, the total, what's paid and what's left, and the
 // link to see it and pay with MoMo or card. Long bills list the first drinks and count the rest.
 export function invoiceText(env, tab, bill) {
   const where = tab.table && tab.table !== 'Walk-in' ? `Table ${String(tab.table).replace(/^table\s*/i, '')}` : 'Walk-in';
   const items = bill.lines.slice(0, 8).map(l => `${l.qty} x ${l.name.slice(0, 24)} ${ghs(l.amountPesewas)}`);
   if (bill.lines.length > 8) items.push(`+ ${bill.lines.length - 8} more on the link`);
-  return ['MEMORIES INVOICE', `Tab ${tab.number} · ${where}`, ...items,
+  // Something left to pay: an INVOICE. Nothing left: a RECEIPT, saying how it was paid and who
+  // recorded it, so a customer who hasn't paid can't be told they have without seeing who said so.
+  const how = (tab.payments || []).map(p => `${p.method === 'cash' ? 'Cash' : 'MoMo'} ${ghs(p.amountPesewas)}${p.method === 'digital' ? ' (confirmed by Paystack)' : p.byName ? ` (taken by ${String(p.byName).split(/\s+/)[0]})` : ''}`);
+  const due = bill.balancePesewas > 0;
+  return [due ? 'MEMORIES INVOICE' : 'MEMORIES RECEIPT', `Tab ${tab.number} · ${where}`, ...items,
     ...(bill.discountPesewas ? [`Discount -${ghs(bill.discountPesewas)}`] : []),
-    `Total ${ghs(bill.totalPesewas)}`, ...(bill.paidPesewas ? [`Paid ${ghs(bill.paidPesewas)}`] : []),
-    bill.balancePesewas ? `To pay ${ghs(bill.balancePesewas)}` : 'Fully paid. Thank you!',
-    ...(bill.balancePesewas ? [`Pay with MoMo or card: ${siteUrl(env, `/bill.html?t=${tab.billToken}`)}`] : [])].join('\n');
+    `Total ${ghs(bill.totalPesewas)}`, ...(how.length ? [`Paid: ${how.join(', ')}`] : []),
+    due ? `TO PAY ${ghs(bill.balancePesewas)}` : 'Paid in full. Thank you!',
+    ...(due ? [`Pay with MoMo or card: ${siteUrl(env, `/bill.html?t=${tab.billToken}`)}`] : ['Not right? Tell your waiter or the manager.'])].join('\n');
 }
 
 export async function textBill(env, b, user) {
@@ -475,7 +624,11 @@ async function tabByToken(env, token) {
 export async function publicBill(env, token) {
   const t = await tabByToken(env, token); if (!t) return PUBLIC;
   const bill = billOf(t.fields, await roundsOf(env, t.id));
-  return { bill: { label: `Tab ${t.fields.number}`, table: t.fields.table, waiterFirstName: String(t.fields.waiterName || '').split(/\s+/)[0], date: t.fields.businessDate, lines: bill.lines, grossPesewas: bill.grossPesewas, discountPesewas: bill.discountPesewas, totalPesewas: bill.totalPesewas, paidPesewas: bill.paidPesewas, balancePesewas: bill.balancePesewas, status: bill.status, statusLabel: PAY_LABEL[bill.status],
+  // Paid, but staying: the table stays open for more drinks (from the waiter, or the bar's menu
+  // on this phone when the bar is taking app orders).
+  const st = t.fields.status === 'open' && t.fields.stationId ? await getDoc(env, 'bar_stations', t.fields.stationId).catch(() => null) : null;
+  const menuUrl = st?.fields?.open && /^[0-9a-f]{32}$/.test(st.fields.token || '') ? `counter.html?s=${st.fields.token}${t.fields.table && t.fields.table !== 'Walk-in' ? `&t=${encodeURIComponent(t.fields.table)}` : ''}` : '';
+  return { open: t.fields.status === 'open', menuUrl, bill: { label: `Tab ${t.fields.number}`, table: t.fields.table, waiterFirstName: String(t.fields.waiterName || '').split(/\s+/)[0], date: t.fields.businessDate, lines: bill.lines, grossPesewas: bill.grossPesewas, discountPesewas: bill.discountPesewas, totalPesewas: bill.totalPesewas, paidPesewas: bill.paidPesewas, balancePesewas: bill.balancePesewas, status: bill.status, statusLabel: PAY_LABEL[bill.status],
     payments: (t.fields.payments || []).map(p => ({ method: p.method === 'cash' ? 'Cash' : 'MoMo', amountPesewas: p.amountPesewas, at: p.at })), paying: !!(t.fields.pending && Date.now() - new Date(t.fields.pending.at).getTime() < 30 * 60e3) },
     // A tip with the payment: for their waiter by default, or anyone on the team.
     tip: { people: (await guestTipPeople(env)).people, defaultId: t.fields.waiterUid || '' } };
@@ -538,6 +691,7 @@ export async function issueTabPayment(env, reference, P) {
     return { status: 'issued', kind: 'tab', tabId: P.tabId, tip, fresh: { amountPesewas: pay.amountPesewas, where: `Tab ${t.fields.number}`, byName: t.fields.waiterName || '' } };
   }).then(async r => {
     if (r.tip) await textTip(env, await phoneOf(env, r.tip.to.uid), r.tip, 'digital');
+    r.closed = await closeIfPaid(env, P.tabId).catch(() => false);
     // Paystack confirmed it: the Manager is texted.
     if (r.fresh) await paymentAlert(env, { ...r.fresh, kind: 'digital', tipPesewas: r.tip?.amount || 0 });
     delete r.fresh; return r;

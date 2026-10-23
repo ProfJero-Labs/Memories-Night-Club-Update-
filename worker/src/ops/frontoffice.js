@@ -11,23 +11,40 @@ import { tableCode } from '../lib/util.js';
 const FRONT = ['superAdmin', 'director', 'manager', 'hrManager', 'eventManager', 'doorStaff', 'security'];
 export const INCIDENT_KINDS = { fight: 'Fight or threat', refused: 'Refused entry', id: 'ID / age problem', fake_ticket: 'Fake or used ticket', lost: 'Lost or found item', medical: 'Medical', customer: 'Customer complaint', booking: 'Booking or payment problem', other: 'Other' };
 
-// Tonight's table bookings: who, which table package, how many people, bottles already paid for.
-// Waiters see it too, so the bottles a table booked get served.
+// Table bookings: tonight's (arrivals, table numbers, bottles to serve) and the coming nights' (so
+// a table booked on Wednesday for Friday is on everyone's screen from Wednesday). Waiters see it
+// too, so the bottles a table booked get served.
+const UPCOMING_DAYS = 30;
+async function bookingRows(env, e) {
+  const orders = (await queryWhere(env, 'orders', [{ field: 'eventId', value: e.id }, { field: 'kind', value: 'table' }])).filter(o => o.fields.status === 'confirmed');
+  const caps = new Map();
+  const out = [];
+  for (const o of orders) {
+    const pid = o.fields.packageId;
+    if (pid && !caps.has(pid)) caps.set(pid, Number((await getDoc(env, 'table_packages', pid))?.fields?.capacity || 0));
+    out.push({ orderId: o.id, code: tableCode(o.id), eventId: e.id, eventName: e.fields.name, night: nightKey(e.fields.date), name: o.fields.buyerName, firstName: firstName(o.fields.buyerName), phoneLast4: String(o.fields.buyerPhone || '').slice(-4),
+      packageName: o.fields.packageName, capacity: caps.get(pid) || 0, bottles: (o.fields.bottles || []).map(b => ({ name: b.name, quantity: b.quantity })),
+      bookedAt: o.fields.createdAt || null, channel: o.fields.channel || 'online',
+      arrived: !!o.fields.arrivedAt, arrivedAt: o.fields.arrivedAt || null, guestsArrived: Number(o.fields.guestsArrived || 0), tableNumber: o.fields.tableNumber || '', bottlesServed: o.fields.bottlesServed === true });
+  }
+  return out;
+}
 export async function tablesTonight(env, user, { date } = {}) {
   if (!requireRole(user, [...FRONT, 'waitStaff', 'barStaff'])) return FORBIDDEN;
   const d = dateOr(date);
-  const events = (await listDocs(env, 'events')).filter(e => e.fields.date && nightKey(e.fields.date) === d);
-  const out = [];
-  for (const e of events) {
-    const orders = (await queryWhere(env, 'orders', [{ field: 'eventId', value: e.id }, { field: 'kind', value: 'table' }])).filter(o => o.fields.status === 'confirmed');
-    for (const o of orders) {
-      const pkg = o.fields.packageId ? await getDoc(env, 'table_packages', o.fields.packageId) : null;
-      out.push({ orderId: o.id, code: tableCode(o.id), eventName: e.fields.name, name: o.fields.buyerName, firstName: firstName(o.fields.buyerName), phoneLast4: String(o.fields.buyerPhone || '').slice(-4),
-        packageName: o.fields.packageName, capacity: Number(pkg?.fields?.capacity || 0), bottles: (o.fields.bottles || []).map(b => ({ name: b.name, quantity: b.quantity })),
-        arrived: !!o.fields.arrivedAt, arrivedAt: o.fields.arrivedAt || null, guestsArrived: Number(o.fields.guestsArrived || 0), tableNumber: o.fields.tableNumber || '', bottlesServed: o.fields.bottlesServed === true });
-    }
+  const all = (await listDocs(env, 'events')).filter(e => e.fields.date && e.fields.active !== false);
+  const last = new Date(Date.parse(`${d}T12:00:00Z`) + UPCOMING_DAYS * 864e5).toISOString().slice(0, 10);
+  const tonight = [], upcoming = [];
+  for (const e of all) {
+    const k = nightKey(e.fields.date);
+    if (k === d) tonight.push(...await bookingRows(env, e));
+    else if (k > d && k <= last) upcoming.push(...await bookingRows(env, e));
   }
-  return { date: d, tables: out.sort((a, b) => Number(a.arrived) - Number(b.arrived) || a.name.localeCompare(b.name)) };
+  return {
+    date: d,
+    tables: tonight.sort((a, b) => Number(a.arrived) - Number(b.arrived) || a.name.localeCompare(b.name)),
+    upcoming: upcoming.sort((a, b) => a.night.localeCompare(b.night) || String(b.bookedAt).localeCompare(String(a.bookedAt))),
+  };
 }
 
 // Front office assigns or confirms a table number and how many arrived; waiters tick bottles served.

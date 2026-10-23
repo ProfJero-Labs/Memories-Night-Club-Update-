@@ -14,9 +14,10 @@ export const ghs = p => `GHS ${(Number(p || 0) / 100).toLocaleString('en-GH', { 
 export const int = v => (Number.isInteger(Number(v)) ? Number(v) : NaN);
 
 export async function nightState(env, date) { return (await getDoc(env, 'shifts', date))?.fields || { status: 'open' }; }
-export async function closedError(env, date) {
-  return (await nightState(env, date)).status === 'closed' ? { error: `The night of ${date} is closed. Ask a manager to record a correction.`, status: 409 } : null;
-}
+// Closing a night is for the accounts only (the end-of-day report for finance): it never stops
+// staff selling, paying or counting. A night can be closed at any time, and closed again later to
+// bring the report up to date. Kept as a hook so callers stay unchanged.
+export async function closedError() { return null; }
 export const audit = (env, user, action, data) => setDoc(env, 'audit_logs', id(), { action, actorUid: uidOf(user) || null, actorName: user?.name || '', ...data, timestamp: now() });
 // Every price, cost and stock-level change: who, when, the old value and the new value.
 export const logChange = (env, user, { kind, refId, refName, field, from, to, note = '' }) =>

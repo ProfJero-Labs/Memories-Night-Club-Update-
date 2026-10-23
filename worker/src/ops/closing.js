@@ -217,7 +217,7 @@ export async function closingStatus(env, user, { date } = {}) {
   const waiterIds = [...new Set([...data.tabs.map(t => t.waiterUid), ...data.rounds.map(r => r.waiterUid)])];
   const waiters = waiterIds.map(uid => {
     const fig = waiterFigures(uid, data), rep = data.reports.find(r => r.uid === uid && r.kind === 'waiter');
-    return { uid, name: data.tabs.find(t => t.waiterUid === uid)?.waiterName || data.rounds.find(r => r.waiterUid === uid)?.waiterName || 'Waiter', submitted: !!rep, explanation: rep?.explanation || '', withYouQty: fig.withYouQty, unpaidPesewas: fig.unpaidPesewas, salesPesewas: fig.salesPesewas };
+    return { uid, name: data.tabs.find(t => t.waiterUid === uid)?.waiterName || data.rounds.find(r => r.waiterUid === uid)?.waiterName || 'Waiter', submitted: !!rep, explanation: rep?.explanation || '', withYouQty: fig.withYouQty, unpaidPesewas: fig.unpaidPesewas, salesPesewas: fig.salesPesewas, openTabs: data.tabs.filter(t => t.waiterUid === uid && t.status === 'open').length };
   });
   const moves = await queryWhere(env, 'stock_moves', [{ field: 'businessDate', value: d }]);
   const activeStations = [...new Set([...moves.map(m => m.fields.stationId), ...data.rounds.map(r => r.stationId)])];
@@ -227,19 +227,22 @@ export async function closingStatus(env, user, { date } = {}) {
     const lines = c ? (c.corrected || c).lines : [];
     bars.push({ stationId: sid, name: data.stations.find(s => s.id === sid)?.name || 'Bar', counted: !!c, countedByName: c?.byName || '', reviewed: c?.status === 'reviewed', differences: lines.filter(l => l.difference).map(l => ({ name: l.name, difference: l.difference, reason: l.reason })) });
   }
-  const cash = data.cash.map(c => ({ id: c.id, name: c.name, role: c.role, status: c.status, explanation: c.explanation || '', ...cashFigures(c) }));
+  const cash = data.cash.map(c => ({ id: c.id, name: c.name, role: c.role, status: c.status, explanation: c.explanation || '', receivedAt: c.receivedAt || '', receivedByName: c.receivedByName || '', ...cashFigures(c) }));
   const front = data.reports.find(r => r.kind === 'front_office');
   const eod = await getDoc(env, 'eod_reports', d);
+  const night = await nightState(env, d);
+  // Four steps. A waiter's report is their tabs: each one closed as paid or owed (nothing to submit).
+  // Cash: waiters → the bar → the Manager.
+  const openTabs = data.tabs.filter(t => t.status === 'open');
+  const notIn = cash.filter(c => c.expectedPesewas && c.status === 'open'), notReceived = cash.filter(c => c.status !== 'open' && !c.receivedAt);
   const steps = [
-    { key: 'waiters', label: 'Waiters submit their reports', done: waiters.every(w => w.submitted), detail: `${waiters.filter(w => w.submitted).length} of ${waiters.length} submitted` },
+    { key: 'waiters', label: 'Every tab closed (paid or owed)', done: !openTabs.length, detail: openTabs.length ? `${openTabs.length} open: ${[...new Set(openTabs.map(t => String(t.waiterName || '').split(' ')[0]))].join(', ')}` : `${data.tabs.length} tabs closed` },
+    { key: 'cash', label: 'Cash in: waiters to the bar, the bar to the Manager', done: !notIn.length && !notReceived.length, detail: notIn.length || notReceived.length ? [notIn.length ? `still with ${notIn.map(c => c.name.split(' ')[0]).join(', ')}` : '', notReceived.length ? `to receive from ${notReceived.map(c => c.name.split(' ')[0]).join(', ')}` : ''].filter(Boolean).join(' · ') : 'All received' },
     { key: 'bar', label: 'The bar counts its stock', done: bars.every(b => b.counted), detail: `${bars.filter(b => b.counted).length} of ${bars.length} bars counted` },
-    { key: 'cash', label: 'Cash is counted', done: cash.every(c => c.status !== 'open'), detail: `${cash.filter(c => c.status !== 'open').length} of ${cash.length} cash shifts counted` },
-    { key: 'front', label: 'Front office checks outstanding work', done: !!front, detail: front ? `By ${front.name}` : 'Not yet' },
-    { key: 'review', label: 'Manager reviews the night', done: !data.approvals.some(a => a.businessDate === d) && bars.every(b => !b.differences.length || b.reviewed) && cash.every(c => !c.differencePesewas || c.status === 'reviewed'), detail: `${data.approvals.filter(a => a.businessDate === d).length} approvals waiting` },
-    { key: 'finance', label: 'Finance receives the report', done: !!eod?.fields?.sent, detail: eod ? (eod.fields.sent ? `Sent to ${eod.fields.sentTo}` : eod.fields.sendNote) : 'Prepared when the night is closed' },
-    { key: 'signoff', label: 'Final sign-off', done: !!eod?.fields?.financeApprovedAt, detail: eod?.fields?.financeApprovedAt ? `Finance: ${eod.fields.financeApprovedByName}` : 'Waiting' },
+    { key: 'finance', label: 'Close: the report goes to finance', done: !!eod?.fields?.sent || night.status === 'closed', detail: eod ? (eod.fields.sent ? `Sent to ${eod.fields.sentTo}` : eod.fields.sendNote) : 'When you close' },
+    { key: 'signoff', label: 'Finance signs off', done: !!eod?.fields?.financeApprovedAt, detail: eod?.fields?.financeApprovedAt ? `Finance: ${eod.fields.financeApprovedByName}` : 'Waiting' },
   ];
-  const night = await nightState(env, d), h = night.handover || null;
+  const h = night.handover || null;
   const closer = { handover: h ? { byName: h.byName, at: h.at, note: h.note, acceptedByName: h.acceptedByName || '', acceptedAt: h.acceptedAt || '' } : null,
     canClose: canCloseNight(user, night), canHandOver: (user.role === 'manager' || requireRole(user, ['superAdmin'])) && !h && night.status !== 'closed',
     canAccept: !!h && !h.acceptedBy && requireRole(user, STAND_INS) && night.status !== 'closed' };
@@ -252,11 +255,10 @@ export async function closeNight(env, b, user) {
   const d = dateOr(b?.date);
   const state = await nightState(env, d);
   if (!canCloseNight(user, state)) return { error: requireRole(user, ['director']) ? 'The Manager closes the night, not the directors.' : 'Only the Manager closes the night, or whoever accepted it when the Manager handed it over.', status: 403 };
-  if (state.status === 'closed') return { error: 'This night is already closed.' };
-  if (d === bizDate() && new Date().getUTCHours() >= 12 && b.confirmEarly !== true) return { error: 'The night isn’t over yet. Close it after the last customers leave.', code: 'early' };
+  // Any time, and again later: each close saves a new version of the report (nothing is locked).
   const status = await closingStatus(env, user, { date: d });
-  const missing = status.steps.filter(s => ['waiters', 'bar', 'cash', 'front'].includes(s.key) && !s.done);
-  if (missing.length && b.closeAnyway !== true) return { error: `Not done yet: ${missing.map(m => m.label.toLowerCase()).join('; ')}.`, code: 'incomplete', missing: missing.map(m => m.key) };
+  // Never blocked: what isn't done yet is listed in the report (and can be closed again later).
+  const missing = status.steps.filter(s => ['waiters', 'bar', 'cash'].includes(s.key) && !s.done);
   const data = await nightData(env, d), sales = salesFrom(data);
   const sheets = [];
   for (const bar of status.bars) { const s = await stockSheet(env, { stationId: bar.stationId, date: d }, { role: 'manager', admin: false }); if (!s.error) sheets.push({ station: s.station.name, rows: s.rows }); }

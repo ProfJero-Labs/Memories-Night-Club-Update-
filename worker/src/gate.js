@@ -9,6 +9,7 @@
 //   Checking: security, the front office and the night's organiser type a phone number (or scan a
 //   code) and see what that person has: a paid ticket (and how, by whom), a member entry, a table.
 //   Nothing found = not in the system.
+import { paystackPost, momoProvider } from './lib/momo.js';
 import { getDoc, setDoc, queryWhere, batchGet, commitTx, updateWrite, foundFields, withTransaction } from './lib/firestore.js';
 import { now, id, clean, normalizePhone, maskPhone, firstName, ticketToken, displayCode, tableCode, paymentRef, nightKey, money, sixDigits, sha256Hex } from './lib/util.js';
 import { requireRole, uidOf } from './lib/auth.js';
@@ -28,20 +29,8 @@ const doorPrice = tt => Number(tt.doorPricePesewas || tt.pricePesewas || 0);
 const hhmm = d => (d ? new Date(d).toLocaleTimeString('en-GB', { timeZone: 'Africa/Accra', hour: '2-digit', minute: '2-digit' }) : '');
 const isTonight = ev => ev?.date && nightKey(ev.date) === nightKey(now());
 
-async function paystack(env, path, body) {
-  const r = await fetch(`https://api.paystack.co${path}`, { method: 'POST', headers: { Authorization: `Bearer ${env.PAYSTACK_SECRET_KEY}`, 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
-  const d = await r.json().catch(() => ({}));
-  if (!r.ok || !d.status) throw new Error(d.message || 'Paystack request failed');
-  return d.data;
-}
-// The MoMo network from the number (Paystack's provider codes for Ghana).
-export function momoProvider(phone) {
-  const p = String(phone).slice(0, 3);
-  if (['024', '054', '055', '059', '025', '053'].includes(p)) return 'mtn';
-  if (['020', '050'].includes(p)) return 'vod';
-  if (['026', '056', '027', '057'].includes(p)) return 'atl';
-  return null;
-}
+const paystack = paystackPost;
+export { momoProvider };
 const email = (env, phone) => `gate-${phone}@${new URL(env.PUBLIC_SITE_URL || 'https://memoriesnightclub.com').hostname.replace(/^www\./, '')}`;
 
 // A night the gate may work on (staff: any; an organiser: only theirs).

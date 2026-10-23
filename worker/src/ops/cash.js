@@ -2,18 +2,20 @@
 //   floatPesewas (opening float), payments[] (cash taken, from tabs.recordCash), movements[]
 //   ({kind: drop|float_in|refund|payout, amountPesewas, reason, byName, approvedByName}), status
 //   open → submitted (counted) → reviewed. Refunds and payouts need a manager's approval first.
-// Expected cash = float + cash taken + float added − cash dropped to the safe − refunds − payouts.
+// Expected cash = float + cash taken + cash from waiters + float added − dropped − refunds − payouts.
+// The chain: a waiter hands their cash to the bar (the bar person confirms what they got: it's added
+// to the bar person's cash as from_waiter); the bar person hands it all to the Manager.
 // The system never makes the count match: the difference stays, with the person's explanation.
 import { getDoc, setDoc, queryWhere } from '../lib/firestore.js';
 import { now, clean } from '../lib/util.js';
 import { requireRole, uidOf, REPORTS } from '../lib/auth.js';
 import { FORBIDDEN, bizDate, dateOr, audit, int, ghs } from './common.js';
-import { canTakeCash } from './tabs.js';
+import { canTakeCash, cashBag } from './tabs.js';
 import { requestApproval } from './approvals.js';
 
 export function cashFigures(s) {
   const sum = (arr, kind) => (arr || []).filter(m => !kind || m.kind === kind).reduce((n, m) => n + Number(m.amountPesewas || 0), 0);
-  const taken = sum(s.payments), floatIn = sum(s.movements, 'float_in'), drops = sum(s.movements, 'drop'), refunds = sum(s.movements, 'refund'), payouts = sum(s.movements, 'payout');
+  const taken = sum(s.payments) + sum(s.movements, 'from_waiter'), floatIn = sum(s.movements, 'float_in'), drops = sum(s.movements, 'drop'), refunds = sum(s.movements, 'refund'), payouts = sum(s.movements, 'payout');
   const expected = Number(s.floatPesewas || 0) + taken + floatIn - drops - refunds - payouts;
   return { floatPesewas: Number(s.floatPesewas || 0), takenPesewas: taken, paymentsCount: (s.payments || []).length, floatInPesewas: floatIn, dropsPesewas: drops, refundsPesewas: refunds, payoutsPesewas: payouts, expectedPesewas: expected,
     countedPesewas: s.countedPesewas ?? null, differencePesewas: s.countedPesewas == null ? null : s.countedPesewas - expected };
@@ -80,10 +82,13 @@ export async function cashSessions(env, user, { date } = {}) {
 // The cash goes to the Manager after the count: the Manager counts what was handed over and
 // confirms it. A difference from what the person counted needs a note, and stays on record.
 export const CASH_RECEIVERS = ['superAdmin', 'director', 'manager'];
+// The bar person is the custodian of the drinks: waiters hand their cash to the bar.
+const FROM_WAITERS = ['waitStaff', 'eventManager'];
 export async function receiveCash(env, b, user) {
-  if (!requireRole(user, CASH_RECEIVERS)) return { error: 'The Manager receives the cash.', status: 403 };
   const s = await getDoc(env, 'cash_sessions', String(b?.id || ''));
   if (!s) return { error: 'Cash shift not found.', status: 404 };
+  const asBar = user.role === 'barStaff';
+  if (asBar ? !FROM_WAITERS.includes(s.fields.role) : !requireRole(user, CASH_RECEIVERS)) return { error: asBar ? 'The bar receives cash from waiters; the Manager receives the rest.' : 'The Manager receives the cash.', status: 403 };
   if (s.fields.uid === uidOf(user)) return { error: 'Someone else must receive your own cash.' };
   if (s.fields.status === 'open') return { error: `${s.fields.name} hasn’t counted their cash yet.` };
   if (s.fields.receivedAt) return { error: `Already received by ${s.fields.receivedByName}.` };
@@ -91,9 +96,23 @@ export async function receiveCash(env, b, user) {
   if (!(got >= 0)) return { error: 'Enter the cash you received.' };
   const note = clean(b?.note, 300), counted = Number(s.fields.countedPesewas || 0);
   if (got !== counted && !note) return { error: `${s.fields.name} counted ${ghs(counted)}; you have ${ghs(got)}. Say what happened.`, code: 'needs_note' };
-  await setDoc(env, 'cash_sessions', s.id, { ...s.fields, receivedPesewas: got, receivedBy: uidOf(user), receivedByName: user.name || '', receivedAt: now(), receivedNote: note });
-  await audit(env, user, 'CASH_RECEIVED', { sessionId: s.id, countedPesewas: counted, receivedPesewas: got });
+  // At the bar: the waiter's cash joins the bar person's own, which they hand to the Manager.
+  if (asBar) {
+    const bag = await cashBag(env, user, s.fields.date); if (bag.error) return { error: `${bag.error} Ask the Manager to take this cash instead.` };
+    const mine = await getDoc(env, 'cash_sessions', bag.sid);
+    await setDoc(env, 'cash_sessions', bag.sid, { ...mine.fields, movements: [...(mine.fields.movements || []), { kind: 'from_waiter', amountPesewas: got, fromUid: s.fields.uid, fromName: s.fields.name, sessionId: s.id, at: now(), byName: user.name || '' }] });
+  }
+  await setDoc(env, 'cash_sessions', s.id, { ...s.fields, receivedPesewas: got, receivedBy: uidOf(user), receivedByName: user.name || '', receivedByRole: user.role, receivedAt: now(), receivedNote: note });
+  await audit(env, user, 'CASH_RECEIVED', { sessionId: s.id, countedPesewas: counted, receivedPesewas: got, by: asBar ? 'bar' : 'manager' });
   return { received: true, differencePesewas: got - counted };
+}
+
+// The bar's list: waiters who have counted their cash and are handing it to the bar.
+export async function waiterCash(env, user, { date } = {}) {
+  if (!requireRole(user, ['barStaff', ...CASH_RECEIVERS])) return FORBIDDEN;
+  const all = (await queryWhere(env, 'cash_sessions', [{ field: 'date', value: dateOr(date) }])).filter(x => FROM_WAITERS.includes(x.fields.role));
+  return { waiting: all.filter(x => x.fields.status !== 'open' && !x.fields.receivedAt).map(x => view(x.id, x.fields)), stillWith: all.filter(x => x.fields.status === 'open' && cashFigures(x.fields).expectedPesewas).map(x => view(x.id, x.fields)),
+    received: all.filter(x => x.fields.receivedAt).map(x => view(x.id, x.fields)) };
 }
 
 export async function reviewCash(env, b, user) {
