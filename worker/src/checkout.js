@@ -92,8 +92,20 @@ export async function initiateTicket(env, b) {
 
 // waiting: the gate screen is asking while the customer approves on their phone, so "abandoned"
 // (not finished yet) means keep waiting, not failed.
+// Paystack doesn't know the reference: the payment page was never opened (or the checkout was
+// started with another Paystack key). Nothing was paid. After 30 minutes it's closed as such, so the
+// payment check stops retrying it; before that it stays pending (the page may still be opening).
+const NOT_AT_PAYSTACK_MS = 30 * 60e3;
 async function confirmCharge(env, pending, reference, { waiting = false } = {}) {
-  const payment = await paystack(env, `/transaction/verify/${encodeURIComponent(reference)}`);
+  let payment;
+  try { payment = await paystack(env, `/transaction/verify/${encodeURIComponent(reference)}`); }
+  catch (e) {
+    if (!/reference not found/i.test(String(e?.message))) throw e;
+    const age = Date.now() - Date.parse(pending.fields.createdAt || 0);
+    if (!(age > NOT_AT_PAYSTACK_MS)) return { status: 'pending' };
+    await setDoc(env, 'pending_checkouts', reference, { ...pending.fields, status: 'failed', error: 'not_at_paystack', failedAt: now() });
+    return { status: 'failed', error: 'This payment was never made. Start again.' };
+  }
   if (payment.status !== 'success') return { status: payment.status === 'failed' || (payment.status === 'abandoned' && !waiting) ? 'failed' : 'pending', error: payment.status === 'failed' ? 'Payment was not successful.' : undefined };
   if (payment.currency !== 'GHS' || Number(payment.amount) !== Number(pending.fields.amountPesewas)) {
     await setDoc(env, 'pending_checkouts', reference, { ...pending.fields, status: 'failed', error: 'amount_mismatch' });

@@ -137,6 +137,8 @@ export class MockFirestore {
       if (m) {
         const ref = decodeURIComponent(m[1]);
         const r = this.paystack.get(ref) || { status: 'failed' };
+        // Paystack's answer for a reference it has never seen (the payment page never opened).
+        if (r === 'not_found') return jsonResponse({ status: false, message: 'Transaction reference not found' }, 400);
         return jsonResponse({ status: true, message: 'ok', data: r });
       }
       if (u.pathname === '/transaction' && method === 'GET') {

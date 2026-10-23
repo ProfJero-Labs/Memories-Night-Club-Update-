@@ -164,3 +164,19 @@ test('when the payment check can’t run, the System panel and the alert say why
   assert.match(text, /could not run \(Paystack list failed/);
   assert.ok(!text.includes(env.PAYSTACK_SECRET_KEY), 'no key in the text');
 });
+
+test('a checkout Paystack has never heard of (the page never opened) is closed as never paid, not retried as an error', async () => {
+  const { store, env } = setup();
+  const ago = m => new Date(Date.now() - m * 60e3).toISOString();
+  const base = { kind: 'ticket', eventId: 'e1', ticketTypeId: 'tt1', quantity: 1, amountPesewas: 5000, buyerPhone: '0241234567', status: 'pending' };
+  store.seed('pending_checkouts', 'MEM-OLD-NOTFOUND', { ...base, createdAt: ago(90) });
+  store.seed('pending_checkouts', 'MEM-NEW-NOTFOUND', { ...base, createdAt: ago(5) });
+  store.setPaystack('MEM-OLD-NOTFOUND', 'not_found');
+  store.setPaystack('MEM-NEW-NOTFOUND', 'not_found');
+  const s = await reconcilePayments(env, Date.UTC(2026, 9, 23, 17, 0)); // an hourly pass: old ones too
+  assert.equal(s.errors, 0, 'not an error');
+  assert.equal(s.ok, true);
+  assert.deepEqual([store.get('pending_checkouts', 'MEM-OLD-NOTFOUND').fields.status, store.get('pending_checkouts', 'MEM-OLD-NOTFOUND').fields.error], ['failed', 'not_at_paystack']);
+  assert.equal(store.get('pending_checkouts', 'MEM-NEW-NOTFOUND').fields.status, 'pending', 'a fresh one may still be opening');
+  assert.equal(store.list('tickets').length, 0, 'no ticket for an unpaid checkout');
+});
