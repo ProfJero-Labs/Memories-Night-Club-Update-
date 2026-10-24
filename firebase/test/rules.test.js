@@ -65,6 +65,8 @@ test('public reads: live events, settings; not private nights, not raffles (the 
   await assertSucceeds(getDoc(doc(anon(), 'events/pub')));
   await assertFails(getDoc(doc(anon(), 'events/priv')));
   await assertSucceeds(getDoc(doc(anon(), 'settings/site')));
+  await assertFails(getDoc(doc(anon(), 'settings/commercial')), 'the commission terms are not public');
+  await assertFails(getDoc(doc(anon(), 'payment_ledger/ref1')));
   await assertFails(getDoc(doc(anon(), 'raffles/r')));
   await assertFails(getDoc(doc(as('org-a', { role: 'organiser' }), 'raffles/r')));
   await assertSucceeds(getDoc(doc(as('boss', { admin: true, role: 'superAdmin' }), 'raffles/r')));

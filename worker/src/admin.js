@@ -4,7 +4,7 @@ import { getDoc, setDoc, deleteDoc, listDocs, queryWhere, queryRecent, commitTx,
 import { now, id, clean, normalizePhone, ticketToken, displayCode, dateKey, firstName, TICKET_STYLES, cleanTicketColors, generatePassword } from './lib/util.js';
 import { requireRole, ADMIN, CMS, TICKET_MONEY, MONEY, STAFF_ROLES, uidOf, forgetStaffRecord } from './lib/auth.js';
 import { sendSms, sendEmail, siteUrl } from './lib/notify.js';
-import { MAX_FEE_PERCENT } from './lib/fee.js';
+import { ledgerRefund } from './ops/ledger.js';
 import { getSettings, DEFAULT_SETTINGS, SETTINGS_FIELDS, isOver, autoStyleFor } from './public.js';
 import { openRaffleForEvent, raffleSpotWrites } from './raffle.js';
 import { balanceMessage } from './checkout.js';
@@ -108,7 +108,7 @@ export async function adminOverview(env, user) {
     staleCheckouts: stale,
     failedCheckouts: failed,
     funnel,
-    // The service fee customers paid on top (lib/fee.js), on payments Paystack confirmed.
+    // The service charge customers paid on top (lib/fee.js), on payments Paystack confirmed.
     serviceFeesPesewas: checkouts.filter(c => c.fields.status === 'issued').reduce((s, c) => s + Number(c.fields.feePesewas || 0), 0),
   };
 }
@@ -323,7 +323,7 @@ export async function adminInstallments(env, user) {
 //  • plan: a pay-in-bits order that sold out before the last payment (everything paid is owed);
 //  • overpay: more paid on a plan than the ticket costs.
 // Staff refund in the Paystack dashboard, then mark it here with a note. Nothing here moves money.
-// The amount is everything the customer paid, the service fee too.
+// The amount is everything the customer paid, the service charge too.
 export async function listRefunds(env, user) {
   if (!requireRole(user, MONEY)) return FORBIDDEN;
   const [flagged, plans] = await Promise.all([
@@ -366,6 +366,9 @@ export async function markRefunded(env, b, user) {
     if (!(Number(doc.fields.overpaidPesewas) > 0) || doc.fields.overpayRefundStatus === 'refunded') return { error: 'Already marked refunded.' };
     await setDoc(env, col, rid, { ...doc.fields, overpayRefundStatus: 'refunded', overpayRefundedAt: stamp.refundedAt, overpayRefundedBy: stamp.refundedBy, overpayRefundNote: note });
   }
+  // The payment ledger: refunded (the commission follows the agreed rule).
+  const refs = source === 'checkout' ? [rid] : source === 'counter' ? [doc.fields.reference] : source === 'plan' ? (doc.fields.payments || []).map(x => x.reference) : [];
+  for (const ref of refs.filter(Boolean)) await ledgerRefund(env, ref, 'refunded', { note, byName: user.name || '' });
   await audit(env, user, 'REFUND_MARKED', { source, id: rid, note });
   return { ok: true };
 }
@@ -396,11 +399,6 @@ export async function updateSettings(env, b, user) {
     const lines = (Array.isArray(b.defaultLines) ? b.defaultLines : []).map(l => clean(l, 48)).filter(Boolean);
     if (lines.length > 12) return { error: 'Keep it to 12 lines or fewer.' };
     data.defaultLines = lines;
-  }
-  if (b?.serviceFeePercent !== undefined && b.serviceFeePercent !== '') {
-    const pct = Number(b.serviceFeePercent);
-    if (!Number.isFinite(pct) || pct < 0 || pct > MAX_FEE_PERCENT) return { error: `The service fee is a percentage from 0 to ${MAX_FEE_PERCENT}.` };
-    data.serviceFeePercent = Math.round(pct * 100) / 100;
   }
   if (b?.closedDates !== undefined) data.closedDates = (Array.isArray(b.closedDates) ? b.closedDates : []).filter(d => /^\d{4}-\d{2}-\d{2}$/.test(d)).slice(0, 200);
   const next = { ...DEFAULT_SETTINGS, ...cur, ...data, updatedAt: now() };

@@ -19,6 +19,7 @@ import { addMoves, saveProduct, stockLeft, stockError } from './ops/stock.js';
 import { prepareTip, tipFields, textTip, phoneOf, guestTipPeople } from './ops/tips.js';
 import { paymentAlert } from './ops/alerts.js';
 import { serviceFee } from './lib/fee.js';
+import { ledgerRefund } from './ops/ledger.js';
 
 const FORBIDDEN = { error: 'Forbidden.', status: 403 };
 export const BAR = ['superAdmin', 'director', 'manager', 'eventManager', 'barManager', 'barStaff', 'waitStaff'];
@@ -90,7 +91,7 @@ export async function counterCheckout(env, b) {
   // drinks' total (it's the staff member's money, see ops/tips.js).
   const tip = await prepareTip(env, b); if (tip.error) return tip;
   const tipPart = tip.none ? {} : { tipPesewas: tip.amount, tipToUid: tip.to.uid, tipToName: tip.to.name, tipToRole: tip.to.role };
-  // The service fee (on the drinks, not the tip) is the customer's, on top (lib/fee.js).
+  // The service charge (on the drinks, not the tip) is the customer's, on top (lib/fee.js).
   const fee = await serviceFee(env, totalPesewas);
   const charge = totalPesewas + (tip.none ? 0 : tip.amount) + fee.feePesewas;
   const orderId = id(), reference = paymentRef();
@@ -129,7 +130,7 @@ export async function issueCounter(env, reference, P) {
   });
   if (!result.already && result.order) {
     const o = result.order;
-    await sendSms(env, o.phone, `MEMORIES BAR\nPaid ${money(o.totalPesewas + Number(o.tipPesewas || 0) + Number(o.feePesewas || 0))} at ${o.stationName}${o.feePesewas ? ` (incl. ${money(o.feePesewas)} service fee)` : ''}${o.tipPesewas ? ` (tip ${money(o.tipPesewas)} for ${String(o.tipToName || '').split(/\s+/)[0]})` : ''}.\nPickup code: ${result.code}\nShow it at the bar. Receipt: ${siteUrl(env, `/receipt.html?code=${o.receiptCode}`)}`);
+    await sendSms(env, o.phone, `MEMORIES BAR\nPaid ${money(o.totalPesewas + Number(o.tipPesewas || 0) + Number(o.feePesewas || 0))} at ${o.stationName}${o.feePesewas ? ` (incl. ${money(o.feePesewas)} service charge)` : ''}${o.tipPesewas ? ` (tip ${money(o.tipPesewas)} for ${String(o.tipToName || '').split(/\s+/)[0]})` : ''}.\nPickup code: ${result.code}\nShow it at the bar. Receipt: ${siteUrl(env, `/receipt.html?code=${o.receiptCode}`)}`);
     if (result.tip) await textTip(env, await phoneOf(env, result.tip.to.uid), result.tip, 'digital');
     // Paystack confirmed it: the Manager is texted.
     await paymentAlert(env, { amountPesewas: o.totalPesewas, kind: 'digital', where: `QR order, ${o.stationName}${o.spot ? `, ${o.spot}` : ''}`, tipPesewas: Number(o.tipPesewas || 0) });
@@ -209,11 +210,13 @@ export async function barUpdate(env, user, b) {
     await commitTx(env, [updateWrite(env, 'counter_orders', orderId, next),
       ...(tipDoc && tipDoc.fields.status === 'owed' ? [updateWrite(env, 'tips', tipPath.slice(5), { ...tipDoc.fields, status: 'cancelled', cancelledAt: at, cancelReason: 'order_refunded' })] : []),
       updateWrite(env, 'audit_logs', id(), { action: action === 'deliver' ? 'BAR_HANDED_OVER' : 'BAR_REFUND_FLAGGED', actorUid: uidOf(user), orderId, timestamp: at })], tx);
-    return { status: next.status, lines: action === 'deliver' ? o.fields.lines : null, stationId: o.fields.stationId };
+    return { status: next.status, lines: action === 'deliver' ? o.fields.lines : null, stationId: o.fields.stationId, reference: o.fields.reference };
   });
+  // Can't make it: the payment ledger shows the refund owed (and reverses the commission if agreed).
+  if (r.status === 'refund_due') await ledgerRefund(env, r.reference, 'pending', { note: clean(b.reason, 120) || 'bar_could_not_make', byName: user.name || '' });
   // Handed to the customer: those drinks leave the bar's stock (once, here).
   if (r.lines) await addMoves(env, r.lines.map(l => ({ productId: l.itemId, productName: l.name, stationId: r.stationId, qty: -Number(l.qty), kind: 'issue', ref: orderId, qrOrder: true })), user);
-  delete r.lines; delete r.stationId;
+  delete r.lines; delete r.stationId; delete r.reference;
   return r;
 }
 

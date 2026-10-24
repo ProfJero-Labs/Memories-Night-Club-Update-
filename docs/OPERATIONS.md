@@ -203,20 +203,23 @@ any paid booking it finds and texts the people on the alert list if it can't.
   expected") and needs a reason. A submitted count is locked; a correction needs approval from
   someone else, and the first count is kept.
 
-## The service fee (5%)
+## The service charge (5%, at most GHS 100 a bill)
 
-- Customers pay a **5% service fee on top** of anything they pay **through the site**: tickets, table
-  bookings, pay in bits, the gate's MoMo sales, a tab's bill link or the waiter's MoMo prompt, and
-  the bar's QR orders. **Cash is not charged.** MoMo sent straight to the club's number and recorded
-  by a waiter isn't charged either (it doesn't go through the site).
-- The customer sees it before paying ("Service fee (5%) · Total to pay"); texts and receipts say
-  "incl. GHS X service fee". The front office and waiters see the full amount in the prompt message.
-- The fee is kept **apart**: a GHS 100 ticket is still GHS 100 of ticket money, and a GHS 50 bill is
-  still GHS 50 paid on the bill, so the night's accounts and the shares don't change. The fee shows
-  on its own: **Money → Service fees** (finance, directors, manager) and on the control room's
-  overview. Paystack must confirm the whole amount (price + fee) or nothing is issued.
-- The admin changes the percentage in **Control room → Settings → Service fee (%)** (0 turns it off,
-  up to 20).
+- Customers pay a **service charge on top** of anything they pay **through the site** (Paystack):
+  tickets, table bookings, pay in bits, the gate's MoMo sales, a tab's bill link or the waiter's
+  MoMo prompt, and the bar's QR orders. **Cash is not charged**, and neither is MoMo sent straight
+  to the club's number.
+- **Charge = 5% of the bill, at most GHS 100**, once per bill: GHS 200 → GHS 10; GHS 2,000 →
+  GHS 100; GHS 10,000 → GHS 100 (not GHS 500). Worked out on what the products cost after any
+  discount; never on the tip, never on itself.
+- The customer sees "Service charge (5%, capped at GHS 100)" and the total before paying; texts say
+  "incl. GHS X service charge". Paystack must confirm exactly that total or nothing is issued.
+- A director or the admin turns it on or off and sets the rate and the cap: **More → Service charge
+  & commission**. Finance can look. Each payment keeps the rule it was charged under, so a change
+  never alters past payments or receipts.
+- The service charge is kept **apart** from product sales and is not shown as profit. See
+  [PAYMENTS-FINANCE.md](PAYMENTS-FINANCE.md) for Paystack's fees, the developer commission and the
+  night's finances.
 
 ## Money and expenses
 

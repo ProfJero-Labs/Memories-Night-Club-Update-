@@ -18,6 +18,7 @@
 
 import { googleAccessToken, parseFields, firestoreValue, getDoc, setDoc } from './lib/firestore.js';
 import { fulfill } from './checkout.js';
+import { refreshPendingFees } from './ops/ledger.js';
 import { alertOnce, reportError } from './lib/monitor.js';
 import { logError } from './lib/log.js';
 
@@ -104,6 +105,12 @@ export async function reconcilePayments(env, scheduledTime = Date.now()) {
       else if (f.status === 'pending' && ageOf(f) >= SETTLE_MS) problem = 'paid_not_issued';
       if (problem && await alertOnce(env, `${problem}_${ref}`, `MEMORIES ACTION NEEDED: a guest paid GHS ${(Number(tx.amount) / 100).toFixed(2)} (ref ${short(ref)}) and did not get what they bought. Reason: ${problem.replace(/_/g, ' ')}. Check Admin > Payments.`)) summary.alerts++;
     }
+
+    // 2b. Paystack's fee on payments where it hadn't given it yet (a few, once an hour).
+    if (hourlyPass) summary.feesFilled = await refreshPendingFees(env, async ref => {
+      const r = await fetch(`https://api.paystack.co/transaction/verify/${encodeURIComponent(ref)}`, { headers: { Authorization: `Bearer ${env.PAYSTACK_SECRET_KEY}` } });
+      const d = await r.json().catch(() => ({})); return r.ok && d.status ? d.data : null;
+    }, 3).catch(() => 0);
 
     // 3. HEARTBEAT: only after a clean run, so silence means something is wrong.
     if (env.HEARTBEAT_URL) await fetch(env.HEARTBEAT_URL).catch(e => logError('heartbeat failed', e));

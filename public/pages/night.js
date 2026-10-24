@@ -15,7 +15,7 @@
 import { $, $$, esc } from '../app.js';
 import { requireStaff, staffHeader, sapi } from '../staff.js';
 import { bottomNav, sheet, say, st, every, money, when, ask, backBar, bindBackBar, upcomingBookings } from '../lib/ops-ui.js';
-import { accountsView, ticketsView, findOrderView, expensesView, nightsView, salesView, closingView, approvalsView, productsView, stockAdminView, eodListView, eodView, moneyView, expenseSheet, explainSheet, budgetView, paymentsView, commissionsView, toApproveView, purchasesView, cashReceiveView, feedbackInboxView } from '../lib/ops-views.js';
+import { accountsView, ticketsView, findOrderView, expensesView, nightsView, salesView, closingView, approvalsView, productsView, stockAdminView, eodListView, eodView, moneyView, expenseSheet, explainSheet, budgetView, paymentsView, commissionsView, toApproveView, purchasesView, cashReceiveView, feedbackInboxView, chargesView, financeNightView } from '../lib/ops-views.js';
 import { payView, reviewsView, perfView } from '../lib/people-views.js';
 import { staffView } from '../lib/staff-view.js';
 
@@ -64,6 +64,8 @@ async function route() {
     if (key === 'find') { app.innerHTML = `${back()}<div id="fov"></div>`; bindBack(); return await findOrderView($('#fov')); }
     if (key === 'expenses') { app.innerHTML = `${back()}<div id="exv"></div>`; bindBack(); return await expensesView($('#exv')); }
     if (key === 'nights') { app.innerHTML = `${back()}<div id="nv"></div>`; bindBack(); return await nightsView($('#nv')); }
+    if (key === 'finance') { app.innerHTML = `${back()}<div id="fnv"></div>`; bindBack(); return await financeNightView($('#fnv'), arg); }
+    if (key === 'charges') { app.innerHTML = `${back()}<div id="chv"></div>`; bindBack(); return await chargesView($('#chv')); }
     if (key === 'money') { app.innerHTML = `${director ? '' : back()}<div id="mv"></div>`; bindBack(); return await moneyView($('#mv')); }
     stop = every(10000, alive => tonight(alive).catch(e => alive() && fail(e)));
   } catch (e) { fail(e); }
@@ -170,7 +172,7 @@ async function tableSheet(id) {
 function more() {
   // Grouped, so each thing is quick to find (no scrolling through one long list).
   const groups = director ? [
-    ['Money', [['accounts', 'Night accounts', 'What the drinks should bring; who isn’t aligned'], ['salaries', 'Salaries and loans', 'What staff are paid'], ['budget', 'Bills and budget', 'What’s due this month'], ['commissions', 'Commissions', '10% on tables over GHS 3,000'], ['reports', 'End-of-day reports', 'Each night, signed off'], ['sales', 'Tonight in detail', 'By waiter, by bar, by drink']]],
+    ['Money', [['accounts', 'Night accounts', 'What the drinks should bring; who isn’t aligned'], ['salaries', 'Salaries and loans', 'What staff are paid'], ['budget', 'Bills and budget', 'What’s due this month'], ['commissions', 'Commissions', '10% on tables over GHS 3,000'], ['reports', 'End-of-day reports', 'Each night, signed off'], ['sales', 'Tonight in detail', 'By waiter, by bar, by drink'], ['finance', 'Night’s finances', 'Sales, Paystack fees, settlement, every payment'], ['charges', 'Service charge & commission', 'The customer charge, the developer commission, a simulation']]],
     ['People', [['staff', 'Staff', 'Add people, send PINs'], ['feedback', 'Staff feedback', 'Complaints and ideas'], ['perf', 'Performance reviews', 'Each staff member, every month'], ['@admin.html#members', 'Members', 'Members and passes']]],
     ['Floor', [['tables', 'Tables', 'Open tables and what they owe'], ['reviews', 'Customer reviews', 'What customers say'], ...(user.role === 'superAdmin' ? [['@admin.html', 'Control room', 'Site, nights, settings']] : [])]],
   ] : [

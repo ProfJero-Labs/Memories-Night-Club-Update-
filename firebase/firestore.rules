@@ -22,7 +22,8 @@ service cloud.firestore {
     // Raffles carry the winner's ticket code, which the door can admit by. Guests see the draw
     // through the Worker, which leaves the code out.
     match /raffles/{id} { allow read: if staff(); allow write: if false; }
-    match /settings/{id} { allow read: if true; allow write: if false; }
+    // The site's public settings only. settings/commercial (the commission terms) goes through the Worker.
+    match /settings/{id} { allow read: if id == 'site'; allow write: if false; }
     match /users/{uid} { allow read: if signedIn() && request.auth.uid == uid; allow write: if false; }
     // Never readable or writable from a browser: orders, payments, guests' contact details.
     match /{collection}/{id} {

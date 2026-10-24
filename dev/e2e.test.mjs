@@ -725,7 +725,7 @@ test('promos: the control room starts an automatic promo and a code promo; guest
   await g.click('[data-type="dev-dnd-reg"]');
   assert.match(await g.textContent('#barSum'), /GHS 80/);
   await g.click('#barGo'); await g.waitForURL(/checkout\.html/); await g.waitForSelector('#co');
-  await g.locator('#sum').getByText('You pay').waitFor();
+  await g.locator('#sum').getByText('After the discount').waitFor();
   assert.match(await g.textContent('#sum'), /GHS 80/);
   await g.click('#codeBox summary'); await g.fill('#code', 'WRONG'); await g.click('#applyCode');
   await g.locator('#fCode .err').getByText(/isn’t valid/).waitFor();
@@ -955,6 +955,30 @@ test('finance fixes stock: a purchase entered twice is deleted (kept, marked del
   assert.deepEqual(fin.errors, []);
 });
 
+test('service charge & commission: a director sees the capped charge, records a commission and runs the simulation; the night’s finances open for the director and finance', async () => {
+  const dir = await phone(390); await signInAs(dir, 'director@dev'); await dir.waitForURL(/night\.html/);
+  await dir.goto(`${base}/night.html#charges`); await dir.locator('#app').getByText('On: 5% of the bill, at most GHS 100').waitFor();
+  await dir.check('#cmOn'); await dir.fill('#cmPct', '0'); await dir.click('#cmSave');
+  await dir.locator('#cmMsg').getByText(/Enter the agreed commission/).waitFor();
+  await dir.fill('#cmPct', '2'); await dir.click('#cmSave'); await dir.locator('#cmMsg').getByText(/Saved/).waitFor();
+  assert.equal(store.get('settings', 'commercial').fields.commission.percent, 2);
+  await dir.fill('#simBill', '200'); await dir.fill('#feeEst', '2'); await dir.click('#simGo');
+  await dir.locator('#simOut table').first().waitFor();
+  assert.match(await dir.textContent('#simOut'), /GHS 10,100/, 'a GHS 10,000 bill: the customer pays GHS 10,100');
+  // Back off again so later tests aren't affected.
+  await dir.uncheck('#cmOn'); await dir.click('#cmSave'); await dir.locator('#cmMsg').getByText(/Saved/).waitFor();
+  assert.equal(store.get('settings', 'commercial').fields.commission.enabled, false);
+  await dir.goto(`${base}/night.html#finance`); await dir.locator('#app .ln.total', { hasText: 'Net product sales' }).waitFor();
+  await dir.locator('#app').getByText('Paystack should settle').waitFor();
+  await dir.selectOption('#fnCh', 'cash'); await dir.locator('#fnCh').evaluate(el => el.value === 'cash');
+  await dir.locator('#app .ln.total', { hasText: 'Net product sales' }).waitFor();
+  const fin = await phone(390); await signInAs(fin, 'finance@dev'); await fin.waitForURL(/finance\.html/);
+  await fin.goto(`${base}/finance.html#charges`); await fin.locator('#app').getByText('Only a director or the admin can change these', { exact: false }).waitFor();
+  assert.equal(await fin.locator('#cmSave').count(), 0, 'finance can look, not change');
+  await fin.goto(`${base}/finance.html#finance`); await fin.locator('#app').getByText('C. Transactions', { exact: false }).waitFor();
+  assert.deepEqual([...dir.errors, ...fin.errors], []);
+});
+
 test('people: the Human manager sets the DJ’s pay and a bonus and sends the month; a director approves; finance pays; the DJ sees the payslip, a notice and a team message', async () => {
   const hr = await phone(390); await signInAs(hr, 'hr@dev'); await hr.waitForURL(/hr\.html/);
   // One line per person: tap the DJ, then their salary and payment details.
@@ -1115,7 +1139,7 @@ test('a night at the bar: tab without QR → bar → delivered → the customer 
   await w.click('[data-close]');
   const cust = await phone(360);
   await cust.goto(`${base}/bill.html?t=${token}`, { waitUntil: 'networkidle' });
-  assert.match(await cust.textContent('#root'), /2 × Club beer/); assert.match(await cust.textContent('#pay'), /GHS 84/); assert.match(await cust.textContent('#root'), /5% service fee \(GHS 4\)/, 'the bill page says why it is GHS 84');
+  assert.match(await cust.textContent('#root'), /2 × Club beer/); assert.match(await cust.textContent('#pay'), /GHS 84/); assert.match(await cust.textContent('#root'), /service charge \(5%, capped at GHS 100\): GHS 4/, 'the bill page says why it is GHS 84');
   await cust.click('#pay'); await cust.waitForURL(/dev\/paystack/); await cust.getByRole('button', { name: 'Pay' }).click();
   await cust.waitForURL(/bill\.html/); await cust.getByText('Payment confirmed. Thank you!').waitFor({ timeout: 20000 });
   // Paid, but staying: the table stays open and they can order more from the bar menu.

@@ -147,6 +147,10 @@ export class MockFirestore {
         if (this.paystackListDown) return jsonResponse({ status: false, message: 'down' }, 503);
         return jsonResponse({ status: true, data: (this.paystackTransactions || []).slice((Number(u.searchParams.get('page') || 1) - 1) * 100, Number(u.searchParams.get('page') || 1) * 100) });
       }
+      // Settlements: tests set store.paystackSettlements = [{ id, status, …, transactions: [...] }].
+      if (u.pathname === '/settlement' && method === 'GET') return jsonResponse({ status: true, data: (this.paystackSettlements || []).map(({ transactions, ...x }) => x) });
+      const st = u.pathname.match(/^\/settlement\/([^/]+)\/transactions$/);
+      if (st) return jsonResponse({ status: true, data: ((this.paystackSettlements || []).find(x => String(x.id) === decodeURIComponent(st[1]))?.transactions) || [] });
       // The gate's MoMo prompt (Charge API): recorded; the test decides when the customer approves.
       if (u.pathname === '/charge') {
         const b = JSON.parse(options.body || '{}');

@@ -92,6 +92,8 @@ export async function listDocs(env, col) {
   return docs;
 }
 export async function setDoc(env, col, docId, data) { await fs(env, `/${col}/${encodeURIComponent(docId)}`, { method: 'PATCH', body: JSON.stringify({ fields: docFields(data) }) }); }
+// A createDoc refused because the document is there already (Firestore answers 409 ALREADY_EXISTS).
+export const alreadyExists = e => e?.status === 409 || /ALREADY_EXISTS|already exists/i.test(String(e?.message));
 export async function createDoc(env, col, docId, data) { return fs(env, `/${col}?documentId=${encodeURIComponent(docId)}`, { method: 'POST', body: JSON.stringify({ fields: docFields(data) }) }); }
 export async function deleteDoc(env, col, docId) { await fs(env, `/${col}/${encodeURIComponent(docId)}`, { method: 'DELETE' }); }
 

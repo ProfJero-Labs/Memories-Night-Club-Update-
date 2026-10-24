@@ -4,6 +4,7 @@ import { cors, ok, fail, reply, throttled, allowedOrigin } from './lib/http.js';
 import { logError } from './lib/log.js';
 import { verifyStaff, requireRole, ADMIN, MONEY, DOOR } from './lib/auth.js';
 import { smsRequest } from './lib/notify.js';
+import { commercialConfig } from './lib/fee.js';
 import { getSettings, publicEvents, eventBundle, calendar, createPrivateRequest, publicTicket } from './public.js';
 import { initiateTicket, initiateTable, startInstallment, topupInstallment, lookupInstallments, textOrderCodes, textTicketLinks, resendTicketLink, startPhoneLookup, verifyPhoneLookup, NEUTRAL_PHONE_CODE, NEUTRAL_CODES, NEUTRAL_LINK, NEUTRAL_TICKETS, fulfill, checkoutStatus, forfeitStalePlans } from './checkout.js';
 import { normalizePhone, normalizePlanCode } from './lib/util.js';
@@ -51,7 +52,7 @@ async function route(req, env, ctx) {
   // ── Public ──
   if (m === 'GET' && p === '/api/events') return ok(req, env, { events: await publicEvents(env) });
   if (m === 'GET' && p.startsWith('/api/events/')) { const d = await eventBundle(env, last(p)); return d ? ok(req, env, d) : fail(req, env, 'Event not found.', 404); }
-  if (m === 'GET' && p === '/api/settings') { const s = await getSettings(env); delete s.closedDates; delete s.updatedAt; return ok(req, env, { settings: s }); }
+  if (m === 'GET' && p === '/api/settings') { const s = await getSettings(env); delete s.closedDates; delete s.updatedAt; const { serviceCharge } = await commercialConfig(env, s); delete s.serviceFeePercent; return ok(req, env, { settings: { ...s, serviceCharge } }); }
   if (m === 'GET' && p === '/api/calendar') return ok(req, env, await calendar(env, Math.min(26, Math.max(1, Number(u.searchParams.get('weeks')) || 10))));
   // A promo code typed in: a strict limit per phone/IP, so codes can't be found by guessing.
   const codeThrottled = async b => !!b?.promoCode && await throttled(req, env, 'promo-code', 'strict');

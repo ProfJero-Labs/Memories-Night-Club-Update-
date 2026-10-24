@@ -71,12 +71,15 @@ export async function api(path, { method = 'GET', body, token, headers: extra, r
 // ── Settings (one document drives every phone/email/Instagram on the site) ──
 let settingsP;
 export const getSettings = () => (settingsP ||= api('/api/settings').then(d => d.settings).catch(() => ({})));
-// The service fee the customer pays on top of anything paid online or by MoMo (the Worker charges
-// it; the admin sets the percentage in Settings). Shown before paying, so the total is no surprise.
-let FEE_PCT = 5;
-export const loadFee = () => getSettings().then(s => { const n = Number(s?.serviceFeePercent); if (Number.isFinite(n) && n >= 0) FEE_PCT = n; return FEE_PCT; });
-export const feePct = () => FEE_PCT;
-export const feeOn = pesewas => Math.round(Number(pesewas || 0) * FEE_PCT / 100);
+// The service charge the customer pays on top of anything paid online or by MoMo: a percentage of
+// the bill, once per bill, capped (5%, at most GHS 100, unless management changed it). The Worker
+// works it out and charges it; this only shows it before paying, so the total is no surprise.
+let SC = { enabled: true, percent: 5, capPesewas: 10000 };
+export const loadFee = () => getSettings().then(s => { if (s?.serviceCharge) SC = s.serviceCharge; return SC; });
+export const feePct = () => Number(SC.percent);
+export const feeOn = pesewas => { if (!SC.enabled) return 0; const raw = Math.round(Math.max(0, Number(pesewas) || 0) * Number(SC.percent || 0) / 100); return Number(SC.capPesewas) >= 0 ? Math.min(raw, Number(SC.capPesewas)) : raw; };
+// "Service charge (5%, capped at GHS 100)": the label wherever the charge is shown.
+export const feeLabel = () => `Service charge (${feePct()}%${Number(SC.capPesewas) >= 0 ? `, capped at ${money(SC.capPesewas)}` : ''})`;
 const digits = s => String(s || '').replace(/\D/g, '');
 export const waLink = n => { const d = digits(n); return d ? `https://wa.me/${d.startsWith('0') ? '233' + d.slice(1) : d}` : ''; };
 const handle = h => String(h || '').trim().replace(/^@/, '').replace(/^https?:\/\/[^/]+\//, '').replace(/\/$/, '');

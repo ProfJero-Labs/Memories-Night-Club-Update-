@@ -11,7 +11,6 @@ export const DEFAULT_SETTINGS = {
   venue: 'SamRit Hotel, Cape Coast', address: '', nightsLine: 'Friday + Saturday', doorsLine: 'Doors 10PM',
   phone: '', whatsapp: '0249050086', email: '', instagram: '@memoriesnightclub.gh', facebook: 'memoriesnightclub.gh', tiktok: '@memoriesnightclub.gh', mapUrl: '',
   heroImage: '', heroVideo: '', defaultLines: [], closedDates: [],
-  serviceFeePercent: 5, // the customer pays this on top of online and MoMo payments (lib/fee.js)
 };
 export const SETTINGS_FIELDS = { venue: 120, address: 200, nightsLine: 60, doorsLine: 60, phone: 30, whatsapp: 30, email: 120, instagram: 60, facebook: 60, tiktok: 60, mapUrl: 500, heroImage: 500, heroVideo: 1000 };
 
