@@ -212,7 +212,7 @@ export async function pricingSimulation(env, user, b = {}) {
   const bills = (Array.isArray(b.bills) && b.bills.length ? b.bills : [20000, 50000, 100000, 200000, 300000, 500000, 1000000]).map(int).filter(n => n > 0).slice(0, 20);
   const typical = int(b.typicalBillPesewas) > 0 ? int(b.typicalBillPesewas) : 20000, change = Number(b.priceChangePercent) || 0;
   const t = calc(typical), bornePer = t.clubBornePesewas == null ? null : t.clubBornePesewas / typical;
-  const drinks = (await listDocs(env, 'menu_items')).map(i => {
+  const drinks = (await listDocs(env, 'menu_items')).filter(i => !i.fields.deleted).map(i => {
     const price = Number(i.fields.pricePesewas || 0), cost = Number(i.fields.costPesewas || 0), proposed = Math.round(price * (1 + change / 100) / 50) * 50;
     const payCost = p => (bornePer == null ? null : Math.round(p * bornePer));
     return { name: i.fields.name, pricePesewas: price, costPesewas: cost, marginPesewas: price - cost, paymentCostPesewas: payCost(price), marginAfterPaymentPesewas: payCost(price) == null ? null : price - cost - payCost(price),

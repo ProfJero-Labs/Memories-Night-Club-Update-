@@ -86,6 +86,7 @@ export async function opsRoute(m, p, u, b, env, user) {
     case '/api/ops/commission/paid': return fin.markCommissionPaid(env, b, user);
     case '/api/ops/pricing-sim': return fin.pricingSimulation(env, user, b);
     case '/api/ops/products/available': return stock.setAvailable(env, b, user);
+    case '/api/ops/products/delete': return stock.deleteProduct(env, b, user);
     case '/api/ops/stock/received': return stock.recordReceived(env, b, user);
     case '/api/ops/stock/explain': return stock.explainCount(env, b, user);
     case '/api/ops/stock/delivery': return stock.decideDelivery(env, b, user);
