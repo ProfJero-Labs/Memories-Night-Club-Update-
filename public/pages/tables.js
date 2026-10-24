@@ -1,5 +1,5 @@
 // tables.html: page script (kept out of the HTML so the CSP can forbid inline scripts).
-import { chrome, normalizePhone, api, esc, params, money, img, $, $$, errorState, shortDate, doors, remember, forgetButton, bindForget, loadFee, feePct, feeOn } from '../app.js';
+import { chrome, normalizePhone, api, esc, params, money, img, $, $$, errorState, shortDate, doors, remember, forgetButton, bindForget, loadFee, feeLabel, feeOn } from '../app.js';
 chrome('tables');
 const root = $('#root');
 const S = { eventId: params.get('event') || '', pkg: '', bottles: {}, step: 1, ...(({ name = '', phone = '', email = '' }) => ({ name, phone, email }))(remember.get()) };
@@ -52,7 +52,7 @@ function render() {
       <h2 class="display">Your table</h2>
       <div class="receipt"><h3>${esc(B.event.name)}</h3><span class="kicker" style="color:var(--teal)">${esc(shortDate(B.event.date))} · ${esc(doors(B.event))}</span>
         <div class="r" style="margin-top:8px"><b>${esc(pkg().name)}</b><b>${money(pkg().pricePesewas)}</b></div>${lines}
-        ${feeOn(total()) ? `<div class="r"><span>Service fee (${feePct()}%)</span><span>${money(feeOn(total()))}</span></div>` : ''}
+        ${feeOn(total()) ? `<div class="r"><span>${feeLabel()}</span><span>${money(feeOn(total()))}</span></div>` : ''}
         <div class="r t"><span>Total to pay</span><span>${money(total() + feeOn(total()))}</span></div></div>
       <div class="field" id="fName"><label for="name">Booking name</label><input id="name" autocomplete="name" value="${esc(S.name)}" required></div>
       <div class="field" id="fPhone"><label for="phone">Phone</label><input id="phone" type="tel" inputmode="tel" autocomplete="tel" placeholder="024 123 4567" value="${esc(S.phone)}" required><span class="hint">We text your confirmation here.</span></div>

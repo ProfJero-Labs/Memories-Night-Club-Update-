@@ -4,7 +4,7 @@
 // payment → show it at the bar. Paying cash? Order at the bar as usual.
 // A search box finds a drink even with small spelling mistakes (drinkMatch). "My night" shows
 // everything paid tonight from the customer's phone (asked with the id of an order they paid).
-import { api, esc, money, normalizePhone, $, $$, loadFee, feePct, feeOn } from '../app.js';
+import { api, esc, money, normalizePhone, $, $$, loadFee, feeLabel, feeOn } from '../app.js';
 import { drinkMatch, drinkMatchAny } from '../lib/shared.js';
 
 const app = $('#app');
@@ -157,7 +157,7 @@ async function start() {
 
   const orderItems = () => `<div class="op-items">${Object.keys(cart).map(id => r.items.find(i => i.id === id)).filter(Boolean).map(i => `<div class="drink"><div class="grow">${esc(i.name)}<small>${money(i.pricePesewas)} each</small></div>${control(i)}<span class="line-t">${money(cart[i.id] * i.pricePesewas)}</span></div>`).join('')}
     <button type="button" class="more" id="addMore">+ Add more drinks</button></div>`;
-  const totals = () => `<div class="r"><span>${drinks(count())}</span><span>${money(total())}</span></div>${tipNow() ? `<div class="r"><span>Tip</span><span>${money(tipNow())}</span></div>` : ''}${feeOn(total()) ? `<div class="r"><span>Service fee (${feePct()}%)</span><span>${money(feeOn(total()))}</span></div>` : ''}<div class="r t"><span>Total</span><span>${money(grand())}</span></div>`;
+  const totals = () => `<div class="r"><span>${drinks(count())}</span><span>${money(total())}</span></div>${tipNow() ? `<div class="r"><span>Tip</span><span>${money(tipNow())}</span></div>` : ''}${feeOn(total()) ? `<div class="r"><span>${feeLabel()}</span><span>${money(feeOn(total()))}</span></div>` : ''}<div class="r t"><span>Total</span><span>${money(grand())}</span></div>`;
   const payLabel = () => { const b = $('#pay'); if (!b.disabled) b.textContent = `Pay ${money(grand())}`; };
   const refreshOrder = () => { $('#orderItems').innerHTML = orderItems(); $('#orderTotals').innerHTML = totals(); payLabel(); bindItems(); };
   const bindItems = () => {

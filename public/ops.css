@@ -226,3 +226,7 @@ input:not([type=checkbox]):not([type=radio]), select, textarea { font-size: max(
 .ln.bad span:last-child { color: #ff7a9c; }
 .pos-money .big-line b { white-space: nowrap; }
 .pos-money .big-line span { min-width: 0; }
+/* Checkbox rows (service charge and commission settings) */
+.tick { display: flex; align-items: center; gap: 10px; min-height: 44px; font-size: 15px; }
+.tick input { width: 22px; height: 22px; accent-color: var(--crimson-btn); }
+.ticks { display: grid; gap: 2px; }

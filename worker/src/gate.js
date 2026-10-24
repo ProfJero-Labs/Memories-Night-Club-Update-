@@ -135,7 +135,7 @@ export async function gateSell(env, b, user) {
   }
   // MoMo: a payment prompt on the customer's phone. Nothing is issued until Paystack confirms it.
   const reference = paymentRef();
-  // The customer pays the service fee on top of a MoMo sale (lib/fee.js); cash isn't charged it.
+  // The customer pays the service charge on top of a MoMo sale (lib/fee.js); cash isn't charged it.
   const fee = await serviceFee(env, item.amountPesewas), charge = item.amountPesewas + fee.feePesewas;
   const pay = { amountPesewas: item.amountPesewas, ...fee, chargePesewas: charge };
   // The sale itself is kept whole under `sale` (its own kind is ticket or table; this checkout's kind is gate).
@@ -146,7 +146,7 @@ export async function gateSell(env, b, user) {
     const c = await paystack(env, '/charge', { email: email(env, phone), amount: charge, currency: 'GHS', reference, mobile_money: { phone, provider }, metadata: { kind: 'gate', eventId: ev.id } });
     if (c?.status === 'send_otp' || c?.status === 'failed') throw new Error(c.status);
     await audit(env, user, 'GATE_SALE_MOMO_PROMPT', { reference, eventId: ev.id, amountPesewas: item.amountPesewas });
-    return { reference, method: 'momo', prompt: true, ...pay, message: `A MoMo prompt for ${money(charge)}${fee.feePesewas ? ` (${money(item.amountPesewas)} + ${money(fee.feePesewas)} service fee)` : ''} is on ${maskPhone(phone)}. Ask them to approve it.` };
+    return { reference, method: 'momo', prompt: true, ...pay, message: `A MoMo prompt for ${money(charge)}${fee.feePesewas ? ` (${money(item.amountPesewas)} + ${money(fee.feePesewas)} service charge)` : ''} is on ${maskPhone(phone)}. Ask them to approve it.` };
   } catch {
     // The prompt couldn't be sent (network not recognised, or Paystack wants a voucher): the customer
     // pays on their phone with a link (texted, and shown as a QR to scan right there).
@@ -154,7 +154,7 @@ export async function gateSell(env, b, user) {
     await setDoc(env, 'pending_checkouts', reference, { reference, kind: 'gate', sale, eventId: ev.id, ...pay, status: 'failed', error: 'prompt_not_sent', failedAt: now() });
     await setDoc(env, 'pending_checkouts', fresh, { reference: fresh, kind: 'gate', sale, eventId: ev.id, eventName: sale.eventName, buyerPhone: phone, ...pay, status: 'pending', createdAt: now() });
     const p = await paystack(env, '/transaction/initialize', { email: email(env, phone), amount: charge, currency: 'GHS', reference: fresh, callback_url: siteUrl(env, '/payment-return.html'), channels: ['mobile_money', 'card'], metadata: { kind: 'gate', eventId: ev.id } });
-    await sendSms(env, phone, `MEMORIES\nPay ${money(charge)}${fee.feePesewas ? ` (incl. ${money(fee.feePesewas)} service fee)` : ''} for ${ev.fields.name || 'tonight'}: ${p.authorization_url}`);
+    await sendSms(env, phone, `MEMORIES\nPay ${money(charge)}${fee.feePesewas ? ` (incl. ${money(fee.feePesewas)} service charge)` : ''} for ${ev.fields.name || 'tonight'}: ${p.authorization_url}`);
     return { reference: fresh, method: 'momo', prompt: false, link: p.authorization_url, ...pay, message: `Payment link texted to ${maskPhone(phone)}. They can also scan the code on your screen.` };
   }
 }

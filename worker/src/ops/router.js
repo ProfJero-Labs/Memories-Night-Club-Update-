@@ -19,6 +19,8 @@ import * as tips from './tips.js';
 import * as nights from './nights.js';
 import * as accounts from './accounts.js';
 import * as orders from './orders.js';
+import * as commercial from './commercial.js';
+import * as fin from './finance-night.js';
 
 export async function opsRoute(m, p, u, b, env, user) {
   const q = k => u.searchParams.get(k) || undefined;
@@ -70,12 +72,19 @@ export async function opsRoute(m, p, u, b, env, user) {
       case '/api/ops/tickets': return orders.ticketsTonight(env, user, { date: q('date') });
       case '/api/ops/find-order': return orders.findOrder(env, user, q('q'));
       case '/api/ops/waiters': return closing.waitersReport(env, user, { date: q('date') });
+      case '/api/ops/commercial': return commercial.getCommercial(env, user);
+      case '/api/ops/finance-night': return fin.nightFinance(env, user, { date: q('date'), channel: q('channel') });
     }
     return undefined;
   }
   if (m !== 'POST') return undefined;
   switch (p) {
     case '/api/ops/products': return stock.saveProduct(env, b, user);
+    case '/api/ops/commercial': return commercial.saveCommercial(env, b, user);
+    case '/api/ops/settlements/sync': return fin.syncSettlements(env, user, b);
+    case '/api/ops/night-received': return fin.recordNightReceived(env, b, user);
+    case '/api/ops/commission/paid': return fin.markCommissionPaid(env, b, user);
+    case '/api/ops/pricing-sim': return fin.pricingSimulation(env, user, b);
     case '/api/ops/products/available': return stock.setAvailable(env, b, user);
     case '/api/ops/stock/received': return stock.recordReceived(env, b, user);
     case '/api/ops/stock/explain': return stock.explainCount(env, b, user);

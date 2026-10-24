@@ -555,7 +555,7 @@ export async function checkoutTab(env, b, user) {
     if (bill.balancePesewas < 100) return { error: bill.balancePesewas ? 'Less than GHS 1 is left. Take it in cash.' : 'Nothing to pay. Close the tab.' };
     const reference = paymentRef();
     const host = new URL(env.PUBLIC_SITE_URL || 'https://memoriesnightclub.com').hostname.replace(/^www\./, '');
-    // The customer pays the service fee on top (lib/fee.js); the bill gets the balance.
+    // The customer pays the service charge on top (lib/fee.js); the bill gets the balance.
     const fee = await serviceFee(env, bill.balancePesewas), charge = bill.balancePesewas + fee.feePesewas;
     await setDoc(env, 'pending_checkouts', reference, { reference, kind: 'tab', tabId: t.id, eventName: `Tab ${t.fields.number}`, amountPesewas: bill.balancePesewas, ...fee, chargePesewas: charge, buyerPhone: phone, prompt: true, status: 'pending', createdAt: now(), by: uidOf(user) });
     await setDoc(env, 'tabs', t.id, { ...fields, closeWhenPaid: true, closeAskedByName: user.name || '' });
@@ -564,7 +564,7 @@ export async function checkoutTab(env, b, user) {
     const sent = await sendSms(env, phone, invoiceText(env, fields, bill));
     await audit(env, user, 'TAB_CHECKOUT_MOMO', { tabId: t.id, amountPesewas: bill.balancePesewas, prompt });
     return { method: 'momo', prompt, reference: prompt ? reference : '', invoiceSent: sent, phoneHint: maskPhone(phone), amountPesewas: bill.balancePesewas, feePesewas: fee.feePesewas, chargePesewas: charge, billUrl: siteUrl(env, `/bill.html?t=${t.fields.billToken}`),
-      message: prompt ? `A MoMo prompt for ${ghs(charge)}${fee.feePesewas ? ` (bill ${ghs(bill.balancePesewas)} + ${ghs(fee.feePesewas)} service fee)` : ''} is on ${maskPhone(phone)}. They approve it, or pay from the invoice text.` : `The invoice is texted to ${maskPhone(phone)}: they pay from its link, or scan the QR.` };
+      message: prompt ? `A MoMo prompt for ${ghs(charge)}${fee.feePesewas ? ` (bill ${ghs(bill.balancePesewas)} + ${ghs(fee.feePesewas)} service charge)` : ''} is on ${maskPhone(phone)}. They approve it, or pay from the invoice text.` : `The invoice is texted to ${maskPhone(phone)}: they pay from its link, or scan the QR.` };
   }
   // Cash: what's left, into the waiter's cash for the night; then the tab closes.
   if (bill.balancePesewas > 0) {
@@ -660,7 +660,7 @@ export async function startBillPayment(env, token, b) {
   }
   const reference = paymentRef(), phone = normalizePhone(b?.phone) || t.fields.customerPhone || '';
   const host = new URL(env.PUBLIC_SITE_URL || 'https://memoriesnightclub.com').hostname.replace(/^www\./, '');
-  // The charge is the bill plus the tip plus the service fee (on the bill only); the tip is split
+  // The charge is the bill plus the tip plus the service charge (on the bill only); the tip is split
   // off again when Paystack confirms it, and the fee never reaches the bill.
   const fee = await serviceFee(env, bill.balancePesewas), charge = bill.balancePesewas + tipPesewas + fee.feePesewas;
   await setDoc(env, 'pending_checkouts', reference, { reference, kind: 'tab', tabId: t.id, eventName: `Tab ${t.fields.number}`, amountPesewas: bill.balancePesewas + tipPesewas, ...fee, chargePesewas: charge, ...(tipPesewas ? { tipPesewas, tipToUid, tipToName: tip.to.name, tipToRole: tip.to.role } : {}), buyerPhone: phone, status: 'pending', createdAt: now() });

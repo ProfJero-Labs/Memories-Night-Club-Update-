@@ -4,7 +4,7 @@
 //
 // All payments land in EvolveIT's Paystack account. The three-way split (EvolveIT / Memories /
 // organizer) is recorded on each order for the ledger; distribution happens out of band.
-import { getDoc, setDoc, createDoc, deleteDoc, queryWhere, batchGet, commitTx, updateWrite, foundFields, withTransaction } from './lib/firestore.js';
+import { alreadyExists, getDoc, setDoc, createDoc, deleteDoc, queryWhere, batchGet, commitTx, updateWrite, foundFields, withTransaction } from './lib/firestore.js';
 import { BITS_POLICY_VERSION, now, id, paymentRef, claimSecret, sha256Hex, ticketToken, displayCode, tableCode, eventSlug, normalizePlanCode, sixDigits, clean, normalizePhone, validEmail, firstName, money, maskPhone, formatAccra } from './lib/util.js';
 import { sendSms, sendEmail, siteUrl } from './lib/notify.js';
 import { getSettings, resolveLines, isOver } from './public.js';
@@ -16,6 +16,7 @@ import { issueGateSale } from './gate.js';
 import { bookingAlert } from './ops/alerts.js';
 import { livePromos, bestPromo, promoRecord, promoCountFields } from './promos.js';
 import { serviceFee, feeNote } from './lib/fee.js';
+import { recordPayment, ledgerRefund } from './ops/ledger.js';
 
 // Smallest payment accepted anywhere: GHS 1.
 export const MIN_TOPUP_PESEWAS = 100;
@@ -99,7 +100,7 @@ export async function initiateTicket(env, b) {
 // started with another Paystack key). Nothing was paid. After 30 minutes it's closed as such, so the
 // payment check stops retrying it; before that it stays pending (the page may still be opening).
 const NOT_AT_PAYSTACK_MS = 30 * 60e3;
-// What Paystack was asked for: the amount, any tip and the service fee (older checkouts: the amount).
+// What Paystack was asked for: the amount, any tip and the service charge (older checkouts: the amount).
 export const chargeOf = f => Number(f.chargePesewas ?? f.amountPesewas);
 async function confirmCharge(env, pending, reference, { waiting = false } = {}) {
   let payment;
@@ -116,6 +117,8 @@ async function confirmCharge(env, pending, reference, { waiting = false } = {}) 
     await setDoc(env, 'pending_checkouts', reference, { ...pending.fields, status: 'failed', error: 'amount_mismatch' });
     return { status: 'failed', error: 'Payment amount did not match. Contact us with your reference.' };
   }
+  // Paid: into the payment ledger (once per reference), with Paystack's own fee and channel.
+  await recordPayment(env, reference, pending, payment);
   return null;
 }
 
@@ -299,7 +302,7 @@ export async function startInstallment(env, b) {
         shares, claimHash, promo: c.promo,
       });
       planId = code;
-    } catch (e) { if (!String(e.message).includes('ALREADY_EXISTS')) throw e; }
+    } catch (e) { if (!alreadyExists(e)) throw e; }
   }
   if (!planId) return { error: 'Couldn’t start your order right now. Try again.' };
   return { ...(await startInstallmentTopup(env, planId, deposit, payEmail(env, c.buyerEmail, c.buyerPhone))), claim };
@@ -617,12 +620,16 @@ async function fulfillGate(env, reference) {
 export async function fulfill(env, reference) {
   const p = await getDoc(env, 'pending_checkouts', reference);
   if (!p) return { status: 'failed', error: 'Checkout not found.' };
-  if (p.fields.kind === 'table') return { kind: 'table', ...(await fulfillTable(env, reference)) };
-  if (p.fields.kind === 'installment_topup') return fulfillInstallment(env, reference);
-  if (p.fields.kind === 'counter') return fulfillCounter(env, reference);
-  if (p.fields.kind === 'tab') return fulfillTab(env, reference);
-  if (p.fields.kind === 'gate') return fulfillGate(env, reference);
-  return { kind: 'ticket', ...(await fulfillTicket(env, reference)) };
+  const k = p.fields.kind;
+  const r = k === 'table' ? { kind: 'table', ...(await fulfillTable(env, reference)) } : k === 'installment_topup' ? await fulfillInstallment(env, reference)
+    : k === 'counter' ? await fulfillCounter(env, reference) : k === 'tab' ? await fulfillTab(env, reference) : k === 'gate' ? await fulfillGate(env, reference)
+      : { kind: 'ticket', ...(await fulfillTicket(env, reference)) };
+  // Paid, but it couldn't be honoured (sold out while paying): the ledger shows a refund owed.
+  if (r.status === 'failed') {
+    const after = await getDoc(env, 'pending_checkouts', reference);
+    if (after?.fields?.refundStatus === 'manual_required') await ledgerRefund(env, reference, 'pending', { note: after.fields.error || '' });
+  }
+  return r;
 }
 
 // Ticket links go only to the browser that started the order (it holds the claim). The Paystack

@@ -332,9 +332,12 @@ export async function moneyView(el, period = 'today') {
         <span>${e.removed ? `<s>${money(e.amountPesewas)}</s>` : money(e.amountPesewas)}${e.canRemove ? `<br><button class="sbtn" data-rmexp="${esc(e.id)}">Take off</button>` : ''}</span></div>`).join('')}</div>` : '<p class="muted" style="margin:0">No expenses recorded.</p>'}</details>
     ${m.purchases.length ? `<details class="fold"><summary>Drinks bought (${m.purchases.length})</summary><div class="lines-list">${m.purchases.map(x => lineRow(`<b>${x.qty} × ${esc(x.productName)}</b>`, money(x.costPesewas), `${esc(dayName(x.date))} · ${esc(x.recordedByName)}${x.supplier ? ` · ${esc(x.supplier)}` : ''}`)).join('')}</div></details>` : ''}
     ${m.byNight.length > 1 ? `<details class="fold"><summary>Night by night</summary><div class="lines-list">${m.byNight.map(r => lineRow(esc(dayName(r.date)), signed(r.profitPesewas), `in ${money(r.inPesewas)} · out ${money(r.outPesewas)}`)).join('')}</div></details>` : ''}
-    ${m.serviceFees?.totalPesewas ? `<details class="fold"><summary>Service fees: ${money(m.serviceFees.totalPesewas)}</summary><div class="lines-list">
+    ${m.serviceFees?.totalPesewas ? `<details class="fold"><summary>Service charges: ${money(m.serviceFees.totalPesewas)}</summary><div class="lines-list">
       ${lineRow(`Paid on top of ${m.serviceFees.payments} online / MoMo payment${m.serviceFees.payments > 1 ? 's' : ''}`, money(m.serviceFees.totalPesewas))}</div>
       <p class="muted" style="margin:0">${esc(m.serviceFees.note)}</p></details>` : ''}
+    ${m.paymentCosts?.payments ? `<details class="fold"><summary>Payment costs: the club bears ${money(m.paymentCosts.clubBornePesewas)}</summary><div class="lines-list">
+      ${lineRow(`Paystack’s fees (${m.paymentCosts.payments} payments)`, money(m.paymentCosts.processingFeesPesewas), m.paymentCosts.feesPending ? `${m.paymentCosts.feesPending} fee${m.paymentCosts.feesPending > 1 ? 's' : ''} not given by Paystack yet` : '')}${lineRow('Developer commission', money(m.paymentCosts.commissionPesewas))}${lineRow('Service charges customers paid', money(m.paymentCosts.serviceChargesPesewas))}
+      <div class="ln total"><span>The club bears (where a charge didn’t cover the payment’s costs)</span><span>${money(m.paymentCosts.clubBornePesewas)}</span></div></div><p class="muted" style="margin:0">${esc(m.paymentCosts.note)}</p></details>` : ''}
     ${m.tips?.totalPesewas ? `<details class="fold"><summary>Tips for staff</summary><div class="lines-list">
       ${lineRow(`Tips given (${m.tips.count})`, money(m.tips.totalPesewas))}${lineRow('MoMo / card: came into the club’s account', money(m.tips.momoPesewas + m.tips.digitalPesewas))}${lineRow('Cash: the staff kept it', money(m.tips.cashPesewas))}
       <div class="ln total"><span>Still to pay out to staff</span><span>${money(m.tips.owedPesewas)}</span></div></div>
@@ -865,4 +868,111 @@ export async function findOrderView(el, q = '') {
   };
   $('#foForm', el).onsubmit = ev => { ev.preventDefault(); const v = $('#foQ', el).value.trim(); if (v) run(v); };
   if (q) run(q); else $('#foQ', el).focus();
+}
+
+// ── Service charge and developer commission (directors and the admin change them; finance and the
+// Manager look), with a pricing simulation that never saves anything ──
+const pct = n => `${Number(n || 0)}%`;
+export async function chargesView(el) {
+  el.innerHTML = '<div class="loading">Loading…</div>';
+  const c = await sapi('/api/ops/commercial');
+  const sc = c.serviceCharge, cm = c.commission, ro = c.canEdit ? '' : 'disabled';
+  const tick = (name, map, on) => Object.entries(map).map(([k, l]) => `<label class="tick"><input type="checkbox" name="${name}" value="${esc(k)}" ${on.includes(k) ? 'checked' : ''} ${ro}> ${esc(l)}</label>`).join('');
+  el.innerHTML = `<div class="vstack" style="display:grid;gap:14px"><h1>Service charge &amp; commission</h1>
+    <p class="lead">${c.updatedByName ? `Last changed by ${esc(c.updatedByName)} ${when(c.updatedAt)}.` : 'Not changed yet: the defaults are in force.'}${c.canEdit ? '' : ' Only a director or the admin can change these.'}</p>
+    <h3 class="group-h">Customer service charge</h3>
+    <div class="say ${sc.enabled ? 'good' : 'warn'}"><b>${sc.enabled ? `On: ${pct(sc.percent)} of the bill, at most ${money(sc.capPesewas)}` : 'Off'}</b>Added once per bill to payments made online or by MoMo through the site. Not on cash. Shown to the customer before they pay.</div>
+    <label class="tick"><input type="checkbox" id="scOn" ${sc.enabled ? 'checked' : ''} ${ro}> Charge customers a service charge</label>
+    <div class="grid2"><div class="sfield"><label for="scPct">Rate (%)</label><input id="scPct" inputmode="decimal" value="${esc(sc.percent)}" ${ro}></div>${moneyField('scCap', 'Most per bill (GHS)', String(sc.capPesewas / 100))}</div>
+    <h3 class="group-h">Developer commission</h3>
+    <div class="say ${cm.enabled ? 'good' : 'warn'}"><b>${cm.enabled ? (cm.type === 'fixed' ? `${money(cm.fixedPesewas)} per eligible payment` : `${pct(cm.percent)} of ${esc(c.bases[cm.basis] || cm.basis).toLowerCase()}`) : 'Off: no commission is recorded'}</b>Recorded as payable to the developers on each successful eligible payment; nothing is deducted from the club’s settlement. Turn it on only once the arrangement is agreed.</div>
+    <label class="tick"><input type="checkbox" id="cmOn" ${cm.enabled ? 'checked' : ''} ${ro}> Record a developer commission</label>
+    <div class="grid2"><div class="sfield"><label for="cmType">Type</label><select id="cmType" ${ro}><option value="percent" ${cm.type === 'percent' ? 'selected' : ''}>A percentage</option><option value="fixed" ${cm.type === 'fixed' ? 'selected' : ''}>A fixed amount per payment</option></select></div>
+      <div class="sfield"><label for="cmPct">Rate (%)</label><input id="cmPct" inputmode="decimal" value="${esc(cm.percent)}" ${ro}></div>${moneyField('cmFix', 'Fixed amount (GHS)', String((cm.fixedPesewas || 0) / 100))}
+      <div class="sfield"><label for="cmBasis">Worked out on</label><select id="cmBasis" ${ro}>${Object.entries(c.bases).map(([k, l]) => `<option value="${esc(k)}" ${k === cm.basis ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select></div>
+      <div class="sfield"><label for="cmRef">If the payment is refunded</label><select id="cmRef" ${ro}><option value="reverse" ${cm.refunds === 'reverse' ? 'selected' : ''}>The commission is reversed</option><option value="keep" ${cm.refunds === 'keep' ? 'selected' : ''}>The commission stays</option></select></div>
+      <div class="sfield"><label>Settlement</label><input value="${esc(c.settlementModes[cm.settlement] || cm.settlement)}" disabled></div></div>
+    <p class="group-h">Payments that earn it</p><div class="ticks">${tick('cmKind', c.kinds, cm.kinds)}</div>
+    <p class="group-h">Channels</p><div class="ticks">${tick('cmCh', c.channels, cm.channels)}</div>
+    <h3 class="group-h">Paystack fee estimate (for the simulation only)</h3>
+    <div class="sfield"><label for="feeEst">Estimated fee (%)</label><input id="feeEst" inputmode="decimal" value="${esc(c.processing.estimatePercent ?? '')}" placeholder="blank: use the actual fees recorded" ${ro}><span class="hint">Real payments always use Paystack’s actual fee. This is only used when there are no actual fees yet.</span></div>
+    ${c.canEdit ? '<button class="big" id="cmSave">Save</button>' : ''}<div id="cmMsg"></div>
+    <h3 class="group-h">Pricing simulation</h3><p class="muted" style="margin:0">Nothing is saved and no prices change.</p>
+    <div class="grid2">${moneyField('simBill', 'A typical bill (GHS)', '200')}<div class="sfield"><label for="simChange">Try a price change (%)</label><input id="simChange" inputmode="decimal" value="0"></div></div>
+    <button class="mid" id="simGo">Run the simulation</button><div id="simOut"></div></div>`;
+  const val = id => $(`#${id}`, el).value;
+  const checked = name => $$(`input[name="${name}"]:checked`, el).map(x => x.value);
+  $('#cmSave', el) && ($('#cmSave', el).onclick = async () => {
+    try {
+      await busy($('#cmSave', el), () => sapi('/api/ops/commercial', { method: 'POST', body: {
+        serviceCharge: { enabled: $('#scOn', el).checked, percent: val('scPct'), capPesewas: ghsIn(val('scCap')) },
+        commission: { enabled: $('#cmOn', el).checked, type: val('cmType'), percent: val('cmPct'), fixedPesewas: ghsIn(val('cmFix') || '0'), basis: val('cmBasis'), refunds: val('cmRef'), kinds: checked('cmKind'), channels: checked('cmCh') },
+        processing: { estimatePercent: val('feeEst') } } }));
+      await chargesView(el); say($('#cmMsg', el), 'Saved. New payments use it; past payments keep what they were charged.', 'good');
+    } catch (e) { say($('#cmMsg', el), e.message, 'bad'); }
+  });
+  $('#simGo', el).onclick = async () => {
+    try {
+      const s = await busy($('#simGo', el), () => sapi('/api/ops/pricing-sim', { method: 'POST', body: { typicalBillPesewas: ghsIn(val('simBill')), priceChangePercent: Number(val('simChange')) || 0, estimatePercent: val('feeEst') } }), 'Working…');
+      const m = v => (v == null ? '—' : money(v));
+      $('#simOut', el).innerHTML = `<p class="muted">Paystack fee: ${s.feeRatePercent == null ? '<b>unknown</b> (no actual fees yet: enter an estimate above)' : `${s.feeRatePercent}% (${esc(s.feeSource)})`}. ${esc(s.note)}</p>
+        <div class="tbl-wrap"><table class="tbl"><thead><tr><th>Bill</th><th class="num">Service charge</th><th class="num">Customer pays</th><th class="num">Paystack fee</th><th class="num">Commission</th><th class="num">Club bears</th><th class="num">Club keeps</th></tr></thead>
+        <tbody>${s.rows.map(r => `<tr><td>${money(r.subtotalPesewas)}</td><td class="num">${money(r.serviceChargePesewas)}</td><td class="num">${money(r.totalPesewas)}</td><td class="num">${m(r.feePesewas)}</td><td class="num">${money(r.commissionPesewas)}</td><td class="num">${m(r.clubBornePesewas)}</td><td class="num">${m(r.clubProceedsPesewas)}</td></tr>`).join('')}</tbody></table></div>
+        <p class="group-h">Drinks on a ${money(s.typicalBillPesewas)} bill</p>
+        <div class="tbl-wrap"><table class="tbl"><thead><tr><th>Drink</th><th class="num">Price</th><th class="num">Cost</th><th class="num">Payment cost</th><th class="num">Margin after</th>${s.priceChangePercent ? `<th class="num">Draft price (${s.priceChangePercent > 0 ? '+' : ''}${s.priceChangePercent}%)</th><th class="num">Margin after</th>` : ''}</tr></thead>
+        <tbody>${s.drinks.map(x => `<tr><td>${esc(x.name)}</td><td class="num">${money(x.pricePesewas)}</td><td class="num">${money(x.costPesewas)}</td><td class="num">${m(x.paymentCostPesewas)}</td><td class="num">${m(x.marginAfterPaymentPesewas)}</td>${s.priceChangePercent ? `<td class="num">${m(x.proposedPricePesewas)}</td><td class="num">${m(x.proposedMarginAfterPaymentPesewas)}</td>` : ''}</tr>`).join('')}</tbody></table></div>
+        <p class="muted" style="margin:0">Draft prices are a simulation: to change a price, finance edits it under Drinks &amp; prices.</p>`;
+    } catch (e) { say($('#simOut', el), e.message, 'bad'); }
+  };
+}
+
+// ── The night's finances: sales, collections, Paystack costs and settlement, every transaction ──
+const TX_STATUS = { completed: 'Completed', pending: 'Paying now', abandoned: 'Left at Paystack', failed: 'Failed', refunded: 'Refunded', refund_owed: 'Refund owed' };
+export async function financeNightView(el, date, channel = 'all') {
+  el.innerHTML = '<div class="loading">Loading…</div>';
+  const r = await sapi(`/api/ops/finance-night?channel=${encodeURIComponent(channel)}${date ? `&date=${date}` : ''}`);
+  const S = r.sales, P = r.payments, c = P.commission;
+  const st = s => (s === 'completed' ? '<b style="color:#6fcfae">Completed</b>' : ['failed', 'refunded', 'refund_owed'].includes(s) ? `<b class="diff-neg">${TX_STATUS[s]}</b>` : amber(TX_STATUS[s] || s));
+  el.innerHTML = `<div class="vstack" style="display:grid;gap:14px"><h1>Night’s finances</h1>${dateBar(r.date, 'fnDate')}
+    <div class="sfield"><label for="fnCh">Payment channel</label><select id="fnCh"><option value="all">All</option>${Object.entries(r.channels).map(([k, l]) => `<option value="${esc(k)}" ${k === r.channel ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select><span class="hint">Filters the payments and the transactions. Sales are always the whole night.</span></div>
+    <h3 class="group-h">A. Sales</h3><div class="lines-list">
+      ${lineRow('Gross product sales', money(S.grossProductPesewas), 'Drinks, tickets and tables, before discounts')}${lineRow('Discounts', signed(-S.discountsPesewas))}${lineRow('Product refunds', signed(-S.productRefundsPesewas), S.productRefundsPaidPesewas !== S.productRefundsPesewas ? `${money(S.productRefundsPaidPesewas)} paid back` : '')}
+      <div class="ln total"><span>Net product sales</span><span>${money(S.netProductPesewas)}</span></div></div>
+    <div class="lines-list">${lineRow('Service charges collected', money(S.serviceChargesPesewas), S.serviceChargesRefundedPesewas ? `${money(S.serviceChargesRefundedPesewas)} more on refunded payments` : 'Not product sales, not profit')}${lineRow('Tips for staff', money(S.tipsPesewas), 'The staff’s money')}${S.unpaidOnBillsPesewas ? lineRow('Still unpaid on bills', money(S.unpaidOnBillsPesewas), 'Sold, not collected yet') : ''}</div>
+    <p class="muted" style="margin:0">${esc(S.note)}</p>
+    <h3 class="group-h">B. Payments and settlement</h3><div class="lines-list">
+      ${P.byChannel.filter(x => x.amountPesewas).map(x => lineRow(esc(x.label), money(x.amountPesewas))).join('') || lineRow('Nothing collected', money(0))}
+      <div class="ln total"><span>Total collected</span><span>${money(P.totalCollectedPesewas)}</span></div></div>
+    <div class="lines-list">${lineRow('Collected through Paystack', money(P.paystackCollectedPesewas))}${lineRow('Paystack’s fees (actual)', signed(-P.processingFeesPesewas), P.processingFeesPending ? amber(`${P.processingFeesPending} payment${P.processingFeesPending > 1 ? 's' : ''}: fee not given by Paystack yet`) : '')}
+      ${lineRow('Refunds paid back', signed(-P.refundsPaidPesewas))}<div class="ln total"><span>Paystack should settle</span><span>${money(P.expectedSettlementPesewas)}</span></div>
+      ${lineRow('Settled, per Paystack', money(P.settledPesewas), `${P.settledPayments} payment${P.settledPayments === 1 ? '' : 's'} matched${P.unsettledPayments ? ` · ${P.unsettledPayments} not settled yet` : ''}`)}
+      <div class="ln total"><span>Still to settle</span><span>${money(P.outstandingSettlementPesewas)}</span></div>
+      ${lineRow('Received by the club (recorded)', P.receivedByClub ? money(P.receivedByClub.amountPesewas) : amber('not recorded'), P.receivedByClub ? `${esc(P.receivedByClub.byName)} · ${esc(P.receivedByClub.note)}` : '')}</div>
+    <div class="lines-list">${lineRow('Refunds owed (not paid back yet)', money(P.refundsOwedPesewas))}${lineRow('Developer commission payable', money(c.payablePesewas), `${money(c.paidPesewas)} paid${c.reversedPesewas ? ` · ${money(c.reversedPesewas)} reversed` : ''}${c.toRecoverPesewas ? ` · ${money(c.toRecoverPesewas)} to recover` : ''}`)}
+      ${lineRow('Service charges on these payments', money(P.serviceChargesPesewas))}<div class="ln total"><span>Payment costs the club bears</span><span>${money(P.clubBorneCostPesewas)}</span></div></div>
+    <p class="muted" style="margin:0">${esc(P.note)}</p>
+    <div class="btn-row"><button class="mid" id="fnSync">Check Paystack settlements</button><button class="mid" id="fnRecv">Record what was received</button>${r.canPayCommission && c.payablePesewas ? '<button class="mid" id="fnPaid">Commission paid</button>' : ''}</div><div id="fnMsg"></div>
+    <h3 class="group-h">C. Transactions (${r.transactions.length})</h3>
+    <p class="muted" style="margin:0">${Object.entries(r.counts).filter(([, n]) => n).map(([k, n]) => `${n} ${TX_STATUS[k].toLowerCase()}`).join(' · ') || 'None'}</p>
+    <div class="lines-list">${r.transactions.slice(0, 200).map(t => lineRow(`${esc(t.label)}<br><small>${esc(r.channels[t.channel] || 'Paystack')} · ${when(t.at)}${t.byName ? ` · ${esc(t.byName)}` : ''} · ${st(t.status)}</small>`,
+      money(t.collectedPesewas || t.chargedPesewas || 0), [t.serviceChargePesewas ? `charge ${money(t.serviceChargePesewas)}` : '', t.processingFeePesewas != null ? `Paystack ${money(t.processingFeePesewas)}` : t.feeStatus === 'pending' ? 'Paystack fee pending' : '', t.commissionPesewas ? `commission ${money(t.commissionPesewas)} (${esc(t.commissionStatus)})` : '', t.settlement === 'settled' ? 'settled' : ''].filter(Boolean).join(' · '))).join('') || '<div class="ln"><span class="muted">No transactions</span></div>'}</div>
+    <button class="big ghost" id="fnCsv">Download (spreadsheet)</button></div>`;
+  const again = () => financeNightView(el, r.date, $('#fnCh', el).value);
+  bindDate(el, v => financeNightView(el, v, r.channel), 'fnDate');
+  $('#fnCh', el).onchange = again;
+  $('#fnSync', el).onclick = async () => { try { const x = await busy($('#fnSync', el), () => sapi('/api/ops/settlements/sync', { method: 'POST', body: { from: r.date, to: new Date(new Date(`${r.date}T00:00:00Z`).getTime() + 3 * 864e5).toISOString().slice(0, 10) } }), 'Asking Paystack…'); await again(); say($('#fnMsg', el), `${x.settlements} settlement${x.settlements === 1 ? '' : 's'} found; ${x.matched} payment${x.matched === 1 ? '' : 's'} matched.`, 'good'); } catch (e) { say($('#fnMsg', el), e.message, 'bad'); } };
+  $('#fnRecv', el).onclick = () => {
+    const { box, close } = sheet(`<h2>Received for ${esc(dayName(r.date))}</h2><p class="muted" style="margin:0">What actually reached the club for this night’s Paystack payments (bank statement, or from whoever holds the Paystack account).</p>${moneyField('rcA', 'Amount received (GHS)', P.receivedByClub ? String(P.receivedByClub.amountPesewas / 100) : '')}<div class="sfield"><label for="rcN">Where it came from</label><input id="rcN" maxlength="300" placeholder="e.g. bank statement ref 12345"></div><div id="rcM"></div><div class="sheet-dock"><button class="big" id="rcGo">Save</button></div>`, { label: 'Received' });
+    $('#rcGo', box).onclick = async () => { try { await busy($('#rcGo', box), () => sapi('/api/ops/night-received', { method: 'POST', body: { date: r.date, amountPesewas: ghsIn($('#rcA', box).value), note: $('#rcN', box).value } })); close(); again(); } catch (e) { say($('#rcM', box), e.message, 'bad'); } };
+  };
+  $('#fnPaid', el) && ($('#fnPaid', el).onclick = () => {
+    const { box, close } = sheet(`<h2>Developer commission paid</h2><p class="muted" style="margin:0">${money(c.payablePesewas)} payable for ${esc(dayName(r.date))} becomes paid.</p><div class="sfield"><label for="cpN">How it was paid</label><input id="cpN" maxlength="300" placeholder="e.g. transfer ref"></div><div id="cpM"></div><div class="sheet-dock"><button class="big" id="cpGo">Mark paid</button></div>`, { label: 'Commission paid' });
+    $('#cpGo', box).onclick = async () => { try { await busy($('#cpGo', box), () => sapi('/api/ops/commission/paid', { method: 'POST', body: { date: r.date, note: $('#cpN', box).value } })); close(); again(); } catch (e) { say($('#cpM', box), e.message, 'bad'); } };
+  });
+  $('#fnCsv', el).onclick = () => saveCsv(`night-finances-${r.date}.csv`, [
+    ['Night', r.date], [], ['Sales', 'GHS'], ['Gross product sales', cedis(S.grossProductPesewas)], ['Discounts', cedis(S.discountsPesewas)], ['Product refunds', cedis(S.productRefundsPesewas)], ['Net product sales', cedis(S.netProductPesewas)], ['Service charges collected', cedis(S.serviceChargesPesewas)], ['Tips for staff', cedis(S.tipsPesewas)], [],
+    ['Payments', 'GHS'], ...P.byChannel.map(x => [x.label, cedis(x.amountPesewas)]), ['Total collected', cedis(P.totalCollectedPesewas)], ['Paystack fees (actual)', cedis(P.processingFeesPesewas)], ['Paystack fees pending (payments)', P.processingFeesPending], ['Refunds paid', cedis(P.refundsPaidPesewas)], ['Refunds owed', cedis(P.refundsOwedPesewas)], ['Expected settlement', cedis(P.expectedSettlementPesewas)], ['Settled per Paystack', cedis(P.settledPesewas)], ['Still to settle', cedis(P.outstandingSettlementPesewas)], ['Developer commission payable', cedis(c.payablePesewas)], ['Developer commission paid', cedis(c.paidPesewas)], ['Payment costs the club bears', cedis(P.clubBorneCostPesewas)], ['Received by the club (recorded)', P.receivedByClub ? cedis(P.receivedByClub.amountPesewas) : ''], [],
+    ['Reference', 'What', 'Channel', 'Status', 'Time', 'Products', 'Service charge', 'Charge rate %', 'Charge cap', 'Tip', 'Collected', 'Paystack fee', 'Fee status', 'Commission', 'Commission status', 'Club bears', 'Settlement'],
+    ...r.transactions.map(t => [t.reference, t.label, r.channels[t.channel] || 'Paystack', TX_STATUS[t.status] || t.status, when(t.at), cedis(t.productPesewas), cedis(t.serviceChargePesewas), t.serviceChargeRule?.percent ?? '', t.serviceChargeRule?.capPesewas != null ? cedis(t.serviceChargeRule.capPesewas) : '', cedis(t.tipPesewas), cedis(t.collectedPesewas), t.processingFeePesewas != null ? cedis(t.processingFeePesewas) : '', t.feeStatus || '', cedis(t.commissionPesewas), t.commissionStatus || '', cedis(t.clubBorneCostPesewas), t.settlement || '']),
+  ]);
 }
