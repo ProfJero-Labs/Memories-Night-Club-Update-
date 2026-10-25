@@ -1268,3 +1268,29 @@ test('the gate: the front office sells for cash and by a MoMo prompt; security c
   assert.ok(docs('incidents').some(i => i.needsManager && /not in the system/i.test(i.note)));
   assert.deepEqual(org.errors, []);
 });
+
+test('trial nights: the admin sees what would go, ticks a practice debt, and clears; official nights stay', async () => {
+  const tab = (tid, f) => { store.seed('tabs', tid, { number: 90, waiterUid: 'uid-waiter', waiterName: 'Dev Waiter', status: 'open', payments: [], discounts: [], ...f }); store.seed('rounds', `r_${tid}`, { tabId: tid, waiterUid: f.waiterUid || 'uid-waiter', status: 'delivered', lines: [] }); };
+  tab('e2eTrialOpen', { businessDate: '2026-10-18' });
+  tab('e2eTrialMgr', { businessDate: '2026-10-18', waiterUid: 'uid-manager', waiterName: 'Dev Manager' });
+  tab('e2eTrialDebt', { businessDate: '2026-10-18', number: 91, status: 'owed', debt: { name: 'Practice Ama', amountPesewas: 2500 } });
+  tab('e2eTrialRealDebt', { businessDate: '2026-10-19', number: 92, status: 'owed', debt: { name: 'Real Yaw', amountPesewas: 6000 } });
+  tab('e2eOfficial', { businessDate: '2026-10-24' });
+  const admin = await phone(390);
+  await signInAs(admin, 'admin@dev'); await admin.waitForURL(/admin\.html/);
+  await openTab(admin, 'system');
+  await admin.click('#trialCheck');
+  await admin.locator('#trialBox tr', { hasText: 'Practice Ama' }).waitFor();
+  assert.ok(await admin.locator('#trialBox tr', { hasText: 'Real Yaw' }).count(), 'every practice debt is listed to decide on');
+  await admin.locator('#trialBox tr', { hasText: 'Practice Ama' }).locator('input[type=checkbox]').check();
+  const dialog = new Promise(res => admin.once('dialog', d => { res(d.message()); d.accept(); }));
+  await admin.click('#trialGo');
+  assert.match(await dialog, /1 of them unpaid/);
+  await admin.locator('#trialBox').getByText(/Cleared \d+ trial tab/).waitFor();
+  const left = new Set(docs('tabs').map(t => t.id));
+  for (const gone of ['e2eTrialOpen', 'e2eTrialMgr', 'e2eTrialDebt']) assert.ok(!left.has(gone), `${gone} is cleared`);
+  for (const kept of ['e2eTrialRealDebt', 'e2eOfficial']) assert.ok(left.has(kept), `${kept} is kept`);
+  const w = await admin.evaluate(() => document.documentElement.scrollWidth);
+  assert.ok(w <= 390, `the System tab is ${w}px wide on a 390px phone`);
+  assert.deepEqual(admin.errors, []);
+});
