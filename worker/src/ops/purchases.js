@@ -24,7 +24,7 @@ const sum = (arr, f) => arr.reduce((n, x) => n + Number(f(x) || 0), 0);
 // What each drink has now at a bar, its limits, and what to buy to fill it up.
 async function stockNow(env, stationId) {
   const [items, left] = await Promise.all([listDocs(env, 'menu_items'), stockLeft(env, stationId)]);
-  return items.filter(i => i.fields.tracked !== false).map(i => {
+  return items.filter(i => i.fields.tracked !== false && !i.fields.deleted).map(i => {
     const now_ = left[i.id] ?? 0, min = Number(i.fields.lowStock || 0), max = Number(i.fields.maxStock || 0);
     return { productId: i.id, name: i.fields.name, stockNow: now_, min, max, costPesewas: Number(i.fields.costPesewas || 0), low: min > 0 && now_ <= min, suggestQty: max > now_ ? max - now_ : 0 };
   }).sort((a, b) => Number(b.low) - Number(a.low) || a.name.localeCompare(b.name));

@@ -52,7 +52,7 @@ export async function guestMenu(env, token) {
   if (!st) return { error: 'This QR code isn’t ours any more. Order at the bar.', status: 404 };
   // A drink the bar has run out of shows as finished (and can't be ordered: see counterCheckout).
   const left = await stockLeft(env, st.id);
-  const items = (await listDocs(env, 'menu_items')).map(publicItem).filter(i => i.pricePesewas > 0)
+  const items = (await listDocs(env, 'menu_items')).filter(x => !x.fields.deleted).map(publicItem).filter(i => i.pricePesewas > 0)
     .map(i => (i.id in left ? { ...i, available: i.available && left[i.id] > 0, left: left[i.id] } : i)).sort(sortMenu);
   // Who the guest can tip (short names and jobs), at checkout.
   const tipPeople = (await guestTipPeople(env)).people;
@@ -226,7 +226,7 @@ export async function barSetup(env, user) {
   const [stations, items] = await Promise.all([listDocs(env, 'bar_stations'), listDocs(env, 'menu_items')]);
   return {
     stations: stations.map(s => ({ id: s.id, name: s.fields.name, open: s.fields.open !== false, url: stationUrl(env, s.fields.token) })).sort((a, b) => a.name.localeCompare(b.name)),
-    items: items.map(publicItem).sort(sortMenu),
+    items: items.filter(x => !x.fields.deleted).map(publicItem).sort(sortMenu),
   };
 }
 export async function upsertStation(env, b, user) {

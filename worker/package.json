@@ -17,5 +17,8 @@
     "axe-core": "^4.13.0",
     "playwright": "^1.63.0",
     "wrangler": "^4.20.0"
+  },
+  "overrides": {
+    "undici": "^7.30.1"
   }
 }
