@@ -208,8 +208,32 @@ async function system() {
     <p class="hint" style="color:var(--muted)">Anything off is set as a Worker secret: see docs/MONITORING.md.</p>
     <h2>Alerts, last 7 days</h2>
     <div class="tbl-wrap"><table class="tbl"><thead><tr><th>When</th><th>What</th><th>Message</th></tr></thead><tbody>
-    ${d.alerts.map(a => `<tr><td>${esc(when(a.at))}</td><td>${esc(a.kind)}</td><td>${esc(a.text)}</td></tr>`).join('') || '<tr><td colspan="3" class="empty-row">No alerts. Quiet is good.</td></tr>'}</tbody></table></div>`;
+    ${d.alerts.map(a => `<tr><td>${esc(when(a.at))}</td><td>${esc(a.kind)}</td><td>${esc(a.text)}</td></tr>`).join('') || '<tr><td colspan="3" class="empty-row">No alerts. Quiet is good.</td></tr>'}</tbody></table></div>
+    <h2>Waiters’ trial nights</h2>
+    <div class="card"><p style="margin:0">Clears what waiters and waitresses did on the practice nights, so they start the official nights clean. Other staff, stock, the payment ledger and the audit log are not touched.</p>
+      <div class="toolbar" style="margin:0"><button type="button" class="sbtn" id="trialCheck">Check what would be cleared</button></div><div id="trialBox"></div></div>`;
   $('#sysNotify') && ($('#sysNotify').onclick = async () => { const p = await Notification.requestPermission(); $('#sysNotify').textContent = p === 'granted' ? 'Notifications on' : 'Blocked in browser settings'; });
+  $('#trialCheck').onclick = trialCheck;
+}
+
+// The waiters' trial nights, cleared once (worker/src/ops/trial-reset.js): see it first, then confirm.
+const TRIAL_ROWS = [['tabs', 'Tabs'], ['rounds', 'Orders sent to the bar'], ['approvals', 'Approvals'], ['cash_sessions', 'Cash shifts'], ['staff_reports', 'Night reports'], ['tips', 'Tips (kept or paid out)'], ['tip_payouts', 'Tip payouts']];
+async function trialCheck() {
+  const box = $('#trialBox');
+  box.innerHTML = '<p class="muted">Checking…</p>';
+  let d; try { d = await sapi('/api/ops/trial-reset'); } catch (e) { return flash(box, e.message, true); }
+  const total = Object.values(d.counts).reduce((n, x) => n + x, 0), k = d.kept;
+  const keptLines = [k.owedTabs && `${k.owedTabs} tab${k.owedTabs > 1 ? 's' : ''} a customer still owes`, k.payingTabs && `${k.payingTabs} tab${k.payingTabs > 1 ? 's' : ''} with a payment still in progress`, k.owedTips && `${k.owedTips} tip${k.owedTips > 1 ? 's' : ''} still owed to them (${ghs(k.owedTipsPesewas)})`].filter(Boolean);
+  box.innerHTML = `<p style="margin:8px 0 0">Nights before <b>${esc(shortDate(d.before))}</b>, ${d.waiters} waiter${d.waiters === 1 ? '' : 's'}:</p>
+    <div class="tbl-wrap"><table class="tbl"><thead><tr><th>Cleared</th><th>How many</th></tr></thead><tbody>${TRIAL_ROWS.map(([key, label]) => `<tr><td>${label}</td><td>${d.counts[key]}</td></tr>`).join('')}</tbody></table></div>
+    ${keptLines.length ? `<p class="hint" style="margin:0;color:var(--muted)">Kept: ${esc(keptLines.join('; '))}.</p>` : ''}
+    ${total ? '<div class="toolbar" style="margin:0"><button type="button" class="sbtn red" id="trialGo">Clear the trial nights</button></div>' : '<p style="margin:0">Nothing left to clear.</p>'}`;
+  $('#trialGo') && ($('#trialGo').onclick = async () => {
+    if (!confirm(`Delete ${d.counts.tabs} trial tabs and everything listed with them? This can’t be undone.`)) return;
+    $('#trialGo').disabled = true;
+    try { const r = await sapi('/api/ops/trial-reset', { method: 'POST', body: { confirm: 'RESET' } }); await trialCheck(); flash($('#trialBox').appendChild(document.createElement('div')), r.message); }
+    catch (e) { $('#trialGo').disabled = false; flash(box, e.message, true); }
+  });
 }
 
 // ── People: members and staff who get in without a ticket (HR) ──

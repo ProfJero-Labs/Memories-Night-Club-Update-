@@ -234,6 +234,7 @@ export class MockFirestore {
         }
       }
       for (const w of body.writes || []) {
+        if (w.delete) { const k = this.key(...w.delete.split('/documents/')[1].split(/\/(.*)/s)); this.docs.delete(k); this.versions.delete(k); continue; }
         const rel = w.update.name.split('/documents/')[1];
         const [col, id] = rel.split(/\/(.*)/s);
         this.seed(col, id, decodeFields(w.update.fields));
