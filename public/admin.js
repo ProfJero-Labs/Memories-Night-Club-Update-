@@ -208,8 +208,39 @@ async function system() {
     <p class="hint" style="color:var(--muted)">Anything off is set as a Worker secret: see docs/MONITORING.md.</p>
     <h2>Alerts, last 7 days</h2>
     <div class="tbl-wrap"><table class="tbl"><thead><tr><th>When</th><th>What</th><th>Message</th></tr></thead><tbody>
-    ${d.alerts.map(a => `<tr><td>${esc(when(a.at))}</td><td>${esc(a.kind)}</td><td>${esc(a.text)}</td></tr>`).join('') || '<tr><td colspan="3" class="empty-row">No alerts. Quiet is good.</td></tr>'}</tbody></table></div>`;
+    ${d.alerts.map(a => `<tr><td>${esc(when(a.at))}</td><td>${esc(a.kind)}</td><td>${esc(a.text)}</td></tr>`).join('') || '<tr><td colspan="3" class="empty-row">No alerts. Quiet is good.</td></tr>'}</tbody></table></div>
+    <h2>Trial nights</h2>
+    <div class="card"><p style="margin:0">Clears the tabs from the practice nights (whoever opened them) and the waiters’ cash shifts, reports and tips from those nights, so everyone starts the official nights clean. Stock, the payment ledger and the audit log are not touched: recount the bar’s stock afterwards.</p>
+      <p class="hint" style="margin:0;color:var(--muted)">This can’t be undone. Export the database first (Google Cloud → Firestore → Import/Export).</p>
+      <div class="toolbar" style="margin:0"><button type="button" class="sbtn" id="trialCheck">Check what would be cleared</button></div><div id="trialBox"></div></div>`;
   $('#sysNotify') && ($('#sysNotify').onclick = async () => { const p = await Notification.requestPermission(); $('#sysNotify').textContent = p === 'granted' ? 'Notifications on' : 'Blocked in browser settings'; });
+  $('#trialCheck').onclick = trialCheck;
+}
+
+// The trial nights, cleared once (worker/src/ops/trial-reset.js): see it first, then confirm.
+const TRIAL_ROWS = [['tabs', 'Tabs'], ['rounds', 'Orders sent to the bar'], ['approvals', 'Approvals'], ['cash_sessions', 'Waiters’ cash shifts'], ['staff_reports', 'Waiters’ night reports'], ['tips', 'Tips (kept or paid out)'], ['tip_payouts', 'Tip payouts']];
+async function trialCheck() {
+  const box = $('#trialBox');
+  box.innerHTML = '<p class="muted">Checking…</p>';
+  let d; try { d = await sapi('/api/ops/trial-reset'); } catch (e) { return flash(box, e.message, true); }
+  const total = Object.values(d.counts).reduce((n, x) => n + x, 0), k = d.kept;
+  const keptLines = [k.payingTabs && `${k.payingTabs} tab${k.payingTabs > 1 ? 's' : ''} with a payment still in progress`, k.owedTips && `${k.owedTips} tip${k.owedTips > 1 ? 's' : ''} still owed to staff (${ghs(k.owedTipsPesewas)})`].filter(Boolean);
+  const owed = d.owed || [];
+  box.innerHTML = `<p style="margin:8px 0 0">Nights before <b>${esc(shortDate(d.before))}</b>:</p>
+    <div class="tbl-wrap"><table class="tbl"><thead><tr><th>Cleared</th><th>How many</th></tr></thead><tbody>${TRIAL_ROWS.map(([key, label]) => `<tr><td>${label}</td><td>${d.counts[key]}</td></tr>`).join('')}</tbody></table></div>
+    ${owed.length ? `<p style="margin:0">Tabs closed as <b>a customer owes it</b> on those nights. Kept unless you tick them: tick only the ones that were practice.</p>
+      <div class="tbl-wrap"><table class="tbl"><thead><tr><th>Practice?</th><th>Night</th><th>Tab</th><th>Customer</th><th>Waiter</th><th>Owes</th></tr></thead><tbody>${owed.map(o => `<tr><td><input type="checkbox" class="trialOwed" value="${esc(o.id)}" aria-label="Clear Tab ${esc(o.number)} as practice"></td><td>${esc(shortDate(o.date))}</td><td>${esc(o.number)}</td><td>${esc(o.customerName)}</td><td>${esc(o.waiterName)}</td><td>${ghs(o.amountPesewas)}</td></tr>`).join('')}</tbody></table></div>` : ''}
+    ${keptLines.length ? `<p class="hint" style="margin:0;color:var(--muted)">Kept: ${esc(keptLines.join('; '))}.</p>` : ''}
+    ${total || owed.length ? '<div class="toolbar" style="margin:0"><button type="button" class="sbtn red" id="trialGo">Clear the trial nights</button></div>' : '<p style="margin:0">Nothing left to clear.</p>'}`;
+  $('#trialGo') && ($('#trialGo').onclick = async () => {
+    const clearOwed = $$('.trialOwed').filter(c => c.checked).map(c => c.value);
+    const n = d.counts.tabs + clearOwed.length;
+    if (!n && !total) return;
+    if (!confirm(`Delete ${n} trial tab${n === 1 ? '' : 's'}${clearOwed.length ? ` (${clearOwed.length} of them unpaid)` : ''} and everything listed with them? This can’t be undone.`)) return;
+    $('#trialGo').disabled = true;
+    try { const r = await sapi('/api/ops/trial-reset', { method: 'POST', body: { confirm: 'RESET', clearOwed } }); await trialCheck(); flash($('#trialBox').appendChild(document.createElement('div')), r.message); }
+    catch (e) { $('#trialGo').disabled = false; flash(box, e.message, true); }
+  });
 }
 
 // ── People: members and staff who get in without a ticket (HR) ──

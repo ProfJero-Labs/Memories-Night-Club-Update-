@@ -129,6 +129,7 @@ export async function commitTx(env, writes, transaction) {
   return call(env, `${basePath(env)}:commit`, { method: 'POST', body: JSON.stringify({ writes, transaction }) });
 }
 export const updateWrite = (env, col, docId, data) => ({ update: { name: docName(env, col, docId), fields: docFields(data) } });
+export const deleteWrite = (env, col, docId) => ({ delete: docName(env, col, docId) });
 export function foundFields(result, suffix) {
   const found = (result || []).filter(x => x.found).map(x => ({ path: x.found.name, fields: parseFields(x.found.fields) }));
   return found.find(x => x.path.endsWith(suffix));
