@@ -31,6 +31,10 @@
 // A difference never stops sales; it is flagged for the manager to explain (the manager has the
 // keys), and from then on the bar sells from what it actually counted.
 //
+// A drink no longer sold is deleted (finance): it leaves the menu, the bar and the QR menu, but
+// the record stays (marked deleted, with who and why) so past nights' sheets and reports stay right.
+// Only a drink with nothing left in any bar can be deleted.
+//
 // Nothing sells past zero: stockLeft() is what should be in the bar minus what's already ordered
 // but not yet handed over. Waiter orders, quick sales and QR orders are refused when it runs out.
 import { getDoc, setDoc, queryWhere, listDocs, queryRecent, batchGet, commitTx, updateWrite, foundFields, withTransaction } from '../lib/firestore.js';
@@ -61,7 +65,7 @@ export async function listProducts(env, user, { stationId } = {}) {
   const withCost = requireRole(user, STOCK);
   const [items, stations] = await Promise.all([listDocs(env, 'menu_items'), listDocs(env, 'bar_stations')]);
   const left = stationId ? await stockLeft(env, stationId) : null;
-  const products = items.map(d => ({ ...productView(d, withCost), ...(left ? { left: d.id in left ? left[d.id] : null } : {}) })).sort(sortProducts);
+  const products = items.filter(d => !d.fields.deleted).map(d => ({ ...productView(d, withCost), ...(left ? { left: d.id in left ? left[d.id] : null } : {}) })).sort(sortProducts);
   return { products, stations: stations.map(s => ({ id: s.id, name: s.fields.name })).sort((a, b) => a.name.localeCompare(b.name)), units: UNITS };
 }
 
@@ -81,6 +85,7 @@ export async function saveProduct(env, b, user) {
   if (max && max < low) return { error: 'The most to hold can’t be below the minimum.' };
   const existing = b?.id ? await getDoc(env, 'menu_items', String(b.id)) : null;
   if (b?.id && !existing) return { error: 'Product not found.', status: 404 };
+  if (existing?.fields.deleted) return { error: `${existing.fields.name} was deleted. Add it again as a new drink.` };
   const pid = existing?.id || id(), old = existing?.fields || {};
   const fields = {
     ...old, name, category: clean(b.category, 30) || 'Drinks', unit: UNITS.includes(b.unit) ? b.unit : (old.unit || 'bottle'),
@@ -99,7 +104,7 @@ export async function saveProduct(env, b, user) {
 export async function setAvailable(env, b, user) {
   if (!requireRole(user, STOCK_HANDS)) return FORBIDDEN;
   const p = await getDoc(env, 'menu_items', String(b?.id || ''));
-  if (!p) return { error: 'Drink not found.', status: 404 };
+  if (!p || p.fields.deleted) return { error: 'Drink not found.', status: 404 };
   const available = b.available === true;
   if ((p.fields.available !== false) === available) return { available };
   await setDoc(env, 'menu_items', p.id, { ...p.fields, available, updatedAt: now(), updatedBy: uidOf(user), updatedByName: user.name || '' });
@@ -107,12 +112,42 @@ export async function setAvailable(env, b, user) {
   return { available };
 }
 
+// Finance deletes a drink the club no longer sells. Only when no bar has any of it left and no new
+// stock of it is waiting to be confirmed (so no stock vanishes from the books). A reason is required.
+// The record is kept, marked deleted: past sheets, bills and reports still show it.
+export async function deleteProduct(env, b, user) {
+  if (!requireRole(user, PRICE_SETTERS)) return { error: 'Only the finance officer deletes drinks.', status: 403 };
+  const p = await getDoc(env, 'menu_items', String(b?.id || ''));
+  if (!p || p.fields.deleted) return { error: 'Drink not found.', status: 404 };
+  const reason = clean(b?.reason, 200);
+  if (!reason) return { error: 'Say why it’s deleted, e.g. “we don’t sell it any more”.' };
+  const name = p.fields.name;
+  if (p.fields.tracked !== false) {
+    for (const s of await listDocs(env, 'bar_stations')) {
+      const { rows } = await sheetFor(env, { id: s.id, ...s.fields }, bizDate(), { withComps: false });
+      const left = rows.find(r => r.productId === p.id)?.expected || 0;
+      if (left > 0) return { error: `${s.fields.name} still has ${left} ${name}. Sell, move or set its number to 0 first.` };
+    }
+  }
+  const waiting = (await queryWhere(env, 'stock_deliveries', [{ field: 'productId', value: p.id }])).some(d => d.fields.status === 'pending');
+  if (waiting) return { error: `New stock of ${name} is waiting to be confirmed. Confirm or delete it first.` };
+  // Ordered but not handed over yet (a waiter's round, a paid QR order): finish those first.
+  for (const status of ['waiting', 'preparing', 'ready', 'taken']) {
+    if ((await queryWhere(env, 'rounds', [{ field: 'status', value: status }])).some(r => (r.fields.lines || []).some(l => l.productId === p.id))) return { error: `${name} is on an order the bar hasn’t handed over yet. Finish it first.` };
+  }
+  if ((await queryWhere(env, 'counter_orders', [{ field: 'status', value: 'paid' }])).some(o => (o.fields.lines || []).some(l => l.itemId === p.id))) return { error: `${name} is on a paid QR order waiting for pickup. Hand it over first.` };
+  await setDoc(env, 'menu_items', p.id, { ...p.fields, deleted: true, available: false, deletedAt: now(), deletedBy: uidOf(user), deletedByName: user.name || '', deleteReason: reason });
+  await logChange(env, user, { kind: 'product_deleted', refId: p.id, refName: name, field: 'deleted', from: false, to: true, note: reason });
+  await audit(env, user, 'PRODUCT_DELETED', { productId: p.id, name, reason });
+  return { deleted: true };
+}
+
 // ── The ledger ──
 export async function addMoves(env, moves, user) {
   const at = now();
   for (const m of moves) await setDoc(env, 'stock_moves', id(), { ...m, businessDate: m.businessDate || bizDate(), ...who(user), at });
 }
-async function product(env, productId) { const p = await getDoc(env, 'menu_items', String(productId || '')); return p ? { id: p.id, ...p.fields } : null; }
+async function product(env, productId) { const p = await getDoc(env, 'menu_items', String(productId || '')); return p && !p.fields.deleted ? { id: p.id, ...p.fields } : null; }
 async function station(env, stationId) { const s = await getDoc(env, 'bar_stations', String(stationId || '')); return s ? { id: s.id, ...s.fields } : null; }
 
 export const PURCHASERS = ['finance', 'director', 'superAdmin'];   // their purchases count at once
@@ -323,8 +358,9 @@ async function sheetFor(env, st, d, { withComps = true } = {}) {
     r.expected = r.opening + r.received + r.transferIn + r.returns + r.corrections - r.issued - r.waste - r.transferOut;
     if (counted[i.id]) { r.counted = Number(counted[i.id].counted); r.difference = r.counted - r.expected; r.reason = counted[i.id].reason || ''; r.note = counted[i.id].note || ''; }
     r.low = r.lowStock > 0 && (r.counted ?? r.expected) <= r.lowStock;
-    return r;
-  }).sort((a, b) => a.category.localeCompare(b.category) || a.name.localeCompare(b.name));
+    // A deleted drink stays on the sheet only for a night it still had stock or anything recorded.
+    return i.fields.deleted && !r.opening && !mv.length && !r.comps && !counted[i.id] ? null : r;
+  }).filter(Boolean).sort((a, b) => a.category.localeCompare(b.category) || a.name.localeCompare(b.name));
   return { opening, closing, rows };
 }
 

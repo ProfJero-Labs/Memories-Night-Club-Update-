@@ -186,13 +186,21 @@ export async function productsView(el, { canEdit = true } = {}) {
         <div class="sfield"><label for="pfX">Maximum stock: never hold more than (optional)</label><input id="pfX" inputmode="numeric" pattern="[0-9]*" value="${esc(p?.maxStock || '')}"></div>
       </details>
       ${p?.updatedByName ? `<p class="muted" style="margin:0">Last changed by ${esc(p.updatedByName)}. Every change is recorded.</p>` : ''}
-      <div id="pfM"></div><div class="sheet-dock"><button class="big" id="pfGo">Save</button></div>`, { label: p ? `Change ${p.name}` : 'Add a drink' });
+      <div id="pfM"></div><div class="sheet-dock" style="display:grid;gap:8px"><button class="big" id="pfGo">Save</button>${p ? '<button class="mid red" id="pfDel">Delete this drink</button>' : ''}</div>`, { label: p ? `Change ${p.name}` : 'Add a drink' });
     $('#pfGo', box).onclick = async () => {
       const price = ghsIn($('#pfP', box).value), cost = $('#pfK', box).value !== '' ? ghsIn($('#pfK', box).value) : '';
       if (p && price !== p.pricePesewas && !confirm(`Change the price of ${p.name} from ${money(p.pricePesewas)} to ${money(price)}? New orders will use it.`)) return;
       try { await busy($('#pfGo', box), () => sapi('/api/ops/products', { method: 'POST', body: { id: p?.id, name: $('#pfN', box).value, category: $('#pfC', box).value, unit: $('#pfU', box).value, pricePesewas: price, costPesewas: cost, lowStock: $('#pfL', box).value, maxStock: $('#pfX', box).value, tracked: $('#pfT', box).checked, available: $('#pfA', box).checked } })); close(); await productsView(el, { canEdit }); say($('#pMsg', el), 'Saved.'); }
       catch (e) { say($('#pfM', box), e.message, 'bad'); }
     };
+    // Delete: asks why (the reason is kept), then a last check. Refused while a bar still has some.
+    $('#pfDel', box) && ($('#pfDel', box).onclick = async () => {
+      const reason = await ask({ title: `Delete ${p.name}?`, label: 'Why? (kept with your name)', hint: 'e.g. we don’t sell it any more', quick: ['We don’t sell it any more', 'Added by mistake', 'Added twice'], send: 'Delete', danger: true, max: 200 });
+      if (reason === null) return;
+      if (!confirm(`Delete ${p.name}? It comes off the menu, the bar and the QR menu. Past nights and reports still show it.`)) return;
+      try { await sapi('/api/ops/products/delete', { method: 'POST', body: { id: p.id, reason } }); close(); await productsView(el, { canEdit }); say($('#pMsg', el), `${p.name} deleted.`, 'good'); }
+      catch (e) { say($('#pfM', box), e.message, 'bad'); }
+    });
   };
   $('#pAdd', el) && ($('#pAdd', el).onclick = () => form());
   draw();
