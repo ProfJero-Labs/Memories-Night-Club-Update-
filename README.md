@@ -7,7 +7,7 @@ The Memories website, ticketing, tables, pay-in-bits, the draw, door check-in, a
 - **Going live:** [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md)
 - **Security controls and their tests:** [`docs/SECURITY.md`](docs/SECURITY.md), audit: [`docs/SECURITY_AUDIT.md`](docs/SECURITY_AUDIT.md), who can call what: [`docs/AUTHZ.md`](docs/AUTHZ.md)
 - **Monitoring and alerts:** [`docs/MONITORING.md`](docs/MONITORING.md) (secrets to set, uptime monitors, drills)
-- **System map** (pages, routes, states): [`docs/AUDIT.md`](docs/AUDIT.md). **Owner decisions:** [`docs/OPEN_DECISIONS.md`](docs/OPEN_DECISIONS.md)
+- **System map** (pages, routes, states): [`docs/AUDIT.md`](docs/AUDIT.md). **Owner decisions:** [`docs/OPEN_DECISIONS.md`](docs/OPEN_DECISIONS.md). **Handover readiness:** [`docs/HANDOVER_READINESS.md`](docs/HANDOVER_READINESS.md)
 
 The live site deploys `public/` from `main` (Cloudflare Pages). The Worker is deployed separately with `npm run worker:deploy`: deploy the Worker **before** merging front-end changes that depend on it. CI (`.github/workflows/ci.yml`) runs all three test suites and a secret scan on every push and pull request.
 
