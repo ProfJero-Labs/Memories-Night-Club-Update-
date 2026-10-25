@@ -37,16 +37,16 @@ step, not a lock (`worker/src/ops/closing.js`), so old tabs never go away on the
 adds a one-time *Waiters' trial nights* reset (preview, then confirm, super admin only). Its tests
 pass. It's still open, and once merged the Worker still has to be deployed by hand (see 1.2).
 
-**Gaps in PR #36 to fix or accept before running it:**
+**Gaps found in PR #36, and what was done** (the first three are fixed on the PR):
 
-| Gap | Effect | Suggested change |
+| Gap | Effect | Done |
 |---|---|---|
-| Only role `waitStaff` is cleared. Managers, the event manager, directors and the bar (quick sales) also open tabs. | Tabs a manager or bartender opened during practice stay open. | Select by night (`businessDate < 2026-10-24`), not by the person's role. |
-| Staff removed through the old *set role → none* path have `role: ''`. | Their practice tabs aren't found. | Same fix: select by night. |
-| Practice tabs closed as *owed* are kept on purpose. | Made-up "customers" stay on the Manager's *what's owed* list. | Show them in the preview with names and amounts, and let the admin tick which are real. |
-| Stock moves and the payment ledger are kept. | Bar stock is still reduced by the practice drinks; practice nights show shortages; any real Paystack money from practice stays in the ledger. | Do a stock count and set real opening stock before the first official night (finance can now *set a drink's number after a recount*). Keep the ledger: it's real money. |
-| Deletes are permanent. | No undo. | Export Firestore first (`gcloud firestore export gs://…`), then run. |
-| Tabs still open from **24 Oct onward** aren't touched. | If a real night left tabs open, they stay. | Close them the normal way: take payment, or ask for a write-off (manager or finance approves). |
+| Only role `waitStaff` was cleared. Managers, the event manager, directors and the bar (quick sales) also open tabs. | Tabs a manager or bartender opened during practice stayed open. | **Fixed:** every tab from before 24 Oct goes, whoever opened it. Tips on those tabs go too (owed tips stay). |
+| Staff removed through the old *set role → none* path have `role: ''`. | Their practice tabs and cash shifts weren't found. | **Fixed:** tabs by night; waiters also recognised from their old cash shifts and reports. |
+| Practice tabs closed as *owed* were kept with no way to clear them. | Made-up "customers" stayed on the Manager's *what's owed* list. | **Fixed:** the preview lists them (night, tab, customer, waiter, amount); the admin ticks the practice ones. Unticked ones stay. |
+| Deletes are permanent. | No undo. | **Warned** on the card: export the database first. |
+| Stock moves and the payment ledger are kept. | Bar stock is still reduced by the practice drinks. | **Kept on purpose** (the ledger is real money). The card says to recount the bar's stock afterwards. |
+| Tabs still open from **24 Oct onward** aren't touched. | If a real night left tabs open, they stay. | **By design.** Close them the normal way: take payment, or a write-off (manager or finance approves). |
 
 **Also check for other trial data the reset doesn't cover** (verify live): test nights and ticket
 types on the public site, test orders and tickets, test members, test staff accounts (the dev
@@ -105,9 +105,10 @@ From OPEN_DECISIONS.md and SECURITY_AUDIT.md, none is ticked off. **Verify live*
 - [ ] Make the GitHub repo private.
 - [ ] Remove developers' and testers' staff accounts that the club won't use.
 
-**One code fix:** `ALLOWED_ORIGINS` in `worker/wrangler.toml` still lists `http://localhost:5500`
-and `http://127.0.0.1:5500`, though SECURITY_AUDIT.md says they were removed. Any page served from
-someone's own computer on that port is allowed to call the live API. Remove them.
+**One code fix (done, ships with the next Worker deploy):** `ALLOWED_ORIGINS` in
+`worker/wrangler.toml` listed `http://localhost:5500` and `http://127.0.0.1:5500`, though
+SECURITY_AUDIT.md said they were removed, so any page served on that port of someone's own computer
+could call the live API. They're removed.
 
 ### 1.5 Privacy notice, terms and refund policy
 
@@ -129,7 +130,7 @@ expects a privacy notice. The club supplies the text; the footer links then take
 - **Repo housekeeping:** 9 Dependabot PRs open (two major: `firebase` 13, `@firebase/rules-unit-testing`
   6); an old `master` branch next to `main`; merged `claude/*` branches.
 - **Stale docs:** NIGHT-AUDIT.md says nothing reaches the live site until the Cloudflare build is
-  fixed (still true, see 1.2); SECURITY_AUDIT.md's CORS line is wrong (1.4).
+  fixed (still true, see 1.2); SECURITY_AUDIT.md's CORS line was wrong until the 1.4 fix.
 
 ## 3. Known gaps to tell the club about (not blockers)
 
@@ -156,11 +157,11 @@ busy night:
 
 ## 5. Handover checklist
 
-1. Fix PR #36's gaps (1.1), export Firestore, merge, deploy, run the preview, check the counts with
-   the club, then clear.
+1. PR #36's gaps are fixed (1.1). Export Firestore, merge, deploy, run the preview, tick the practice
+   debts with the club, then clear.
 2. Close or write off any open tabs from 24 Oct onward; recount bar stock.
 3. Fix the Worker deploy; confirm the live version matches `main`.
-4. Remove `localhost:5500` from `ALLOWED_ORIGINS`; deploy.
+4. Deploy the Worker so the `localhost:5500` removal takes effect (the code change is done).
 5. Owner security actions (1.4), each ticked with a date.
 6. Ownership table (1.3) agreed and signed; super admin moved to the club.
 7. Privacy, terms and refund pages live.
