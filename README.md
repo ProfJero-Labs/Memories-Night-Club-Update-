@@ -7,7 +7,7 @@ The Memories website, ticketing, tables, pay-in-bits, the draw, door check-in, a
 - **Going live:** [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md)
 - **Security controls and their tests:** [`docs/SECURITY.md`](docs/SECURITY.md), audit: [`docs/SECURITY_AUDIT.md`](docs/SECURITY_AUDIT.md), who can call what: [`docs/AUTHZ.md`](docs/AUTHZ.md)
 - **Monitoring and alerts:** [`docs/MONITORING.md`](docs/MONITORING.md) (secrets to set, uptime monitors, drills)
-- **System map** (pages, routes, states): [`docs/AUDIT.md`](docs/AUDIT.md). **Owner decisions:** [`docs/OPEN_DECISIONS.md`](docs/OPEN_DECISIONS.md)
+- **System map** (pages, routes, states): [`docs/AUDIT.md`](docs/AUDIT.md). **Owner decisions:** [`docs/OPEN_DECISIONS.md`](docs/OPEN_DECISIONS.md). **Handover readiness:** [`docs/HANDOVER_READINESS.md`](docs/HANDOVER_READINESS.md)
 
 The live site deploys `public/` from `main` (Cloudflare Pages). The Worker is deployed separately with `npm run worker:deploy`: deploy the Worker **before** merging front-end changes that depend on it. CI (`.github/workflows/ci.yml`) runs all three test suites and a secret scan on every push and pull request.
 
@@ -22,7 +22,7 @@ npm run dev            # http://localhost:8787
 
 This runs the real Worker code against an in-memory Firestore, a fake Paystack checkout (a Pay / Decline page) and dev staff logins. Staff sign in with a phone number and PIN: phones `0200000001` (admin) to `0200000012` (director), see `dev/seed.mjs`; the PIN is `2580`, or `258025` for manager, director, finance and admin. The email logins (`admin@dev`, `manager@dev`, `door@dev`, `bar@dev`, `orga@dev`, `orgb@dev`, `waiter@dev`, `cashier@dev`, `finance@dev`, `security@dev`, `director@dev`, and `guest@dev` with no role) still work under *Sign in with email instead*, password `memories-dev`. How the venue side works: `docs/OPERATIONS.md`. The dev bar's order page is `/counter.html?s=0123456789abcdef0123456789abcdef&t=4` (table 4); the member pass is `/member.html` (add a member under People → Members and scan the pass QR it shows, or sign in as `orga@dev` and tap **My pass**).
 
-**Previewing with VS Code Live Server (port 5500)?** The pages work there, but they call the API at `apiBase` in `public/config.js`, which is the production Worker. A feature the deployed Worker doesn't have yet (People, Bar orders, System…) says *"needs the latest Worker"*. Deploy the Worker (`cd worker && npm ci && npm run deploy`) or use `npm run dev` above, which serves the site and the current Worker together. Seed nights, lines and prices are dev placeholders from `dev/seed.mjs`; none of it is production data.
+**Previewing with VS Code Live Server (port 5500)?** It can't reach the API: the production Worker only accepts calls from the club's own domains, not from `localhost`. Use `npm run dev` above, which serves the site and the current Worker together. Seed nights, lines and prices are dev placeholders from `dev/seed.mjs`; none of it is production data.
 
 ## Tests
 
