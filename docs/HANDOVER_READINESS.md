@@ -146,7 +146,7 @@ busy night:
 ## 4. What's in good shape
 
 - **Tests:** 296/296 Worker tests pass (payments, idempotency, roles, door races, logging, CSP,
-  no committed secrets). Browser journeys and Firestore/Storage rules tests pass in CI on `main`.
+  no committed secrets). All 55 browser journeys pass (re-run for this audit), and the Firestore/Storage rules tests pass in CI on `main`.
 - **Security:** XSS, token leaks, authorisation (34 routes × every wrong role), payment replay,
   check-in races, rate limits and the rules are all covered by tests (SECURITY_AUDIT.md).
 - **No test data ships in the code:** dev logins, seed nights and fake Paystack live only in `dev/`.
