@@ -107,6 +107,7 @@ export async function opsRoute(m, p, u, b, env, user) {
     case '/api/ops/tabs/cash': return tabs.recordCash(env, b, user);
     case '/api/ops/tabs/pay': return tabs.recordPayment(env, b, user);
     case '/api/ops/tabs/close': return tabs.closeTab(env, b, user);
+    case '/api/ops/tabs/cancel': return tabs.cancelTab(env, b, user);
     case '/api/ops/tabs/text-bill': return tabs.textBill(env, b, user);
     case '/api/ops/bar/round': return tabs.barRound(env, b, user);
     case '/api/ops/cash/open': return cash.openCash(env, b, user);
