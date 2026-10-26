@@ -11,6 +11,7 @@ import { normalizePhone, normalizePlanCode } from './lib/util.js';
 import { upsertRaffle, drawRaffle } from './raffle.js';
 import { checkin, verifyTicket, doorSummary, doorSearch, seatTable, undoCheckin } from './door.js';
 import * as admin from './admin.js';
+import { restoreNov14Ticket } from './fixes/nov14-ticket.js';
 import * as members from './members.js';
 import * as gate from './gate.js';
 import { getDoc } from './lib/firestore.js';
@@ -343,7 +344,11 @@ const handler = {
   },
   async scheduled(event, env, ctx) {
     // Two crons (wrangler.toml): every 10 minutes the payment reconciliation, daily the forfeit sweep.
-    if (event.cron === '*/10 * * * *') ctx.waitUntil(reconcilePayments(env, event.scheduledTime));
+    if (event.cron === '*/10 * * * *') {
+      ctx.waitUntil(reconcilePayments(env, event.scheduledTime));
+      // One-time: put back the 14 Nov ticket deleted by mistake (src/fixes/nov14-ticket.js).
+      ctx.waitUntil(restoreNov14Ticket(env).catch(e => { logError('restoreNov14Ticket failed', e); return reportError(env, 'cron.restoreNov14Ticket', e); }));
+    }
     else ctx.waitUntil(forfeitStalePlans(env).catch(e => { logError('forfeitStalePlans failed', e); return reportError(env, 'cron.forfeitStalePlans', e); }));
   },
 };
