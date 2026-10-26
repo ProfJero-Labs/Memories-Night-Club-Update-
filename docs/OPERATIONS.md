@@ -395,6 +395,16 @@ selling, taking payments and counting stock after it. A night can be closed at a
 closed again later (**Close again and send the updated report**). Each close saves a new version
 of the report.
 
+**Tabs left open after a night.** A tab forgotten on a night that's over stays on the waiter's
+screen until it's cleared. The director (More → *Tabs left open*), finance (Reports → *Tabs left
+open after a night*) or the administrator clears them, night by night, with a reason (e.g. *Trial
+night*). Drinks the bar never handed over are cancelled; a tab with nothing owed closes; a tab still
+owing is written off with that reason, so the night's accounts still show it. Nothing is deleted,
+and who cleared it is kept.
+
+**A drink added twice.** Finance → Stock → Drinks & prices → tap the extra one → *Added twice?* →
+pick the drink to keep → **Delete this drink**. Any of it counted at the bars moves to the one kept.
+
 ## Setting up for live use
 
 - Deploy the Worker (`cd worker && npm ci && npm run deploy`) and the site (Cloudflare Pages).

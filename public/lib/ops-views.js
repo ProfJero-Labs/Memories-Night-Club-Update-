@@ -186,6 +186,8 @@ export async function productsView(el, { canEdit = true } = {}) {
         <div class="sfield"><label for="pfX">Maximum stock: never hold more than (optional)</label><input id="pfX" inputmode="numeric" pattern="[0-9]*" value="${esc(p?.maxStock || '')}"></div>
       </details>
       ${p?.updatedByName ? `<p class="muted" style="margin:0">Last changed by ${esc(p.updatedByName)}. Every change is recorded.</p>` : ''}
+      ${p ? (() => { const same = products.find(x => x.id !== p.id && x.name.trim().toLowerCase() === p.name.trim().toLowerCase()); return `<details class="fold" ${same ? 'open' : ''}><summary>Added twice?</summary>
+        <div class="sfield"><label for="pfDup">It’s the same drink as</label><select id="pfDup"><option value="">Not a duplicate</option>${products.filter(x => x.id !== p.id).map(x => `<option value="${esc(x.id)}" ${same?.id === x.id ? 'selected' : ''}>${esc(x.name)} · ${money(x.pricePesewas)}</option>`).join('')}</select><span class="hint">Pick the one to keep, then Delete this drink: any of this one counted at the bars moves to it.</span></div></details>`; })() : ''}
       <div id="pfM"></div><div class="sheet-dock" style="display:grid;gap:8px"><button class="big" id="pfGo">Save</button>${p ? '<button class="mid red" id="pfDel">Delete this drink</button>' : ''}</div>`, { label: p ? `Change ${p.name}` : 'Add a drink' });
     $('#pfGo', box).onclick = async () => {
       const price = ghsIn($('#pfP', box).value), cost = $('#pfK', box).value !== '' ? ghsIn($('#pfK', box).value) : '';
@@ -195,10 +197,11 @@ export async function productsView(el, { canEdit = true } = {}) {
     };
     // Delete: asks why (the reason is kept), then a last check. Refused while a bar still has some.
     $('#pfDel', box) && ($('#pfDel', box).onclick = async () => {
-      const reason = await ask({ title: `Delete ${p.name}?`, label: 'Why? (kept with your name)', hint: 'e.g. we don’t sell it any more', quick: ['We don’t sell it any more', 'Added by mistake', 'Added twice'], send: 'Delete', danger: true, max: 200 });
+      const keep = products.find(x => x.id === $('#pfDup', box)?.value);
+      const reason = await ask({ title: `Delete ${p.name}?`, label: 'Why? (kept with your name)', hint: 'e.g. we don’t sell it any more', quick: keep ? ['Added twice'] : ['We don’t sell it any more', 'Added by mistake', 'Added twice'], value: keep ? 'Added twice' : '', send: 'Delete', danger: true, max: 200 });
       if (reason === null) return;
-      if (!confirm(`Delete ${p.name}? It comes off the menu, the bar and the QR menu. Past nights and reports still show it.`)) return;
-      try { await sapi('/api/ops/products/delete', { method: 'POST', body: { id: p.id, reason } }); close(); await productsView(el, { canEdit }); say($('#pMsg', el), `${p.name} deleted.`, 'good'); }
+      if (!confirm(keep ? `Delete ${p.name} and keep ${keep.name}? Any ${p.name} counted at the bars moves to ${keep.name}. Past nights and reports still show it.` : `Delete ${p.name}? It comes off the menu, the bar and the QR menu. Past nights and reports still show it.`)) return;
+      try { const r = await sapi('/api/ops/products/delete', { method: 'POST', body: { id: p.id, reason, ...(keep ? { mergeInto: keep.id } : {}) } }); close(); await productsView(el, { canEdit }); say($('#pMsg', el), r.moved ? `${p.name} deleted. ${r.moved} moved to ${r.mergedInto}.` : `${p.name} deleted.`, 'good'); }
       catch (e) { say($('#pfM', box), e.message, 'bad'); }
     });
   };
@@ -983,4 +986,25 @@ export async function financeNightView(el, date, channel = 'all') {
     ['Reference', 'What', 'Channel', 'Status', 'Time', 'Products', 'Service charge', 'Charge rate %', 'Charge cap', 'Tip', 'Collected', 'Paystack fee', 'Fee status', 'Commission', 'Commission status', 'Club bears', 'Settlement'],
     ...r.transactions.map(t => [t.reference, t.label, r.channels[t.channel] || 'Paystack', TX_STATUS[t.status] || t.status, when(t.at), cedis(t.productPesewas), cedis(t.serviceChargePesewas), t.serviceChargeRule?.percent ?? '', t.serviceChargeRule?.capPesewas != null ? cedis(t.serviceChargeRule.capPesewas) : '', cedis(t.tipPesewas), cedis(t.collectedPesewas), t.processingFeePesewas != null ? cedis(t.processingFeePesewas) : '', t.feeStatus || '', cedis(t.commissionPesewas), t.commissionStatus || '', cedis(t.clubBorneCostPesewas), t.settlement || '']),
   ]);
+}
+
+// ── Tabs left open after a night (director, finance, administrator: worker/src/ops/tab-clear.js) ──
+// Night by night: the tabs still open, who served them, what's owed. "Clear" closes them all: drinks
+// the bar never handed over are cancelled, a tab still owing is written off with the reason given.
+export async function tabClearView(el) {
+  el.innerHTML = '<div class="loading">Loading…</div>';
+  const { nights } = await sapi('/api/ops/tabs/stale');
+  el.innerHTML = `<div class="vstack" style="display:grid;gap:14px"><h1>Tabs left open</h1>
+    <p class="lead">Tabs still open from nights that are over. Waiters keep seeing them until they’re cleared.</p><div id="tcMsg"></div>
+    ${nights.map(n => `<section class="card" style="display:grid;gap:8px"><div><b>${esc(dayName(n.date))}</b> · ${n.tabs.length} open tab${n.tabs.length === 1 ? '' : 's'}${n.unpaidPesewas ? ` · ${money(n.unpaidPesewas)} unpaid` : ''}</div>
+      <div class="tbl-wrap"><table class="tbl"><thead><tr><th>Tab</th><th>Waiter</th><th>Customer</th><th class="num">Owes</th></tr></thead><tbody>${n.tabs.map(t => `<tr><td>${esc(t.number)}${t.table ? ` · ${esc(t.table)}` : ''}</td><td>${esc(t.waiterName)}</td><td>${esc(t.customerName)}</td><td class="num">${money(t.balancePesewas)}</td></tr>`).join('')}</tbody></table></div>
+      <button class="mid red" data-clear="${esc(n.date)}">Clear these tabs</button></section>`).join('') || '<p class="muted">No tabs left open. Every past night is cleared.</p>'}</div>`;
+  $$('[data-clear]', el).forEach(b => b.onclick = async () => {
+    const n = nights.find(x => x.date === b.dataset.clear);
+    const reason = await ask({ title: `Clear ${n.tabs.length} tab${n.tabs.length === 1 ? '' : 's'} from ${dayName(n.date)}?`, label: 'Why? (kept with your name)', quick: ['Trial night', 'Night finished, tabs left open'], send: 'Clear', danger: true, max: 200 });
+    if (reason === null) return;
+    if (n.unpaidPesewas && !confirm(`${money(n.unpaidPesewas)} is still unpaid on these tabs. It will be written off with your reason. Clear them?`)) return;
+    try { const r = await busy(b, () => sapi('/api/ops/tabs/clear', { method: 'POST', body: { date: n.date, reason } })); await tabClearView(el); say($('#tcMsg', el), r.message, 'good'); }
+    catch (e) { say($('#tcMsg', el), e.message, 'bad'); }
+  });
 }
