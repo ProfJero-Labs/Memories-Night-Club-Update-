@@ -84,6 +84,8 @@ export class MockFirestore {
     this.versions.set(k, ++this.seq);
   }
 
+  delete(col, id) { const k = this.key(col, id); this.docs.delete(k); this.versions.set(k, ++this.seq); }
+
   get(col, id) {
     const k = this.key(col, id);
     return this.docs.has(k) ? { fields: this.docs.get(k), version: this.versions.get(k) } : null;
@@ -231,6 +233,12 @@ export class MockFirestore {
         if (curVer !== readVer) {
           if (txId) this.txs.delete(txId);
           return jsonResponse({ error: { message: 'ABORTED: transaction was aborted due to contention' } }, 409);
+        }
+      }
+      for (const w of body.writes || []) {
+        if (w.currentDocument?.exists === false && w.update && this.docs.has(this.key(...w.update.name.split('/documents/')[1].split(/\/(.*)/s)))) {
+          if (txId) this.txs.delete(txId);
+          return jsonResponse({ error: { message: 'FAILED_PRECONDITION: Document already exists' } }, 400);
         }
       }
       for (const w of body.writes || []) {
