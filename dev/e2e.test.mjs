@@ -1381,3 +1381,25 @@ test('bar: the quick-sell drink list has the same search', async () => {
   assert.deepEqual(await bar.locator('#pkList .pick .grow').evaluateAll(n => n.map(x => x.firstChild.textContent.trim())), ['Stout']);
   assert.deepEqual(bar.errors, []);
 });
+
+test('finance clears the tabs left open after a night; they leave the waiter’s screen', async () => {
+  store.seed('tabs', 'e2eLeftOpen', { number: 77, businessDate: '2026-10-22', stationId: 'main', table: 'T7', waiterUid: 'uid-waiter', waiterName: 'Dev Waiter', status: 'open', payments: [], discounts: [] });
+  store.seed('rounds', 'r_e2eLeftOpen', { tabId: 'e2eLeftOpen', businessDate: '2026-10-22', waiterUid: 'uid-waiter', lines: [{ lineId: 'l1', productId: 'x', name: 'Beer', unitPesewas: 2500, qty: 2 }], status: 'handed' });
+  const fin = await phone(390);
+  await signInAs(fin, 'finance@dev'); await fin.waitForURL(/finance\.html/);
+  await fin.goto(`${base}/finance.html#reports`);
+  await fin.click('[data-goto="opentabs"]');
+  const night = fin.locator('section.card', { hasText: 'Thursday 22 October' });
+  await night.getByText('Dev Waiter').waitFor();
+  await night.getByRole('button', { name: 'Clear these tabs' }).click();
+  await fin.getByRole('button', { name: 'Trial night' }).click();
+  const dialog = new Promise(res => fin.once('dialog', d => { res(d.message()); d.accept(); }));
+  await fin.click('#askGo');
+  assert.match(await dialog, /GHS 50.*still unpaid/);
+  await fin.getByText(/Cleared 1 tab/).waitFor();
+  const t = docs('tabs').find(x => x.id === 'e2eLeftOpen');
+  assert.deepEqual([t.status, t.writeOffReason, t.clearedByName], ['written_off', 'Trial night', 'Dev Finance']);
+  const w = await fin.evaluate(() => document.documentElement.scrollWidth);
+  assert.ok(w <= 390, `the screen is ${w}px wide on a 390px phone`);
+  assert.deepEqual(fin.errors, []);
+});

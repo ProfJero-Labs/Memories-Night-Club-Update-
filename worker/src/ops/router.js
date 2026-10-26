@@ -22,6 +22,7 @@ import * as orders from './orders.js';
 import * as commercial from './commercial.js';
 import * as fin from './finance-night.js';
 import * as trial from './trial-reset.js';
+import * as tabClear from './tab-clear.js';
 
 export async function opsRoute(m, p, u, b, env, user) {
   const q = k => u.searchParams.get(k) || undefined;
@@ -76,6 +77,7 @@ export async function opsRoute(m, p, u, b, env, user) {
       case '/api/ops/commercial': return commercial.getCommercial(env, user);
       case '/api/ops/finance-night': return fin.nightFinance(env, user, { date: q('date'), channel: q('channel') });
       case '/api/ops/trial-reset': return trial.trialResetPreview(env, user);
+      case '/api/ops/tabs/stale': return tabClear.staleTabsView(env, user);
     }
     return undefined;
   }
@@ -121,6 +123,7 @@ export async function opsRoute(m, p, u, b, env, user) {
     case '/api/ops/incidents/update': return front.updateIncident(env, b, user);
     case '/api/ops/my-report': return closing.submitMyReport(env, b, user);
     case '/api/ops/trial-reset': return trial.trialReset(env, b, user);
+    case '/api/ops/tabs/clear': return tabClear.clearTabs(env, b, user);
     case '/api/ops/front-report': return closing.submitFrontOffice(env, b, user);
     case '/api/ops/close-night': return closing.closeNight(env, b, user);
     case '/api/ops/close-night/hand-over': return closing.handOverClosing(env, b, user);

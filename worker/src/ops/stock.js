@@ -122,11 +122,17 @@ export async function deleteProduct(env, b, user) {
   const reason = clean(b?.reason, 200);
   if (!reason) return { error: 'Say why it’s deleted, e.g. “we don’t sell it any more”.' };
   const name = p.fields.name;
+  // A drink added twice: what the bars hold of it moves to the drink it duplicates (mergeInto).
+  const into = b?.mergeInto ? await product(env, b.mergeInto) : null;
+  if (b?.mergeInto && (!into || into.id === p.id)) return { error: 'Pick the drink to keep.' };
+  const moveOver = [];
   if (p.fields.tracked !== false) {
     for (const s of await listDocs(env, 'bar_stations')) {
       const { rows } = await sheetFor(env, { id: s.id, ...s.fields }, bizDate(), { withComps: false });
       const left = rows.find(r => r.productId === p.id)?.expected || 0;
-      if (left > 0) return { error: `${s.fields.name} still has ${left} ${name}. Sell, move or set its number to 0 first.` };
+      if (left > 0 && !into) return { error: `${s.fields.name} still has ${left} ${name}. Sell, move or set its number to 0 first, or if it was added twice, pick the drink to keep.` };
+      if (left > 0 && into.tracked === false) return { error: `${into.name} isn’t counted at the bar, so the ${left} ${name} in ${s.fields.name} can’t move to it. Turn on “Count it at the bar” for ${into.name} first.` };
+      if (left > 0) moveOver.push({ station: s, left });
     }
   }
   const waiting = (await queryWhere(env, 'stock_deliveries', [{ field: 'productId', value: p.id }])).some(d => d.fields.status === 'pending');
@@ -136,10 +142,17 @@ export async function deleteProduct(env, b, user) {
     if ((await queryWhere(env, 'rounds', [{ field: 'status', value: status }])).some(r => (r.fields.lines || []).some(l => l.productId === p.id))) return { error: `${name} is on an order the bar hasn’t handed over yet. Finish it first.` };
   }
   if ((await queryWhere(env, 'counter_orders', [{ field: 'status', value: 'paid' }])).some(o => (o.fields.lines || []).some(l => l.itemId === p.id))) return { error: `${name} is on a paid QR order waiting for pickup. Hand it over first.` };
-  await setDoc(env, 'menu_items', p.id, { ...p.fields, deleted: true, available: false, deletedAt: now(), deletedBy: uidOf(user), deletedByName: user.name || '', deleteReason: reason });
-  await logChange(env, user, { kind: 'product_deleted', refId: p.id, refName: name, field: 'deleted', from: false, to: true, note: reason });
-  await audit(env, user, 'PRODUCT_DELETED', { productId: p.id, name, reason });
-  return { deleted: true };
+  if (moveOver.length) {
+    const note = `${name} was a duplicate of ${into.name}: ${reason}`;
+    await addMoves(env, moveOver.flatMap(({ station: s, left }) => [
+      { productId: p.id, productName: name, stationId: s.id, qty: -left, kind: 'correction', reason: 'merged_duplicate', note, mergedInto: into.id },
+      { productId: into.id, productName: into.name, stationId: s.id, qty: left, kind: 'correction', reason: 'merged_duplicate', note, mergedFrom: p.id }]), user);
+    for (const { station: s, left } of moveOver) await logChange(env, user, { kind: 'stock', refId: into.id, refName: into.name, field: `${left} moved from duplicate ${name} in ${s.fields.name}`, from: null, to: left, note: reason });
+  }
+  await setDoc(env, 'menu_items', p.id, { ...p.fields, deleted: true, available: false, deletedAt: now(), deletedBy: uidOf(user), deletedByName: user.name || '', deleteReason: reason, ...(into ? { mergedInto: into.id, mergedIntoName: into.name } : {}) });
+  await logChange(env, user, { kind: 'product_deleted', refId: p.id, refName: name, field: 'deleted', from: false, to: true, note: into ? `${reason} (duplicate of ${into.name})` : reason });
+  await audit(env, user, 'PRODUCT_DELETED', { productId: p.id, name, reason, ...(into ? { mergedInto: into.id, movedQty: moveOver.reduce((n, m) => n + m.left, 0) } : {}) });
+  return { deleted: true, ...(into ? { mergedInto: into.name, moved: moveOver.reduce((n, m) => n + m.left, 0) } : {}) };
 }
 
 // ── The ledger ──
