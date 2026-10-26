@@ -6,32 +6,53 @@ import { sheet, say, busy, money, moneyField, ghsIn, pasteMomoButton } from './o
 // Draws a drink list into `el`. products: from /api/ops/products?stationId=… (with `left`).
 // onSend(lines, total) runs when the big button is tapped; it may throw to show an error.
 // topEl: a form shown above the drinks that keeps what was typed while drinks are added.
+// A search box stays at the top: it narrows the list as you type (any part of the name or the
+// category, every word), and what's already picked stays picked.
+const fold = s => String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
 export function drinkPicker(el, products, { title = 'Pick drinks', top = '', topEl = null, button = n => `Send to bar · ${n}`, onSend, onBack } = {}) {
   const menu = products.filter(p => p.pricePesewas > 0);
   const cart = {};
+  let query = '';
   const cats = [...new Set(menu.map(p => p.category))];
   const out = p => !p.available || p.left === 0;
   const cap = p => Math.min(30, p.left == null ? 30 : p.left);
-  const draw = () => {
-    const total = Object.entries(cart).reduce((n, [id, q]) => n + q * menu.find(p => p.id === id).pricePesewas, 0), count = Object.values(cart).reduce((a, b) => a + b, 0);
-    el.innerHTML = `${onBack ? '<div class="backbar"><button type="button" class="back-btn" data-back aria-label="Back">←<span>Back</span></button></div>' : ''}<h1>${esc(title)}</h1>${top}${topEl ? '<div data-top></div>' : ''}
-      ${cats.map(c => `<h3 class="cat-h">${esc(c)}</h3>${menu.filter(p => p.category === c).map(p => `<div class="pick ${out(p) ? 'out' : ''}"><div class="grow">${esc(p.name)}<small>${money(p.pricePesewas)}${out(p) ? ' · finished' : p.left != null && p.left <= 5 ? ` · only ${p.left} left` : ''}</small></div>
-        ${out(p) ? '' : `<div class="qstep"><button type="button" data-m="${esc(p.id)}" aria-label="One fewer ${esc(p.name)}">−</button><span>${cart[p.id] || 0}</span><button type="button" data-p="${esc(p.id)}" aria-label="One more ${esc(p.name)}" ${(cart[p.id] || 0) >= cap(p) ? 'disabled' : ''}>+</button></div>`}</div>`).join('')}`).join('')}
-      <div id="pkMsg"></div>
-      <div class="dock"><button class="big" id="send" ${count ? '' : 'disabled'}>${count ? esc(button(`${count} drink${count > 1 ? 's' : ''} · ${money(total)}`)) : 'Pick drinks'}</button></div>`;
-    $('[data-back]', el) && ($('[data-back]', el).onclick = onBack);
-    if (topEl) $('[data-top]', el).replaceWith(topEl);
-    $$('[data-p],[data-m]', el).forEach(b => b.onclick = () => {
-      const id = b.dataset.p || b.dataset.m, p = menu.find(x => x.id === id);
-      cart[id] = Math.max(0, Math.min(cap(p), (cart[id] || 0) + (b.dataset.p ? 1 : -1))); if (!cart[id]) delete cart[id];
-      const y = scrollY; draw(); scrollTo(0, y);
-    });
-    $('#send', el).onclick = async () => {
-      try { await busy($('#send', el), () => onSend(Object.entries(cart).map(([productId, qty]) => ({ productId, qty })), total), 'Saving…'); }
-      catch (e) { say($('#pkMsg', el), e.message, 'bad'); }
-    };
+  const row = p => `<div class="pick ${out(p) ? 'out' : ''}"><div class="grow">${esc(p.name)}<small>${money(p.pricePesewas)}${out(p) ? ' · finished' : p.left != null && p.left <= 5 ? ` · only ${p.left} left` : ''}</small></div>
+    ${out(p) ? '' : `<div class="qstep"><button type="button" data-m="${esc(p.id)}" aria-label="One fewer ${esc(p.name)}">−</button><span>${cart[p.id] || 0}</span><button type="button" data-p="${esc(p.id)}" aria-label="One more ${esc(p.name)}" ${(cart[p.id] || 0) >= cap(p) ? 'disabled' : ''}>+</button></div>`}</div>`;
+  el.innerHTML = `${onBack ? '<div class="backbar"><button type="button" class="back-btn" data-back aria-label="Back">←<span>Back</span></button></div>' : ''}<h1>${esc(title)}</h1>${top}${topEl ? '<div data-top></div>' : ''}
+    <div class="pick-search" role="search"><input type="search" id="pkFind" placeholder="Search drinks" aria-label="Search drinks" autocomplete="off" enterkeyhint="search"><button type="button" id="pkClear" aria-label="Clear the search" hidden>×</button></div>
+    <div id="pkList"></div><div id="pkMsg"></div>
+    <div class="dock"><button class="big" id="send" disabled>Pick drinks</button></div>`;
+  $('[data-back]', el) && ($('[data-back]', el).onclick = onBack);
+  if (topEl) $('[data-top]', el).replaceWith(topEl);
+  const list = $('#pkList', el), send = $('#send', el), find = $('#pkFind', el);
+  // The search stays just under the header and the back bar while the list scrolls.
+  const bb = $('.backbar', el); $('.pick-search', el).style.setProperty('--pick-top', `${56 + (bb ? bb.offsetHeight : 0)}px`);
+  const totals = () => ({ total: Object.entries(cart).reduce((n, [id, q]) => n + q * menu.find(p => p.id === id).pricePesewas, 0), count: Object.values(cart).reduce((a, b) => a + b, 0) });
+  const drawList = () => {
+    const words = fold(query).split(/\s+/).filter(Boolean);
+    const hit = p => words.every(w => fold(`${p.name} ${p.category}`).includes(w));
+    const shown = cats.map(c => [c, menu.filter(p => p.category === c && hit(p))]).filter(([, ps]) => ps.length);
+    list.innerHTML = shown.map(([c, ps]) => `<h3 class="cat-h">${esc(c)}</h3>${ps.map(row).join('')}`).join('')
+      || `<div class="empty-box"><b>No drink matches “${esc(query.trim())}”</b>Check the spelling, or clear the search.</div>`;
+    const { total, count } = totals();
+    send.disabled = !count;
+    send.textContent = count ? button(`${count} drink${count > 1 ? 's' : ''} · ${money(total)}`) : 'Pick drinks';
   };
-  draw();
+  list.addEventListener('click', ev => {
+    const b = ev.target.closest('[data-p],[data-m]'); if (!b) return;
+    const id = b.dataset.p || b.dataset.m, p = menu.find(x => x.id === id);
+    cart[id] = Math.max(0, Math.min(cap(p), (cart[id] || 0) + (b.dataset.p ? 1 : -1))); if (!cart[id]) delete cart[id];
+    drawList();
+  });
+  const clear = $('#pkClear', el);
+  find.addEventListener('input', () => { query = find.value; clear.hidden = !query; drawList(); });
+  clear.onclick = () => { find.value = query = ''; clear.hidden = true; drawList(); find.focus(); };
+  send.onclick = async () => {
+    const { total } = totals();
+    try { await busy(send, () => onSend(Object.entries(cart).map(([productId, qty]) => ({ productId, qty })), total), 'Saving…'); }
+    catch (e) { say($('#pkMsg', el), e.message, 'bad'); }
+  };
+  drawList();
 }
 
 // "Customer gave a tip": the amount and who it's for (the person serving, unless the customer

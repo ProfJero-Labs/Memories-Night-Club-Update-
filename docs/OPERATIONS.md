@@ -105,6 +105,7 @@ The Door screen is where the entrance is run. Phone numbers are the main ID: a p
 
 ## Quick sale (waiter or bar)
 
+- Picking drinks (waiters and the bar): type in **Search drinks** at the top of the list instead of scrolling; it keeps what's already picked.
 - **Bar → Sell**: pick the drinks → the customer pays → **Cash received** or **MoMo received**
   (with the MoMo transaction ID). Serve the drinks. Done: it's out of the bar's stock and in the
   bartender's sales and cash.
@@ -134,6 +135,12 @@ Every step is one tap, and the waiter is never stuck on one table.
      back to the bar and the menu opens for the new drink) or **Just return it**. It comes off the
      bill when the bar taps *Got them back*. **Broken**: off the bill, in the waiter's report.
    On **My tables** every open tab shows **Add drinks** and **Close tab** right on it.
+   - **Cancel tab**: a tab with nothing on it (the customer didn't order, or every order was
+     cancelled), nothing paid and nothing at the bar shows **Cancel tab** instead of Close tab.
+     Tap it twice. When the last order on a tab is cancelled (by the waiter before the bar starts
+     it, or *Can't make it* at the bar) and nothing was paid, the tab cancels itself. A cancelled
+     tab leaves My tables and the night's open tabs; it stays on record under *Closed tonight*,
+     with who cancelled it.
 5. **Close tab** asks one question: **Cash or MoMo?** (Every order must be collected first, so
    the bill is final.)
    - **Cash** → **Got GHS … cash · close**: it goes in the waiter's cash for the night, the tab

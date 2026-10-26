@@ -1317,6 +1317,71 @@ test('the event manager sees tickets sold so far for every night coming up, even
   assert.deepEqual(em.errors, []);
 });
 
+test('waiter: search the drinks instead of scrolling; the search stays on screen; picks are kept while searching', async () => {
+  const w = await phone(360); await signInAs(w, 'waiter@dev'); await w.waitForURL(/waiter\.html/);
+  await w.click('#newTab'); await w.waitForURL(/#order$/);
+  await w.fill('#odTable', '33');
+  await w.fill('#pkFind', 'teq');
+  assert.deepEqual(await w.locator('#pkList .pick .grow').evaluateAll(n => n.map(x => x.firstChild.textContent.trim())), ['Tequila shot'], 'only what matches');
+  assert.deepEqual(await w.locator('#pkList .cat-h').allInnerTexts(), ['SHOTS']);
+  await w.click('[data-p="dev-m-shot"]');
+  assert.equal(await w.inputValue('#pkFind'), 'teq', 'the search stays while adding');
+  await w.fill('#pkFind', 'CLUB beer');
+  await w.click('[data-p="dev-m-beer"]');
+  await w.fill('#pkFind', 'zzz');
+  await w.locator('#pkList').getByText('No drink matches “zzz”').waitFor();
+  await w.click('#pkClear');
+  assert.equal(await w.inputValue('#pkFind'), '');
+  assert.ok(await w.locator('#pkList .pick').count() >= 5, 'everything is back');
+  assert.match(await w.textContent('#send'), /2 drinks · GHS 55/, 'both picks kept');
+  // Scrolled down the list, the search box is still on screen, under the back bar.
+  await w.evaluate(() => scrollTo(0, document.body.scrollHeight));
+  const s = await w.locator('.pick-search').boundingBox(), bb = await w.locator('.backbar').boundingBox();
+  assert.ok(s.y >= bb.y + bb.height - 1 && s.y < 200, `search box at y=${s.y}, back bar ends at ${bb.y + bb.height}`);
+  await w.click('#send'); await w.waitForURL(/#tabs$/);
+  const bar = await phone(390); await signInAs(bar, 'bar@dev'); await bar.waitForURL(/bar\.html/);
+  assert.deepEqual([...w.errors, ...bar.errors], []);
+});
+
+test('waiter: a tab with nothing ordered is cancelled (two taps); cancelling the last order cancels the tab by itself', async () => {
+  const w = await phone(360); await signInAs(w, 'waiter@dev'); await w.waitForURL(/waiter\.html/);
+  // An order sent, then cancelled before the bar starts it: the tab goes with it.
+  await w.click('#newTab'); await w.waitForURL(/#order$/);
+  await w.fill('#odTable', '44'); await w.click('[data-p="dev-m-water"]'); await w.click('#send'); await w.waitForURL(/#tabs$/);
+  await w.locator('[data-tab]', { hasText: '44' }).first().click(); await w.waitForURL(/#tab\//);
+  const tab44 = await w.evaluate(() => location.hash.split('/')[1]);
+  w.once('dialog', d => d.accept());
+  await w.locator('[data-act="cancel"]').click();
+  await w.waitForURL(/#tabs$/); await w.locator('#msg').getByText(/the tab is cancelled too/).waitFor();
+  assert.equal(docs('tabs').find(t => t.id === tab44).status, 'cancelled');
+  assert.equal(await w.locator('#list > .tcard', { hasText: '44' }).count(), 0, 'not on My tables any more');
+  await w.locator('details.fold summary', { hasText: 'Closed tonight' }).click();
+  const done44 = w.locator('details.fold .tcard', { hasText: '44' });
+  await done44.locator('.st.cancelled', { hasText: 'Cancelled: nothing ordered' }).waitFor();
+  assert.match(await done44.innerText(), /Cancelled by Dev/);
+  // A tab opened with nothing on it: Cancel tab instead of a dead Close tab; the first tap asks.
+  store.seed('tabs', 'e2eEmptyTab', { number: 98, businessDate: docs('tabs').find(t => t.id === tab44).businessDate, table: '45', waiterUid: 'uid-waiter', waiterName: 'Dev Waiter', status: 'open', payments: [], discounts: [], createdAt: new Date().toISOString() });
+  const card = w.locator('#list > .tcard', { hasText: '45' });
+  await card.waitFor({ timeout: 10000 });
+  await card.locator('[data-cancel]').click();
+  await card.getByText('Tap again to cancel the tab').waitFor();
+  assert.equal(docs('tabs').find(t => t.id === 'e2eEmptyTab').status, 'open', 'one tap does nothing');
+  await card.locator('[data-cancel]').click();
+  await w.locator('#msg').getByText(/Tab cancelled/).waitFor();
+  assert.equal(docs('tabs').find(t => t.id === 'e2eEmptyTab').status, 'cancelled');
+  assert.deepEqual(w.errors, []);
+});
+
+test('bar: the quick-sell drink list has the same search', async () => {
+  const bar = await phone(390); await signInAs(bar, 'bar@dev'); await bar.waitForURL(/bar\.html/);
+  const sell = bar.locator('button, a', { hasText: /^Sell$/ }).first();
+  await sell.waitFor(); await sell.click();
+  await bar.waitForSelector('#pkFind');
+  await bar.fill('#pkFind', 'stout');
+  assert.deepEqual(await bar.locator('#pkList .pick .grow').evaluateAll(n => n.map(x => x.firstChild.textContent.trim())), ['Stout']);
+  assert.deepEqual(bar.errors, []);
+});
+
 test('finance clears the tabs left open after a night; they leave the waiter’s screen', async () => {
   store.seed('tabs', 'e2eLeftOpen', { number: 77, businessDate: '2026-10-22', stationId: 'main', table: 'T7', waiterUid: 'uid-waiter', waiterName: 'Dev Waiter', status: 'open', payments: [], discounts: [] });
   store.seed('rounds', 'r_e2eLeftOpen', { tabId: 'e2eLeftOpen', businessDate: '2026-10-22', waiterUid: 'uid-waiter', lines: [{ lineId: 'l1', productId: 'x', name: 'Beer', unitPesewas: 2500, qty: 2 }], status: 'handed' });

@@ -57,6 +57,7 @@ async function tabsList() {
       + (done.length ? `<details class="fold"><summary>Closed tonight (${done.length})</summary><div class="cards">${done.map(card).join('')}</div></details>` : '');
     $$('[data-tab]').forEach(b => b.onclick = () => { location.hash = `tab/${b.dataset.tab}`; });
     $$('[data-more]').forEach(b => b.onclick = () => { location.hash = `add/${b.dataset.more}`; });
+    $$('[data-cancel]').forEach(b => b.onclick = () => cancelTab(b, b.dataset.cancel, () => route()));
     $$('[data-pay]').forEach(b => b.onclick = async () => {
       try { const { tab } = await busy(b, () => sapi(`/api/ops/tab?id=${encodeURIComponent(b.dataset.pay)}`), 'Opening…'); closeSheet(tab); }
       catch (e) { say($('#msg'), e.message, 'bad'); }
@@ -66,11 +67,13 @@ async function tabsList() {
 // An open tab on My tables: its two next steps right on it.
 const card = t => t.status !== 'open' || t.quick ? doneCard(t) : `<div class="tcard ${t.openRounds ? 'warn' : ''}" style="cursor:default">
   <button type="button" class="tcard-open" data-tab="${esc(t.id)}"><span class="row"><span class="t">${esc(t.label)} · ${esc(t.table)}</span><span class="amt">${money(t.bill.balancePesewas || t.bill.totalPesewas)}</span></span>
-  <span class="row"><span class="sub">${t.customerName ? `${esc(t.customerName)} · ` : ''}${t.openRounds ? `${t.openRounds} order${t.openRounds > 1 ? 's' : ''} to collect` : 'All collected'}</span>${st(t.payStatus, t.payLabel)}</span></button>
-  <span class="btn-row"><button type="button" class="mid" data-more="${esc(t.id)}">Add drinks</button><button type="button" class="mid okc" data-pay="${esc(t.id)}" ${t.bill.totalPesewas ? '' : 'disabled'}>Close tab</button></span></div>`;
+  <span class="row"><span class="sub">${t.customerName ? `${esc(t.customerName)} · ` : ''}${t.openRounds ? `${t.openRounds} order${t.openRounds > 1 ? 's' : ''} to collect` : cancellable(t) ? 'Nothing ordered' : 'All collected'}</span>${st(t.payStatus, t.payLabel)}</span></button>
+  <span class="btn-row"><button type="button" class="mid" data-more="${esc(t.id)}">Add drinks</button>${cancellable(t) ? `<button type="button" class="mid red" data-cancel="${esc(t.id)}">Cancel tab</button>` : `<button type="button" class="mid okc" data-pay="${esc(t.id)}" ${t.bill.totalPesewas ? '' : 'disabled'}>Close tab</button>`}</span></div>`;
+// Nothing ordered (or every order cancelled), nothing paid, nothing at the bar: the tab can go.
+const cancellable = t => t.status === 'open' && !t.quick && !t.bill.totalPesewas && !t.bill.paidPesewas && !(t.payments || []).length && !t.openRounds;
 const doneCard = t => `<button class="tcard ${t.status !== 'open' ? 'done' : t.openRounds ? 'warn' : ''}" data-tab="${esc(t.id)}">
   <span class="row"><span class="t">${esc(t.label)} · ${esc(t.table)}</span><span class="amt">${money(t.bill.balancePesewas || t.bill.totalPesewas)}</span></span>
-  <span class="row"><span class="sub">${t.customerName ? `${esc(t.customerName)} · ` : ''}${t.status === 'owed' ? `Owed by ${esc(t.customerName || 'the customer')}` : t.status !== 'open' ? 'Closed' : t.openRounds ? `${t.openRounds} order${t.openRounds > 1 ? 's' : ''} to collect` : 'Add drinks or close'}</span>${st(t.payStatus, t.payLabel)}</span></button>`;
+  <span class="row"><span class="sub">${t.customerName ? `${esc(t.customerName)} · ` : ''}${t.status === 'owed' ? `Owed by ${esc(t.customerName || 'the customer')}` : t.status === 'cancelled' ? `Cancelled${t.cancelledByName ? ` by ${esc(String(t.cancelledByName).split(/\s+/)[0])}` : ''}` : t.status !== 'open' ? 'Closed' : t.openRounds ? `${t.openRounds} order${t.openRounds > 1 ? 's' : ''} to collect` : 'Add drinks or close'}</span>${st(t.payStatus, t.payLabel)}</span></button>`;
 
 // ── One tab: Add drinks or Close tab, the orders to collect, the bill ──
 async function tabView(id) {
@@ -88,9 +91,10 @@ async function tabView(id) {
       <div id="msg"></div>
       ${open && t.quick ? '<div class="say warn"><b>Quick sale</b>Collect the drinks at the bar, then tap “I got them”. It closes by itself.</div>' : ''}
       ${open && !t.quick ? `<div class="pay-now"><b>${money(b.balancePesewas)} ${b.paidPesewas && !b.balancePesewas ? 'paid' : 'so far'}</b>
-        <div class="btn-row"><button class="big ghost" id="add">Add drinks</button><button class="big" id="close" ${b.totalPesewas ? '' : 'disabled'}>Close tab</button></div>
+        <div class="btn-row"><button class="big ghost" id="add">Add drinks</button>${cancellable({ ...t, openRounds: toCollect }) ? '<button class="big red" id="cancelTab">Cancel tab</button>' : `<button class="big" id="close" ${b.totalPesewas ? '' : 'disabled'}>Close tab</button>`}</div>
+        ${cancellable({ ...t, openRounds: toCollect }) ? '<span class="sub">Nothing to pay on this tab. Add drinks, or cancel it if the customer didn’t order.</span>' : ''}
         ${toCollect ? `<span class="sub">${toCollect} order${toCollect > 1 ? 's' : ''} to collect from the bar first (below).</span>` : ''}</div>` : ''}
-      ${!open ? `<div class="say ${t.status === 'closed' ? 'good' : 'warn'}"><b>${t.status === 'closed' ? 'Closed' : 'Written off'}</b>This tab is finished.</div>` : ''}
+      ${!open ? `<div class="say ${t.status === 'closed' ? 'good' : 'warn'}"><b>${{ closed: 'Closed', owed: 'Closed: the customer owes', cancelled: 'Cancelled', written_off: 'Written off' }[t.status] || 'Closed'}</b>${t.status === 'cancelled' ? `Nothing was ordered on this tab.${t.cancelledByName ? ` Cancelled by ${esc(t.cancelledByName)}.` : ''}` : 'This tab is finished.'}</div>` : ''}
       <h2>Orders</h2>
       <div class="cards">${t.rounds.map(roundCard).join('') || '<div class="empty-box"><b>No drinks yet</b>Tap “Add drinks”.</div>'}</div>
       <h2>Bill</h2>
@@ -107,6 +111,7 @@ async function tabView(id) {
     const flash = sessionStorage.getItem('waiter-flash'); if (flash) { sessionStorage.removeItem('waiter-flash'); say($('#msg'), flash); }
     $('#add') && ($('#add').onclick = () => { location.hash = `add/${t.id}`; });
     $('#close') && ($('#close').onclick = () => closeSheet(t));
+    $('#cancelTab') && ($('#cancelTab').onclick = e => cancelTab(e.currentTarget, t.id, () => returnTo('tabs')));
     $('#showBill') && ($('#showBill').onclick = () => showBill(t));
     $('#cash') && ($('#cash').onclick = () => takePayment(t));
     $('#invoice') && ($('#invoice').onclick = async e => {
@@ -201,11 +206,24 @@ const roundCard = r => {
     ${back ? '<span class="sub">Waiting for the bar to take drinks back.</span>' : ''}${r.cancelReason ? `<span class="sub">${esc(r.cancelReason)}</span>` : ''}
     ${acts ? `<span class="btn-row">${acts}</span>` : ''}</div>`;
 };
+// Cancel tab: the first tap asks, the second cancels.
+async function cancelTab(btn, tabId, after) {
+  if (!btn.dataset.sure) { btn.dataset.sure = '1'; btn.textContent = 'Tap again to cancel the tab'; setTimeout(() => { if (btn.isConnected) { delete btn.dataset.sure; btn.textContent = 'Cancel tab'; } }, 4000); return; }
+  try {
+    await busy(btn, () => sapi('/api/ops/tabs/cancel', { method: 'POST', body: { tabId } }), 'Cancelling…');
+    sessionStorage.setItem('waiter-flash', 'Tab cancelled. It’s kept on record under “Closed tonight”.');
+    after();
+  } catch (e) { delete btn.dataset.sure; say($('#msg'), e.message, 'bad'); }
+}
 async function roundAct(rid, action, t) {
   const r = t.rounds.find(x => x.id === rid);
   if (action === 'return' || action === 'broken') return pickLine(r, action);
   if (action === 'cancel' && !confirm('Cancel this order? The bar hasn’t started it.')) return;
-  try { await sapi('/api/ops/tabs/round-action', { method: 'POST', body: { roundId: rid, action } }); route(); }
+  try {
+    const res = await sapi('/api/ops/tabs/round-action', { method: 'POST', body: { roundId: rid, action } });
+    if (res.tabCancelled) { sessionStorage.setItem('waiter-flash', `Order cancelled. Nothing else was on ${t.label}, so the tab is cancelled too.`); return returnTo('tabs'); }
+    route();
+  }
   catch (e) { say($('#msg'), e.message, 'bad'); }
 }
 function pickLine(r, action) {

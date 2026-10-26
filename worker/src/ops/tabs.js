@@ -2,7 +2,7 @@
 // their phone (Paystack) or in cash. QR self-ordering (bar.js) uses the same menu and stock.
 //
 //   tabs/{id}    number ("Tab 27", counted per night), businessDate, stationId, table, customerName,
-//                customerPhone, waiterUid, waiterName, status open|closed|written_off, billToken
+//                customerPhone, waiterUid, waiterName, status open|closed|written_off|cancelled, billToken
 //                (the customer's bill link), payments[{id, method cash|momo|digital, amountPesewas, at,
 //                byName, sessionId?}], discounts[{amountPesewas, reason, approvedByName}], pending
 //                (a Paystack payment in progress)
@@ -49,10 +49,10 @@ export function billOf(tab, rounds) {
   const total = Math.max(0, gross - discount);
   const paid = (tab.payments || []).reduce((n, p) => n + Number(p.amountPesewas || 0), 0);
   const balance = total - paid;
-  const status = tab.status === 'written_off' ? 'written_off' : !total && !paid ? 'empty' : balance <= 0 ? (balance < 0 ? 'overpaid' : 'paid') : paid > 0 ? 'part_paid' : 'unpaid';
+  const status = tab.status === 'written_off' ? 'written_off' : tab.status === 'cancelled' ? 'cancelled' : !total && !paid ? 'empty' : balance <= 0 ? (balance < 0 ? 'overpaid' : 'paid') : paid > 0 ? 'part_paid' : 'unpaid';
   return { lines, grossPesewas: gross, discountPesewas: discount, totalPesewas: total, paidPesewas: paid, balancePesewas: Math.max(0, balance), overpaidPesewas: Math.max(0, -balance), status };
 }
-export const PAY_LABEL = { empty: 'Nothing ordered yet', unpaid: 'Waiting for payment', part_paid: 'Part paid', paid: 'Paid', overpaid: 'Overpaid', written_off: 'Written off (unpaid)' };
+export const PAY_LABEL = { empty: 'Nothing ordered yet', unpaid: 'Waiting for payment', part_paid: 'Part paid', paid: 'Paid', overpaid: 'Overpaid', written_off: 'Written off (unpaid)', cancelled: 'Cancelled: nothing ordered' };
 
 async function roundsOf(env, tabId) { return (await queryWhere(env, 'rounds', [{ field: 'tabId', value: tabId }])).map(r => ({ id: r.id, ...r.fields })); }
 const tabView = (t, rounds, { full = true } = {}) => {
@@ -62,6 +62,7 @@ const tabView = (t, rounds, { full = true } = {}) => {
     waiterUid: t.waiterUid, waiterName: t.waiterName, stationId: t.stationId, stationName: t.stationName, status: t.status, payStatus: bill.status, payLabel: PAY_LABEL[bill.status],
     bill, payments: (t.payments || []).map(p => ({ method: p.method, label: METHOD_LABEL[p.method] || p.method, amountPesewas: p.amountPesewas, at: p.at, byName: p.byName || '', momoRef: p.momoRef || '' })),
     openRounds: rounds.filter(r => !['delivered', 'cancelled'].includes(r.status)).length,
+    ...(t.status === 'cancelled' ? { cancelledByName: t.cancelledByName || '', cancelledAt: t.cancelledAt || '' } : {}),
     ...(full ? { rounds: rounds.sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt))).map(roundView), billUrl: null } : {}),
     createdAt: t.createdAt,
   };
@@ -186,9 +187,44 @@ export async function waiterRound(env, b, user) {
   const res = await stepRound(env, b, user, rid, action);
   // A quick sale is finished once it's paid and the waiter has the drinks.
   if (!res.error && action === 'delivered' && res.tabId) await closeQuickIfDone(env, res.tabId, user);
+  // The last order on the tab was cancelled and nothing was paid: the tab goes with it.
+  if (!res.error && action === 'cancel' && res.tabId) res.tabCancelled = await cancelIfEmpty(env, res.tabId, user, 'Every order was cancelled');
   delete res.tabId;
   return res;
 }
+// A tab with nothing to pay, no payment and no order still at the bar can be cancelled: it leaves
+// My tables and the night's open tabs, and stays on record (who and when). Returns why not, or null.
+async function whyNotCancel(env, fields, rounds) {
+  if (fields.status !== 'open') return 'This tab is already finished.';
+  const bill = billOf(fields, rounds);
+  if ((fields.payments || []).length || bill.paidPesewas) return 'Money was taken on this tab. Close it instead.';
+  if (rounds.some(r => r.status !== 'cancelled')) return 'This tab has drinks on it. Cancel the orders that are still waiting first, or close the tab.';
+  // A pay link sent earlier that the customer may still be paying.
+  if (fields.pending?.reference && (await getDoc(env, 'pending_checkouts', fields.pending.reference))?.fields?.status === 'pending') return 'A payment is in progress on this tab. Wait for it, or close the tab.';
+  return null;
+}
+async function cancelTabNow(env, t, user, reason) {
+  await setDoc(env, 'tabs', t.id, { ...t.fields, status: 'cancelled', cancelledAt: now(), cancelledByName: user.name || '', cancelReason: reason, closedAt: now(), closedByName: user.name || '' });
+  await audit(env, user, 'TAB_CANCELLED', { tabId: t.id, number: t.fields.number, reason });
+}
+async function cancelIfEmpty(env, tabId, user, reason) {
+  const t = await getDoc(env, 'tabs', tabId);
+  if (!t || await whyNotCancel(env, t.fields, await roundsOf(env, tabId))) return false;
+  await cancelTabNow(env, t, user, reason);
+  return true;
+}
+// The waiter cancels a tab nothing was ordered on (or every order was cancelled).
+export async function cancelTab(env, b, user) {
+  if (!requireRole(user, WAITERS)) return FORBIDDEN;
+  const t = await getDoc(env, 'tabs', String(b?.tabId || ''));
+  if (!t) return { error: 'Tab not found.', status: 404 };
+  if (!mineOrBoss(user, t.fields)) return { error: 'This is another waiter’s tab.', status: 403 };
+  const why = await whyNotCancel(env, t.fields, await roundsOf(env, t.id));
+  if (why) return { error: why };
+  await cancelTabNow(env, t, user, clean(b?.reason, 120) || 'Nothing was ordered');
+  return { cancelled: true };
+}
+
 async function closeQuickIfDone(env, tabId, user) {
   const t = await getDoc(env, 'tabs', tabId);
   if (!t || !t.fields.quick || t.fields.status !== 'open') return;
@@ -331,9 +367,11 @@ export async function barRound(env, b, user) {
       moves = back.map(l => ({ productId: l.productId, productName: l.name, stationId: f.stationId, qty: l.returnPending, kind: 'return_in', ref: rid, tabId: f.tabId, fromWaiterUid: f.waiterUid, fromWaiterName: f.waiterName }));
     } else return { error: 'Unknown action.' };
     await commitTx(env, [updateWrite(env, 'rounds', rid, next), updateWrite(env, 'audit_logs', id(), { action: `BAR_ROUND_${String(b.action).toUpperCase()}`, actorUid: uidOf(user), actorName: byName, roundId: rid, timestamp: at })], tx);
-    return { status: next.status };
+    return { status: next.status, tabId: f.tabId };
   });
   if (!res.error && moves) await addMoves(env, moves, user);
+  if (!res.error && action === 'cant_make' && res.tabId) res.tabCancelled = await cancelIfEmpty(env, res.tabId, user, 'The bar couldn’t make the order');
+  delete res.tabId;
   return res;
 }
 
