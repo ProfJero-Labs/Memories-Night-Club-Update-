@@ -123,5 +123,12 @@ test('a night can only be handed to a real organiser account; the organiser list
   assert.equal(await post({ organiserId: 'made-up' }), 400);
   assert.equal(await post({ organiserId: '' }), 200, 'club night');
   const r = await worker.fetch(new Request('https://api.test/api/admin/organisers', { headers: { Authorization: `Bearer ${token}` } }), env);
-  assert.deepEqual((await r.json()).organisers, [{ uid: 'org-1', email: 'promoter@x.com' }]);
+  assert.deepEqual((await r.json()).organisers, [{ uid: 'org-1', name: '', email: 'promoter@x.com', phoneLast4: '' }]);
+  // Organisers added by phone show by name and phone; removed ones aren't offered or accepted.
+  store.seed('users', 'org-2', { name: 'Kwame Events', phone: '0241112222', role: 'organiser' });
+  store.seed('users', 'org-old', { name: 'Gone Promoter', phone: '0249998888', role: 'organiser', removed: true });
+  const list = (await (await worker.fetch(new Request('https://api.test/api/admin/organisers', { headers: { Authorization: `Bearer ${token}` } }), env)).json()).organisers;
+  assert.deepEqual(list.map(o => o.uid), ['org-2', 'org-1']);
+  assert.equal(list[0].phoneLast4, '2222');
+  assert.equal(await post({ organiserId: 'org-old' }), 400, 'a removed organiser can’t be given a night');
 });

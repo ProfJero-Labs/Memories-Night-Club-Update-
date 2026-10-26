@@ -165,7 +165,7 @@ export async function upsertEvent(env, b, user) {
   const organiserId = clean(b.organiserId, 128) || null;
   if (organiserId && organiserId !== existing?.fields?.organiserId) {
     const acct = await getDoc(env, 'users', organiserId);
-    if (acct?.fields?.role !== 'organiser') return { error: 'Pick an organiser from the list (give them the Organiser role under Staff first).' };
+    if (acct?.fields?.role !== 'organiser' || acct.fields.removed === true) return { error: 'Pick an organiser from the list (give them the Organiser role under Staff first).' };
   }
   const artwork = ownImage(b.artwork, env, existing?.fields?.artwork), heroImage = ownImage(b.heroImage, env, existing?.fields?.heroImage), heroVideo = ownImage(b.heroVideo, env, existing?.fields?.heroVideo);
   if (artwork === null || heroImage === null || heroVideo === null) return { error: 'Upload images here in the control room (links to other sites aren’t allowed).' };
@@ -412,8 +412,11 @@ export async function updateSettings(env, b, user) {
 // Organiser accounts, for the night editor's picker (the UID stays behind the scenes).
 export async function listOrganisers(env, user) {
   if (!requireRole(user, CMS)) return FORBIDDEN;
-  const organisers = (await queryWhere(env, 'users', [{ field: 'role', value: 'organiser' }])).map(x => ({ uid: x.id, email: x.fields.email || '' }));
-  return { organisers: organisers.sort((a, b) => a.email.localeCompare(b.email)) };
+  // Name and the last four of the phone: organisers added by phone have no email, so an email-only
+  // list showed them all as the same "Organiser account". Removed accounts aren't offered.
+  const organisers = (await queryWhere(env, 'users', [{ field: 'role', value: 'organiser' }])).filter(x => x.fields.removed !== true)
+    .map(x => ({ uid: x.id, name: x.fields.name || '', email: x.fields.email || '', phoneLast4: String(x.fields.phone || '').slice(-4) }));
+  return { organisers: organisers.sort((a, b) => (a.name || a.email).localeCompare(b.name || b.email)) };
 }
 
 export async function listStaff(env, user) {
