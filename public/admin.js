@@ -150,7 +150,8 @@ async function overview() {
     ${d.funnel ? `<p class="funnel"><strong>Last 7 days:</strong> ${d.funnel.started} checkouts started · ${d.funnel.paid} paid${d.funnel.started ? ` (${Math.round(100 * d.funnel.paid / d.funnel.started)}%)` : ''} · ${d.funnel.abandoned} left at Paystack · ${d.funnel.failed} failed${d.funnel.waiting ? ` · ${d.funnel.waiting} paying now` : ''}</p>` : ''}
     <h2>Coming up</h2>
     <div class="rows ov-nights">${d.nights.map(n => `<button type="button" class="row-btn" data-open="${esc(n.id)}"><span class="t">${esc(n.name)}</span><span class="s">${nightLine(n)}</span><span class="r">${money(n.revenuePesewas)}</span></button>`).join('') || '<p class="empty-row">No upcoming nights. Create one under Nights.</p>'}</div>`;
-  $$('[data-open]').forEach(b => b.onclick = () => show('nights', b.dataset.open));
+  // The night's editor is for whoever runs the website; everyone else opens the night's orders.
+  $$('[data-open]').forEach(b => b.onclick = () => show(can(CMS) ? 'nights' : 'bookings', b.dataset.open));
   $$('[data-quick]').forEach(b => b.onclick = () => show(b.dataset.quick));
 }
 
@@ -718,14 +719,19 @@ async function payments() {
 }
 
 // ── Bookings (tickets, tables, comps) ──
-async function bookings() {
+async function bookings(eventId) {
   const [{ events }] = await Promise.all([sapi('/api/admin/events')]);
   panel.innerHTML = `<h1>Orders</h1><div class="toolbar"><select id="fEv"><option value="">All nights</option>${events.map(e => `<option value="${esc(e.id)}">${esc(shortDate(e.date))} · ${esc(e.name)}</option>`).join('')}</select>
-    <select id="fKind"><option value="">Everything</option><option value="table">Tables</option><option value="ticket">Tickets</option><option value="comp">Comps</option></select></div><div id="list"></div>`;
+    <select id="fKind"><option value="">Everything</option><option value="table">Tables</option><option value="ticket">Tickets</option><option value="comp">Comps</option></select></div><p id="sold" class="funnel" aria-live="polite"></p><div id="list"></div>`;
+  if (eventId && events.some(e => e.id === eventId)) $('#fEv').value = eventId;
   const load = async () => {
     const q = new URLSearchParams(); if (val('#fEv')) q.set('eventId', val('#fEv')); if (val('#fKind')) q.set('kind', val('#fKind'));
     $('#list').innerHTML = '<div class="loading">Loading…</div>';
     const { orders } = await sapi(`/api/admin/orders?${q}`);
+    // Sold so far for what's picked: paid orders only (not holds, released or refunded).
+    const paid = orders.filter(o => o.status === 'confirmed'), n = k => paid.filter(o => o.kind === k);
+    const tickets = n('ticket').reduce((s, o) => s + Number(o.quantity || 1), 0), comps = n('comp').length, tables = n('table').length;
+    $('#sold').innerHTML = `<strong>Sold so far:</strong> ${[`${tickets} ticket${tickets === 1 ? '' : 's'}`, tables ? `${tables} table${tables === 1 ? '' : 's'}` : '', comps ? `${comps} comp${comps === 1 ? '' : 's'}` : ''].filter(Boolean).map(esc).join(' · ')} · ${money(paid.reduce((s, o) => s + Number(o.amountPesewas || 0), 0))}`;
     $('#list').innerHTML = `<div class="tbl-wrap"><table class="tbl"><thead><tr><th>When</th><th>Night</th><th>Who</th><th>Phone</th><th>What</th><th class="num">Paid</th><th></th></tr></thead><tbody>
       ${orders.map(o => `<tr><td>${esc(when(o.createdAt))}</td><td>${esc(o.eventName)}</td><td>${esc(o.buyerName)}</td><td>${o.buyerPhone ? `<a href="tel:${esc(o.buyerPhone)}">${esc(o.buyerPhone)}</a>` : ''}</td>
         <td>${o.kind === 'table' ? `<strong>${esc(o.packageName)}</strong>${(o.bottles || []).map(b => `<br><small>${b.quantity} × ${esc(b.name)}</small>`).join('')}` : o.kind === 'comp' ? `Comp · admits ${o.admits}${o.note ? `<br><small>${esc(o.note)}</small>` : ''}` : `${o.quantity} × ${esc(o.ticketTypeName)}${o.paidInInstallments ? ' <small>(in bits)</small>' : ''}`}</td>

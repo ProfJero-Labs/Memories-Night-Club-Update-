@@ -1294,3 +1294,25 @@ test('trial nights: the admin sees what would go, ticks a practice debt, and cle
   assert.ok(w <= 390, `the System tab is ${w}px wide on a 390px phone`);
   assert.deepEqual(admin.errors, []);
 });
+
+test('the event manager sees tickets sold so far for every night coming up, even weeks away, and opens a night’s orders', async () => {
+  const day = 864e5, at = d => new Date(Date.now() + d * day).toISOString();
+  for (let i = 1; i <= 8; i++) store.seed('events', `e2eSoon${i}`, { name: `Soon night ${i}`, date: at(i), visibility: 'public', active: true });
+  store.seed('events', 'e2eFar', { name: 'Far Takeover', date: at(20), visibility: 'public', active: true });
+  for (const [oid, qty] of [['e2eFarA', 2], ['e2eFarB', 3]]) store.seed('orders', oid, { orderId: oid, kind: 'ticket', eventId: 'e2eFar', eventName: 'Far Takeover', ticketTypeName: 'Standard', quantity: qty, amountPesewas: 15000 * qty, buyerName: `Buyer ${oid}`, buyerPhone: '0241234567', status: 'confirmed', createdAt: new Date().toISOString() });
+  store.seed('orders', 'e2eFarHeld', { orderId: 'e2eFarHeld', kind: 'table', eventId: 'e2eFar', eventName: 'Far Takeover', packageName: 'Floor Table', amountPesewas: 350000, buyerName: 'Only Held', status: 'released', createdAt: new Date().toISOString() });
+  const em = await phone(390);
+  await signInAs(em, 'events@dev'); await em.waitForURL(/admin\.html/);
+  await openTab(em, 'overview');
+  const row = em.locator('.ov-nights .row-btn', { hasText: 'Far Takeover' });
+  await row.waitFor();
+  assert.match(await row.innerText(), /5 tickets/, 'a night three weeks away is listed with what it has sold');
+  await row.click();
+  await em.waitForFunction(() => location.hash === '#bookings/e2eFar' && /Sold so far/.test(document.querySelector('#sold')?.textContent || ''));
+  assert.equal(await em.locator('#fEv').inputValue(), 'e2eFar', 'the orders open on that night');
+  assert.match(await em.locator('#sold').innerText(), /5 tickets · GHS 750/, 'paid orders only: the released hold is not counted');
+  assert.equal(await em.locator('#list tbody tr', { hasText: 'Buyer e2eFarA' }).count(), 1);
+  const w = await em.evaluate(() => document.documentElement.scrollWidth);
+  assert.ok(w <= 390, `Orders is ${w}px wide on a 390px phone`);
+  assert.deepEqual(em.errors, []);
+});

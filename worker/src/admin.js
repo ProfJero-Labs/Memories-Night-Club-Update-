@@ -81,7 +81,8 @@ export async function adminOverview(env, user) {
   }
 
   const upcoming = events.filter(e => e.fields.active !== false && !isOver(e.fields)).sort((a, b) => new Date(a.fields.date) - new Date(b.fields.date));
-  const nights = upcoming.slice(0, 6).map(e => {
+  // Every night on sale, not only the next few: a night weeks away already has tickets sold.
+  const nights = upcoming.slice(0, 40).map(e => {
     const mine = confirmed.filter(o => o.fields.eventId === e.id);
     return {
       id: e.id,
