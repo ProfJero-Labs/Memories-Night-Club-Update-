@@ -1330,7 +1330,7 @@ test('finance clears the tabs left open after a night; they leave the waiter’s
   await fin.getByRole('button', { name: 'Trial night' }).click();
   const dialog = new Promise(res => fin.once('dialog', d => { res(d.message()); d.accept(); }));
   await fin.click('#askGo');
-  assert.match(await dialog, /GHS 50.*still unpaid/);
+  assert.match(await dialog, /GHS 50.*not ticked as cash/);
   await fin.getByText(/Cleared 1 tab/).waitFor();
   const t = docs('tabs').find(x => x.id === 'e2eLeftOpen');
   assert.deepEqual([t.status, t.writeOffReason, t.clearedByName], ['written_off', 'Trial night', 'Dev Finance']);

@@ -8,8 +8,11 @@
 //   orders handed over are marked delivered (their drinks left the bar's stock when handed)
 //   the tab closes: as closed if nothing is owed, or as written off (with the reason) if something
 //   is, so the night's accounts still show the unpaid amount
+//   unless the customer paid the waiter in cash that was never entered (cashPaid: [tabIds]): then
+//   the cash is recorded now, as taken by the waiter that night (in their cash for that night, so
+//   it shows in what they owe if it wasn't handed in), and the tab closes as paid
 // Nothing is deleted: who cleared it, when and why are kept on the tab, and in the audit log.
-import { queryWhere, commitTx, updateWrite } from '../lib/firestore.js';
+import { queryWhere, commitTx, updateWrite, getDoc } from '../lib/firestore.js';
 import { now, id, clean } from '../lib/util.js';
 import { requireRole, uidOf } from '../lib/auth.js';
 import { FORBIDDEN, bizDate, isDate, ghs } from './common.js';
@@ -52,10 +55,12 @@ export async function clearTabs(env, b, user) {
   const reason = clean(b?.reason, 200);
   if (!reason) return { error: 'Say why, e.g. “trial night” or “night finished, tabs left open”.' };
   const list = await staleTabs(env, date);
+  const cashPaid = new Set(Array.isArray(b?.cashPaid) ? b.cashPaid.map(String) : []);
+  const sessions = new Map();
   if (!list.length) return { cleared: 0, message: 'No tabs are open from that night.' };
   const at = now(), byName = user.name || '', by = uidOf(user);
   const writes = [];
-  let cancelled = 0, writtenOff = 0, unpaid = 0;
+  let cancelled = 0, writtenOff = 0, unpaid = 0, cashLate = 0;
   for (const { t, rounds, bill } of list) {
     for (const r of rounds) {
       const { id: rid, ...f } = r;
@@ -65,11 +70,24 @@ export async function clearTabs(env, b, user) {
     // Recount after cancelling: drinks never handed over aren't owed.
     const after = billOf(t.fields, rounds.map(r => (NOT_HANDED.includes(r.status) ? { ...r, status: 'cancelled' } : r)));
     const clearedBy = { clearedAt: at, clearedBy: by, clearedByName: byName, clearReason: reason, closedAt: at, closedByName: `${byName} (cleared after the night)` };
+    if (after.balancePesewas > 0 && cashPaid.has(t.id)) {
+      // Paid in cash to the waiter, never entered: recorded now, under the waiter, for that night.
+      const amount = after.balancePesewas, payId = id(), w = t.fields.waiterUid || '';
+      const pay = { id: payId, method: 'cash', amountPesewas: amount, at, businessDate: date, by: w, byName: t.fields.waiterName || '', recordedLateBy: by, recordedLateByName: byName, sessionId: `${date}__${w}` };
+      writes.push(updateWrite(env, 'tabs', t.id, { ...t.fields, payments: [...(t.fields.payments || []), pay], status: 'closed', ...clearedBy }));
+      if (w) {
+        const sid = `${date}__${w}`;
+        if (!sessions.has(sid)) sessions.set(sid, (await getDoc(env, 'cash_sessions', sid))?.fields || { date, uid: w, name: t.fields.waiterName || '', role: 'waitStaff', floatPesewas: 0, status: 'open', openedAt: at, payments: [], movements: [] });
+        const sf = sessions.get(sid); sf.payments = [...(sf.payments || []), { id: payId, tabId: t.id, tabNumber: t.fields.number, amountPesewas: amount, at, late: true }];
+      }
+      cashLate += amount; continue;
+    }
     if (after.balancePesewas > 0) { writtenOff++; unpaid += after.balancePesewas; writes.push(updateWrite(env, 'tabs', t.id, { ...t.fields, status: 'written_off', writtenOffAt: at, writtenOffByName: byName, writeOffReason: reason, ...clearedBy })); }
     else writes.push(updateWrite(env, 'tabs', t.id, { ...t.fields, status: 'closed', ...clearedBy }));
   }
-  writes.push(updateWrite(env, 'audit_logs', id(), { action: 'TABS_CLEARED', actorUid: by, actorName: byName, businessDate: date, reason, tabIds: list.map(x => x.t.id), cancelledOrders: cancelled, writtenOff, unpaidPesewas: unpaid, timestamp: at }));
+  for (const [sid, sf] of sessions) writes.push(updateWrite(env, 'cash_sessions', sid, sf));
+  writes.push(updateWrite(env, 'audit_logs', id(), { action: 'TABS_CLEARED', cashRecordedPesewas: cashLate, actorUid: by, actorName: byName, businessDate: date, reason, tabIds: list.map(x => x.t.id), cancelledOrders: cancelled, writtenOff, unpaidPesewas: unpaid, timestamp: at }));
   for (let i = 0; i < writes.length; i += 400) await commitTx(env, writes.slice(i, i + 400));
   const n = list.length;
-  return { cleared: n, writtenOff, unpaidPesewas: unpaid, message: `Cleared ${n} tab${n === 1 ? '' : 's'}.${writtenOff ? ` ${writtenOff} still owed ${ghs(unpaid)} and ${writtenOff === 1 ? 'was' : 'were'} written off with your reason.` : ''}${cancelled ? ` ${cancelled} order${cancelled === 1 ? '' : 's'} the bar never handed over ${cancelled === 1 ? 'was' : 'were'} cancelled.` : ''}` };
+  return { cleared: n, writtenOff, unpaidPesewas: unpaid, cashRecordedPesewas: cashLate, message: `Cleared ${n} tab${n === 1 ? '' : 's'}.${cashLate ? ` ${ghs(cashLate)} cash recorded under the waiters who took it.` : ''}${writtenOff ? ` ${writtenOff} still owed ${ghs(unpaid)} and ${writtenOff === 1 ? 'was' : 'were'} written off with your reason.` : ''}${cancelled ? ` ${cancelled} order${cancelled === 1 ? '' : 's'} the bar never handed over ${cancelled === 1 ? 'was' : 'were'} cancelled.` : ''}` };
 }

@@ -309,6 +309,46 @@ never in sales, money in or profit.
   everything paid tonight from their phone. The menu has a search box that forgives spelling
   mistakes ("henikin" finds Heineken; "coke" finds Coca-Cola).
 
+## Cash: recorded the moment it's paid
+
+- **Waiters:** on a table, **Customer paid (cash or MoMo)** is right under Add drinks / Close tab.
+  Record the cash when the customer hands it over: the tab can stay open for more drinks.
+- **Tonight** (Manager and directors) shows **Cash with staff**: each person's cash recorded,
+  whether it's been handed in, and any tabs they still have open. Tap a name for their sales.
+- **Tabs left open** (directors and finance, after a night): each unpaid tab has a tick, **Customer
+  paid [waiter] in cash**. Ticked: the cash is recorded under that waiter for that night (it shows
+  in what they owe if they didn't hand it in). Not ticked: written off.
+
+## QR menu: pay cash at the bar
+
+- The customer picks **Cash at the bar** instead of MoMo or card, types their phone number and
+  gets a code at once (also by text). No service charge, no tip on this screen.
+- The bar sees it at the top of App orders, marked **PAY CASH FIRST**. Take the cash, tap **Cash
+  received**, then hand over the drinks. It's recorded as a cash sale at the bar: in your cash for
+  the night and in every report.
+- **They didn't pay** drops it. An unpaid cash order lapses by itself after 30 minutes, and a phone
+  can only have one unpaid cash order at a time.
+
+## Paystack's code (OTP)
+
+- Paystack sometimes texts a customer a code before the MoMo prompt (new numbers). **Staff never
+  type it.** On a waiter's MoMo prompt, the customer gets a text with their bill link: the page asks
+  for the code, they type it, then approve the MoMo prompt. The waiter can carry on serving.
+- At the gate, the customer pays on Paystack's own page from the texted link and types the code
+  there.
+- Every payment text and page tells customers: "Paystack may text you a code first: check your
+  messages." When it's busy, **MoMo to the club's number** needs no code at all.
+
+## Every sale, one by one (directors, the Manager, finance)
+
+- Tap any figure on **Tonight** or **Money** (Received, Still owed, Cash, MoMo, Paid on phone, Money
+  in, a drink in *By drink*, a person in *Cash with staff*) to see the sales behind it. Or More →
+  **Every sale**.
+- Pick **Tonight / This week / This month**, how it was paid (Cash, MoMo to the club, Paid on their
+  phone, QR orders, Not fully paid), one staff member, or one drink. Tap a sale: what was bought,
+  who served, who took the money and how, the customer. **Download** gives a spreadsheet.
+- Ticket sales are not here (they're the events side).
+
 ## Finding a drink, and what the stock is worth
 
 - **Find a drink**: every drink list (waiters' new tab and *Add drinks*, quick sales, the bar's

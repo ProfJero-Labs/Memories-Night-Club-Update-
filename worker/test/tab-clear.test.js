@@ -82,3 +82,17 @@ test('a drink on a stuck order from a past night can be deleted once that night�
   ok(await call('POST', '/api/ops/tabs/clear', { who: 'd1', body: { date: '2026-10-18', reason: 'Trial night' } }), 'clear');
   ok(await call('POST', '/api/ops/products/delete', { who: 'f1', body: { id: 'dup', reason: 'Added twice' } }), 'delete');
 });
+
+test('clearing old tabs: a tab the customer paid in cash is recorded under the waiter, not written off', async () => {
+  const { store, call } = setup();
+  seedNight(store, '2026-10-20');
+  const r = ok(await call('POST', '/api/ops/tabs/clear', { who: 'd1', body: { date: '2026-10-20', reason: 'Night finished, tabs left open', cashPaid: ['owes'] } }), 'clear');
+  assert.deepEqual([r.writtenOff, r.cashRecordedPesewas], [0, 10000]);
+  const t = store.get('tabs', 'owes').fields;
+  assert.equal(t.status, 'closed');
+  assert.deepEqual(t.payments.map(p => [p.method, p.amountPesewas, p.byName, p.recordedLateByName]), [['cash', 10000, 'Kojo Waiter', 'Nana Director']]);
+  assert.equal(store.get('cash_sessions', '2026-10-20__w1').fields.payments[0].amountPesewas, 10000, 'in the waiter’s cash for that night');
+  const sales = ok(await call('GET', '/api/ops/sales?date=2026-10-20', { who: 'd1' }), 'sales');
+  assert.equal(sales.totals.cashPesewas, 15000, 'counted as cash in the night’s sales');
+  assert.equal(sales.cashByPerson[0].name, 'Kojo Waiter');
+});

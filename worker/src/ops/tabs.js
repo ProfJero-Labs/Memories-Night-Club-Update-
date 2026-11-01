@@ -24,7 +24,7 @@ import { FORBIDDEN, bizDate, who, audit, closedError, ghs, int } from './common.
 import { addMoves, stockError } from './stock.js';
 import { prepareTip, tipFields, textTip, phoneOf, guestTipPeople } from './tips.js';
 import { paymentAlert } from './alerts.js';
-import { momoPrompt } from '../lib/momo.js';
+import { momoPrompt, submitMomoCode } from '../lib/momo.js';
 import { serviceFee } from '../lib/fee.js';
 
 export const BOSS = ['superAdmin', 'director', 'manager'];
@@ -575,11 +575,22 @@ export async function checkoutTab(env, b, user) {
     const fee = await serviceFee(env, bill.balancePesewas), charge = bill.balancePesewas + fee.feePesewas;
     await setDoc(env, 'pending_checkouts', reference, { reference, kind: 'tab', tabId: t.id, eventName: `Tab ${t.fields.number}`, amountPesewas: bill.balancePesewas, ...fee, chargePesewas: charge, buyerPhone: phone, prompt: true, status: 'pending', createdAt: now(), by: uidOf(user) });
     await setDoc(env, 'tabs', t.id, { ...fields, closeWhenPaid: true, closeAskedByName: user.name || '' });
-    const prompt = await momoPrompt(env, { phone, amountPesewas: charge, reference, email: `tab-${phone}@${host}`, metadata: { kind: 'tab', tabId: t.id } });
-    if (!prompt) await setDoc(env, 'pending_checkouts', reference, { reference, kind: 'tab', tabId: t.id, status: 'failed', error: 'prompt_not_sent', failedAt: now() });
-    const sent = await sendSms(env, phone, invoiceText(env, fields, bill));
-    await audit(env, user, 'TAB_CHECKOUT_MOMO', { tabId: t.id, amountPesewas: bill.balancePesewas, prompt });
-    return { method: 'momo', prompt, reference: prompt ? reference : '', invoiceSent: sent, phoneHint: maskPhone(phone), amountPesewas: bill.balancePesewas, feePesewas: fee.feePesewas, chargePesewas: charge, billUrl: siteUrl(env, `/bill.html?t=${t.fields.billToken}`),
+    const sent = await momoPrompt(env, { phone, amountPesewas: charge, reference, email: `tab-${phone}@${host}`, metadata: { kind: 'tab', tabId: t.id } });
+    const prompt = !!sent.sent, otp = !!sent.otp;
+    if (otp) {
+      // Paystack texted the customer a code first. The customer types it on their own bill page
+      // (the waiter is never asked to): the bill link knows this payment is waiting for it.
+      await setDoc(env, 'pending_checkouts', reference, { ...(await getDoc(env, 'pending_checkouts', reference)).fields, otpAsked: true });
+      await setDoc(env, 'tabs', t.id, { ...fields, closeWhenPaid: true, closeAskedByName: user.name || '', codeWait: { reference, at: now() } });
+    }
+    else if (!prompt) await setDoc(env, 'pending_checkouts', reference, { reference, kind: 'tab', tabId: t.id, status: 'failed', error: 'prompt_not_sent', failedAt: now() });
+    const texted = await sendSms(env, phone, otp
+      ? `MEMORIES\nPaystack has texted you a code. To pay ${ghs(charge)} for Tab ${fields.number}, open this link and type the code. Then approve the MoMo prompt:\n${siteUrl(env, `/bill.html?t=${fields.billToken}`)}`
+      : invoiceText(env, fields, bill));
+    await audit(env, user, 'TAB_CHECKOUT_MOMO', { tabId: t.id, amountPesewas: bill.balancePesewas, prompt, otp });
+    if (otp) return { method: 'momo', prompt: false, otp: true, reference, invoiceSent: texted, phoneHint: maskPhone(phone), amountPesewas: bill.balancePesewas, feePesewas: fee.feePesewas, chargePesewas: charge, billUrl: siteUrl(env, `/bill.html?t=${t.fields.billToken}`),
+      message: `Paystack has texted the customer a code. They type it on the link we texted to ${maskPhone(phone)} (or scan this QR), then approve the MoMo prompt. You don’t need to wait here.` };
+    return { method: 'momo', prompt, reference: prompt ? reference : '', invoiceSent: texted, phoneHint: maskPhone(phone), amountPesewas: bill.balancePesewas, feePesewas: fee.feePesewas, chargePesewas: charge, billUrl: siteUrl(env, `/bill.html?t=${t.fields.billToken}`),
       message: prompt ? `A MoMo prompt for ${ghs(charge)}${fee.feePesewas ? ` (bill ${ghs(bill.balancePesewas)} + ${ghs(fee.feePesewas)} service charge)` : ''} is on ${maskPhone(phone)}. They approve it, or pay from the invoice text.` : `The invoice is texted to ${maskPhone(phone)}: they pay from its link, or scan the QR.` };
   }
   // MoMo sent straight to the club's number (no Paystack, so no OTP and no service charge): the
@@ -629,7 +640,7 @@ export function invoiceText(env, tab, bill) {
     ...(bill.discountPesewas ? [`Discount -${ghs(bill.discountPesewas)}`] : []),
     `Total ${ghs(bill.totalPesewas)}`, ...(how.length ? [`Paid: ${how.join(', ')}`] : []),
     due ? `TO PAY ${ghs(bill.balancePesewas)}` : 'Paid in full. Thank you!',
-    ...(due ? [`Pay with MoMo or card: ${siteUrl(env, `/bill.html?t=${tab.billToken}`)}`] : ['Not right? Tell your waiter or the manager.'])].join('\n');
+    ...(due ? [`Pay with MoMo or card: ${siteUrl(env, `/bill.html?t=${tab.billToken}`)}`, 'Paystack may text you a code first: check your messages.'] : ['Not right? Tell your waiter or the manager.'])].join('\n');
 }
 
 export async function textBill(env, b, user) {
@@ -658,10 +669,27 @@ export async function publicBill(env, token) {
   // on this phone when the bar is taking app orders).
   const st = t.fields.status === 'open' && t.fields.stationId ? await getDoc(env, 'bar_stations', t.fields.stationId).catch(() => null) : null;
   const menuUrl = st?.fields?.open && /^[0-9a-f]{32}$/.test(st.fields.token || '') ? `counter.html?s=${st.fields.token}${t.fields.table && t.fields.table !== 'Walk-in' ? `&t=${encodeURIComponent(t.fields.table)}` : ''}` : '';
-  return { open: t.fields.status === 'open', menuUrl, bill: { label: `Tab ${t.fields.number}`, table: t.fields.table, waiterFirstName: t.fields.waiterNickname || String(t.fields.waiterName || '').split(/\s+/)[0], date: t.fields.businessDate, lines: bill.lines, grossPesewas: bill.grossPesewas, discountPesewas: bill.discountPesewas, totalPesewas: bill.totalPesewas, paidPesewas: bill.paidPesewas, balancePesewas: bill.balancePesewas, status: bill.status, statusLabel: PAY_LABEL[bill.status],
+  // A MoMo payment waiting for the code Paystack texted the customer (the last 15 minutes).
+  const cw = t.fields.codeWait, waitingCode = cw && Date.now() - new Date(cw.at).getTime() < 15 * 60e3
+    ? (await getDoc(env, 'pending_checkouts', cw.reference))?.fields : null;
+  const codeNeeded = !!(waitingCode && waitingCode.status === 'pending' && waitingCode.otpAsked && !waitingCode.otpSubmittedAt);
+  return { codeNeeded, open: t.fields.status === 'open', menuUrl, bill: { label: `Tab ${t.fields.number}`, table: t.fields.table, waiterFirstName: t.fields.waiterNickname || String(t.fields.waiterName || '').split(/\s+/)[0], date: t.fields.businessDate, lines: bill.lines, grossPesewas: bill.grossPesewas, discountPesewas: bill.discountPesewas, totalPesewas: bill.totalPesewas, paidPesewas: bill.paidPesewas, balancePesewas: bill.balancePesewas, status: bill.status, statusLabel: PAY_LABEL[bill.status],
     payments: (t.fields.payments || []).map(p => ({ method: p.method === 'cash' ? 'Cash' : 'MoMo', amountPesewas: p.amountPesewas, at: p.at })), paying: !!(t.fields.pending && Date.now() - new Date(t.fields.pending.at).getTime() < 30 * 60e3) },
     // A tip with the payment: for their waiter by default, or anyone on the team.
     tip: { people: (await guestTipPeople(env)).people, defaultId: t.fields.waiterUid || '' } };
+}
+
+// The customer types the code Paystack texted them, on their bill page. Paystack then sends the
+// MoMo prompt to their phone.
+export async function billCode(env, token, b) {
+  const t = await tabByToken(env, token); if (!t) return PUBLIC;
+  const cw = t.fields.codeWait;
+  const pc = cw ? await getDoc(env, 'pending_checkouts', cw.reference) : null;
+  if (!pc || !pc.fields.otpAsked || pc.fields.status !== 'pending') return { error: pc?.fields?.status === 'issued' ? 'This bill is already paid. Thank you!' : 'No payment is waiting for a code. Tap Pay to start again.' };
+  const r = await submitMomoCode(env, cw.reference, b?.otp);
+  if (r.error) return r;
+  await setDoc(env, 'pending_checkouts', cw.reference, { ...pc.fields, otpSubmittedAt: now() });
+  return { accepted: true, message: 'Code accepted. Approve the MoMo prompt on your phone now.' };
 }
 
 async function paystackInit(env, payload) {

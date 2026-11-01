@@ -198,8 +198,22 @@ function salesFrom(data) {
     // bill and tip), so the MoMo statement = MoMo sales + MoMo tips.
     tips: { ...tipTotals(data.tips || []), people: [...(data.tips || []).reduce((m, x) => m.set(x.toUid, { name: x.toName, amountPesewas: (m.get(x.toUid)?.amountPesewas || 0) + Number(x.amountPesewas || 0) }), new Map()).values()].sort((a, b) => b.amountPesewas - a.amountPesewas),
       momo: (data.tips || []).filter(x => x.method === 'momo').map(x => ({ tabNumber: x.tabNumber || '', amountPesewas: x.amountPesewas, momoRef: x.momoRef, toName: x.toName, byName: x.byName || '', at: x.at })) },
+    // Cash with each person tonight (waiters and the bar): recorded, handed in or not, and their tabs
+    // still open, so the Manager sees at a glance who holds what.
+    cashByPerson: cashByPerson(data),
     unpaid: data.tabs.filter(t => t.bill.balancePesewas > 0 && t.status !== 'written_off').map(t => ({ id: t.id, number: t.number, table: t.table, waiterName: t.waiterName, balancePesewas: t.bill.balancePesewas })),
   };
+}
+
+function cashByPerson(data) {
+  const people = new Map();
+  const get = (uid, name) => people.get(uid) || people.set(uid, { uid, name: name || 'Staff', cashPesewas: 0, momoPesewas: 0, openTabs: 0, openPesewas: 0, handedIn: null }).get(uid);
+  for (const t of data.tabs) {
+    for (const p of t.payments || []) if (p.by && p.method !== 'digital') { const x = get(p.by, p.byName); if (p.method === 'cash') x.cashPesewas += Number(p.amountPesewas || 0); else x.momoPesewas += Number(p.amountPesewas || 0); }
+    if (t.status === 'open' && t.waiterUid) { const x = get(t.waiterUid, t.waiterName); x.openTabs += 1; x.openPesewas += t.bill.balancePesewas; }
+  }
+  for (const c of data.cash) { const x = people.get(c.uid); if (x) x.handedIn = c.receivedAt ? 'received' : c.status !== 'open' ? 'counted' : 'with them'; }
+  return [...people.values()].sort((a, b) => b.cashPesewas - a.cashPesewas || b.openTabs - a.openTabs);
 }
 
 // ── The close: what's done, what isn't ──

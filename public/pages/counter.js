@@ -26,7 +26,9 @@ let clientId = store.get('mem-bar-draft') || uuid(), timer = null, query = '';
 const tipPick = { tip: 0, other: '', to: '' };
 const TIPS = [0, 1000, 2000, 5000];
 const ghsIn = v => { const n = Math.round(Number(String(v).replace(/[^0-9.]/g, '')) * 100); return Number.isFinite(n) ? n : 0; };
-const tipNow = () => (tipPick.tip === 'other' ? ghsIn(tipPick.other) : tipPick.tip);
+// How the guest pays: MoMo or card now (Paystack), or cash at the bar (no tip here, no service charge).
+const payPick = { cash: false };
+const tipNow = () => (payPick.cash ? 0 : tipPick.tip === 'other' ? ghsIn(tipPick.other) : tipPick.tip);
 // The last order this phone paid tonight: the key to "My night".
 const lastPaid = () => { const x = store.get('mem-bar-paid'); return x?.at > Date.now() - 14 * 3600e3 ? x.id : null; };
 async function myNight() {
@@ -57,6 +59,15 @@ function showOrder(orderId) {
     $('#label').textContent = o.stationName || 'Bar order';
     const lines = `<div class="summary">${o.lines.map(l => `<div class="r"><span>${l.qty} × ${esc(l.name)}</span></div>`).join('')}<div class="r t"><span>Paid</span><span>${money(o.totalPesewas)}</span></div></div>`;
     if (o.status === 'pending_payment') { app.innerHTML = `${msg('Approve the MoMo prompt on your phone. We’re waiting for it to confirm…')}<p class="foot-small">Don’t close this page. Your pickup code shows here the moment it’s paid.</p>`; timer = setTimeout(poll, 4000); return; }
+    if (o.status === 'cash_due') {
+      app.innerHTML = `<p class="kicker red" style="text-align:center">Go to the bar: show this code and pay cash</p><div class="pickup" aria-label="Your code">${esc(o.pickupCode)}</div>
+        <div class="summary">${o.lines.map(l => `<div class="r"><span>${l.qty} × ${esc(l.name)}</span></div>`).join('')}<div class="r t"><span>Pay cash</span><span>${money(o.totalPesewas)}</span></div></div>
+        <p class="foot-small">Nothing is made until you pay. The order lapses after 30 minutes. We’ve also texted you the code.</p>`;
+      navigator.wakeLock?.request('screen').catch(() => {});
+      timer = setTimeout(poll, 6000); return;
+    }
+    if (o.status === 'cash_paid') { store.set('mem-bar-order', null); store.set('mem-bar-paid', { id: orderId, at: Date.now() }); app.innerHTML = `${msg('Paid in cash. Enjoy!', 'ok')}<div class="row-actions"><a class="btn red" href="${esc(again())}&view=menu">Order more</a></div>`; return; }
+    if (o.status === 'cash_lapsed') { store.set('mem-bar-order', null); app.innerHTML = `${msg('This cash order lapsed: it wasn’t paid within 30 minutes. Nothing was taken.')}<a class="btn red" href="${esc(again())}">Order again</a>`; return; }
     if (['paid', 'delivered'].includes(o.status)) store.set('mem-bar-paid', { id: orderId, at: Date.now() });
     if (o.status === 'paid') {
       app.innerHTML = `<p class="kicker red" style="text-align:center">Show this at the bar</p><div class="pickup" aria-label="Pickup code">${esc(o.pickupCode)}</div>${lines}
@@ -96,7 +107,7 @@ async function start() {
   const total = () => Object.entries(cart).reduce((a, [id, q]) => a + q * price(id), 0);
   const count = () => Object.values(cart).reduce((a, q) => a + q, 0);
   const drinks = n => `${n} drink${n === 1 ? '' : 's'}`;
-  const grand = () => total() + (total() ? tipNow() + feeOn(total()) : 0);
+  const grand = () => total() + (total() ? tipNow() + (payPick.cash ? 0 : feeOn(total())) : 0);
   // A drink not in the basket shows one "+ Add"; once added, the − n + stepper.
   const control = i => (cart[i.id]
     ? `<div class="stepper"><button type="button" data-m="${esc(i.id)}" aria-label="One fewer ${esc(i.name)}">−</button><span aria-live="polite" aria-label="${cart[i.id]} in your order">${cart[i.id]}</span><button type="button" data-p="${esc(i.id)}" aria-label="One more ${esc(i.name)}">+</button></div>`
@@ -157,8 +168,11 @@ async function start() {
 
   const orderItems = () => `<div class="op-items">${Object.keys(cart).map(id => r.items.find(i => i.id === id)).filter(Boolean).map(i => `<div class="drink"><div class="grow">${esc(i.name)}<small>${money(i.pricePesewas)} each</small></div>${control(i)}<span class="line-t">${money(cart[i.id] * i.pricePesewas)}</span></div>`).join('')}
     <button type="button" class="more" id="addMore">+ Add more drinks</button></div>`;
-  const totals = () => `<div class="r"><span>${drinks(count())}</span><span>${money(total())}</span></div>${tipNow() ? `<div class="r"><span>Tip</span><span>${money(tipNow())}</span></div>` : ''}${feeOn(total()) ? `<div class="r"><span>${feeLabel()}</span><span>${money(feeOn(total()))}</span></div>` : ''}<div class="r t"><span>Total</span><span>${money(grand())}</span></div>`;
-  const payLabel = () => { const b = $('#pay'); if (!b.disabled) b.textContent = `Pay ${money(grand())}`; };
+  const totals = () => `<div class="r"><span>${drinks(count())}</span><span>${money(total())}</span></div>${tipNow() ? `<div class="r"><span>Tip</span><span>${money(tipNow())}</span></div>` : ''}${feeOn(total()) && !payPick.cash ? `<div class="r"><span>${feeLabel()}</span><span>${money(feeOn(total()))}</span></div>` : ''}<div class="r t"><span>Total</span><span>${money(grand())}</span></div>`;
+  const payLabel = () => {
+    const b = $('#pay'); if (!b.disabled) b.textContent = payPick.cash ? `Order · pay ${money(grand())} cash at the bar` : `Pay ${money(grand())}`;
+    $('#payNote') && ($('#payNote').textContent = payPick.cash ? 'You get a code now. Show it at the bar and pay cash there. Nothing is made until you pay.' : 'MoMo or card, secured by Paystack. Paystack may text you a code first: check your messages.');
+  };
   const refreshOrder = () => { $('#orderItems').innerHTML = orderItems(); $('#orderTotals').innerHTML = totals(); payLabel(); bindItems(); };
   const bindItems = () => {
     $$('#orderItems [data-p],#orderItems [data-m]').forEach(b => b.onclick = () => {
@@ -173,11 +187,14 @@ async function start() {
   function drawOrder() {
     $('#orderBody').innerHTML = `<div id="orderItems">${orderItems()}</div>
       <div class="totals" id="orderTotals" aria-live="polite">${totals()}</div>
-      <div class="field"><label for="ph">MoMo number</label><input id="ph" type="tel" inputmode="tel" autocomplete="tel" placeholder="024 123 4567" value="${esc(phoneNow.v)}"><span class="err" role="alert"></span><span class="hint">Your pickup code also comes here by text. Paying cash? Just order at the bar.</span></div>
-      ${tipPart()}
+      <div class="field"><span class="label" id="payL">How will you pay?</span>
+        <div class="tipseg" role="radiogroup" aria-labelledby="payL"><button type="button" data-pw="momo" role="radio" aria-pressed="${!payPick.cash}" aria-checked="${!payPick.cash}">MoMo or card</button><button type="button" data-pw="cash" role="radio" aria-pressed="${payPick.cash}" aria-checked="${payPick.cash}">Cash at the bar</button></div></div>
+      <div class="field"><label for="ph">${payPick.cash ? 'Your phone number' : 'MoMo number'}</label><input id="ph" type="tel" inputmode="tel" autocomplete="tel" placeholder="024 123 4567" value="${esc(phoneNow.v)}"><span class="err" role="alert"></span><span class="hint">${payPick.cash ? 'Your code is texted here too.' : 'Your pickup code also comes here by text.'}</span></div>
+      ${payPick.cash ? '' : tipPart()}
       <div id="err"></div>`;
     $('#pay').disabled = false; payLabel(); bindItems();
     $('#ph').oninput = e => { phoneNow.v = e.target.value; clearErr('#ph'); };
+    $$('[data-pw]').forEach(x => x.onclick = () => { payPick.cash = x.dataset.pw === 'cash'; newDraft(); drawOrder(); });
     // A different tip is a different payment: a new order id, so the old payment isn't reused.
     const tipChanged = () => { newDraft(); $('#orderTotals').innerHTML = totals(); payLabel(); };
     $$('[data-tip]').forEach(x => x.onclick = () => {
@@ -194,7 +211,16 @@ async function start() {
   $('#pay').onclick = async () => {
     const btn = $('#pay'); $('#err').innerHTML = '';
     const phone = $('#ph').value;
-    if (!normalizePhone(phone)) return fieldErr('#ph', 'Enter your MoMo number, e.g. 024 123 4567.');
+    if (!normalizePhone(phone)) return fieldErr('#ph', payPick.cash ? 'Enter your phone number, e.g. 024 123 4567.' : 'Enter your MoMo number, e.g. 024 123 4567.');
+    if (payPick.cash) {
+      btn.disabled = true; btn.textContent = 'Sending your order…';
+      try {
+        const o = await api('/api/guest/counter/checkout', { method: 'POST', body: { station, spot, payWith: 'cash', items: Object.entries(cart).map(([itemId, qty]) => ({ itemId, qty })), phone, clientId } });
+        store.set('mem-bar-momo', phone); store.set('mem-bar-order', o.orderId); store.set('mem-bar-cart', null); store.set('mem-bar-draft', null);
+        location.href = `${again()}&view=order`;
+      } catch (e) { $('#err').innerHTML = msg(e.message, 'bad'); btn.disabled = false; payLabel(); }
+      return;
+    }
     const t = tipNow();
     if (tipPick.tip === 'other' && t < 100) return fieldErr('#tipAmt', 'Enter the tip (at least GHS 1), or pick No tip.');
     if (t && !tipPick.to) return fieldErr('#tipTo', 'Pick who the tip is for.');

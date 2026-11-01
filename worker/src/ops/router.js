@@ -23,6 +23,7 @@ import * as commercial from './commercial.js';
 import * as fin from './finance-night.js';
 import * as trial from './trial-reset.js';
 import * as tabClear from './tab-clear.js';
+import * as salesList from './sales-list.js';
 
 export async function opsRoute(m, p, u, b, env, user) {
   const q = k => u.searchParams.get(k) || undefined;
@@ -48,6 +49,7 @@ export async function opsRoute(m, p, u, b, env, user) {
       case '/api/ops/my-report': return closing.myReport(env, user, { date: q('date') });
       case '/api/ops/front-report': return closing.frontOfficeReport(env, user, { date: q('date') });
       case '/api/ops/sales': return closing.todaySales(env, user, { date: q('date') });
+      case '/api/ops/sales/list': return salesList.salesList(env, user, { period: q('period'), from: q('from'), to: q('to'), method: q('method'), person: q('person'), drink: q('drink') });
       case '/api/ops/closing': return closing.closingStatus(env, user, { date: q('date') });
       case '/api/ops/eod': return closing.eodReport(env, user, { date: q('date') });
       case '/api/ops/eod/list': return closing.listEod(env, user);

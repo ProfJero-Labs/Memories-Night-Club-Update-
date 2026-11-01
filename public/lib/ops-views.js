@@ -310,6 +310,56 @@ export async function stockAdminView(el, date, stationId, { role = '' } = {}) {
 
 // ── Money: is the club making money? Tonight / this week / this month ──
 // The answer first (profit, or my share of it), then money in and out, then the details folded.
+// ── Every sale, one by one (directors, the Manager, finance) ──
+// Opened from any figure on Tonight or Money, already filtered to what was tapped. o: { period,
+// method, person, drink }. onChange(o) keeps the address in step, so Back returns to the same list.
+export async function salesListView(el, o = {}, { onChange } = {}) {
+  el.innerHTML = '<div class="loading">Loading…</div>';
+  const qs = new URLSearchParams(Object.entries({ period: o.period || 'today', method: o.method || '', person: o.person || '', drink: o.drink || '' }).filter(([, v]) => v)).toString();
+  const d = await sapi(`/api/ops/sales/list?${qs}`), t = d.totals;
+  const go = patch => { const n = { ...o, ...patch }; onChange ? onChange(n) : salesListView(el, n, { onChange }); };
+  const chip = (k, label) => `<button type="button" class="mid ${d.filters.method === k ? 'on' : ''}" data-m="${esc(k)}" style="min-height:40px;padding:0 12px">${esc(label)}</button>`;
+  const stCls = s => (s.status === 'paid' || s.status === 'overpaid' ? 'paid' : s.status === 'part_paid' ? 'ready' : s.status === 'refunded' || s.status === 'refund_due' ? 'cancelled' : 'unpaid');
+  el.innerHTML = `<div class="vstack" style="display:grid;gap:14px"><h1>Sales</h1>
+    <div class="seg" role="radiogroup" aria-label="When" style="grid-template-columns:repeat(3,minmax(0,1fr))">${[['today', 'Tonight'], ['week', 'This week'], ['month', 'This month']].map(([k, l]) => `<button type="button" class="mid ${k === d.period.key ? 'on' : ''}" data-per="${k}" role="radio" aria-checked="${k === d.period.key}">${l}</button>`).join('')}</div>
+    <div style="display:flex;flex-wrap:wrap;gap:6px" role="group" aria-label="How it was paid">${chip('', 'All')}${Object.entries(d.methodOptions).map(([k, l]) => chip(k, l)).join('')}</div>
+    <div class="btn-row"><div class="sfield" style="flex:1;min-width:140px"><label for="slP">Staff</label><select id="slP"><option value="">Everyone</option>${d.people.map(p => `<option value="${esc(p.uid)}" ${p.uid === d.filters.person ? 'selected' : ''}>${esc(p.name)}</option>`).join('')}</select></div>
+      <div class="sfield" style="flex:1;min-width:140px"><label for="slD">Drink</label><select id="slD"><option value="">All drinks</option>${d.drinks.map(n => `<option ${n === d.filters.drink ? 'selected' : ''}>${esc(n)}</option>`).join('')}</select></div></div>
+    <div class="pos-money"><div class="big-line"><span>${t.count} sale${t.count === 1 ? '' : 's'} · ${esc(d.period.label)}</span><b>${money(t.salesPesewas)}</b></div>
+      <div class="big-line good"><span>${d.filters.method && d.filters.method !== 'unpaid' ? esc(d.methodOptions[d.filters.method]) : 'Received'}</span><b>${money(t.paidPesewas)}</b></div>
+      ${t.leftPesewas ? `<div class="big-line bad"><span>Not paid yet</span><b>${money(t.leftPesewas)}</b></div>` : ''}
+      ${d.drinkTotals ? `<p class="how">${d.drinkTotals.qty} × ${esc(d.drinkTotals.name)} sold in these: ${money(d.drinkTotals.amountPesewas)}</p>` : ''}</div>
+    ${d.sales.length ? `<div class="pos-tables">${d.sales.map((s, i) => `<button type="button" class="pos-row" data-sale="${i}"><span class="where">${d.period.key === 'today' ? '' : `${esc(dayName(s.date).split(' ').slice(0, 2).join(' '))} · `}${when(s.at)} · ${esc(s.where)}<small>${esc(s.label)} · ${esc(s.servedByName || '—')}${s.payments.length ? ` · ${esc([...new Set(s.payments.map(x => x.method === 'cash' ? 'Cash' : x.method === 'momo' ? 'MoMo' : x.method === 'qr' ? 'QR' : 'Phone'))].join(' + '))}` : ''}${s.customerName ? ` · ${esc(s.customerName)}` : ''}</small></span>
+      <span class="amt">${money(s.totalPesewas)}${st(stCls(s), s.statusLabel)}</span></button>`).join('')}</div>${d.more ? `<p class="muted">And ${d.more} more. Pick a staff member or a drink to narrow it down.</p>` : ''}`
+      : '<div class="empty-box"><b>No sales</b>Nothing matches. Try “All”, or a longer period.</div>'}
+    <button class="big ghost" id="slCsv">Download (spreadsheet)</button></div>`;
+  $$('[data-per]', el).forEach(b => b.onclick = () => go({ period: b.dataset.per }));
+  $$('[data-m]', el).forEach(b => b.onclick = () => go({ method: b.dataset.m }));
+  $('#slP', el).onchange = e => go({ person: e.target.value });
+  $('#slD', el).onchange = e => go({ drink: e.target.value });
+  $$('[data-sale]', el).forEach(b => b.onclick = () => {
+    const s = d.sales[Number(b.dataset.sale)];
+    sheet(`<h2>${esc(s.where)} · ${money(s.totalPesewas)}</h2>
+      <p class="muted" style="margin:0">${esc(dayName(s.date))} · ${when(s.at)} · ${esc(s.label)}${s.bar ? ` · ${esc(s.bar)}` : ''}</p>
+      <div class="lines-list">
+        <div class="ln"><span>Served by</span><span>${esc(s.servedByName || '—')}</span></div>
+        ${s.customerName || s.customerPhone ? `<div class="ln"><span>Customer</span><span>${esc(s.customerName)}${s.customerPhone ? ` <a href="tel:${esc(s.customerPhone)}">${esc(s.customerPhone)}</a>` : ''}</span></div>` : ''}
+        <div class="ln"><span>Status</span><span>${esc(s.statusLabel)}</span></div></div>
+      <h3 style="margin:6px 0 0">What was bought</h3>
+      <div class="lines-list">${s.lines.map(l => `<div class="ln"><span>${l.qty} × ${esc(l.name)}</span><span>${money(l.amountPesewas)}</span></div>`).join('') || '<div class="ln"><span class="muted">No drinks</span></div>'}
+        ${s.discountPesewas ? `<div class="ln"><span>Discount</span><span>−${money(s.discountPesewas)}</span></div>` : ''}
+        <div class="ln total"><span>Total</span><span>${money(s.totalPesewas)}</span></div></div>
+      <h3 style="margin:6px 0 0">How it was paid</h3>
+      <div class="lines-list">${s.payments.map(x => `<div class="ln"><span>${esc(x.methodLabel)} · ${when(x.at)}<br><small class="muted">Taken by ${esc(x.takenByName || '—')}${x.ref ? ` · ref ${esc(x.ref)}` : ''}${x.late ? ' · recorded after the night' : ''}</small></span><span>${money(x.amountPesewas)}</span></div>`).join('') || '<div class="ln"><span class="muted">No payment yet</span></div>'}
+        ${s.leftPesewas ? `<div class="ln total"><span>Not paid yet</span><span>${money(s.leftPesewas)}</span></div>` : ''}</div>
+      <button class="big ghost" data-close>Done</button>`, { label: 'Sale' });
+  });
+  $('#slCsv', el).onclick = () => saveCsv(`sales-${d.period.from}${d.period.to !== d.period.from ? `-to-${d.period.to}` : ''}.csv`, [
+    ['Sales', d.period.label], [],
+    ['Night', 'Time', 'Where', 'Bill', 'Served by', 'Customer', 'Drinks', 'Total GHS', 'Paid GHS', 'Not paid GHS', 'Paid how', 'Status'],
+    ...d.sales.map(s => [s.date, when(s.at), s.where, s.label, s.servedByName, s.customerName, s.lines.map(l => `${l.qty} x ${l.name}`).join('; '), cedis(s.totalPesewas), cedis(s.paidPesewas), cedis(s.leftPesewas), s.payments.map(x => `${x.methodLabel} ${cedis(x.amountPesewas)} (${x.takenByName})`).join('; '), s.statusLabel])]);
+}
+
 // ── What the stock is worth ──
 // Everything finance recorded buying, minus what left the bars, valued at cost (and at selling price).
 export async function stockValueView(el) {
@@ -333,6 +383,8 @@ export async function stockValueView(el) {
     [], ['Total', '', t.qty, '', cedis(t.costValuePesewas), cedis(t.priceValuePesewas)]]);
 }
 
+// Opens the sales list behind a figure: { period, method, person, drink }.
+export const openSales = o => { location.hash = `saleslist/${new URLSearchParams(Object.entries(o).filter(([, v]) => v)).toString()}`; };
 export async function moneyView(el, period = 'today') {
   el.innerHTML = '<div class="loading">Loading…</div>';
   const [m, due, com] = await Promise.all([sapi(`/api/ops/money?period=${encodeURIComponent(period)}`), sapi('/api/ops/budget').catch(() => null), sapi('/api/ops/commissions').catch(() => null)]);
@@ -344,7 +396,7 @@ export async function moneyView(el, period = 'today') {
     <div class="hero-stack">${m.myShare ? `<div class="hero ${m.myShare.profitPesewas >= 0 ? 'good' : 'bad'}"><span>Your share (${m.myShare.pct}%)</span><b>${signed(m.myShare.profitPesewas)}</b><span>${esc(m.period.label)} · club ${profit ? 'profit' : 'loss'} ${money(Math.abs(t.profitPesewas))}</span></div>`
       : `<div class="hero ${profit ? 'good' : 'bad'}"><span>${profit ? 'Profit' : 'Loss'} · ${esc(m.period.label)}</span><b>${money(Math.abs(t.profitPesewas))}</b></div>`}
     <div class="hero-row">
-      <div class="hero pos-money"><span>Money in</span><b>${money(t.inPesewas)}</b></div>
+      <button type="button" class="hero pos-money" data-sl=""><span>Money in</span><b>${money(t.inPesewas)}</b></button>
       <div class="hero pos-money"><span>Money out</span><b>${money(t.outPesewas)}</b></div>
     </div></div>
     ${t.waiting ? `<div class="say warn"><b>${t.waiting} expense${t.waiting > 1 ? 's' : ''} waiting for a director: ${money(t.waitingPesewas)}</b>Not counted until approved.</div>` : ''}
@@ -353,13 +405,13 @@ export async function moneyView(el, period = 'today') {
       ${due ? `<a class="row-btn" href="#budget" style="text-decoration:none"><span class="t">Bills this month</span><span class="s">${due.totals.overdue ? `<b class="diff-neg">${due.totals.overdue} overdue</b> · ` : ''}${money(due.totals.paidPesewas)} paid of ${money(due.totals.billsPesewas)}</span><span class="r">${money(due.totals.duePesewas)}</span></a>` : ''}
       ${com ? `<a class="row-btn" href="#commissions" style="text-decoration:none"><span class="t">Commissions this month</span><span class="s">${com.ratePct}% on tables over ${money(com.overPesewas)}${com.totals.unassigned ? ` · ${com.totals.unassigned} not named yet` : ''}</span><span class="r">${money(com.totals.owedPesewas)}</span></a>` : ''}</div>` : ''}
     <details class="fold"><summary>Money in and out</summary>
-      <h3 class="group-h">Money in</h3><div class="lines-list">${rows(m.moneyIn)}<div class="ln total"><span>Total</span><span>${money(t.inPesewas)}</span></div></div>
+      <h3 class="group-h">Money in</h3><div class="lines-list">${m.moneyIn.filter(r => r.amountPesewas).map(r => r.key === 'drinks' ? `<div class="ln tap" data-sl=""><span>${esc(r.label)}</span><span>${money(r.amountPesewas)}</span></div>` : lineRow(esc(r.label), money(r.amountPesewas))).join('') || '<div class="ln"><span class="muted">Nothing yet</span></div>'}<div class="ln total"><span>Total</span><span>${money(t.inPesewas)}</span></div></div>
       ${d.unpaidPesewas ? `<p class="muted" style="margin:0">Not counted yet: ${money(d.unpaidPesewas)} of drinks still unpaid on open tables.</p>` : ''}
       <h3 class="group-h">Money out</h3><div class="lines-list">${rows(m.moneyOut)}<div class="ln total"><span>Total</span><span>${money(t.outPesewas)}</span></div></div></details>
     <details class="fold"><summary>Drinks <span class="muted">${signed(d.profitPesewas)} made</span></summary>
-      <div class="lines-list">${lineRow('Sold', money(d.soldPesewas))}${lineRow('What they cost us', money(d.costPesewas))}<div class="ln total"><span>Made on drinks</span><span class="${d.profitPesewas >= 0 ? '' : 'diff-neg'}">${signed(d.profitPesewas)}</span></div></div>
+      <div class="lines-list"><div class="ln tap" data-sl=""><span>Sold</span><span>${money(d.soldPesewas)}</span></div>${lineRow('What they cost us', money(d.costPesewas))}<div class="ln total"><span>Made on drinks</span><span class="${d.profitPesewas >= 0 ? '' : 'diff-neg'}">${signed(d.profitPesewas)}</span></div></div>
       ${d.missingCost.length ? `<p style="margin:0">${amber('No cost entered for:')} ${d.missingCost.map(esc).join(', ')}. Finance can add it under Drinks &amp; prices.</p>` : ''}
-      ${d.rows.length ? `<h3 class="group-h">By drink</h3><div class="lines-list">${d.rows.map(r => lineRow(esc(r.name), signed(r.profitPesewas), `${r.qty} sold · ${money(r.salesPesewas)} · cost ${money(r.costPesewas)}`)).join('')}</div>` : ''}</details>
+      ${d.rows.length ? `<h3 class="group-h">By drink <small class="muted">(tap one: who bought it)</small></h3><div class="lines-list">${d.rows.map(r => `<div class="ln tap" data-sldrink="${esc(r.name)}"><span>${esc(r.name)}<br><small>${r.qty} sold · ${money(r.salesPesewas)} · cost ${money(r.costPesewas)}</small></span><span style="white-space:nowrap">${signed(r.profitPesewas)}</span></div>`).join('')}</div>` : ''}</details>
     <details class="fold"><summary>Expenses (${live.length})</summary>
       ${m.expenses.length ? `<div class="lines-list">${m.expenses.map(e => `<div class="ln" style="${e.removed ? 'opacity:.55' : ''}"><span><b>${esc(e.description)}</b><br><small class="muted">${esc(e.categoryLabel)} · ${esc(dayName(e.date))} · ${esc(e.paidWith)} · ${esc(e.recordedByName)}${e.removed ? ` · taken off by ${esc(e.removedByName)}: ${esc(e.removedReason)}` : ''}${e.approval === 'pending' ? ' · <b>waiting for a director</b>' : e.approval === 'refused' ? ` · <b>refused by ${esc(e.decidedByName)}</b>: ${esc(e.decisionNote)}` : ''}</small></span>
         <span>${e.removed ? `<s>${money(e.amountPesewas)}</s>` : money(e.amountPesewas)}${e.canRemove ? `<br><button class="sbtn" data-rmexp="${esc(e.id)}">Take off</button>` : ''}</span></div>`).join('')}</div>` : '<p class="muted" style="margin:0">No expenses recorded.</p>'}</details>
@@ -377,6 +429,8 @@ export async function moneyView(el, period = 'today') {
       <p class="muted" style="margin:0">${esc(m.tips.note)}</p></details>` : ''}
     ${m.owners?.length ? `<details class="fold"><summary>Directors’ shares</summary><div class="lines-list">${m.owners.map(o => lineRow(`${esc(o.name)} <small class="muted">${o.pct}%</small>`, signed(o.profitPesewas))).join('')}</div></details>` : ''}</div>`;
   $$('[data-per]', el).forEach(b => b.onclick = () => moneyView(el, b.dataset.per));
+  $$('[data-sl]', el).forEach(b => b.onclick = () => openSales({ period: m.period.key === 'custom' ? 'today' : m.period.key, method: b.dataset.sl }));
+  $$('[data-sldrink]', el).forEach(b => b.onclick = () => openSales({ period: m.period.key === 'custom' ? 'today' : m.period.key, drink: b.dataset.sldrink }));
   $('#addExp', el) && ($('#addExp', el).onclick = () => expenseSheet(m, async r => { await moneyView(el, m.period.key); say($('#mMsg', el), r?.needsApproval ? 'Saved. It’s above the limit, so it waits for a director.' : 'Expense saved.'); }));
   $$('[data-rmexp]', el).forEach(b => b.onclick = () => {
     const { box, close } = sheet(`<h2>Take off this expense</h2><p class="muted" style="margin:0">It stays on record, crossed out.</p>
@@ -1016,17 +1070,24 @@ export async function financeNightView(el, date, channel = 'all') {
 export async function tabClearView(el) {
   el.innerHTML = '<div class="loading">Loading…</div>';
   const { nights } = await sapi('/api/ops/tabs/stale');
+  // Each unpaid tab asks one question: did the customer pay the waiter in cash? Ticked: the cash is
+  // recorded under that waiter for that night. Not ticked: it's written off.
+  const row = t => `<div class="ln" style="align-items:center"><span><b>Tab ${esc(t.number)}${t.table ? ` · ${esc(t.table)}` : ''}</b><br><small class="muted">${esc(t.waiterName)}${t.customerName ? ` · ${esc(t.customerName)}` : ''}</small>
+    ${t.balancePesewas ? `<label class="tick" style="display:flex;gap:8px;align-items:center;margin-top:6px;font-weight:600"><input type="checkbox" data-cash="${esc(t.id)}" style="width:22px;height:22px"> Customer paid ${esc(String(t.waiterName || 'the waiter').split(' ')[0])} in cash</label>` : ''}</span>
+    <span>${t.balancePesewas ? money(t.balancePesewas) : 'Paid'}</span></div>`;
   el.innerHTML = `<div class="vstack" style="display:grid;gap:14px"><h1>Tabs left open</h1>
-    <p class="lead">Tabs still open from nights that are over. Waiters keep seeing them until they’re cleared.</p><div id="tcMsg"></div>
-    ${nights.map(n => `<section class="card" style="display:grid;gap:8px"><div><b>${esc(dayName(n.date))}</b> · ${n.tabs.length} open tab${n.tabs.length === 1 ? '' : 's'}${n.unpaidPesewas ? ` · ${money(n.unpaidPesewas)} unpaid` : ''}</div>
-      <div class="tbl-wrap"><table class="tbl"><thead><tr><th>Tab</th><th>Waiter</th><th>Customer</th><th class="num">Owes</th></tr></thead><tbody>${n.tabs.map(t => `<tr><td>${esc(t.number)}${t.table ? ` · ${esc(t.table)}` : ''}</td><td>${esc(t.waiterName)}</td><td>${esc(t.customerName)}</td><td class="num">${money(t.balancePesewas)}</td></tr>`).join('')}</tbody></table></div>
+    <p class="lead">Tabs still open from nights that are over. For each unpaid one: if the customer paid the waiter in cash, tick it. The cash is then recorded under that waiter. Anything not ticked is written off.</p><div id="tcMsg"></div>
+    ${nights.map(n => `<section class="card" style="display:grid;gap:8px" data-night="${esc(n.date)}"><div><b>${esc(dayName(n.date))}</b> · ${n.tabs.length} open tab${n.tabs.length === 1 ? '' : 's'}${n.unpaidPesewas ? ` · ${money(n.unpaidPesewas)} unpaid` : ''}</div>
+      <div class="lines-list">${n.tabs.map(row).join('')}</div>
       <button class="mid red" data-clear="${esc(n.date)}">Clear these tabs</button></section>`).join('') || '<p class="muted">No tabs left open. Every past night is cleared.</p>'}</div>`;
   $$('[data-clear]', el).forEach(b => b.onclick = async () => {
-    const n = nights.find(x => x.date === b.dataset.clear);
-    const reason = await ask({ title: `Clear ${n.tabs.length} tab${n.tabs.length === 1 ? '' : 's'} from ${dayName(n.date)}?`, label: 'Why? (kept with your name)', quick: ['Trial night', 'Night finished, tabs left open'], send: 'Clear', danger: true, max: 200 });
+    const n = nights.find(x => x.date === b.dataset.clear), sec = b.closest('[data-night]');
+    const cashPaid = $$('[data-cash]', sec).filter(x => x.checked).map(x => x.dataset.cash);
+    const cashSum = n.tabs.filter(t => cashPaid.includes(t.id)).reduce((a, t) => a + t.balancePesewas, 0), lost = n.unpaidPesewas - cashSum;
+    const reason = await ask({ title: `Clear ${n.tabs.length} tab${n.tabs.length === 1 ? '' : 's'} from ${dayName(n.date)}?`, label: 'Why? (kept with your name)', quick: ['Night finished, tabs left open', 'Trial night'], send: 'Clear', danger: !!lost, max: 200 });
     if (reason === null) return;
-    if (n.unpaidPesewas && !confirm(`${money(n.unpaidPesewas)} is still unpaid on these tabs. It will be written off with your reason. Clear them?`)) return;
-    try { const r = await busy(b, () => sapi('/api/ops/tabs/clear', { method: 'POST', body: { date: n.date, reason } })); await tabClearView(el); say($('#tcMsg', el), r.message, 'good'); }
+    if (lost && !confirm(`${money(lost)} is unpaid and not ticked as cash. It will be written off. Clear them?`)) return;
+    try { const r = await busy(b, () => sapi('/api/ops/tabs/clear', { method: 'POST', body: { date: n.date, reason, cashPaid } })); await tabClearView(el); say($('#tcMsg', el), r.message, 'good'); }
     catch (e) { say($('#tcMsg', el), e.message, 'bad'); }
   });
 }

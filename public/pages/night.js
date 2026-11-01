@@ -16,7 +16,7 @@ import { $, $$, esc } from '../app.js';
 import { requireStaff, staffHeader, sapi } from '../staff.js';
 import { bottomNav, sheet, say, st, every, money, when, ask, backBar, bindBackBar, upcomingBookings, dayName } from '../lib/ops-ui.js';
 import { accraDayKey } from '../app.js';
-import { accountsView, ticketsView, findOrderView, expensesView, nightsView, salesView, closingView, approvalsView, productsView, stockAdminView, eodListView, eodView, moneyView, expenseSheet, explainSheet, budgetView, paymentsView, commissionsView, toApproveView, stockValueView, purchasesView, cashReceiveView, feedbackInboxView, chargesView, financeNightView, tabClearView } from '../lib/ops-views.js';
+import { accountsView, ticketsView, findOrderView, expensesView, nightsView, salesView, closingView, approvalsView, productsView, stockAdminView, eodListView, eodView, moneyView, expenseSheet, explainSheet, budgetView, paymentsView, commissionsView, toApproveView, stockValueView, salesListView, openSales, purchasesView, cashReceiveView, feedbackInboxView, chargesView, financeNightView, tabClearView } from '../lib/ops-views.js';
 import { payView, reviewsView, perfView } from '../lib/people-views.js';
 import { staffView } from '../lib/staff-view.js';
 
@@ -59,6 +59,7 @@ async function route() {
     if (key === 'perf') { app.innerHTML = `${back()}<div id="pfv"></div>`; bindBack(); return await perfView($('#pfv'), arg); }
     if (key === 'purchases') { app.innerHTML = `${back()}<div id="puv"></div>`; bindBack(); return await purchasesView($('#puv')); }
     if (key === 'cash') { app.innerHTML = `${back()}<div id="crv"></div>`; bindBack(); return await cashReceiveView($('#crv')); }
+    if (key === 'saleslist') { app.innerHTML = `${back()}<div id="slv"></div>`; bindBack(); const o = Object.fromEntries(new URLSearchParams(arg || '')); return await salesListView($('#slv'), o, { onChange: openSales }); }
     if (key === 'stockvalue') { app.innerHTML = `${back()}<div id="svv"></div>`; bindBack(); return await stockValueView($('#svv')); }
     if (key === 'stock') { app.innerHTML = `${back()}<div id="kv"></div>`; bindBack(); return await stockAdminView($('#kv'), undefined, undefined, { role: user.role }); }
     if (key === 'accounts') { app.innerHTML = `${back()}<div id="acv"></div>`; bindBack(); return await accountsView($('#acv'), arg, { onCash: () => { location.hash = 'cash'; } }); }
@@ -94,16 +95,17 @@ async function tonight(alive = () => location.hash.slice(1).split('/')[0] in { '
   const stale = !closed && s.date < accraDayKey() && Number(new Date().toLocaleString('en-GB', { timeZone: 'Africa/Accra', hour: '2-digit', hourCycle: 'h23' })) >= 12;
   nav.setDot('tonight', waiting.length + toExplain.length);
   // Glanceable: the director sees their own share first; the Manager sees the money received.
+  // Every figure opens the sales behind it (tap "Received" for every sale, "Still owed" for the unpaid ones).
   const top = director && m?.myShare
     ? `<div class="hero ${m.myShare.profitPesewas >= 0 ? 'good' : 'bad'}"><span>Your share tonight (${m.myShare.pct}%)</span><b>${m.myShare.profitPesewas < 0 ? '−' : ''}${money(Math.abs(m.myShare.profitPesewas))}</b></div>
-       <div class="hero-row"><div class="hero good"><span>Received</span><b>${money(x.paidPesewas)}</b></div><div class="hero ${x.owedPesewas ? 'bad' : ''}"><span>Still owed</span><b>${money(x.owedPesewas)}</b></div></div>`
-    : `<div class="hero good"><span>Received tonight</span><b>${money(x.paidPesewas)}</b></div>
-       <div class="hero-row"><div class="hero"><span>Sold</span><b>${money(x.salesPesewas)}</b></div><div class="hero ${x.owedPesewas ? 'bad' : ''}"><span>Still owed</span><b>${money(x.owedPesewas)}</b></div></div>`;
+       <div class="hero-row"><button type="button" class="hero good" data-sl=""><span>Received</span><b>${money(x.paidPesewas)}</b></button><button type="button" class="hero ${x.owedPesewas ? 'bad' : ''}" data-sl="unpaid"><span>Still owed</span><b>${money(x.owedPesewas)}</b></button></div>`
+    : `<button type="button" class="hero good" data-sl=""><span>Received tonight</span><b>${money(x.paidPesewas)}</b></button>
+       <div class="hero-row"><button type="button" class="hero" data-sl=""><span>Sold</span><b>${money(x.salesPesewas)}</b></button><button type="button" class="hero ${x.owedPesewas ? 'bad' : ''}" data-sl="unpaid"><span>Still owed</span><b>${money(x.owedPesewas)}</b></button></div>`;
   app.innerHTML = `<div class="pos">
     <p class="kicker">Night of ${esc(dayName(s.date))}${s.startedAt ? ` · started ${esc(when(s.startedAt))}` : ''}${closed ? ' · closed' : ' · open'}</p>
     ${stale ? `<div class="say warn"><b>This night is still open</b>It started ${esc(dayName(s.date))}. If it has ended, close it so the next night starts fresh.</div>` : ''}
     ${top}
-    <p class="muted" style="margin:0">Cash ${money(x.cashPesewas)} · MoMo ${money((x.momoPesewas || 0))} · Paid on phone ${money(x.digitalPesewas)}</p>
+    <div style="display:flex;flex-wrap:wrap;gap:6px"><button type="button" class="mid" data-sl="cash" style="min-height:40px;padding:0 12px">Cash ${money(x.cashPesewas)} ›</button><button type="button" class="mid" data-sl="momo" style="min-height:40px;padding:0 12px">MoMo ${money((x.momoPesewas || 0))} ›</button><button type="button" class="mid" data-sl="phone" style="min-height:40px;padding:0 12px">Paid on phone ${money(x.digitalPesewas)} ›</button></div>
     <div id="msg"></div>
     ${director && toPay ? `<button class="big red" data-goto="approve">${toPay} payment${toPay > 1 ? 's' : ''} to approve</button>` : ''}
     ${toExplain.length ? `<section class="pos-need"><h2>Stock to explain <span class="count">${toExplain.length}</span></h2>
@@ -120,6 +122,8 @@ async function tonight(alive = () => location.hash.slice(1).split('/')[0] in { '
       ${director ? '' : '<button type="button" class="row-btn" data-goto="cash"><span class="t">Cash from the staff</span><span class="s">Receive each person’s counted cash</span><span class="r"></span></button><button type="button" class="row-btn" data-goto="purchases"><span class="t">Buying drinks</span><span class="s">Ask for what to buy</span><span class="r"></span></button>'}
       ${!director || !closed ? '' : ''}
     </div>
+    ${s.cashByPerson?.length ? `<section><div class="pos-head"><h2>Cash with staff</h2><span class="muted">${money(x.cashPesewas)} cash tonight</span></div>
+      <div class="lines-list">${s.cashByPerson.map(c => `<div class="ln tap" data-slp="${esc(c.uid)}"><span><b>${esc(c.name)}</b><br><small class="muted">${c.handedIn === 'received' ? 'Handed in' : c.handedIn === 'counted' ? 'Counted, not handed in yet' : c.cashPesewas ? 'Still with them' : ''}${c.momoPesewas ? `${c.cashPesewas ? ' · ' : ''}MoMo ${money(c.momoPesewas)}` : ''}${c.openTabs ? `${c.cashPesewas || c.momoPesewas ? ' · ' : ''}<b class="diff-neg">${c.openTabs} tab${c.openTabs > 1 ? 's' : ''} open, ${money(c.openPesewas)} unpaid</b>` : ''}</small></span><span>${money(c.cashPesewas)}</span></div>`).join('')}</div></section>` : ''}
     <section><div class="pos-head"><h2>Tables</h2><span class="muted">${open.length} open</span></div>
       <div class="pos-tables">${open.slice(0, 5).map(tableRow).join('') || '<p class="muted">No open tables.</p>'}</div>
       ${open.length > 5 ? `<button class="link" data-goto="tables">See all ${open.length} tables →</button>` : ''}</section>
@@ -128,6 +132,8 @@ async function tonight(alive = () => location.hash.slice(1).split('/')[0] in { '
   bindRows();
   if (flash && Date.now() - flash.at < 8000) say($('#msg'), flash.text, flash.kind);
   $('#toClose') && ($('#toClose').onclick = () => { location.hash = 'close'; });
+  $$('[data-sl]', app).forEach(b => b.onclick = () => openSales({ period: 'today', method: b.dataset.sl }));
+  $$('[data-slp]', app).forEach(b => b.onclick = () => openSales({ period: 'today', person: b.dataset.slp }));
   $$('[data-explain]', app).forEach(b => b.onclick = () => explainSheet(toExplain[Number(b.dataset.explain)], () => { note('Explanation saved. Finance can see it.'); tonight().catch(fail); }));
   $('#addExp') && ($('#addExp').onclick = async () => { const m = await sapi('/api/ops/money?period=today').catch(() => null); expenseSheet(m, r => note(r?.needsApproval ? 'Saved. It’s above the limit, so it waits for a director.' : 'Expense saved.')); });
   $$('[data-goto]:not(.back-btn)', app).forEach(b => b.onclick = () => { location.hash = b.dataset.goto; });
@@ -180,12 +186,12 @@ async function tableSheet(id) {
 function more() {
   // Grouped, so each thing is quick to find (no scrolling through one long list).
   const groups = director ? [
-    ['Money', [['accounts', 'Night accounts', 'What the drinks should bring; who isn’t aligned'], ['salaries', 'Salaries and loans', 'What staff are paid'], ['budget', 'Bills and budget', 'What’s due this month'], ['commissions', 'Commissions', '10% on tables over GHS 3,000'], ['reports', 'End-of-day reports', 'Each night, signed off'], ['sales', 'Tonight in detail', 'By waiter, by bar, by drink'], ['stockvalue', 'Stock value', 'What’s in the bars, at cost'], ['finance', 'Night’s finances', 'Sales, Paystack fees, settlement, every payment'], ['charges', 'Service charge & commission', 'The customer charge, the developer commission, a simulation']]],
+    ['Money', [['accounts', 'Night accounts', 'What the drinks should bring; who isn’t aligned'], ['salaries', 'Salaries and loans', 'What staff are paid'], ['budget', 'Bills and budget', 'What’s due this month'], ['commissions', 'Commissions', '10% on tables over GHS 3,000'], ['reports', 'End-of-day reports', 'Each night, signed off'], ['saleslist', 'Every sale', 'One by one: what, who, how paid'], ['sales', 'Tonight in detail', 'By waiter, by bar, by drink'], ['stockvalue', 'Stock value', 'What’s in the bars, at cost'], ['finance', 'Night’s finances', 'Sales, Paystack fees, settlement, every payment'], ['charges', 'Service charge & commission', 'The customer charge, the developer commission, a simulation']]],
     ['Tabs', [['opentabs', 'Tabs left open', 'Clear tabs still open after a night']]],
     ['People', [['staff', 'Staff', 'Add people, send PINs'], ['feedback', 'Staff feedback', 'Complaints and ideas'], ['perf', 'Performance reviews', 'Each staff member, every month'], ['@admin.html#members', 'Members', 'Members and passes']]],
     ['Floor', [['tables', 'Tables', 'Open tables and what they owe'], ['reviews', 'Customer reviews', 'What customers say'], ...(user.role === 'superAdmin' ? [['@admin.html', 'Control room', 'Site, nights, settings']] : [])]],
   ] : [
-    ['Tonight', [['accounts', 'Night accounts', 'What the drinks should bring; who isn’t aligned'], ['tickets', 'Tickets tonight', 'Sold online and at the gate'], ['find', 'Find an order', 'A table booking or tickets'], ['payments', 'Payments tonight', 'Every payment, with details'], ['cash', 'Cash from the staff', 'Receive each person’s counted cash'], ['approvals', 'Approvals', 'Everything asked tonight'], ['sales', 'Tonight in detail', 'By waiter, by bar, by drink']]],
+    ['Tonight', [['accounts', 'Night accounts', 'What the drinks should bring; who isn’t aligned'], ['tickets', 'Tickets tonight', 'Sold online and at the gate'], ['find', 'Find an order', 'A table booking or tickets'], ['payments', 'Payments tonight', 'Every payment, with details'], ['cash', 'Cash from the staff', 'Receive each person’s counted cash'], ['approvals', 'Approvals', 'Everything asked tonight'], ['saleslist', 'Every sale', 'One by one: what, who, how paid'], ['sales', 'Tonight in detail', 'By waiter, by bar, by drink']]],
     ['Stock and money', [['expenses', 'Expenses', 'What was spent; add one'], ['purchases', 'Buying drinks', 'Ask; finance and a director approve'], ['stock', 'Stock', 'New stock, counts, differences'], ['stockvalue', 'Stock value', 'What’s in the bars, at cost'], ['money', 'Money', 'In, out, profit'], ['prices', 'Drinks & prices', 'Set by finance'], ['commissions', 'Commissions', 'Who brought the big tables']]],
     ['Records', [['nights', 'Nights coming up', 'Tickets sold, tables booked'], ['reports', 'Past nights', 'End-of-day reports'], ['@admin.html#members', 'Members', 'Members and passes']]],
   ];

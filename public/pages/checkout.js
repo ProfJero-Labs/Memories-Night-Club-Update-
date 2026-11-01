@@ -82,7 +82,7 @@ function shell() {
       <div class="pay-dock"><button class="btn red block" type="submit" id="pay">Pay <span class="arrow">→</span></button></div>
       ${bitsOpen() ? '<button type="button" class="link" id="bitsMode" style="justify-self:center">Can’t pay it all now? Pay in bits</button>' : ''}
       <a href="installment.html" class="link" style="justify-self:center">Already paying in bits? Continue payment</a>
-      <p class="foot-small" style="margin:0">Payments by Paystack: MoMo or card. Strictly 18+.</p>
+      <p class="foot-small" style="margin:0">Payments by Paystack: MoMo or card. Paystack may text you a code first: check your messages. Strictly 18+.</p>
     </form>
     <aside class="aside" aria-label="Your ticket, live"><p class="kicker" style="margin-bottom:14px">Your ticket · live preview</p><div data-preview></div></aside>
   </div>`;

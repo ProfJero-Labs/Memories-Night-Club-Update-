@@ -1,8 +1,12 @@
 // Scan to order: a guest scans the QR at a bar (counter.html?s={stationToken}, optionally &t={table}),
 // picks drinks, pays by MoMo or
 // card on Paystack, and gets a pickup code only once Paystack confirms the payment. The bar sees
-// paid orders in a queue (public/bar.html) and hands them over against the code. Cash guests just
-// order at the bar as usual.
+// paid orders in a queue (public/bar.html) and hands them over against the code.
+// Or the guest picks "Pay cash at the bar": they get a code at once (status cash_due), go to the
+// bar, pay cash and get the drinks. The bartender taps "Cash received": it becomes an ordinary cash
+// sale at the bar (in their cash for the night, out of the bar's stock), so every report counts it
+// as cash. Nothing is made before the cash is in. A cash order not paid within 30 minutes lapses,
+// and a phone has one unpaid cash order at a time.
 //
 // Collections (server only):
 //   bar_stations/{id}     name, token (in the QR; rotate it to retire printed QRs), open
@@ -21,6 +25,9 @@ import { paymentAlert } from './ops/alerts.js';
 import { serviceFee } from './lib/fee.js';
 import { ledgerRefund } from './ops/ledger.js';
 import { bizDate } from './ops/common.js';
+import { quickSale } from './ops/tabs.js';
+export const CASH_WAIT_MS = 30 * 60e3;
+const cashFresh = f => f.status === 'cash_due' && Date.now() - new Date(f.createdAt).getTime() < CASH_WAIT_MS;
 
 const FORBIDDEN = { error: 'Forbidden.', status: 403 };
 export const BAR = ['superAdmin', 'director', 'manager', 'eventManager', 'barManager', 'barStaff', 'waitStaff'];
@@ -65,7 +72,8 @@ export async function counterCheckout(env, b) {
   if (!st) return { error: 'This QR code isn’t ours any more. Order at the bar.', status: 404 };
   if (st.fields.open === false) return { error: 'The bar isn’t taking app orders right now. Order at the bar.' };
   const phone = normalizePhone(b?.phone);
-  if (!phone) return { error: 'Enter your MoMo number, e.g. 024 123 4567.' };
+  const cash = b?.payWith === 'cash';
+  if (!phone) return { error: cash ? 'Enter your phone number, e.g. 024 123 4567: your code is texted to it.' : 'Enter your MoMo number, e.g. 024 123 4567.' };
   const clientId = /^[0-9a-f-]{8,64}$/i.test(String(b?.clientId || '')) ? String(b.clientId) : null;
   // A double tap, or Back then Pay again: the same basket returns the same payment, never a second one.
   if (clientId) {
@@ -88,6 +96,15 @@ export async function counterCheckout(env, b) {
   const short = await stockError(env, st.id, lines.map(l => ({ productId: l.itemId, name: l.name, qty: l.qty })), { guest: true });
   if (short) return { error: short };
   const totalPesewas = lines.reduce((n, l) => n + l.qty * l.unitPesewas, 0);
+  if (cash) {
+    // One unpaid cash order per phone: pay for it (or let it lapse) before ordering another.
+    const waiting = (await queryWhere(env, 'counter_orders', [{ field: 'phone', value: phone }, { field: 'status', value: 'cash_due' }])).find(o => cashFresh(o.fields));
+    if (waiting) return { error: `You already have an order waiting for cash at the bar (code ${waiting.fields.pickupCode}). Pay for it at the bar first.`, orderId: waiting.id };
+    const orderId = id(), code = pickupCode(), spot = cleanSpot(b?.spot);
+    await setDoc(env, 'counter_orders', orderId, { stationId: st.id, stationName: st.fields.name, ...(spot ? { spot } : {}), lines, totalPesewas, phone, clientId, payWith: 'cash', pickupCode: code, status: 'cash_due', receiptCode: id(), createdAt: now() });
+    await sendSms(env, phone, `MEMORIES\nYour order at ${st.fields.name}: code ${code}\nGo to the bar, show this code and pay ${money(totalPesewas)} cash. The order lapses after 30 minutes.`);
+    return { orderId, cash: true, pickupCode: code, totalPesewas };
+  }
   // An optional tip for whoever the guest picks: charged with the drinks, but never part of the
   // drinks' total (it's the staff member's money, see ops/tips.js).
   const tip = await prepareTip(env, b); if (tip.error) return tip;
@@ -159,8 +176,9 @@ export async function guestOrder(env, orderId, fulfillRef) {
     declined = res?.status === 'failed' && pc?.fields?.status !== 'failed';
     o = await getDoc(env, 'counter_orders', orderId);
   }
-  const f = o.fields, paid = ['paid', 'delivered'].includes(f.status);
-  return { status: declined ? 'payment_failed' : f.status, stationName: f.stationName, spot: f.spot || null, lines: f.lines.map(l => ({ name: l.name, qty: l.qty })), totalPesewas: f.totalPesewas, pickupCode: paid ? f.pickupCode : undefined, receiptCode: paid || f.status === 'refund_due' ? f.receiptCode : undefined };
+  const f = o.fields, paid = ['paid', 'delivered', 'cash_paid'].includes(f.status) || f.status === 'cash_due';
+  const status = f.status === 'cash_due' && !cashFresh(f) ? 'cash_lapsed' : f.status;
+  return { status: declined ? 'payment_failed' : status, stationName: f.stationName, spot: f.spot || null, lines: f.lines.map(l => ({ name: l.name, qty: l.qty })), totalPesewas: f.totalPesewas, pickupCode: paid ? f.pickupCode : undefined, receiptCode: paid || f.status === 'refund_due' ? f.receiptCode : undefined };
 }
 
 export async function receipt(env, code) {
@@ -184,6 +202,8 @@ export async function barQueue(env, user, stationId) {
   return {
     stations, stationId: st.id, open: st.open,
     orders: all.filter(o => o.fields.status === 'paid').map(view).sort((a, b) => new Date(a.paidAt) - new Date(b.paidAt)),
+    // Guests who chose to pay cash: the bar takes the cash, then makes the drinks.
+    cashDue: all.filter(o => cashFresh(o.fields)).map(o => ({ ...view(o), at: o.fields.createdAt, phoneLast4: String(o.fields.phone || '').slice(-4) })).sort((a, b) => new Date(a.at) - new Date(b.at)),
     delivered: all.filter(o => o.fields.status === 'delivered' && new Date(o.fields.deliveredAt).getTime() > since).map(view).sort((a, b) => new Date(b.deliveredAt) - new Date(a.deliveredAt)).slice(0, 20),
   };
 }
@@ -192,7 +212,8 @@ export async function barQueue(env, user, stationId) {
 export async function barUpdate(env, user, b) {
   if (!requireRole(user, BAR)) return FORBIDDEN;
   const orderId = String(b?.orderId || ''), action = b?.action;
-  if (!/^[0-9a-f]{32}$/.test(orderId) || !['deliver', 'refund'].includes(action)) return { error: 'Unknown order.' };
+  if (!/^[0-9a-f]{32}$/.test(orderId) || !['deliver', 'refund', 'cash', 'not_paid'].includes(action)) return { error: 'Unknown order.' };
+  if (action === 'cash' || action === 'not_paid') return cashOrder(env, user, orderId, action);
   // The guest has paid: the bar never turns it into a refund. Only the Manager can, as a last resort
   // (nothing sells past zero, so the drinks should be there).
   if (action === 'refund' && !requireRole(user, PAID_CANCELLERS)) return { error: 'This order is paid, so the bar can’t cancel it. Call the Manager.', status: 403 };
@@ -219,6 +240,30 @@ export async function barUpdate(env, user, b) {
   if (r.lines) await addMoves(env, r.lines.map(l => ({ productId: l.itemId, productName: l.name, stationId: r.stationId, qty: -Number(l.qty), kind: 'issue', ref: orderId, qrOrder: true })), user);
   delete r.lines; delete r.stationId; delete r.reference;
   return r;
+}
+
+// A guest's "pay cash at the bar" order. cash: the bartender took the cash: it becomes a cash sale at
+// the bar (their cash, the bar's stock, every report), then the drinks are handed over.
+// not_paid: the guest didn't come or didn't pay: the order is dropped (nothing was made or taken).
+async function cashOrder(env, user, orderId, action) {
+  const o = await getDoc(env, 'counter_orders', orderId);
+  if (!o) return { error: 'Unknown order.', status: 404 };
+  const f = o.fields;
+  if (f.status !== 'cash_due') return { error: f.status === 'cash_paid' ? 'Already paid and handed over.' : 'This order isn’t waiting for cash.' };
+  if (action === 'not_paid') {
+    await setDoc(env, 'counter_orders', orderId, { ...f, status: 'cancelled', cancelReason: 'cash_not_paid', cancelledAt: now(), cancelledBy: uidOf(user) });
+    await audit(env, user, 'BAR_CASH_ORDER_DROPPED', { orderId });
+    return { status: 'cancelled' };
+  }
+  // Taken off the waiting list first, so its own hold on the stock doesn't stop the sale.
+  await setDoc(env, 'counter_orders', orderId, { ...f, status: 'cash_taking' });
+  const sale = await quickSale(env, { fromBar: true, method: 'cash', stationId: f.stationId, customerPhone: f.phone || '', customerName: f.spot ? `QR, table ${f.spot}` : 'QR order',
+    lines: f.lines.map(l => ({ productId: l.itemId, qty: l.qty })) }, user);
+  if (sale.error) { await setDoc(env, 'counter_orders', orderId, f); return sale; }
+  const at = now();
+  await setDoc(env, 'counter_orders', orderId, { ...f, status: 'cash_paid', tabId: sale.id, paidAt: at, businessDate: bizDate(), deliveredAt: at, deliveredBy: uidOf(user), cashTakenByName: user.name || '' });
+  await audit(env, user, 'BAR_CASH_ORDER_PAID', { orderId, tabId: sale.id, amountPesewas: f.totalPesewas });
+  return { status: 'cash_paid', totalPesewas: f.totalPesewas };
 }
 
 // ── Control room: stations and the menu ──

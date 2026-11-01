@@ -89,6 +89,7 @@ async function tabView(id) {
       ${open && t.quick ? '<div class="say warn"><b>Quick sale</b>Collect the drinks at the bar, then tap “I got them”. It closes by itself.</div>' : ''}
       ${open && !t.quick ? `<div class="pay-now"><b>${money(b.balancePesewas)} ${b.paidPesewas && !b.balancePesewas ? 'paid' : 'so far'}</b>
         <div class="btn-row"><button class="big ghost" id="add">Add drinks</button><button class="big" id="close">Close tab</button></div>
+        ${b.balancePesewas && canCash ? '<button class="big ghost" id="cash">Customer paid (cash or MoMo)</button>' : ''}
         ${atBarOf(t).length ? `<span class="sub">${atBarOf(t).length} order${atBarOf(t).length > 1 ? 's' : ''} still at the bar (below).</span>` : ''}</div>` : ''}
       ${!open ? `<div class="say ${t.status === 'closed' ? 'good' : 'warn'}"><b>${t.status === 'closed' ? 'Closed' : 'Written off'}</b>This tab is finished.</div>` : ''}
       <h2>Orders</h2>
@@ -101,7 +102,6 @@ async function tabView(id) {
         <div class="ln total"><span>Still to pay</span><span>${money(b.balancePesewas)}</span></div></div>
       ${open && !t.quick ? `<details class="fold"><summary>More</summary><div class="btn-row" style="margin-top:10px">
         ${b.balancePesewas ? '<button class="mid" id="showBill">Show QR to pay</button><button class="mid" id="invoice">Text the invoice now</button>' : ''}
-        ${b.balancePesewas && canCash ? '<button class="mid" id="cash">Part payment / MoMo to the club’s number</button>' : ''}
         <button class="mid" id="ask">Ask the manager</button></div></details>` : ''}`;
     bindBackBar(app);
     const flash = sessionStorage.getItem('waiter-flash'); if (flash) { sessionStorage.removeItem('waiter-flash'); say($('#msg'), flash); }
@@ -194,7 +194,7 @@ function closeSheet(t) {
     $('#csBack', box).onclick = backToTables; // closes the panel too
   }
   async function waitMomo(r) {
-    $('#csBody', box).innerHTML = `<div class="result warn" role="status"><h1 class="display">${r.prompt ? 'Approve on your phone' : 'Pay from the text'}</h1><p style="margin:0">${esc(r.message)}</p>
+    $('#csBody', box).innerHTML = `<div class="result warn" role="status"><h1 class="display">${r.otp ? 'Customer enters a code' : r.prompt ? 'Approve on your phone' : 'Pay from the text'}</h1><p style="margin:0">${esc(r.message)}</p>
       <div class="qr-big" id="csQr"></div><p class="muted" style="margin:0" id="csWait">Waiting for the payment… The tab closes by itself once paid.</p></div>
       <button class="big ghost" id="csLater">Back to my tables (it closes when paid)</button>`;
     $('#csQr', box).innerHTML = await qrSvg(r.billUrl).catch(() => '');

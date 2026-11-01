@@ -192,3 +192,4 @@ export function upcomingBookings(list = []) {
         <span class="s">${esc(t.code)} · phone …${esc(t.phoneLast4)}${t.capacity ? ` · up to ${t.capacity}` : ''}${t.bottles.length ? ` · ${t.bottles.map(b => `${b.quantity} × ${esc(b.name)}`).join(', ')}` : ''}${t.bookedAt ? ` · booked ${esc(new Date(t.bookedAt).toLocaleDateString('en-GB', { timeZone: 'Africa/Accra', day: 'numeric', month: 'short' }))}` : ''}</span></div>`).join('')}</div>`;
   }).join('');
 }
+

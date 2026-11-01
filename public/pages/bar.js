@@ -22,24 +22,31 @@ const beep = () => { try { ctx ||= new AudioContext(); const o = ctx.createOscil
 function draw() {
   const q = $('#find').value.trim().toUpperCase();
   const list = data.orders.filter(o => !q || o.pickupCode.startsWith(q));
+  const cash = (data.cashDue || []).filter(o => !q || o.pickupCode.startsWith(q));
   const lateN = data.orders.filter(late).length;
   // The code box only shows when there's an order to find (or a code is being typed).
-  $('#findBox').hidden = !data.orders.length && !q;
-  $('#aCount').innerHTML = data.orders.length ? `${data.orders.length} waiting${lateN ? ` · <span class="hot">${lateN} over 10 min</span>` : ''}` : (data.delivered.length ? `${data.delivered.length} handed over` : '');
-  $('#orders').innerHTML = list.map(o => `<article class="ord ${q && o.pickupCode === q ? 'hit' : ''} ${late(o) ? 'late' : ''}" aria-label="Order ${esc(o.pickupCode)}"><div class="head"><span class="code">${esc(o.pickupCode)}</span><span class="waited">${ago(o.paidAt)}</span></div>
+  $('#findBox').hidden = !data.orders.length && !(data.cashDue || []).length && !q;
+  $('#aCount').innerHTML = data.orders.length || cash.length ? [data.orders.length ? `${data.orders.length} paid, waiting${lateN ? ` · <span class="hot">${lateN} over 10 min</span>` : ''}` : '', cash.length ? `${cash.length} to pay cash` : ''].filter(Boolean).join(' · ') : (data.delivered.length ? `${data.delivered.length} handed over` : '');
+  // Guests paying cash: take the cash first, then make the drinks. "Cash received" records the sale.
+  $('#orders').innerHTML = cash.map(o => `<article class="ord ${q && o.pickupCode === q ? 'hit' : ''}" aria-label="Cash order ${esc(o.pickupCode)}" style="border-color:var(--gold, #c9a227)"><div class="head"><span class="code">${esc(o.pickupCode)}</span><span class="waited">${ago(o.at)}</span></div>
+    <span class="spot" style="background:#c9a227;color:#111">PAY CASH FIRST</span>${o.spot ? ` <span class="spot">${esc(table(o))}</span>` : ''}
+    <ul>${o.lines.map(l => `<li><b>${l.qty}×</b><span>${esc(l.name)}</span></li>`).join('')}</ul><span class="note-small">Not paid yet · phone …${esc(o.phoneLast4)}</span>
+    <button class="big step" data-cash="${esc(o.id)}">Cash received · ${money(o.totalPesewas)}</button><div class="more"><button type="button" data-unpaid="${esc(o.id)}">They didn’t pay</button></div></article>`).join('') + list.map(o => `<article class="ord ${q && o.pickupCode === q ? 'hit' : ''} ${late(o) ? 'late' : ''}" aria-label="Order ${esc(o.pickupCode)}"><div class="head"><span class="code">${esc(o.pickupCode)}</span><span class="waited">${ago(o.paidAt)}</span></div>
     ${o.spot ? `<span class="spot">${esc(table(o))}</span>` : ''}
     <ul>${o.lines.map(l => `<li><b>${l.qty}×</b><span>${esc(l.name)}</span></li>`).join('')}</ul><span class="note-small">${money(o.totalPesewas)} paid · phone …${esc(o.phoneLast4)}</span>
     <button class="big step" data-go="${esc(o.id)}">Hand over</button>${canCancel ? `<div class="more"><button type="button" data-no="${esc(o.id)}">Cancel and refund</button></div>` : '<span class="note-small">Paid: it can’t be cancelled here. A problem? Call the Manager.</span>'}</article>`).join('')
-    || (q ? '<p class="none"><b>No match.</b> No paid order with that code. Ask to see their phone: the code only shows once MoMo confirms.</p>' : `<p class="none">${open ? 'None waiting. Paid orders appear here by themselves.' : 'Paused: guests order at the bar.'}</p>`);
+    || (cash.length ? '' : q ? '<p class="none"><b>No match.</b> No paid order with that code. Ask to see their phone: the code only shows once MoMo confirms.</p>' : `<p class="none">${open ? 'None waiting. Paid orders appear here by themselves.' : 'Paused: guests order at the bar.'}</p>`);
   $('#doneWrap').hidden = !data.delivered.length;
   $('#done').innerHTML = data.delivered.map(o => `<tr><td data-label="Code"><strong>${esc(o.pickupCode)}</strong></td><td data-label="Table">${esc(table(o)) || '—'}</td><td data-label="Drinks">${o.lines.map(l => `${l.qty} × ${esc(l.name)}`).join(', ')}</td><td data-label="When">${ago(o.deliveredAt)}</td></tr>`).join('');
   $$('[data-go]').forEach(b => b.onclick = () => act(b.dataset.go, 'deliver'));
+  $$('[data-cash]').forEach(b => b.onclick = () => act(b.dataset.cash, 'cash'));
+  $$('[data-unpaid]').forEach(b => b.onclick = () => { if (confirm('Drop this order? Nothing was paid or made.')) act(b.dataset.unpaid, 'not_paid'); });
   $$('[data-no]').forEach(b => b.onclick = async () => { const why = await ask({ title: 'Cancel a paid order', label: 'This guest has paid. Only cancel if it truly can’t be served. Why?', quick: ['Bottle broke', 'Finished', 'Guest left'], send: 'Cancel and refund', danger: true }); if (why) act(b.dataset.no, 'refund', why); });
 }
 async function act(orderId, action, reason) {
   try {
     await sapi('/api/bar/order', { method: 'POST', body: { orderId, action, reason } });
-    flash(action === 'deliver' ? 'Handed over.' : 'Marked for a refund. A manager will see it under Refunds.');
+    flash(action === 'deliver' ? 'Handed over.' : action === 'cash' ? 'Cash recorded. Hand over the drinks.' : action === 'not_paid' ? 'Order dropped.' : 'Marked for a refund. A manager will see it under Refunds.');
     $('#find').value = ''; load();
   } catch (e) { flash(e.message, true); load(); }
 }
