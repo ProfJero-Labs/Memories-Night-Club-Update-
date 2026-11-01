@@ -1014,9 +1014,9 @@ test('people: the Human manager sets the DJ’s pay and a bonus and sends the mo
   await mg.click('#clHand'); await mg.locator('.sheet .chip', { hasText: 'Family emergency' }).click(); await mg.click('#askGo');
   await mg.locator('#clMsg').getByText(/Handed over/).waitFor();
   await hr.goto(`${base}/hr.html#close`); await hr.click('#clAccept'); await hr.locator('#clMsg').getByText('You’re closing tonight.').waitFor();
-  await d2.goto(`${base}/night.html#tonight`); await d2.locator('#toClose', { hasText: 'How closing is going' }).click();
+  await d2.goto(`${base}/night.html#tonight`); await d2.locator('#toClose', { hasText: 'Close the night' }).click();
   await d2.locator('#app').getByText(/Dev Human Manager is closing instead/).waitFor();
-  assert.equal(await d2.locator('#closeGo').count(), 0, 'no close button for a director');
+  assert.equal(await d2.locator('#closeGo').count(), 1, 'a director can end the night too');
   assert.deepEqual([...hr.errors, ...d2.errors, ...fin.errors, ...dj.errors, ...mg.errors], []);
 });
 

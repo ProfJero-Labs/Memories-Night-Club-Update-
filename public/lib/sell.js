@@ -2,6 +2,7 @@
 // can't be picked) and take the payment (Cash, or MoMo with its transaction ID).
 import { $, $$, esc } from '../app.js';
 import { sheet, say, busy, money, moneyField, ghsIn, pasteMomoButton } from './ops-ui.js';
+import { drinkMatch, drinkMatchAny } from './shared.js';
 
 // Draws a drink list into `el`. products: from /api/ops/products?stationId=… (with `left`).
 // onSend(lines, total) runs when the big button is tapped; it may throw to show an error.
@@ -12,24 +13,46 @@ export function drinkPicker(el, products, { title = 'Pick drinks', top = '', top
   const cats = [...new Set(menu.map(p => p.category))];
   const out = p => !p.available || p.left === 0;
   const cap = p => Math.min(30, p.left == null ? 30 : p.left);
+  // Search: type part of a name or its group; small spelling mistakes are fine ("henny", "guiness",
+  // "star bear"), the same search as the customers' QR menu. Best matches first.
+  let q = '';
+  const score = p => drinkMatch(q, p.name, p.category) || 0;
+  const matches = p => !q || score(p) > 0;
+  const totals = () => ({ total: Object.entries(cart).reduce((n, [id, qty]) => n + qty * menu.find(p => p.id === id).pricePesewas, 0), count: Object.values(cart).reduce((a, b) => a + b, 0) });
+  el.innerHTML = `${onBack ? '<div class="backbar"><button type="button" class="back-btn" data-back aria-label="Back">←<span>Back</span></button></div>' : ''}<h1>${esc(title)}</h1>${top}${topEl ? '<div data-top></div>' : ''}
+    <div class="sfield pick-search"><label for="pkQ">Find a drink</label><input id="pkQ" type="search" inputmode="search" autocomplete="off" enterkeyhint="search" placeholder="Type a name, e.g. Hennessy"></div>
+    <div data-list></div>
+    <div id="pkMsg"></div>
+    <div class="dock"><button class="big" id="send" disabled>Pick drinks</button></div>`;
+  $('[data-back]', el) && ($('[data-back]', el).onclick = onBack);
+  if (topEl) $('[data-top]', el).replaceWith(topEl);
+  const list = $('[data-list]', el), send = $('#send', el);
+  const row = p => `<div class="pick ${out(p) ? 'out' : ''}"><div class="grow">${esc(p.name)}<small>${money(p.pricePesewas)}${out(p) ? ' · finished' : p.left != null && p.left <= 5 ? ` · only ${p.left} left` : ''}</small></div>
+    ${out(p) ? '' : `<div class="qstep"><button type="button" data-m="${esc(p.id)}" aria-label="One fewer ${esc(p.name)}">−</button><span>${cart[p.id] || 0}</span><button type="button" data-p="${esc(p.id)}" aria-label="One more ${esc(p.name)}" ${(cart[p.id] || 0) >= cap(p) ? 'disabled' : ''}>+</button></div>`}</div>`;
   const draw = () => {
-    const total = Object.entries(cart).reduce((n, [id, q]) => n + q * menu.find(p => p.id === id).pricePesewas, 0), count = Object.values(cart).reduce((a, b) => a + b, 0);
-    el.innerHTML = `${onBack ? '<div class="backbar"><button type="button" class="back-btn" data-back aria-label="Back">←<span>Back</span></button></div>' : ''}<h1>${esc(title)}</h1>${top}${topEl ? '<div data-top></div>' : ''}
-      ${cats.map(c => `<h3 class="cat-h">${esc(c)}</h3>${menu.filter(p => p.category === c).map(p => `<div class="pick ${out(p) ? 'out' : ''}"><div class="grow">${esc(p.name)}<small>${money(p.pricePesewas)}${out(p) ? ' · finished' : p.left != null && p.left <= 5 ? ` · only ${p.left} left` : ''}</small></div>
-        ${out(p) ? '' : `<div class="qstep"><button type="button" data-m="${esc(p.id)}" aria-label="One fewer ${esc(p.name)}">−</button><span>${cart[p.id] || 0}</span><button type="button" data-p="${esc(p.id)}" aria-label="One more ${esc(p.name)}" ${(cart[p.id] || 0) >= cap(p) ? 'disabled' : ''}>+</button></div>`}</div>`).join('')}`).join('')}
-      <div id="pkMsg"></div>
-      <div class="dock"><button class="big" id="send" ${count ? '' : 'disabled'}>${count ? esc(button(`${count} drink${count > 1 ? 's' : ''} · ${money(total)}`)) : 'Pick drinks'}</button></div>`;
-    $('[data-back]', el) && ($('[data-back]', el).onclick = onBack);
-    if (topEl) $('[data-top]', el).replaceWith(topEl);
-    $$('[data-p],[data-m]', el).forEach(b => b.onclick = () => {
+    let shown = menu.filter(matches);
+    // Nothing matches every word typed: show what matches any of them.
+    if (q && !shown.length) shown = menu.filter(p => drinkMatchAny(q, p.name, p.category) > 0);
+    if (q) shown = [...shown].sort((a, b2) => score(b2) - score(a));
+    // While searching: the matches in one list. Otherwise: by category.
+    list.innerHTML = !shown.length ? `<div class="empty-box"><b>No drink called “${esc(q)}”</b>Check the spelling, or clear the search.</div>`
+      : q ? shown.map(row).join('') : cats.map(c => `<h3 class="cat-h">${esc(c)}</h3>${shown.filter(p => p.category === c).map(row).join('')}`).join('');
+    // What's picked stays visible while searching for the next drink.
+    const picked = Object.keys(cart).map(id => menu.find(p => p.id === id)).filter(p => p && !shown.includes(p));
+    if (q && picked.length) list.innerHTML += `<h3 class="cat-h">Already picked</h3>${picked.map(row).join('')}`;
+    const { total, count } = totals();
+    send.disabled = !count; send.textContent = count ? button(`${count} drink${count > 1 ? 's' : ''} · ${money(total)}`) : 'Pick drinks';
+    $$('[data-p],[data-m]', list).forEach(b => b.onclick = () => {
       const id = b.dataset.p || b.dataset.m, p = menu.find(x => x.id === id);
       cart[id] = Math.max(0, Math.min(cap(p), (cart[id] || 0) + (b.dataset.p ? 1 : -1))); if (!cart[id]) delete cart[id];
       const y = scrollY; draw(); scrollTo(0, y);
     });
-    $('#send', el).onclick = async () => {
-      try { await busy($('#send', el), () => onSend(Object.entries(cart).map(([productId, qty]) => ({ productId, qty })), total), 'Saving…'); }
-      catch (e) { say($('#pkMsg', el), e.message, 'bad'); }
-    };
+  };
+  $('#pkQ', el).oninput = e => { q = e.target.value.trim(); draw(); };
+  send.onclick = async () => {
+    const { total } = totals();
+    try { await busy(send, () => onSend(Object.entries(cart).map(([productId, qty]) => ({ productId, qty })), total), 'Saving…'); }
+    catch (e) { say($('#pkMsg', el), e.message, 'bad'); }
   };
   draw();
 }

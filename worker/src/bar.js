@@ -20,6 +20,7 @@ import { prepareTip, tipFields, textTip, phoneOf, guestTipPeople } from './ops/t
 import { paymentAlert } from './ops/alerts.js';
 import { serviceFee } from './lib/fee.js';
 import { ledgerRefund } from './ops/ledger.js';
+import { bizDate } from './ops/common.js';
 
 const FORBIDDEN = { error: 'Forbidden.', status: 403 };
 export const BAR = ['superAdmin', 'director', 'manager', 'eventManager', 'barManager', 'barStaff', 'waitStaff'];
@@ -122,9 +123,9 @@ export async function issueCounter(env, reference, P) {
     const tipPesewas = Number(o.fields.tipPesewas || 0);
     const tip = tipPesewas ? { amount: tipPesewas, to: { uid: o.fields.tipToUid, name: o.fields.tipToName || '', role: o.fields.tipToRole || '' } } : null;
     await commitTx(env, [
-      updateWrite(env, 'counter_orders', P.orderId, { ...o.fields, status: 'paid', pickupCode: code, paidAt: at }),
+      updateWrite(env, 'counter_orders', P.orderId, { ...o.fields, status: 'paid', pickupCode: code, paidAt: at, businessDate: bizDate() }),
       updateWrite(env, 'pending_checkouts', reference, { ...fresh.fields, status: 'issued', orderId: P.orderId, issuedAt: at }),
-      ...(tip ? [updateWrite(env, 'tips', `tip_${reference}`, tipFields(tip, { method: 'digital', source: 'qr', at, date: nightKey(at), reference, orderId: P.orderId, stationId: o.fields.stationId }))] : []),
+      ...(tip ? [updateWrite(env, 'tips', `tip_${reference}`, tipFields(tip, { method: 'digital', source: 'qr', at, date: bizDate(), reference, orderId: P.orderId, stationId: o.fields.stationId }))] : []),
     ], tx);
     return { status: 'issued', kind: 'counter', orderId: P.orderId, code, order: o.fields, tip };
   });

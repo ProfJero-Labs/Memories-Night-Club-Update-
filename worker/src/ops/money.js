@@ -17,7 +17,7 @@
 import { setDoc, getDoc, queryRecent, listDocs, queryWhere } from '../lib/firestore.js';
 import { now, id, clean, nightKey } from '../lib/util.js';
 import { requireRole, uidOf, REPORTS } from '../lib/auth.js';
-import { FORBIDDEN, bizDate, isDate, audit, int, ghs } from './common.js';
+import { FORBIDDEN, bizDate, isDate, audit, int, ghs, paidNight } from './common.js';
 import { billOf } from './tabs.js';
 import { ledgerSince } from './ledger.js';
 import { tipTotals } from './tips.js';
@@ -107,7 +107,7 @@ export async function moneyReport(env, user, q = {}) {
   const rounds = roundsRaw.map(r => ({ id: r.id, ...r.fields })).filter(r => r.status !== 'cancelled');
   const tabs = tabsRaw.map(t => ({ id: t.id, ...t.fields })).filter(t => inRange(t.businessDate));
   for (const t of tabs) t.bill = billOf(t, rounds.filter(r => r.tabId === t.id));
-  const qr = qrRaw.map(o => ({ id: o.id, ...o.fields })).filter(o => ['paid', 'delivered'].includes(o.status) && o.paidAt && inRange(nightKey(o.paidAt)));
+  const qr = qrRaw.map(o => ({ id: o.id, ...o.fields })).filter(o => ['paid', 'delivered'].includes(o.status) && o.paidAt && inRange(paidNight(o)));
   const orders = ordersRaw.map(o => ({ id: o.id, ...o.fields })).filter(o => o.status === 'confirmed' && o.kind === 'table' && Number(o.amountPesewas) > 0 && inRange(nightKey(o.createdAt)));
   const buys = buysRaw.map(d => ({ id: d.id, ...d.fields })).filter(d => d.status === 'confirmed' && inRange(d.businessDate || nightKey(d.recordedAt)));
   const expenses = expRaw.map(e => ({ id: e.id, ...e.fields })).filter(e => inRange(e.date));
@@ -115,7 +115,7 @@ export async function moneyReport(env, user, q = {}) {
 
   // Drinks: money received (cash, MoMo, phone payments) and what was sold.
   const pays = tabs.flatMap(t => (t.payments || []).map(p => ({ ...p, date: t.businessDate })));
-  const night = (k, x) => (k === 'qr' ? nightKey(x.paidAt) : x.date);
+  const night = (k, x) => (k === 'qr' ? paidNight(x) : x.date);
   const drinksPaid = sum(pays, x => x.amountPesewas) + sum(qr, o => o.totalPesewas);
   const soldLines = [
     ...tabs.flatMap(t => rounds.filter(r => r.tabId === t.id).flatMap(r => r.lines.map(l => ({ ...l, n: Math.max(0, l.qty - (l.returnedQty || 0) - (l.brokenQty || 0) - (l.compQty || 0)) })))),

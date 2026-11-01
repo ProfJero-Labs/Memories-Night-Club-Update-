@@ -11,7 +11,7 @@
 import { listDocs, queryWhere } from '../lib/firestore.js';
 import { nightKey } from '../lib/util.js';
 import { requireRole } from '../lib/auth.js';
-import { FORBIDDEN, dateOr, nightState } from './common.js';
+import { FORBIDDEN, dateOr, nightState, paidNight } from './common.js';
 import { billOf } from './tabs.js';
 import { cashFigures } from './cash.js';
 import { stockSheet } from './stock.js';
@@ -56,7 +56,7 @@ export async function nightAccounts(env, user, { date } = {}) {
   // ── 3. What accounts for it ──
   const pays = tabs.flatMap(t => (t.payments || []).map(p => ({ ...p, tabId: t.id })));
   const byMethod = m => sum(pays.filter(p => p.method === m), p => p.amountPesewas);
-  const qr = qrRaw.map(o => ({ id: o.id, ...o.fields })).filter(o => o.paidAt && nightKey(o.paidAt) === d);
+  const qr = qrRaw.map(o => ({ id: o.id, ...o.fields })).filter(o => paidNight(o) === d);
   const qrValue = sum(qr, o => o.totalPesewas);
   const lineSum = (rs, k) => sum(rs.flatMap(r => r.lines), l => Number(l[k] || 0) * l.unitPesewas);
   const handed = rounds.filter(r => HANDED.includes(r.status)), atBar = rounds.filter(r => AT_BAR.includes(r.status));

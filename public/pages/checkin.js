@@ -9,14 +9,14 @@ if (['superAdmin', 'director', 'manager', 'eventManager'].includes(user.role)) $
 if (user.role === 'organiser') { $('#adminLink').hidden = false; $('#adminLink').href = 'organiser.html'; $('#adminLink').textContent = 'My nights'; }
 
 // ── The night ──
-// ?event= wins; otherwise the night whose door window contains now (a night runs until 04:00 the
-// next morning); otherwise staff must choose. Changing night is always a deliberate action.
+// ?event= wins; otherwise tonight's night (the night still open, however late it is); otherwise
+// staff must choose. Changing night is always a deliberate action.
 const ev = $('#ev');
 const night = () => ev.value;
 try {
-  const { events } = await sapi('/api/door/events');
+  const { events, tonight: open } = await sapi('/api/door/events');
   ev.innerHTML += events.map(e => `<option value="${esc(e.id)}">${esc(shortDate(e.date))} · ${esc(e.name)}</option>`).join('');
-  const tonight = events.filter(e => nightKey(e.date) === nightKey());
+  const tonight = events.filter(e => nightKey(e.date) === (open || nightKey()));
   const want = params.get('event');
   if (want && events.some(e => e.id === want)) ev.value = want;
   else if (tonight.length === 1) ev.value = tonight[0].id;

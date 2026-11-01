@@ -1,13 +1,46 @@
-// Shared by the venue operations (tabs, bar, stock, cash, closing). A "business night" runs from
-// the evening until 4AM the next morning and is named by its evening's date, e.g. 2026-10-16.
-// Once a manager closes a night its records are locked: corrections go through an approval.
+// Shared by the venue operations (tabs, bar, stock, cash, closing). A "business night" is named by
+// the date it started, e.g. 2026-10-16. The club has no fixed closing time: a night stays open
+// until the Manager (or a director) closes it, however late that is. Everything recorded while it's
+// open belongs to it. Once it's closed, the next thing recorded starts a new night, named by that
+// day's date.
+//   config/night  { date, startedAt, after }: the night that's open now (see loadNight)
 import { getDoc, setDoc } from '../lib/firestore.js';
-import { now, id, nightKey } from '../lib/util.js';
+import { now, id, nightKey, accraDayKey } from '../lib/util.js';
 import { uidOf } from '../lib/auth.js';
 
 export const FORBIDDEN = { error: 'You can’t do that with your role.', status: 403 };
-export const bizDate = (d = new Date()) => nightKey(d);
 export const isDate = s => /^\d{4}-\d{2}-\d{2}$/.test(String(s || ''));
+
+// The night that's open now. Read once per request (index.js calls loadNight first), so bizDate()
+// can stay a plain call everywhere. Before the first stored night (or if it can't be read), the old
+// rule names it: a moment before 4AM belongs to the evening before.
+const NIGHT_TTL = 30e3;
+let current = null; // { date, at, env }
+export async function loadNight(env, { fresh = false } = {}) {
+  if (!fresh && current && current.env === env && Date.now() - current.at < NIGHT_TTL / 3) return current.date;
+  let date;
+  try {
+    const cfg = (await getDoc(env, 'config', 'night'))?.fields;
+    date = isDate(cfg?.date) ? cfg.date : null;
+    if (!date) {
+      date = nightKey(new Date());
+      await setDoc(env, 'config', 'night', { date, startedAt: now() });
+    } else if ((await nightState(env, date)).status === 'closed') {
+      // Closed: the next night starts, named by today's date (if today's is the one closed, it stays).
+      const next = accraDayKey(new Date());
+      if (next > date) { await setDoc(env, 'config', 'night', { date: next, startedAt: now(), after: date }); date = next; }
+    }
+  } catch { date = current?.date || nightKey(new Date()); }
+  current = { date, at: Date.now(), env };
+  return date;
+}
+// The night a payment belongs to: the night that was open when it was paid (stored on it), or for
+// older records the clock rule.
+export const paidNight = o => o?.businessDate || (o?.paidAt ? nightKey(o.paidAt) : '');
+// A moment that just happened belongs to the open night; an old one (a late check) to its own.
+export const nightAt = at => (Date.now() - new Date(at).getTime() < 2 * 3600e3 ? bizDate() : nightKey(at));
+// With a moment: the old clock rule (for times before nights were stored). Without: the open night.
+export const bizDate = d => (d ? nightKey(d) : current && Date.now() - current.at < NIGHT_TTL ? current.date : nightKey(new Date()));
 export const dateOr = (s, d = bizDate()) => (isDate(s) ? s : d);
 export const who = user => ({ by: uidOf(user), byName: user?.name || user?.email || '' });
 export const ghs = p => `GHS ${(Number(p || 0) / 100).toLocaleString('en-GH', { maximumFractionDigits: 2 })}`;

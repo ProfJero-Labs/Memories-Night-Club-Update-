@@ -55,6 +55,22 @@ export function billOf(tab, rounds) {
 export const PAY_LABEL = { empty: 'Nothing ordered yet', unpaid: 'Waiting for payment', part_paid: 'Part paid', paid: 'Paid', overpaid: 'Overpaid', written_off: 'Written off (unpaid)' };
 
 async function roundsOf(env, tabId) { return (await queryWhere(env, 'rounds', [{ field: 'tabId', value: tabId }])).map(r => ({ id: r.id, ...r.fields })); }
+// Closing a tab: drinks the bar has already handed over count as delivered, so the waiter doesn't
+// have to tap "I got them" on each order first (the drinks left the bar's stock at the handover).
+// Returns what's still at the bar, in plain words, or null.
+async function settleHanded(env, rounds, user) {
+  const at = now();
+  for (const r of rounds.filter(x => ['handed', 'received'].includes(x.status))) {
+    const { id: rid, ...f } = r;
+    await setDoc(env, 'rounds', rid, { ...f, status: 'delivered', receivedAt: f.receivedAt || at, deliveredAt: at, deliveredOnClose: true });
+    r.status = 'delivered'; r.deliveredAt = at;
+  }
+  const atBar = rounds.filter(x => !['delivered', 'cancelled'].includes(x.status));
+  if (!atBar.length) return null;
+  const notStarted = atBar.filter(x => x.status === 'waiting').length;
+  return { error: `${atBar.length === 1 ? 'One order is' : `${atBar.length} orders are`} still at the bar${notStarted ? ` (${notStarted === atBar.length ? 'not started yet' : `${notStarted} not started yet`}: cancel ${notStarted === 1 ? 'it' : 'them'} if the customer doesn’t want ${notStarted === 1 ? 'it' : 'them'})` : ''}. Wait for the bar to hand ${atBar.length === 1 ? 'it' : 'them'} over, then close.`,
+    code: 'at_bar', atBar: atBar.map(x => ({ id: x.id, status: x.status, statusLabel: ROUND_LABEL[x.status], lines: x.lines.map(l => `${l.qty} × ${l.name}`).join(', ') })) };
+}
 const tabView = (t, rounds, { full = true } = {}) => {
   const bill = billOf(t, rounds);
   return {
@@ -510,8 +526,9 @@ export async function closeTab(env, b, user) {
   if (!t) return { error: 'Tab not found.', status: 404 };
   if (!mineOrBoss(user, t.fields) && !requireRole(user, ['cashier'])) return FORBIDDEN;
   if (t.fields.status !== 'open') return { error: 'Already closed.' };
-  const rounds = await roundsOf(env, t.id), bill = billOf(t.fields, rounds);
-  if (rounds.some(r => !['delivered', 'cancelled'].includes(r.status))) return { error: 'Some drinks on this tab aren’t delivered yet.' };
+  const rounds = await roundsOf(env, t.id);
+  const atBar = await settleHanded(env, rounds, user); if (atBar) return atBar;
+  const bill = billOf(t.fields, rounds);
   if (bill.balancePesewas > 0) return { error: `${ghs(bill.balancePesewas)} is still unpaid. Take the payment first, or ask a manager to write it off.` };
   await setDoc(env, 'tabs', t.id, { ...t.fields, status: 'closed', closedAt: now(), closedByName: user.name || '' });
   await audit(env, user, 'TAB_CLOSED', { tabId: t.id });
@@ -531,8 +548,7 @@ export async function checkoutTab(env, b, user) {
   if (!mineOrBoss(user, t.fields)) return { error: 'This is another waiter’s tab.', status: 403 };
   if (t.fields.status !== 'open') return { error: 'This tab is already closed.' };
   const rounds = await roundsOf(env, t.id);
-  const out = rounds.filter(r => !['delivered', 'cancelled'].includes(r.status));
-  if (out.length) return { error: `${out.length === 1 ? 'One order isn’t' : `${out.length} orders aren’t`} collected yet. Tap “I got them” (or cancel it) first, so the bill is final.` };
+  const atBar = await settleHanded(env, rounds, user); if (atBar) return atBar;
   const phone = b?.phone ? normalizePhone(b.phone) : t.fields.customerPhone || '';
   if (b?.phone && !phone) return { error: 'That phone number doesn’t look right. Fix it, or leave it empty.' };
   const fields = { ...t.fields, customerPhone: phone };
@@ -565,6 +581,17 @@ export async function checkoutTab(env, b, user) {
     await audit(env, user, 'TAB_CHECKOUT_MOMO', { tabId: t.id, amountPesewas: bill.balancePesewas, prompt });
     return { method: 'momo', prompt, reference: prompt ? reference : '', invoiceSent: sent, phoneHint: maskPhone(phone), amountPesewas: bill.balancePesewas, feePesewas: fee.feePesewas, chargePesewas: charge, billUrl: siteUrl(env, `/bill.html?t=${t.fields.billToken}`),
       message: prompt ? `A MoMo prompt for ${ghs(charge)}${fee.feePesewas ? ` (bill ${ghs(bill.balancePesewas)} + ${ghs(fee.feePesewas)} service charge)` : ''} is on ${maskPhone(phone)}. They approve it, or pay from the invoice text.` : `The invoice is texted to ${maskPhone(phone)}: they pay from its link, or scan the QR.` };
+  }
+  // MoMo sent straight to the club's number (no Paystack, so no OTP and no service charge): the
+  // transaction ID from the MoMo text is recorded for what's left, then the tab closes.
+  if (b?.method === 'momo_club') {
+    if (bill.balancePesewas > 0) {
+      const r = await recordPayment(env, { tabId: t.id, method: 'momo', amountPesewas: bill.balancePesewas, momoRef: b?.momoRef, momoFrom: b?.momoFrom }, user);
+      if (r.error) return r;
+    }
+    const c = await closeTab(env, { tabId: t.id }, user);
+    if (c.error) return c;
+    return { method: 'momo_club', closed: true, momoPesewas: bill.balancePesewas };
   }
   // Cash: what's left, into the waiter's cash for the night; then the tab closes.
   if (bill.balancePesewas > 0) {

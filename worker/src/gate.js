@@ -17,6 +17,7 @@ import { sendSms, siteUrl } from './lib/notify.js';
 import { computeShares } from './shares.js';
 import { memberAtGate } from './members.js';
 import { cashBag } from './ops/tabs.js';
+import { bizDate } from './ops/common.js';
 import { serviceFee } from './lib/fee.js';
 
 const FORBIDDEN = { error: 'You can’t do that with your role.', status: 403 };
@@ -28,7 +29,7 @@ const audit = (env, user, action, data) => setDoc(env, 'audit_logs', id(), { act
 const shares = (env, ev, amount) => computeShares(amount, { evolveitSharePct: ev?.evolveitSharePct, organizerSharePct: ev?.organizerSharePct }, Number(env.EVOLVEIT_SHARE_PCT));
 const doorPrice = tt => Number(tt.doorPricePesewas || tt.pricePesewas || 0);
 const hhmm = d => (d ? new Date(d).toLocaleTimeString('en-GB', { timeZone: 'Africa/Accra', hour: '2-digit', minute: '2-digit' }) : '');
-const isTonight = ev => ev?.date && nightKey(ev.date) === nightKey(now());
+const isTonight = ev => ev?.date && nightKey(ev.date) === bizDate();
 
 const paystack = paystackPost;
 export { momoProvider };
@@ -127,7 +128,7 @@ export async function gateSell(env, b, user) {
 
   const sale = { ...item, eventId: ev.id, eventName: ev.fields.name || '', organizerId: ev.fields.organiserId || null, buyerName: name, buyerPhone: phone, soldBy: uidOf(user), soldByName: user.name || '', shares: shares(env, ev.fields, item.amountPesewas) };
   if (method === 'cash') {
-    const bag = await cashBag(env, user, nightKey(now())); if (bag.error) return bag;
+    const bag = await cashBag(env, user, bizDate()); if (bag.error) return bag;
     const r = await issueGateSale(env, sale, { paidWith: 'cash', reference: `gate_${id()}`, sessionId: bag.sid });
     if (r.error) return r;
     await audit(env, user, 'GATE_SALE_CASH', { orderId: r.orderId, eventId: ev.id, amountPesewas: item.amountPesewas, kind: item.kind });
@@ -336,7 +337,7 @@ async function tableCap(env, f) { return f.packageId ? Number((await getDoc(env,
 export async function gateReport(env, b, user) {
   const ev = await gateNight(env, user, b?.eventId, CHECKERS); if (!ev) return FORBIDDEN;
   const ph = normalizePhone(b?.phone);
-  await setDoc(env, 'incidents', id(), { businessDate: nightKey(now()), kind: 'entry', note: `Not in the system: ${ph ? maskPhone(ph) : 'no number'}${clean(b?.note, 200) ? `: ${clean(b.note, 200)}` : ''}. Found by ${user.name || 'staff'} (${user.role}).`, people: '', needsManager: true, status: 'open', by: uidOf(user), byName: user.name || '', at: now() });
+  await setDoc(env, 'incidents', id(), { businessDate: bizDate(), kind: 'entry', note: `Not in the system: ${ph ? maskPhone(ph) : 'no number'}${clean(b?.note, 200) ? `: ${clean(b.note, 200)}` : ''}. Found by ${user.name || 'staff'} (${user.role}).`, people: '', needsManager: true, status: 'open', by: uidOf(user), byName: user.name || '', at: now() });
   await audit(env, user, 'GATE_NOT_IN_SYSTEM', { eventId: ev.id, phoneHint: ph ? maskPhone(ph) : '' });
   return { reported: true };
 }
@@ -348,7 +349,7 @@ export async function gateCounts(env, user, eventId) {
   const T = tickets.map(t => t.fields).filter(t => !t.revoked && !t.cancelled), O = orders.map(o => o.fields).filter(o => o.status === 'confirmed');
   const heads = xs => xs.reduce((n, t) => n + Number(t.admitCount || 1), 0);
   const gate = O.filter(o => o.channel === 'gate'), sum = xs => xs.reduce((n, o) => n + Number(o.amountPesewas || 0), 0);
-  const members = isTonight(ev.fields) ? (await queryWhere(env, 'member_entries', [{ field: 'night', value: nightKey(now()) }])).filter(e => e.fields.method !== 'reentry').length : 0;
+  const members = isTonight(ev.fields) ? (await queryWhere(env, 'member_entries', [{ field: 'night', value: bizDate() }])).filter(e => e.fields.method !== 'reentry').length : 0;
   return {
     event: { id: ev.id, name: ev.fields.name || '' },
     online: { sold: heads(T.filter(t => t.channel !== 'gate' && !t.comp)), in: heads(T.filter(t => t.channel !== 'gate' && !t.comp && t.status === 'used')) },

@@ -158,15 +158,14 @@ test('the Event manager serves a table like a waiter: opens it, sends drinks, ta
   assert.equal(ok(await ctx.call('GET', '/api/ops/my-report', { who: EV }), 'report').figures.cashCollectedPesewas, 5000);
 });
 
-test('closing the night: the Manager closes it, not a director; if the Manager can’t, they hand it over and the Human manager or Event manager who accepts closes it', async () => {
+test('closing the night: the Manager (or a director) closes it; if the Manager can’t, they hand it over and the Human manager or Event manager who accepts closes it', async () => {
   const ctx = setup();
   ctx.store.seed('users', 'ev', { name: 'Yaa Events', role: 'eventManager', phone: '0240000299' });
   const EV = { uid: 'ev', role: 'eventManager' };
   const close = who => ctx.call('POST', '/api/ops/close-night', { who, body: { confirmEarly: true, closeAnyway: true } });
-  assert.match((await close(ctx.D1)).data.error, /The Manager closes the night, not the directors/);
   assert.equal((await close(ctx.HR)).status, 403, 'not without a handover');
   let st = ok(await ctx.call('GET', '/api/ops/closing', { who: ctx.D1 }), 'director looks');
-  assert.deepEqual([st.closer.canClose, st.closer.handover], [false, null]);
+  assert.deepEqual([st.closer.canClose, st.closer.handover], [true, null], 'a director can end the night');
   // The Manager can't be there tonight: hands over with a reason.
   assert.equal((await ctx.call('POST', '/api/ops/close-night/hand-over', { who: ctx.HR, body: { note: 'x' } })).status, 403);
   assert.match((await ctx.call('POST', '/api/ops/close-night/hand-over', { who: ctx.M1, body: {} })).data.error, /Say why/);
@@ -195,4 +194,54 @@ test('the Human manager sees only the staff he looks after: no directors, no sha
   assert.ok(!JSON.stringify(hr).includes('sharePct'));
   const d = ok(await ctx.call('GET', '/api/admin/people', { who: ctx.D1 }), 'director list');
   assert.ok(d.staff.some(s => s.role === 'director'), 'a director still sees everyone');
+});
+
+test('no fixed closing time: the night stays open until it is closed, then the next sale starts a new night', async () => {
+  const ctx = setup();
+  const day = ms => new Date(Date.now() + ms).toLocaleDateString('en-CA', { timeZone: 'Africa/Accra' });
+  const yesterday = day(-864e5), today = day(0);
+  // A night that started yesterday evening and is still going (it's long past 4AM).
+  ctx.store.seed('config', 'night', { date: yesterday, startedAt: new Date(Date.now() - 864e5).toISOString() });
+  const t1 = ok(await ctx.call('POST', '/api/ops/tabs/open', { who: ctx.M1, body: { table: '3' } }), 'open late');
+  assert.equal(ctx.store.get('tabs', t1.id).fields.businessDate, yesterday, 'still the open night, however late');
+  const s1 = ok(await ctx.call('GET', '/api/ops/sales', { who: ctx.D1 }), 'sales');
+  assert.deepEqual([s1.date, s1.isOpenNight], [yesterday, true]);
+  // A director ends it.
+  ok(await ctx.call('POST', '/api/ops/close-night', { who: ctx.D1, body: { date: yesterday } }), 'a director closes');
+  const t2 = ok(await ctx.call('POST', '/api/ops/tabs/open', { who: ctx.M1, body: { table: '4' } }), 'open after');
+  assert.equal(ctx.store.get('tabs', t2.id).fields.businessDate, today, 'the next night has started');
+  const s2 = ok(await ctx.call('GET', '/api/ops/sales', { who: ctx.M1 }), 'sales after');
+  assert.deepEqual([s2.date, s2.previous?.date], [today, yesterday], 'last night is one tap away');
+});
+
+test('closing a tab: drinks the bar handed over count as delivered; only drinks still at the bar stop it', async () => {
+  const ctx = setup();
+  const W = ctx.M1;
+  const t = ok(await ctx.call('POST', '/api/ops/tabs/open', { who: W, body: { table: '7' } }), 'open');
+  const r1 = ok(await ctx.call('POST', '/api/ops/tabs/round', { who: W, body: { tabId: t.id, lines: [{ productId: 'beer', qty: 2 }] } }), 'order');
+  const rid = r1.roundId || r1.id;
+  // Still at the bar: the close says so, and names it.
+  const blocked = await ctx.call('POST', '/api/ops/tabs/checkout', { who: W, body: { tabId: t.id, method: 'cash' } });
+  assert.equal(blocked.data.code, 'at_bar'); assert.equal(blocked.data.atBar.length, 1);
+  // The bar hands it over; the waiter never taps "I got them".
+  ok(await ctx.call('POST', '/api/ops/bar/round', { who: ctx.B1, body: { roundId: rid, action: 'hand' } }), 'handed');
+  const c = ok(await ctx.call('POST', '/api/ops/tabs/checkout', { who: W, body: { tabId: t.id, method: 'momo_club', momoRef: 'MP123456789' } }), 'close with MoMo to the club');
+  assert.deepEqual([c.closed, c.momoPesewas], [true, 5000]);
+  assert.equal(ctx.store.get('rounds', rid).fields.status, 'delivered');
+  // An empty tab (opened by mistake) closes too.
+  const e = ok(await ctx.call('POST', '/api/ops/tabs/open', { who: W, body: { table: '8' } }), 'open empty');
+  assert.equal(ok(await ctx.call('POST', '/api/ops/tabs/checkout', { who: W, body: { tabId: e.id, method: 'cash' } }), 'close empty').closed, true);
+});
+
+test('stock value: what finance recorded coming in, minus what left, at cost price; flags what makes it wrong', async () => {
+  const ctx = setup();
+  ctx.store.seed('menu_items', 'gin', { name: 'House gin', category: 'Spirits', unit: 'bottle', pricePesewas: 30000, available: true, tracked: true });
+  ctx.store.seed('stock_moves', 'gin-in', { productId: 'gin', stationId: 'main', qty: 2, kind: 'received', businessDate: '2000-01-01' });
+  ctx.store.seed('stock_moves', 'beer-out', { productId: 'beer', stationId: 'main', qty: -5, kind: 'issue', businessDate: '2000-01-02' });
+  assert.equal((await ctx.call('GET', '/api/ops/stock/value', { who: ctx.B1 })).status, 403, 'not the bartenders');
+  const v = ok(await ctx.call('GET', '/api/ops/stock/value', { who: ctx.D1 }), 'director');
+  assert.equal(v.totals.costValuePesewas, 15 * 1200, '15 beers at cost (gin has no cost yet)');
+  assert.equal(v.totals.priceValuePesewas, 15 * 2500 + 2 * 30000);
+  assert.deepEqual(v.noCostPrice, ['House gin']);
+  ok(await ctx.call('GET', '/api/ops/stock/value', { who: ctx.F1 }), 'finance');
 });

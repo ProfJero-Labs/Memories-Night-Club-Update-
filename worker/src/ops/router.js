@@ -32,6 +32,7 @@ export async function opsRoute(m, p, u, b, env, user) {
       case '/api/ops/stock': return stock.stockSheet(env, { stationId: q('stationId'), date: q('date') }, user);
       case '/api/ops/changes': return stock.changeLog(env, user);
       case '/api/ops/stock/to-explain': return stock.countsToExplain(env, user);
+      case '/api/ops/stock/value': return stock.stockValue(env, user);
       case '/api/ops/stock/deliveries': return stock.listDeliveries(env, user, { stationId: q('stationId') });
       case '/api/ops/tabs': return tabs.myTabs(env, user, { all: q('all') === '1' });
       case '/api/ops/tabs/find': return tabs.findTabs(env, user, q('q'));

@@ -343,7 +343,7 @@ test('the waiter’s tab: order → the bar → “I got them”; close it: cash
   assert.equal(a.totalPesewas, 5000);
   assert.equal(ctx.store.sms.filter(x => x.to === '0245557070').length, 0, 'no text while they’re still drinking');
   // Closing before the drinks are collected: refused, so the bill is final.
-  assert.match((await ctx.call('POST', '/api/ops/tabs/checkout', { who: ctx.W1, body: { tabId: a.tabId, method: 'cash' } })).data.error, /isn’t collected yet/);
+  assert.match((await ctx.call('POST', '/api/ops/tabs/checkout', { who: ctx.W1, body: { tabId: a.tabId, method: 'cash' } })).data.error, /still at the bar/);
   await barMakes(ctx, a.roundId);
   ok(await ctx.call('POST', '/api/ops/tabs/round-action', { who: ctx.W1, body: { roundId: a.roundId, action: 'delivered' } }), 'I got them');
   // More drinks on the same tab later.

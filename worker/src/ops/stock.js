@@ -37,7 +37,7 @@
 //
 // Nothing sells past zero: stockLeft() is what should be in the bar minus what's already ordered
 // but not yet handed over. Waiter orders, quick sales and QR orders are refused when it runs out.
-import { getDoc, setDoc, queryWhere, listDocs, queryRecent, batchGet, commitTx, updateWrite, foundFields, withTransaction } from '../lib/firestore.js';
+import { getDoc, setDoc, queryWhere, queryAll, listDocs, queryRecent, batchGet, commitTx, updateWrite, foundFields, withTransaction } from '../lib/firestore.js';
 import { now, id, clean } from '../lib/util.js';
 import { requireRole, STOCK, uidOf } from '../lib/auth.js';
 import { FORBIDDEN, bizDate, dateOr, who, audit, logChange, closedError, int } from './common.js';
@@ -354,8 +354,8 @@ function openingFor(stationId, date, counts, moves) {
 
 async function sheetFor(env, st, d, { withComps = true } = {}) {
   const [items, allMoves, counts] = await Promise.all([
-    listDocs(env, 'menu_items'), queryWhere(env, 'stock_moves', [{ field: 'stationId', value: st.id }], { limit: 20000 }),
-    queryWhere(env, 'stock_counts', [{ field: 'stationId', value: st.id }]),
+    listDocs(env, 'menu_items'), queryAll(env, 'stock_moves', [{ field: 'stationId', value: st.id }]),
+    queryAll(env, 'stock_counts', [{ field: 'stationId', value: st.id }]),
   ]);
   const opening = openingFor(st.id, d, counts, allMoves);
   const moves = allMoves.filter(m => m.fields.businessDate === d);
@@ -389,6 +389,49 @@ export async function stockSheet(env, { stationId, date }, user) {
     station: { id: st.id, name: st.name }, date: d, opening: { source: opening.source, fromDate: opening.fromDate || null },
     closing: closing ? { status: closing.fields.status, byName: closing.fields.byName, at: closing.fields.at, reviewedByName: closing.fields.reviewedByName || '', corrected: !!closing.fields.corrected } : null,
     rows, reasons: COUNT_REASONS, wasteReasons: WASTE_REASONS, pendingDeliveries: pendingNew,
+  };
+}
+
+// ── What the stock is worth (directors, the Manager, finance) ──
+// No storeroom: every drink finance records buying goes into a bar, so the club's stock is what's in
+// its bars. For each drink: everything recorded coming in (bought, returned) minus everything that
+// left (handed out, broken, moved), from the stock ledger; or the bar's own count where tonight's
+// closing count is in. Valued at the cost price finance set, and at the selling price.
+// Flags what makes the figure wrong: drinks with no cost price, and drinks below zero (something
+// left the bar that was never recorded coming in).
+export async function stockValue(env, user) {
+  if (!requireRole(user, STOCK)) return FORBIDDEN;
+  const d = bizDate();
+  const [items, stations, deliveries] = await Promise.all([listDocs(env, 'menu_items'), listDocs(env, 'bar_stations'), listDocs(env, 'stock_deliveries')]);
+  const item = Object.fromEntries(items.map(i => [i.id, i.fields]));
+  const drinks = new Map(), bars = [];
+  for (const s of stations.sort((a, b) => String(a.fields.name).localeCompare(String(b.fields.name)))) {
+    const { rows, closing } = await sheetFor(env, { id: s.id, ...s.fields }, d, { withComps: false });
+    let costValue = 0, priceValue = 0, qty = 0;
+    for (const r of rows) {
+      const onHand = r.counted ?? r.expected, f = item[r.productId] || {};
+      const cost = Number(f.costPesewas || 0), price = Number(f.pricePesewas || 0);
+      const x = drinks.get(r.productId) || { productId: r.productId, name: r.name, category: r.category, unit: r.unit, costPesewas: cost, pricePesewas: price, qty: 0, bars: [] };
+      x.qty += onHand; if (onHand) x.bars.push({ name: s.fields.name || 'Bar', qty: onHand }); drinks.set(r.productId, x);
+      if (onHand > 0) { costValue += onHand * cost; priceValue += onHand * price; qty += onHand; }
+    }
+    bars.push({ stationId: s.id, name: s.fields.name || 'Bar', qty, costValuePesewas: costValue, priceValuePesewas: priceValue, countedTonight: !!closing });
+  }
+  const rows = [...drinks.values()].map(x => ({ ...x, costValuePesewas: Math.max(0, x.qty) * x.costPesewas, priceValuePesewas: Math.max(0, x.qty) * x.pricePesewas }))
+    .filter(x => x.qty !== 0).sort((a, b) => b.costValuePesewas - a.costValuePesewas || a.name.localeCompare(b.name));
+  const sum = (xs, f) => xs.reduce((n, x) => n + Number(f(x) || 0), 0);
+  // What finance has recorded buying (confirmed), all time and this month: the money put into stock.
+  const bought = deliveries.map(x => x.fields).filter(x => x.status === 'confirmed' && !x.deleted);
+  const cost = x => Number(x.totalCostPesewas ?? (x.unitCostPesewas != null ? x.unitCostPesewas * (x.confirmedQty ?? x.qty) : 0));
+  const month = d.slice(0, 7);
+  return {
+    date: d,
+    totals: { qty: sum(rows.filter(r => r.qty > 0), r => r.qty), costValuePesewas: sum(rows, r => r.costValuePesewas), priceValuePesewas: sum(rows, r => r.priceValuePesewas) },
+    bought: { allTimePesewas: sum(bought, cost), thisMonthPesewas: sum(bought.filter(x => String(x.businessDate || '').startsWith(month)), cost), noCost: bought.filter(x => x.totalCostPesewas == null && x.unitCostPesewas == null).length },
+    bars, rows,
+    noCostPrice: rows.filter(r => r.qty > 0 && !r.costPesewas).map(r => r.name),
+    belowZero: rows.filter(r => r.qty < 0).map(r => ({ name: r.name, qty: r.qty })),
+    notCounted: items.filter(i => !i.fields.deleted && i.fields.tracked === false).map(i => i.fields.name),
   };
 }
 

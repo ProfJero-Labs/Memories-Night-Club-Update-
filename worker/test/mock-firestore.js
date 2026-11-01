@@ -212,7 +212,13 @@ export class MockFirestore {
       );
       for (const o of [...(sq.orderBy || [])].reverse()) {
         const f = o.field.fieldPath, dir = o.direction === 'DESCENDING' ? -1 : 1;
+        if (f === '__name__') { matches.sort((a, b) => (a.id < b.id ? -dir : a.id > b.id ? dir : 0)); continue; }
         matches.sort((a, b) => { const x = a.fields[f], y = b.fields[f]; const xa = isNaN(Date.parse(x)) ? x : Date.parse(x), ya = isNaN(Date.parse(y)) ? y : Date.parse(y); return xa < ya ? -dir : xa > ya ? dir : 0; });
+      }
+      if (sq.startAt?.values?.[0]?.referenceValue) {
+        const after = sq.startAt.values[0].referenceValue.split('/').pop();
+        const i = matches.findIndex(m => m.id === after);
+        matches.splice(0, i < 0 ? 0 : i + (sq.startAt.before ? 0 : 1));
       }
       matches.splice(sq.limit || 1000);
       const out = matches.map(({ id, fields }) => {

@@ -47,7 +47,7 @@ export const MSG = {
   server: 'SOMETHING WENT WRONG ON OUR SIDE. TRY AGAIN IN A MOMENT.',
   busy: 'TOO MANY TRIES. GIVE IT A MINUTE.',
 };
-export class ApiError extends Error { constructor(message, status, code = '') { super(message); this.status = status; this.code = code; } }
+export class ApiError extends Error { constructor(message, status, code = '', data = null) { super(message); this.status = status; this.code = code; this.data = data; } }
 export async function api(path, { method = 'GET', body, token, headers: extra, retries = method === 'GET' ? 1 : 0, timeout = 15000 } = {}) {
   for (let attempt = 0; ; attempt++) {
     const ctl = new AbortController(); const t = setTimeout(() => ctl.abort(), timeout);
@@ -59,7 +59,7 @@ export async function api(path, { method = 'GET', body, token, headers: extra, r
       if (r.ok && d.success !== false) return d;
       if (r.status === 429) throw new ApiError(MSG.busy, 429);
       if (r.status >= 500 && attempt < retries) continue;
-      throw new ApiError(r.status >= 500 ? MSG.server : (d.error || MSG.server), r.status, d.code || '');
+      throw new ApiError(r.status >= 500 ? MSG.server : (d.error || MSG.server), r.status, d.code || '', d);
     } catch (e) {
       if (e instanceof ApiError) throw e;
       if (attempt < retries) { await new Promise(res => setTimeout(res, 600)); continue; }

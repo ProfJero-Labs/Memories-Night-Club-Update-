@@ -14,8 +14,9 @@
 // manager explains them). The manager adds expenses from Tonight; the director sees Money.
 import { $, $$, esc } from '../app.js';
 import { requireStaff, staffHeader, sapi } from '../staff.js';
-import { bottomNav, sheet, say, st, every, money, when, ask, backBar, bindBackBar, upcomingBookings } from '../lib/ops-ui.js';
-import { accountsView, ticketsView, findOrderView, expensesView, nightsView, salesView, closingView, approvalsView, productsView, stockAdminView, eodListView, eodView, moneyView, expenseSheet, explainSheet, budgetView, paymentsView, commissionsView, toApproveView, purchasesView, cashReceiveView, feedbackInboxView, chargesView, financeNightView, tabClearView } from '../lib/ops-views.js';
+import { bottomNav, sheet, say, st, every, money, when, ask, backBar, bindBackBar, upcomingBookings, dayName } from '../lib/ops-ui.js';
+import { accraDayKey } from '../app.js';
+import { accountsView, ticketsView, findOrderView, expensesView, nightsView, salesView, closingView, approvalsView, productsView, stockAdminView, eodListView, eodView, moneyView, expenseSheet, explainSheet, budgetView, paymentsView, commissionsView, toApproveView, stockValueView, purchasesView, cashReceiveView, feedbackInboxView, chargesView, financeNightView, tabClearView } from '../lib/ops-views.js';
 import { payView, reviewsView, perfView } from '../lib/people-views.js';
 import { staffView } from '../lib/staff-view.js';
 
@@ -43,7 +44,7 @@ async function route() {
     if (key === 'staff') { app.innerHTML = `${back()}<div id="sv"></div>`; bindBack(); return await staffView($('#sv'), user); }
     if (key === 'reports') { app.innerHTML = `${back()}<div id="rv"></div>`; bindBack(); return await eodListView($('#rv'), { canSignOff: director }); }
     if (key === 'report' && arg) { app.innerHTML = '<div id="rv"></div>'; return await eodView($('#rv'), arg, { canSignOff: director }); }
-    if (key === 'close') { app.innerHTML = `${back()}<div id="cv"></div>`; bindBack(); return await closingView($('#cv'), undefined, { canClose: !director || user.role === 'superAdmin' }); }
+    if (key === 'close') { app.innerHTML = `${back()}<div id="cv"></div>`; bindBack(); return await closingView($('#cv'), undefined, { canClose: true }); }
     if (key === 'approvals') { app.innerHTML = `${back()}<div id="av"></div>`; bindBack(); return await approvalsView($('#av')); }
     if (key === 'sales') { app.innerHTML = `${back()}<div id="sv"></div>`; bindBack(); return await salesView($('#sv')); }
     if (key === 'prices') { app.innerHTML = `${back()}<div id="pv"></div>`; bindBack(); return await productsView($('#pv'), { canEdit: user.role === 'superAdmin' }); }
@@ -58,6 +59,7 @@ async function route() {
     if (key === 'perf') { app.innerHTML = `${back()}<div id="pfv"></div>`; bindBack(); return await perfView($('#pfv'), arg); }
     if (key === 'purchases') { app.innerHTML = `${back()}<div id="puv"></div>`; bindBack(); return await purchasesView($('#puv')); }
     if (key === 'cash') { app.innerHTML = `${back()}<div id="crv"></div>`; bindBack(); return await cashReceiveView($('#crv')); }
+    if (key === 'stockvalue') { app.innerHTML = `${back()}<div id="svv"></div>`; bindBack(); return await stockValueView($('#svv')); }
     if (key === 'stock') { app.innerHTML = `${back()}<div id="kv"></div>`; bindBack(); return await stockAdminView($('#kv'), undefined, undefined, { role: user.role }); }
     if (key === 'accounts') { app.innerHTML = `${back()}<div id="acv"></div>`; bindBack(); return await accountsView($('#acv'), arg, { onCash: () => { location.hash = 'cash'; } }); }
     if (key === 'tickets') { app.innerHTML = `${back()}<div id="tkv"></div>`; bindBack(); return await ticketsView($('#tkv'), arg); }
@@ -87,6 +89,9 @@ async function tonight(alive = () => location.hash.slice(1).split('/')[0] in { '
   const open = t.tabs.filter(tb => tb.status === 'open');
   const closed = s.night.status === 'closed';
   const toPay = ta?.items?.length || 0;
+  // No fixed closing time: the night stays open until it's closed. A night still open the next
+  // afternoon was probably forgotten, so say so (it is never closed by itself).
+  const stale = !closed && s.date < accraDayKey() && Number(new Date().toLocaleString('en-GB', { timeZone: 'Africa/Accra', hour: '2-digit', hourCycle: 'h23' })) >= 12;
   nav.setDot('tonight', waiting.length + toExplain.length);
   // Glanceable: the director sees their own share first; the Manager sees the money received.
   const top = director && m?.myShare
@@ -95,7 +100,8 @@ async function tonight(alive = () => location.hash.slice(1).split('/')[0] in { '
     : `<div class="hero good"><span>Received tonight</span><b>${money(x.paidPesewas)}</b></div>
        <div class="hero-row"><div class="hero"><span>Sold</span><b>${money(x.salesPesewas)}</b></div><div class="hero ${x.owedPesewas ? 'bad' : ''}"><span>Still owed</span><b>${money(x.owedPesewas)}</b></div></div>`;
   app.innerHTML = `<div class="pos">
-    <p class="kicker">${esc(new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'Africa/Accra' }))}${closed ? ' · closed' : ''}</p>
+    <p class="kicker">Night of ${esc(dayName(s.date))}${s.startedAt ? ` · started ${esc(when(s.startedAt))}` : ''}${closed ? ' · closed' : ' · open'}</p>
+    ${stale ? `<div class="say warn"><b>This night is still open</b>It started ${esc(dayName(s.date))}. If it has ended, close it so the next night starts fresh.</div>` : ''}
     ${top}
     <p class="muted" style="margin:0">Cash ${money(x.cashPesewas)} · MoMo ${money((x.momoPesewas || 0))} · Paid on phone ${money(x.digitalPesewas)}</p>
     <div id="msg"></div>
@@ -106,8 +112,9 @@ async function tonight(alive = () => location.hash.slice(1).split('/')[0] in { '
     ${waiting.length ? `<section class="pos-need"><h2>Needs you <span class="count">${waiting.length}</span></h2>
       ${waiting.map(p => `<div class="need"><div><b>${esc(p.label)}</b><span>${esc(p.summary)}</span><small>${esc(p.requestedByName)} · “${esc(p.reason)}”</small></div>
         <div class="need-btns"><button class="mid okc" data-yes="${esc(p.id)}" aria-label="Approve">✓</button><button class="mid" data-no="${esc(p.id)}" aria-label="Refuse">✗</button></div></div>`).join('')}</section>` : ''}
-    ${closed ? `<div class="say good"><b>The night is closed</b>The report is under ${director ? 'More → End-of-day reports' : 'More → Past nights'}.</div>` : director ? '' : '<button class="big" id="toClose">Close the night</button>'}
+    ${closed ? `<div class="say good"><b>The night is closed</b>The report is under ${director ? 'More → End-of-day reports' : 'More → Past nights'}.</div>` : '<button class="big" id="toClose">Close the night</button>'}
     <div class="rows">
+      ${s.previous ? `<button type="button" class="row-btn" data-goto="report/${esc(s.previous.date)}"><span class="t">Last night: ${esc(dayName(s.previous.date))}</span><span class="s">Closed${s.previous.closedByName ? ` by ${esc(s.previous.closedByName)}` : ''} · tap for the full report</span><span class="r">${money(s.previous.salesPesewas)}</span></button>` : ''}
       <button type="button" class="row-btn" data-goto="payments"><span class="t">Payments tonight</span><span class="s">Every payment: what, who served, how it was paid</span><span class="r"></span></button>
       <button type="button" class="row-btn" data-goto="customers"><span class="t">${director ? 'Customers' : 'Top customers'}</span><span class="s">Who spent the most; reviews</span><span class="r"></span></button>
       ${director ? '' : '<button type="button" class="row-btn" data-goto="cash"><span class="t">Cash from the staff</span><span class="s">Receive each person’s counted cash</span><span class="r"></span></button><button type="button" class="row-btn" data-goto="purchases"><span class="t">Buying drinks</span><span class="s">Ask for what to buy</span><span class="r"></span></button>'}
@@ -116,7 +123,7 @@ async function tonight(alive = () => location.hash.slice(1).split('/')[0] in { '
     <section><div class="pos-head"><h2>Tables</h2><span class="muted">${open.length} open</span></div>
       <div class="pos-tables">${open.slice(0, 5).map(tableRow).join('') || '<p class="muted">No open tables.</p>'}</div>
       ${open.length > 5 ? `<button class="link" data-goto="tables">See all ${open.length} tables →</button>` : ''}</section>
-    ${director ? (closed ? '' : '<button class="big ghost" id="toClose">How closing is going</button>') : '<button class="big ghost" id="addExp">Add an expense</button>'}
+    ${director ? '' : '<button class="big ghost" id="addExp">Add an expense</button>'}
   </div>`;
   bindRows();
   if (flash && Date.now() - flash.at < 8000) say($('#msg'), flash.text, flash.kind);
@@ -173,13 +180,13 @@ async function tableSheet(id) {
 function more() {
   // Grouped, so each thing is quick to find (no scrolling through one long list).
   const groups = director ? [
-    ['Money', [['accounts', 'Night accounts', 'What the drinks should bring; who isn’t aligned'], ['salaries', 'Salaries and loans', 'What staff are paid'], ['budget', 'Bills and budget', 'What’s due this month'], ['commissions', 'Commissions', '10% on tables over GHS 3,000'], ['reports', 'End-of-day reports', 'Each night, signed off'], ['sales', 'Tonight in detail', 'By waiter, by bar, by drink'], ['finance', 'Night’s finances', 'Sales, Paystack fees, settlement, every payment'], ['charges', 'Service charge & commission', 'The customer charge, the developer commission, a simulation']]],
+    ['Money', [['accounts', 'Night accounts', 'What the drinks should bring; who isn’t aligned'], ['salaries', 'Salaries and loans', 'What staff are paid'], ['budget', 'Bills and budget', 'What’s due this month'], ['commissions', 'Commissions', '10% on tables over GHS 3,000'], ['reports', 'End-of-day reports', 'Each night, signed off'], ['sales', 'Tonight in detail', 'By waiter, by bar, by drink'], ['stockvalue', 'Stock value', 'What’s in the bars, at cost'], ['finance', 'Night’s finances', 'Sales, Paystack fees, settlement, every payment'], ['charges', 'Service charge & commission', 'The customer charge, the developer commission, a simulation']]],
     ['Tabs', [['opentabs', 'Tabs left open', 'Clear tabs still open after a night']]],
     ['People', [['staff', 'Staff', 'Add people, send PINs'], ['feedback', 'Staff feedback', 'Complaints and ideas'], ['perf', 'Performance reviews', 'Each staff member, every month'], ['@admin.html#members', 'Members', 'Members and passes']]],
     ['Floor', [['tables', 'Tables', 'Open tables and what they owe'], ['reviews', 'Customer reviews', 'What customers say'], ...(user.role === 'superAdmin' ? [['@admin.html', 'Control room', 'Site, nights, settings']] : [])]],
   ] : [
     ['Tonight', [['accounts', 'Night accounts', 'What the drinks should bring; who isn’t aligned'], ['tickets', 'Tickets tonight', 'Sold online and at the gate'], ['find', 'Find an order', 'A table booking or tickets'], ['payments', 'Payments tonight', 'Every payment, with details'], ['cash', 'Cash from the staff', 'Receive each person’s counted cash'], ['approvals', 'Approvals', 'Everything asked tonight'], ['sales', 'Tonight in detail', 'By waiter, by bar, by drink']]],
-    ['Stock and money', [['expenses', 'Expenses', 'What was spent; add one'], ['purchases', 'Buying drinks', 'Ask; finance and a director approve'], ['stock', 'Stock', 'New stock, counts, differences'], ['money', 'Money', 'In, out, profit'], ['prices', 'Drinks & prices', 'Set by finance'], ['commissions', 'Commissions', 'Who brought the big tables']]],
+    ['Stock and money', [['expenses', 'Expenses', 'What was spent; add one'], ['purchases', 'Buying drinks', 'Ask; finance and a director approve'], ['stock', 'Stock', 'New stock, counts, differences'], ['stockvalue', 'Stock value', 'What’s in the bars, at cost'], ['money', 'Money', 'In, out, profit'], ['prices', 'Drinks & prices', 'Set by finance'], ['commissions', 'Commissions', 'Who brought the big tables']]],
     ['Records', [['nights', 'Nights coming up', 'Tickets sold, tables booked'], ['reports', 'Past nights', 'End-of-day reports'], ['@admin.html#members', 'Members', 'Members and passes']]],
   ];
   const { box, close } = sheet(`<h2>More</h2>${groups.map(([g, items]) => `<p class="group-h">${esc(g)}</p><div class="more-list">${items.map(([k, l, sub]) => `<button type="button" data-more="${esc(k)}"><b>${esc(l)}</b><span>${esc(sub)}</span></button>`).join('')}</div>`).join('')}`, { label: 'More', full: true });

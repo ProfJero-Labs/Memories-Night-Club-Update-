@@ -83,12 +83,12 @@ export async function closingView(el, date, { canClose = false } = {}) {
   const h = d.closer?.handover;
   const who = closed ? '' : `<div class="say ${h && !h.acceptedByName ? 'warn' : 'good'}"><b>Who closes tonight</b>${h
     ? `${esc(h.byName)} can’t close: “${esc(h.note)}”. ${h.acceptedByName ? `<b>${esc(h.acceptedByName)}</b> is closing instead.` : 'Waiting for the Human manager or the Event manager to take it.'}`
-    : 'The Manager.'}
+    : 'The Manager or a director, whenever the night ends.'}
     ${d.closer?.canHandOver ? '<br><button class="mid" id="clHand" style="margin-top:8px">I can’t close tonight</button>' : ''}${d.closer?.canAccept ? '<br><button class="mid okc" id="clAccept" style="margin-top:8px">I’ll close tonight</button>' : ''}</div>`;
-  el.innerHTML = `<h1>Close the night</h1>${dateBar(d.date)}<p class="lead">${esc(dayName(d.date))}. You can close at any time; what isn’t done yet is listed in the report.</p>${who}
+  el.innerHTML = `<h1>Close the night</h1>${dateBar(d.date)}<p class="lead">${esc(dayName(d.date))}${d.open?.date === d.date && d.open.startedAt ? ` · started ${esc(when(d.open.startedAt))}` : ''}. There’s no set closing time: close when the night ends. What isn’t done yet is listed in the report.</p>${who}
     <div class="stepbar">${d.steps.map(s => `<div class="${s.done ? 'done' : ''}"><span><b>${esc(s.label)}</b><small>${esc(s.detail)}</small></span>${s.done ? st('paid', 'Done') : st('unpaid', 'Waiting')}</div>`).join('')}</div>
     <div id="clMsg"></div>
-    ${closed ? `<div class="say good"><b>Closed: the report is with finance</b>Staff can keep working. Anything sold after this goes in the report if you close again.</div>` : ''}${canClose ? `<p class="muted" style="margin:0">This prepares the end-of-day report and sends it to finance. It doesn’t stop anyone working: you can close at any time, and close again later to update it.</p><button class="big" id="closeGo">${closed ? 'Close again and send the updated report' : 'Close the night and send the report'}</button>` : ''}
+    ${closed ? `<div class="say good"><b>Closed: the report is with finance</b>Anything recorded after closing is still kept: close again to update the report. The next night starts on its own the next day.</div>` : ''}${canClose ? `<p class="muted" style="margin:0">This ends the night: the end-of-day report goes to finance and the next sale starts a new night. You can close again later to update the report.</p><button class="big" id="closeGo">${closed ? 'Close again and send the updated report' : 'Close the night and send the report'}</button>` : ''}
     <details class="fold"><summary>See the details: tabs, bar stock, cash</summary>
     <h2>1. Waiters</h2><div class="tbl-wrap"><table class="tbl"><thead><tr><th>Waiter</th><th class="num">Sales</th><th class="num">Not delivered</th><th class="num">Owed / unpaid</th><th>Tabs</th></tr></thead><tbody>
       ${d.waiters.map(w => `<tr><td><strong>${esc(w.name)}</strong>${w.explanation ? `<br><small class="muted">“${esc(w.explanation)}”</small>` : ''}</td><td class="num">${money(w.salesPesewas)}</td><td class="num">${w.withYouQty ? `<span class="diff-neg">${w.withYouQty}</span>` : 0}</td><td class="num">${w.unpaidPesewas ? `<span class="diff-neg">${money(w.unpaidPesewas)}</span>` : money(0)}</td><td>${w.openTabs ? st('unpaid', `${w.openTabs} open`) : st('paid', 'All closed')}</td></tr>`).join('') || '<tr><td colspan="5" class="empty-row">No waiters worked tonight.</td></tr>'}</tbody></table></div>
@@ -124,7 +124,6 @@ export async function closingView(el, date, { canClose = false } = {}) {
         await closingView(el, d.date, { canClose });
         return say($('#clMsg', el), r.note, r.sent ? 'good' : 'warn', 'Night closed');
       } catch (e) {
-        if (e.code === 'early' && confirm('The night isn’t over yet (it runs until 4AM). Close it anyway?')) { extra = { ...extra, confirmEarly: true }; continue; }
         if (e.code === 'incomplete' && confirm(`${e.message}\n\nClose anyway? What’s missing is listed in the end-of-day report.`)) { extra = { ...extra, closeAnyway: true }; continue; }
         return say($('#clMsg', el), e.message, 'bad');
       }
@@ -311,6 +310,29 @@ export async function stockAdminView(el, date, stationId, { role = '' } = {}) {
 
 // ── Money: is the club making money? Tonight / this week / this month ──
 // The answer first (profit, or my share of it), then money in and out, then the details folded.
+// ── What the stock is worth ──
+// Everything finance recorded buying, minus what left the bars, valued at cost (and at selling price).
+export async function stockValueView(el) {
+  el.innerHTML = '<div class="loading">Loading…</div>';
+  const v = await sapi('/api/ops/stock/value'), t = v.totals;
+  el.innerHTML = `<div class="vstack" style="display:grid;gap:14px"><h1>Stock value</h1>
+    <p class="lead">What’s in the bars now, at what the club paid for it.</p>
+    <div class="hero-stack"><div class="hero good"><span>Stock at cost</span><b>${money(t.costValuePesewas)}</b><span>${t.qty} item${t.qty === 1 ? '' : 's'} in the bars</span></div>
+      <div class="hero-row"><div class="hero"><span>At selling prices</span><b>${money(t.priceValuePesewas)}</b></div><div class="hero"><span>Bought this month</span><b>${money(v.bought.thisMonthPesewas)}</b></div></div></div>
+    ${v.noCostPrice.length ? `<div class="say warn"><b>No cost price for ${v.noCostPrice.length} drink${v.noCostPrice.length > 1 ? 's' : ''}</b>${v.noCostPrice.map(esc).join(', ')}. They count as GHS 0 until finance adds the cost (Drinks &amp; prices).</div>` : ''}
+    ${v.belowZero.length ? `<div class="say bad"><b>Below zero: stock left the bar that was never recorded coming in</b>${v.belowZero.map(x => `${esc(x.name)} ${x.qty}`).join(', ')}. Finance records the missing purchase, or the bar counts it.</div>` : ''}
+    ${v.notCounted.length ? `<p class="muted" style="margin:0">Not counted at the bar, so not in this value: ${v.notCounted.map(esc).join(', ')}.</p>` : ''}
+    <h2>By bar</h2><div class="lines-list">${v.bars.map(b => lineRow(`<b>${esc(b.name)}</b>`, money(b.costValuePesewas), `${b.qty} items · ${money(b.priceValuePesewas)} at selling prices${b.countedTonight ? ' · counted tonight' : ''}`)).join('') || '<div class="ln"><span class="muted">No bars set up</span></div>'}</div>
+    <h2>By drink</h2><div class="lines-list">${v.rows.map(r => lineRow(`<b>${esc(r.name)}</b>`, money(r.costValuePesewas), `${r.qty} × ${r.costPesewas ? money(r.costPesewas) : '<b>no cost</b>'}${v.bars.length > 1 ? ` · ${r.bars.map(b => `${esc(b.name)} ${b.qty}`).join(', ')}` : ''}`)).join('') || '<div class="ln"><span class="muted">Nothing in stock</span></div>'}
+      <div class="ln total"><span>Total at cost</span><span>${money(t.costValuePesewas)}</span></div></div>
+    <p class="muted" style="margin:0">All stock finance has recorded buying, ever: ${money(v.bought.allTimePesewas)}${v.bought.noCost ? ` (${v.bought.noCost} purchase${v.bought.noCost > 1 ? 's' : ''} without what was paid)` : ''}. The bars’ stock goes down as drinks are handed out, broken or moved.</p>
+    <button class="big ghost" id="svCsv">Download (spreadsheet)</button></div>`;
+  $('#svCsv', el).onclick = () => saveCsv(`stock-value-${v.date}.csv`, [
+    ['Stock value', v.date], [], ['Drink', 'Category', 'In stock', 'Cost each GHS', 'Value at cost GHS', 'Value at selling price GHS'],
+    ...v.rows.map(r => [r.name, r.category, r.qty, cedis(r.costPesewas), cedis(r.costValuePesewas), cedis(r.priceValuePesewas)]),
+    [], ['Total', '', t.qty, '', cedis(t.costValuePesewas), cedis(t.priceValuePesewas)]]);
+}
+
 export async function moneyView(el, period = 'today') {
   el.innerHTML = '<div class="loading">Loading…</div>';
   const [m, due, com] = await Promise.all([sapi(`/api/ops/money?period=${encodeURIComponent(period)}`), sapi('/api/ops/budget').catch(() => null), sapi('/api/ops/commissions').catch(() => null)]);

@@ -134,11 +134,16 @@ Every step is one tap, and the waiter is never stuck on one table.
      back to the bar and the menu opens for the new drink) or **Just return it**. It comes off the
      bill when the bar taps *Got them back*. **Broken**: off the bill, in the waiter's report.
    On **My tables** every open tab shows **Add drinks** and **Close tab** right on it.
-5. **Close tab** asks one question: **Cash or MoMo?** (Every order must be collected first, so
-   the bill is final.)
+5. **Close tab** asks one question: **how is the customer paying?** Drinks the bar has handed over
+   count as delivered: no need to tap *I got them* first. Only an order the bar still has stops the
+   close; the panel shows it (and **Cancel this order** if the bar hasn't started it). A tab with
+   nothing on it can be closed too.
+   - **MoMo to the club's number** → type (or paste) the transaction ID from the MoMo text:
+     recorded and closed at once. No code from Paystack and no service charge: the quickest way
+     when it's busy.
    - **Cash** → **Got GHS … cash · close**: it goes in the waiter's cash for the night, the tab
      closes, and the receipt is texted if there's a number.
-   - **MoMo** → a MoMo prompt goes to the customer's phone and the invoice (every drink, the total
+   - **MoMo prompt** → a MoMo prompt goes to the customer's phone and the invoice (every drink, the total
      and a pay link) is texted to them. They approve the prompt, or pay from the link, or scan the
      QR on the waiter's screen. The tab closes by itself once Paystack confirms the payment; the
      waiter can go back to My tables meanwhile.
@@ -304,9 +309,25 @@ never in sales, money in or profit.
   everything paid tonight from their phone. The menu has a search box that forgives spelling
   mistakes ("henikin" finds Heineken; "coke" finds Coca-Cola).
 
+## Finding a drink, and what the stock is worth
+
+- **Find a drink**: every drink list (waiters' new tab and *Add drinks*, quick sales, the bar's
+  *Sell*) has a search box at the top. Type part of the name; small spelling mistakes are fine
+  ("henny", "tekila", "guiness"). Drinks already picked stay listed while you search for the next.
+- **Stock value** (directors and the Manager: More; finance: Stock): what's in the bars now at the
+  cost price finance set, and at selling prices, by bar and by drink, with a spreadsheet download.
+  There's no storeroom: everything finance records buying goes into a bar. It warns about drinks
+  with **no cost price** (they count as GHS 0 until finance adds one) and drinks **below zero**
+  (handed out but never recorded coming in).
+
 ## Who closes the night
 
-- **The Manager closes the night.** Not the directors (they can look: *How closing is going*).
+- **There's no fixed closing time.** A night stays open (however late) until the **Manager or a
+  director** taps **Close the night**: the night ends abruptly, staff go home early, whenever.
+  Everything recorded while it's open belongs to it. After the close, the next thing recorded
+  starts the next night (named by that day's date); *Tonight* then shows **Last night** with its
+  figures one tap away. A night still open the next afternoon shows a reminder; it never closes
+  by itself.
 - If the Manager can't be there: Close the night → **I can't close tonight**, with the reason. The
   Human manager and the Event manager are texted, and a notice goes to the managers. The first to tap
   **I'll close tonight** is responsible for closing that night, and only they (or the Manager) can.

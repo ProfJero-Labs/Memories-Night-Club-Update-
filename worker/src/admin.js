@@ -10,6 +10,7 @@ import { openRaffleForEvent, raffleSpotWrites } from './raffle.js';
 import { balanceMessage } from './checkout.js';
 import { counterRefunds } from './bar.js';
 import { ensureStaffMember, suspendStaffMember } from './members.js';
+import { bizDate } from './ops/common.js';
 
 
 const FORBIDDEN = { error: 'Forbidden.', status: 403 };
@@ -534,7 +535,9 @@ export async function organiserOverview(env, user) {
 export async function doorEvents(env, user) {
   const all = await listDocs(env, 'events');
   const mine = user.role === 'organiser' && user.admin !== true ? all.filter(e => e.fields.organiserId === uidOf(user)) : all;
-  return { events: mine.filter(e => e.fields.active !== false && new Date(e.fields.date).getTime() + 12 * 3600e3 > Date.now()).map(e => ({ id: e.id, name: e.fields.name, date: e.fields.date })).sort((a, b) => new Date(a.date) - new Date(b.date)) };
+  // Nights stay listed for a day after they start (the club closes when it closes); `tonight` is the
+  // open night, so the door picks it however late it is.
+  return { tonight: bizDate(), events: mine.filter(e => e.fields.active !== false && new Date(e.fields.date).getTime() + 24 * 3600e3 > Date.now()).map(e => ({ id: e.id, name: e.fields.name, date: e.fields.date })).sort((a, b) => new Date(a.date) - new Date(b.date)) };
 }
 
 // ── Settlements (the club paying an organizer) ──

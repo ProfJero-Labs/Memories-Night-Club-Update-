@@ -17,7 +17,7 @@
 import { getDoc, setDoc, queryWhere, queryRecent, listDocs } from '../lib/firestore.js';
 import { now, nightKey, clean } from '../lib/util.js';
 import { requireRole, uidOf } from '../lib/auth.js';
-import { FORBIDDEN, dateOr, audit, int } from './common.js';
+import { FORBIDDEN, dateOr, audit, int, paidNight } from './common.js';
 import { billOf } from './tabs.js';
 import { ledgerFor, ledgerSince } from './ledger.js';
 import { commercialConfig, serviceChargeOf, commissionOf } from '../lib/fee.js';
@@ -42,7 +42,7 @@ export async function nightFinance(env, user, { date, channel = 'all' } = {}) {
   const rounds = roundsRaw.map(r => ({ id: r.id, ...r.fields }));
   const tabs = tabsRaw.map(t => ({ id: t.id, ...t.fields }));
   for (const t of tabs) t.bill = billOf(t, rounds.filter(r => r.tabId === t.id));
-  const qr = qrRaw.map(o => ({ id: o.id, ...o.fields })).filter(o => ['paid', 'delivered', 'refund_due', 'refunded'].includes(o.status) && o.paidAt && nightKey(o.paidAt) === d);
+  const qr = qrRaw.map(o => ({ id: o.id, ...o.fields })).filter(o => ['paid', 'delivered', 'refund_due', 'refunded'].includes(o.status) && paidNight(o) === d);
   const orders = ordersRaw.map(o => ({ id: o.id, ...o.fields })).filter(o => o.status === 'confirmed' && o.kind !== 'comp' && nightKey(o.createdAt) === d);
 
   // ── A. Sales ──

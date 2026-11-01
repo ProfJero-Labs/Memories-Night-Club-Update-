@@ -19,6 +19,7 @@ import * as bar from './bar.js';
 import * as promos from './promos.js';
 import * as staffauth from './staffauth.js';
 import { opsRoute } from './ops/router.js';
+import { loadNight } from './ops/common.js';
 import { publicBill, startBillPayment } from './ops/tabs.js';
 import { guestNight } from './ops/payments.js';
 import { leaveReview } from './ops/reviews.js';
@@ -327,6 +328,8 @@ const handler = {
   async fetch(req, env, ctx) {
     if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers: cors(req, env) });
     try {
+      // The night that's open now (the club closes when it closes): read once for this request.
+      if (new URL(req.url).pathname.startsWith('/api/')) await loadNight(env);
       const res = await route(req, env, ctx);
       // Probing looks like a run of refusals from one address; a guest having a bad night doesn't.
       const ip = req.headers.get('CF-Connecting-IP') || 'unknown', path = new URL(req.url).pathname;
@@ -343,6 +346,7 @@ const handler = {
     }
   },
   async scheduled(event, env, ctx) {
+    await loadNight(env);
     // Two crons (wrangler.toml): every 10 minutes the payment reconciliation, daily the forfeit sweep.
     if (event.cron === '*/10 * * * *') {
       ctx.waitUntil(reconcilePayments(env, event.scheduledTime));

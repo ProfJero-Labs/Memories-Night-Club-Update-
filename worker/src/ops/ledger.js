@@ -27,6 +27,7 @@
 import { getDoc, setDoc, createDoc, queryWhere, queryRecent, alreadyExists } from '../lib/firestore.js';
 import { now, nightKey } from '../lib/util.js';
 import { commercialConfig, commissionOf } from '../lib/fee.js';
+import { nightAt } from './common.js';
 
 const num = v => Number(v || 0);
 // The product part of a checkout: tabs and QR orders keep the tip inside amountPesewas.
@@ -51,7 +52,7 @@ export async function recordPayment(env, reference, pending, payment) {
   const feeKnown = payment.fees !== undefined && payment.fees !== null && Number.isFinite(Number(payment.fees));
   const rec = {
     reference, kind: P.kind, eventId: P.eventId || '', label: P.eventName || P.ticketTypeName || P.packageName || '', tabId: P.tabId || '', orderId: P.orderId || '', planId: P.planId || '',
-    businessDate: nightKey(at), paidAt: at, recordedAt: now(), channel, currency: payment.currency || 'GHS',
+    businessDate: nightAt(at), paidAt: at, recordedAt: now(), channel, currency: payment.currency || 'GHS',
     ...parts, collectedPesewas: num(payment.amount),
     serviceCharge: { percent: num(P.feePercent), capPesewas: P.feeCapPesewas ?? null },
     processingFeePesewas: feeKnown ? num(payment.fees) : null, feeStatus: feeKnown ? 'actual' : 'pending',
