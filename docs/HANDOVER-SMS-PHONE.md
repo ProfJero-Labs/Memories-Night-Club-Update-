@@ -83,24 +83,32 @@ re-read; "Phone offline" on Tonight when the phone hasn't checked in for a few m
 4. Yes/no: confirm automatically on one clear match with the balance adding up (recommended), or
    only pre-fill for a manager to tap.
 
-## Owner's direction (2 Nov 2026): don't rely on the Manager — automate
+## Owner's direction (2 Nov 2026): automate; finance acts; directors are informed
 
-The current Manager isn't diligent. The system must stay credible even when he fails: nothing
-important may depend on him alone, and anything risky he does must reach the directors
-automatically (he can't stop it). Build these with the SMS phone:
+- **The Manager isn't diligent.** Nothing important may depend on him alone; the system does it
+  automatically, and anything risky he does is reported without him being able to stop it.
+- **The directors are busy.** Day-to-day financial responsibility moves to **finance** (they act:
+  approve, confirm, chase, sign off). The directors **act only on big or unusual things**; otherwise
+  they are **informed automatically** and can open any figure, sale, payment or record themselves,
+  at any time, without asking anyone (they already see everything; keep it that way).
+- Keep a second pair of eyes: finance doesn't approve what finance itself recorded or paid; anything
+  above a big limit still needs a director.
 
-| Today the Manager… | Automate |
-|---|---|
-| Confirms MoMo to the wallet by hand | The SMS phone confirms automatically. Manual confirm only when the phone is offline or the match is unclear, and **every manual confirm texts the directors at once**. Accepting a short payment: directors only. |
-| Closes the night | If still open with no sales for 3 hours after 5AM, the system closes it, sends the report and texts the directors (owner to confirm). |
-| Sends the end-of-day report (by closing) | **Directors' morning text every day, regardless:** sales, cash, MoMo, Paystack, shortfalls, cash not handed in (named), tabs left open by waiter, stock missing by bar and drink, approvals given, manual MoMo confirms. |
-| Receives staff cash | Short or not handed in by morning: named in the morning text; the Manager's own received cash is checked the same way. |
-| Approves free drinks, discounts, write-offs | Nightly limit; above it a director approves; every approval listed in the morning text. |
-| Explains stock differences | Missing stock and its value in the morning text. |
-| Watches waiting wallet payments | Waiting over 20 minutes: text the directors. |
+| Today… | Automate / who acts | Directors |
+|---|---|---|
+| The Manager confirms MoMo to the wallet by hand | The SMS phone confirms automatically. Manual confirm only when the phone is offline or unclear, and then by **finance** (not the Manager). Accepting a short payment: finance, with a reason. | Every manual or short confirm in the morning text; a short payment over a big limit texts them at once. |
+| The Manager closes the night | If still open with no sales for 3 hours after 5AM, the system closes it and sends the report (owner to confirm). | In the morning text. |
+| The end-of-day report depends on the Manager closing | **Finance's morning summary** (text + screen) every day regardless: sales, cash, MoMo, Paystack, shortfalls, cash not handed in (named), tabs left open by waiter, stock missing by bar and drink, approvals given, manual MoMo confirms. Finance signs it off. | **Directors' morning text**: the same headline figures, plus anything finance hasn't signed off by midday. |
+| The Manager receives staff cash | Short or not handed in by morning: named for finance to chase; the Manager's own received cash checked the same way. | In the morning text. |
+| The Manager approves free drinks, discounts, write-offs | Nightly limit; above it **finance** approves; every approval listed. | Listed; above a big limit a director approves. |
+| Stock differences | Missing stock and its value go to finance to chase. | In the morning text. |
+| Wallet payment waiting long | Waiting over 20 minutes: text **finance**. | Over an hour: text the directors. |
+| Directors approve salaries, loans, bills, purchases, commissions, big expenses ("To approve") | Finance approves up to a set amount, but never what finance itself recorded; above it, a director. (Owner to confirm.) | Everything finance approved is listed for them to look at. |
 
-Owner to decide (tomorrow): auto-close yes/no; morning text time and which directors' phones;
-approval limit per night (e.g. GHS 300); short MoMo payments directors-only (recommended yes).
+Owner to decide (tomorrow): auto-close yes/no; morning text time and phones (finance + directors);
+the nightly approval limit for finance; the "big" limit above which a director must still act;
+whether finance takes over "To approve" up to that limit. Unchanged: **Due to EvolveIT stays
+directors only** (owner's earlier rule).
 
 ## Later (agreed, not started)
 
