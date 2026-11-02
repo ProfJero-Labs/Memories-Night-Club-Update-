@@ -360,6 +360,33 @@ export async function salesListView(el, o = {}, { onChange } = {}) {
     ...d.sales.map(s => [s.date, when(s.at), s.where, s.label, s.servedByName, s.customerName, s.lines.map(l => `${l.qty} x ${l.name}`).join('; '), cedis(s.totalPesewas), cedis(s.paidPesewas), cedis(s.leftPesewas), s.payments.map(x => `${x.methodLabel} ${cedis(x.amountPesewas)} (${x.takenByName})`).join('; '), s.statusLabel])]);
 }
 
+// ── Due to EvolveIT (directors only) ──
+// The charges collected in the partner's wallet (big bills by MoMo). The partner pays EvolveIT; a
+// director can tick a payment off here.
+export async function evolveitView(el) {
+  el.innerHTML = '<div class="loading">Loading…</div>';
+  const d = await sapi('/api/ops/evolveit'), t = d.totals;
+  el.innerHTML = `<div class="vstack" style="display:grid;gap:14px"><h1>Due to EvolveIT</h1>
+    <p class="lead">The GHS 100 charges on big bills paid to the wallet. Only directors see this.</p>
+    <div class="hero-stack"><div class="hero ${t.outstandingPesewas ? 'bad' : 'good'}"><span>Due now</span><b>${money(t.outstandingPesewas)}</b>${t.oldestUnsettled ? `<span>Oldest from ${esc(dayName(t.oldestUnsettled))}</span>` : '<span>Nothing due</span>'}</div>
+      <div class="hero-row"><div class="hero"><span>Collected so far</span><b>${money(t.owedPesewas)}</b></div><div class="hero good"><span>Paid to EvolveIT</span><b>${money(t.settledPesewas)}</b></div></div></div>
+    ${t.overduePesewas ? `<div class="say bad"><b>${money(t.overduePesewas)} waiting more than 10 days</b>Marked in red below.</div>` : ''}
+    <h2>Day by day</h2>
+    <div class="lines-list">${d.byDay.map(x => lineRow(`<b${x.overdue ? ' class="diff-neg"' : ''}>${esc(dayName(x.date))}</b>`, x.outstandingPesewas ? `<span class="${x.overdue ? 'diff-neg' : ''}">${money(x.outstandingPesewas)} due</span>` : 'Paid', `${x.payments} big bill${x.payments === 1 ? '' : 's'} · ${money(x.owedPesewas)} charged${x.settledPesewas ? ` · ${money(x.settledPesewas)} paid` : ''}${x.overdue ? ` · ${x.ageDays} days` : ''}`)).join('') || '<div class="ln"><span class="muted">No big bills paid to the wallet yet.</span></div>'}</div>
+    ${d.canRecord && t.outstandingPesewas ? '<button class="big ghost" id="evPaid">The partner paid EvolveIT</button>' : ''}<div id="evMsg"></div>
+    ${d.settlements.length ? `<h2>Payments to EvolveIT</h2><div class="lines-list">${d.settlements.map(s => lineRow(`<b>${money(s.amountPesewas)}</b> · ${when(s.at)} ${esc(dayName(String(s.at).slice(0, 10)))}`, s.differencePesewas ? `<span class="diff-neg">${money(s.differencePesewas)} doesn’t match</span>` : 'Matches', `ID ${esc(s.momoRef)} · ${s.rows} charge${s.rows === 1 ? '' : 's'}${s.from ? ` (${esc(s.from)} to ${esc(s.to)})` : ''} · by ${esc(s.byName)}`)).join('')}</div>` : ''}</div>`;
+  $('#evPaid', el) && ($('#evPaid', el).onclick = () => {
+    const { box, close } = sheet(`<h2>The partner paid EvolveIT</h2><p class="muted" style="margin:0">Due now: ${money(t.outstandingPesewas)}. It settles the oldest charges first.</p>
+      ${moneyField('evA', 'Amount paid (GHS)', String(t.outstandingPesewas / 100))}
+      <div class="sfield"><label for="evR">MoMo transaction ID</label><input id="evR" maxlength="40" autocomplete="off" autocapitalize="characters"></div>
+      <div id="evM"></div><button class="big" id="evGo">Save</button><button class="big ghost" data-close>Cancel</button>`, { label: 'Paid to EvolveIT' });
+    $('#evGo', box).onclick = async () => {
+      try { const r = await busy($('#evGo', box), () => sapi('/api/ops/evolveit/paid', { method: 'POST', body: { amountPesewas: ghsIn($('#evA', box).value), momoRef: $('#evR', box).value } })); close(); await evolveitView(el); say($('#evMsg', el), r.message, r.differencePesewas ? 'warn' : 'good'); }
+      catch (e) { say($('#evM', box), e.message, 'bad'); }
+    };
+  });
+}
+
 // ── What the stock is worth ──
 // Everything finance recorded buying, minus what left the bars, valued at cost (and at selling price).
 export async function stockValueView(el) {
@@ -421,7 +448,7 @@ export async function moneyView(el, period = 'today') {
       ${lineRow(`Paid on top of ${m.serviceFees.payments} online / MoMo payment${m.serviceFees.payments > 1 ? 's' : ''}`, money(m.serviceFees.totalPesewas))}</div>
       <p class="muted" style="margin:0">${esc(m.serviceFees.note)}</p></details>` : ''}
     ${m.paymentCosts?.payments ? `<details class="fold"><summary>Payment costs: the club bears ${money(m.paymentCosts.clubBornePesewas)}</summary><div class="lines-list">
-      ${lineRow(`Paystack’s fees (${m.paymentCosts.payments} payments)`, money(m.paymentCosts.processingFeesPesewas), m.paymentCosts.feesPending ? `${m.paymentCosts.feesPending} fee${m.paymentCosts.feesPending > 1 ? 's' : ''} not given by Paystack yet` : '')}${lineRow('Developer commission', money(m.paymentCosts.commissionPesewas))}${lineRow('Service charges customers paid', money(m.paymentCosts.serviceChargesPesewas))}
+      ${lineRow(`Paystack’s fees (${m.paymentCosts.payments} payments)`, money(m.paymentCosts.processingFeesPesewas), m.paymentCosts.feesPending ? `${m.paymentCosts.feesPending} fee${m.paymentCosts.feesPending > 1 ? 's' : ''} not given by Paystack yet` : '')}${m.paymentCosts.commissionPesewas == null ? '' : lineRow('Developer commission', money(m.paymentCosts.commissionPesewas))}${lineRow('Service charges customers paid', money(m.paymentCosts.serviceChargesPesewas))}
       <div class="ln total"><span>The club bears (where a charge didn’t cover the payment’s costs)</span><span>${money(m.paymentCosts.clubBornePesewas)}</span></div></div><p class="muted" style="margin:0">${esc(m.paymentCosts.note)}</p></details>` : ''}
     ${m.tips?.totalPesewas ? `<details class="fold"><summary>Tips for staff</summary><div class="lines-list">
       ${lineRow(`Tips given (${m.tips.count})`, money(m.tips.totalPesewas))}${lineRow('MoMo / card: came into the club’s account', money(m.tips.momoPesewas + m.tips.digitalPesewas))}${lineRow('Cash: the staff kept it', money(m.tips.cashPesewas))}
@@ -980,7 +1007,7 @@ export async function chargesView(el) {
       <div class="sfield"><label for="rtWal">Partner’s MoMo wallet (big bills)</label><input id="rtWal" type="tel" inputmode="tel" value="${esc(rt.bigWalletNumber || '')}" ${ro}></div>
       <div class="sfield"><label for="rtWalN">Name customers see on it</label><input id="rtWalN" maxlength="60" value="${esc(rt.bigWalletName || '')}" ${ro}></div></div>
     <p class="group-h">What it means for some bills</p>
-    <div class="lines-list">${(c.routeExamples || []).map(x => { const p = x.paystack || x.momo; return lineRow(`<b>Bill ${money(x.billPesewas)}</b> · cash or ${x.paystack ? 'Paystack' : 'MoMo to the wallet'}`, `pays ${money(p.customerPaysPesewas)}`, `Venue records ${money(p.venueRecordsPesewas)} · EvolveIT ${x.paystack ? 'about ' : ''}${money(x.paystack ? p.evolveitEstimatePesewas : p.evolveitPesewas)}`); }).join('')}</div>
+    <div class="lines-list">${(c.routeExamples || []).map(x => { const p = x.paystack || x.momo; return lineRow(`<b>Bill ${money(x.billPesewas)}</b> · cash or ${x.paystack ? 'Paystack' : 'MoMo to the wallet'}`, `pays ${money(p.customerPaysPesewas)}`, `Venue records ${money(p.venueRecordsPesewas)}${(x.paystack ? p.evolveitEstimatePesewas : p.evolveitPesewas) == null ? '' : ` · EvolveIT ${x.paystack ? 'about ' : ''}${money(x.paystack ? p.evolveitEstimatePesewas : p.evolveitPesewas)}`}`); }).join('')}</div>
     <p class="muted" style="margin:0">Cash never has a charge. On Paystack, Paystack’s fee comes out of the charge and EvolveIT keeps the rest (the real fee is what Paystack reports). Above the Paystack limit, the customer sends MoMo to the wallet and pays the flat charge, which is owed to EvolveIT.</p>
     ${c.canEdit ? '<button class="big ghost" id="rtSave">Save the payment rules</button><div id="rtMsg"></div>' : ''}
     <h3 class="group-h">Customer service charge</h3>
@@ -1040,7 +1067,7 @@ const TX_STATUS = { completed: 'Completed', pending: 'Paying now', abandoned: 'L
 export async function financeNightView(el, date, channel = 'all') {
   el.innerHTML = '<div class="loading">Loading…</div>';
   const r = await sapi(`/api/ops/finance-night?channel=${encodeURIComponent(channel)}${date ? `&date=${date}` : ''}`);
-  const S = r.sales, P = r.payments, c = P.commission;
+  const S = r.sales, P = r.payments, showC = !!P.commission, c = P.commission || { payablePesewas: 0, paidPesewas: 0, reversedPesewas: 0, toRecoverPesewas: 0 };
   const st = s => (s === 'completed' ? '<b style="color:#6fcfae">Completed</b>' : ['failed', 'refunded', 'refund_owed'].includes(s) ? `<b class="diff-neg">${TX_STATUS[s]}</b>` : amber(TX_STATUS[s] || s));
   el.innerHTML = `<div class="vstack" style="display:grid;gap:14px"><h1>Night’s finances</h1>${dateBar(r.date, 'fnDate')}
     <div class="sfield"><label for="fnCh">Payment channel</label><select id="fnCh"><option value="all">All</option>${Object.entries(r.channels).map(([k, l]) => `<option value="${esc(k)}" ${k === r.channel ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select><span class="hint">Filters the payments and the transactions. Sales are always the whole night.</span></div>
@@ -1057,7 +1084,7 @@ export async function financeNightView(el, date, channel = 'all') {
       ${lineRow('Settled, per Paystack', money(P.settledPesewas), `${P.settledPayments} payment${P.settledPayments === 1 ? '' : 's'} matched${P.unsettledPayments ? ` · ${P.unsettledPayments} not settled yet` : ''}`)}
       <div class="ln total"><span>Still to settle</span><span>${money(P.outstandingSettlementPesewas)}</span></div>
       ${lineRow('Received by the club (recorded)', P.receivedByClub ? money(P.receivedByClub.amountPesewas) : amber('not recorded'), P.receivedByClub ? `${esc(P.receivedByClub.byName)} · ${esc(P.receivedByClub.note)}` : '')}</div>
-    <div class="lines-list">${lineRow('Refunds owed (not paid back yet)', money(P.refundsOwedPesewas))}${lineRow('Developer commission payable', money(c.payablePesewas), `${money(c.paidPesewas)} paid${c.reversedPesewas ? ` · ${money(c.reversedPesewas)} reversed` : ''}${c.toRecoverPesewas ? ` · ${money(c.toRecoverPesewas)} to recover` : ''}`)}
+    <div class="lines-list">${lineRow('Refunds owed (not paid back yet)', money(P.refundsOwedPesewas))}${showC ? lineRow('Developer commission payable', money(c.payablePesewas), `${money(c.paidPesewas)} paid${c.reversedPesewas ? ` · ${money(c.reversedPesewas)} reversed` : ''}${c.toRecoverPesewas ? ` · ${money(c.toRecoverPesewas)} to recover` : ''}`) : ''}
       ${lineRow('Service charges on these payments', money(P.serviceChargesPesewas))}<div class="ln total"><span>Payment costs the club bears</span><span>${money(P.clubBorneCostPesewas)}</span></div></div>
     <p class="muted" style="margin:0">${esc(P.note)}</p>
     <div class="btn-row"><button class="mid" id="fnSync">Check Paystack settlements</button><button class="mid" id="fnRecv">Record what was received</button>${r.canPayCommission && c.payablePesewas ? '<button class="mid" id="fnPaid">Commission paid</button>' : ''}</div><div id="fnMsg"></div>

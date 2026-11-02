@@ -50,7 +50,7 @@ export async function salesList(env, user, q = {}) {
       servedByName: o.status === 'paid' ? 'Not collected yet' : 'The bar', servedBy: o.deliveredBy || '', customerName: '', customerPhone: o.phone || '',
       lines: (o.lines || []).map(l => ({ qty: l.qty, name: l.name, amountPesewas: l.qty * l.unitPesewas })), discountPesewas: 0,
       totalPesewas: o.totalPesewas, paidPesewas: o.totalPesewas, leftPesewas: 0, status: refund ? o.status : 'paid', statusLabel: refund ? (o.status === 'refunded' ? 'Refunded' : 'Refund owed') : 'Paid',
-      payments: [{ method: 'qr', methodLabel: SALE_METHODS.qr, amountPesewas: o.totalPesewas, at: o.paidAt, takenByName: 'Customer, by QR', takenBy: '', ref: o.reference || '' }], methods: ['qr'] });
+      payments: [o.paidVia === 'wallet' ? { method: 'momo', methodLabel: 'MoMo to the wallet (confirmed)', amountPesewas: o.totalPesewas, at: o.paidAt, takenByName: 'Confirmed by a manager', takenBy: '', ref: o.momoRef || '' } : { method: 'qr', methodLabel: SALE_METHODS.qr, amountPesewas: o.totalPesewas, at: o.paidAt, takenByName: 'Customer, by QR', takenBy: '', ref: o.reference || '' }], methods: [o.paidVia === 'wallet' ? 'momo' : 'qr'] });
   }
 
   // Who can be picked: everyone who served or took a payment in the period.

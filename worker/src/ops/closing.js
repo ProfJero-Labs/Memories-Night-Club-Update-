@@ -174,11 +174,13 @@ function salesFrom(data) {
   const cancelled = data.rounds.filter(r => r.status === 'cancelled');
   const cashRefunds = data.cash.flatMap(c => (c.movements || []).filter(m => m.kind === 'refund'));
   // Money confirmed by Paystack: tab payments and QR self-orders (refunds are listed on their own).
-  const digital = sum(tabPays.filter(p => p.method === 'digital'), p => p.amountPesewas) + qrValue;
+  // QR orders paid by MoMo to the partner's wallet (big orders) are MoMo, not Paystack.
+  const qrWallet = sum(data.qr.filter(o => o.paidVia === 'wallet'), o => o.totalPesewas);
+  const digital = sum(tabPays.filter(p => p.method === 'digital'), p => p.amountPesewas) + qrValue - qrWallet;
   const cash = sum(tabPays.filter(p => p.method === 'cash'), p => p.amountPesewas);
   // MoMo sent straight to the club's number, recorded by staff with its transaction ID: finance
   // checks these against the MoMo statement (listed in the report).
-  const momo = sum(tabPays.filter(p => p.method === 'momo'), p => p.amountPesewas);
+  const momo = sum(tabPays.filter(p => p.method === 'momo'), p => p.amountPesewas) + qrWallet;
   const sales = sum(data.tabs, t => t.bill.totalPesewas) + qrValue;
   return {
     totals: {

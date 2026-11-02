@@ -449,7 +449,7 @@ export async function stockLeft(env, stationId) {
     for (const r of await queryWhere(env, 'rounds', [{ field: 'stationId', value: st.id }, { field: 'status', value: status }])) for (const l of r.fields.lines || []) take(l.productId, l.qty);
   }
   const fresh = Date.now() - 30 * 60e3;
-  for (const status of ['paid', 'pending_payment', 'cash_due']) {
+  for (const status of ['paid', 'pending_payment', 'cash_due', 'wallet_due']) {
     for (const o of await queryWhere(env, 'counter_orders', [{ field: 'stationId', value: st.id }, { field: 'status', value: status }])) {
       if (status !== 'paid' && !(new Date(o.fields.createdAt).getTime() > fresh)) continue;
       for (const l of o.fields.lines || []) take(l.itemId, l.qty);

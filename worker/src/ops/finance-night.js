@@ -109,7 +109,8 @@ export async function nightFinance(env, user, { date, channel = 'all' } = {}) {
     byChannel: Object.entries(byChannel).map(([k, v]) => ({ key: k, label: CHANNELS[k], amountPesewas: v })),
     paystackCollectedPesewas: collectedPaystack,
     processingFeesPesewas: fees, processingFeesPending: feesPending.length,
-    commission: { payablePesewas: cm('payable'), paidPesewas: cm('paid'), reversedPesewas: cm('reversed'), toRecoverPesewas: cm('paid_to_recover'), payments: L.filter(r => r.commission?.status && r.commission.status !== 'not_eligible').length },
+    // The developer commission (EvolveIT's): the directors only.
+    commission: requireRole(user, COMMISSION_PAYERS) ? { payablePesewas: cm('payable'), paidPesewas: cm('paid'), reversedPesewas: cm('reversed'), toRecoverPesewas: cm('paid_to_recover'), payments: L.filter(r => r.commission?.status && r.commission.status !== 'not_eligible').length } : null,
     otherDeductionsPesewas: 0,
     refundsPaidPesewas: sum(refunded, r => r.refund.amountPesewas), refundsOwedPesewas: sum(refundOwed, r => r.refund.amountPesewas),
     expectedSettlementPesewas: expected,

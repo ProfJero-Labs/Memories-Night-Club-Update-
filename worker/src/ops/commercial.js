@@ -10,6 +10,8 @@ import { routeFor, cleanRoutes, DEFAULT_ROUTES } from '../lib/routes.js';
 import { commercialConfig, clearCommercialCache, MAX_RATE_PERCENT, COMMISSION_KINDS, COMMISSION_CHANNELS, COMMISSION_BASES, DEFAULT_SERVICE_CHARGE } from '../lib/fee.js';
 
 export const COMMERCIAL_EDITORS = ['superAdmin', 'director'];
+// What EvolveIT earns is for the directors' eyes only (owner's rule).
+const hideEvolveit = x => ({ ...x, ...(x.paystack ? { paystack: { ...x.paystack, evolveitEstimatePesewas: null, paystackFeeEstimatePesewas: null } } : {}), ...(x.momo ? { momo: { ...x.momo, evolveitPesewas: null } } : {}) });
 export const COMMERCIAL_VIEWERS = [...COMMERCIAL_EDITORS, 'finance'];
 
 export async function getCommercial(env, user) {
@@ -20,7 +22,7 @@ export async function getCommercial(env, user) {
     settlementModes: { payable: 'Recorded as payable to the developers (paid out separately)' },
     // The new payment rules, with what they mean for a few bills (so directors can check before
     // switching them on).
-    routeExamples: [5000, 20000, 30000, 30100, 60000, 150000, 200000, 250000, 2000000].map(b => routeFor(b, cfg.routes)) };
+    routeExamples: [5000, 20000, 30000, 30100, 60000, 150000, 200000, 250000, 2000000].map(b => routeFor(b, cfg.routes)).map(x => (requireRole(user, COMMERCIAL_EDITORS) ? x : hideEvolveit(x))) };
 }
 
 const rate = v => { const n = Number(v); return Number.isFinite(n) && n >= 0 && n <= MAX_RATE_PERCENT ? Math.round(n * 100) / 100 : NaN; };

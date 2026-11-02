@@ -43,6 +43,7 @@ async function tabsList() {
   app.innerHTML = `<h1>My tables</h1>
     <div id="msg"></div>
     <div class="btn-row"><button class="big" id="newTab">New tab</button><button class="big ghost" id="quick">Quick sale</button></div>
+    <div id="qrCash"></div>
     <div class="cards" id="list"><div class="loading">Loading…</div></div>
     <button class="mid ghost" id="tipOnly">Record a tip (no bill)</button>`;
   $('#newTab').onclick = () => { location.hash = 'order'; };
@@ -50,8 +51,18 @@ async function tabsList() {
   $('#tipOnly').onclick = () => tipSheet(sapi, user.uid, m => say($('#msg'), m));
   const flash = sessionStorage.getItem('waiter-flash'); if (flash) { sessionStorage.removeItem('waiter-flash'); say($('#msg'), flash); }
   stop = every(6000, async alive => {
-    const { tabs } = await sapi('/api/ops/tabs');
+    const [{ tabs }, q] = await Promise.all([sapi('/api/ops/tabs'), canCash ? sapi('/api/bar/queue').catch(() => null) : null]);
     if (!alive()) return;
+    // QR customers paying cash: whoever serves them takes it (code on their phone).
+    const due = q?.cashDue || [];
+    $('#qrCash').innerHTML = due.length ? `<h2>QR orders paying cash</h2><div class="cards">${due.map(o => `<div class="tcard warn" style="cursor:default"><span class="row"><span class="t">${esc(o.spot ? `Table ${o.spot}` : 'QR order')} · code ${esc(o.pickupCode)}</span><span class="amt">${money(o.totalPesewas)}</span></span>
+      <span class="sub">${o.lines.map(l => `${l.qty} × ${esc(l.name)}`).join(', ')} · phone …${esc(o.phoneLast4)}</span>
+      <span class="btn-row"><button type="button" class="mid okc" data-qrcash="${esc(o.id)}">Cash received · ${money(o.totalPesewas)}</button></span></div>`).join('')}</div>` : '';
+    $$('[data-qrcash]').forEach(b => b.onclick = async () => {
+      if (!confirm('Check the code on the customer’s phone. Cash received?')) return;
+      try { const r = await busy(b, () => sapi('/api/bar/order', { method: 'POST', body: { orderId: b.dataset.qrcash, action: 'cash' } })); b.closest('.tcard')?.remove(); if (!$('[data-qrcash]')) $('#qrCash').innerHTML = ''; say($('#msg'), r.message || 'Cash recorded.'); }
+      catch (e) { say($('#msg'), e.message, 'bad'); }
+    });
     const open = tabs.filter(t => t.status === 'open'), done = tabs.filter(t => t.status !== 'open');
     nav.setDot('tabs', open.length || 0);
     $('#list').innerHTML = (open.length ? open.map(card).join('') : '<div class="empty-box"><b>No open tabs</b>Tap “New tab” when a table or customer orders.</div>')

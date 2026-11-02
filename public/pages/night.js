@@ -18,7 +18,7 @@ import { bottomNav, sheet, say, st, every, money, when, ask, backBar, bindBackBa
 import { accraDayKey, loadFee, momoDirectOff } from '../app.js';
 import { pasteMomoButton, ghsIn, moneyField, busy } from '../lib/ops-ui.js';
 loadFee().catch(() => {});
-import { accountsView, ticketsView, findOrderView, expensesView, nightsView, salesView, closingView, approvalsView, productsView, stockAdminView, eodListView, eodView, moneyView, expenseSheet, explainSheet, budgetView, paymentsView, commissionsView, toApproveView, stockValueView, salesListView, openSales, purchasesView, cashReceiveView, feedbackInboxView, chargesView, financeNightView, tabClearView } from '../lib/ops-views.js';
+import { accountsView, ticketsView, findOrderView, expensesView, nightsView, salesView, closingView, approvalsView, productsView, stockAdminView, eodListView, eodView, moneyView, expenseSheet, explainSheet, budgetView, paymentsView, commissionsView, toApproveView, stockValueView, salesListView, openSales, evolveitView, purchasesView, cashReceiveView, feedbackInboxView, chargesView, financeNightView, tabClearView } from '../lib/ops-views.js';
 import { payView, reviewsView, perfView } from '../lib/people-views.js';
 import { staffView } from '../lib/staff-view.js';
 
@@ -62,6 +62,7 @@ async function route() {
     if (key === 'purchases') { app.innerHTML = `${back()}<div id="puv"></div>`; bindBack(); return await purchasesView($('#puv')); }
     if (key === 'cash') { app.innerHTML = `${back()}<div id="crv"></div>`; bindBack(); return await cashReceiveView($('#crv')); }
     if (key === 'saleslist') { app.innerHTML = `${back()}<div id="slv"></div>`; bindBack(); const o = Object.fromEntries(new URLSearchParams(arg || '')); return await salesListView($('#slv'), o, { onChange: openSales }); }
+    if (key === 'evolveit' && director) { app.innerHTML = `${back()}<div id="evv"></div>`; bindBack(); return await evolveitView($('#evv')); }
     if (key === 'stockvalue') { app.innerHTML = `${back()}<div id="svv"></div>`; bindBack(); return await stockValueView($('#svv')); }
     if (key === 'stock') { app.innerHTML = `${back()}<div id="kv"></div>`; bindBack(); return await stockAdminView($('#kv'), undefined, undefined, { role: user.role }); }
     if (key === 'accounts') { app.innerHTML = `${back()}<div id="acv"></div>`; bindBack(); return await accountsView($('#acv'), arg, { onCash: () => { location.hash = 'cash'; } }); }
@@ -224,7 +225,7 @@ async function tableSheet(id) {
 function more() {
   // Grouped, so each thing is quick to find (no scrolling through one long list).
   const groups = director ? [
-    ['Money', [['accounts', 'Night accounts', 'What the drinks should bring; who isn’t aligned'], ['salaries', 'Salaries and loans', 'What staff are paid'], ['budget', 'Bills and budget', 'What’s due this month'], ['commissions', 'Commissions', '10% on tables over GHS 3,000'], ['reports', 'End-of-day reports', 'Each night, signed off'], ['saleslist', 'Every sale', 'One by one: what, who, how paid'], ['sales', 'Tonight in detail', 'By waiter, by bar, by drink'], ['stockvalue', 'Stock value', 'What’s in the bars, at cost'], ['finance', 'Night’s finances', 'Sales, Paystack fees, settlement, every payment'], ['charges', 'Service charge & commission', 'The customer charge, the developer commission, a simulation']]],
+    ['Money', [['accounts', 'Night accounts', 'What the drinks should bring; who isn’t aligned'], ['salaries', 'Salaries and loans', 'What staff are paid'], ['budget', 'Bills and budget', 'What’s due this month'], ['commissions', 'Commissions', '10% on tables over GHS 3,000'], ['reports', 'End-of-day reports', 'Each night, signed off'], ['saleslist', 'Every sale', 'One by one: what, who, how paid'], ['sales', 'Tonight in detail', 'By waiter, by bar, by drink'], ['stockvalue', 'Stock value', 'What’s in the bars, at cost'], ['finance', 'Night’s finances', 'Sales, Paystack fees, settlement, every payment'], ['charges', 'Service charge & commission', 'The customer charge, the developer commission, a simulation'], ['evolveit', 'Due to EvolveIT', 'Charges on big bills paid to the wallet']]],
     ['Tabs', [['opentabs', 'Tabs left open', 'Clear tabs still open after a night'], ['@paystackdown', 'Paystack is down tonight', 'Let any bill be paid by MoMo to the wallet']]],
     ['People', [['staff', 'Staff', 'Add people, send PINs'], ['feedback', 'Staff feedback', 'Complaints and ideas'], ['perf', 'Performance reviews', 'Each staff member, every month'], ['@admin.html#members', 'Members', 'Members and passes']]],
     ['Floor', [['tables', 'Tables', 'Open tables and what they owe'], ['reviews', 'Customer reviews', 'What customers say'], ...(user.role === 'superAdmin' ? [['@admin.html', 'Control room', 'Site, nights, settings']] : [])]],

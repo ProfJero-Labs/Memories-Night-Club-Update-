@@ -68,9 +68,28 @@ export async function startWallet(env, t, bill, user, { phone } = {}) {
   await audit(env, user, 'WALLET_PAYMENT_STARTED', { walletPaymentId: wid, tabId: t.id, duePesewas: w.duePesewas, reason: w.reason });
   return view(wid, w);
 }
-const view = (wid, w) => ({ id: wid, tabId: w.tabId, tabNumber: w.tabNumber, table: w.table, waiterName: w.waiterName, billPesewas: w.billPesewas, chargePesewas: w.chargePesewas, duePesewas: w.duePesewas,
+// A QR order above the limit (the guest picked "MoMo to the wallet"): the order waits as
+// 'wallet_due' with its pickup code as the reference; a manager confirms; then it's paid and the bar
+// hands it over like any paid QR order. order: the counter_orders fields; oid: its id.
+export async function startOrderWallet(env, oid, order) {
+  const q = await walletQuote(env, order.totalPesewas, order.totalPesewas); if (q.error) return q;
+  const wid = id(), at = now();
+  const w = { orderId: oid, tabId: '', tabNumber: '', table: order.spot ? `QR, ${order.spot}` : 'QR order', waiterUid: '', waiterName: `QR at ${order.stationName}`, businessDate: bizDate(),
+    billPesewas: q.billPesewas, chargePesewas: q.chargePesewas, duePesewas: q.duePesewas, reason: q.reason, code: order.pickupCode, wallet: q.wallet, rule: q.rule,
+    customerPhone: order.phone || '', status: 'waiting', startedBy: '', startedByName: 'Customer (QR)', createdAt: at };
+  await setDoc(env, 'wallet_payments', wid, w);
+  if (w.customerPhone) await sendSms(env, w.customerPhone, `MEMORIES\nYour order at ${order.stationName}: send ${ghs(w.duePesewas)} by MoMo to ${w.wallet.number}${w.wallet.name ? ` (${w.wallet.name})` : ''}.\nReference: ${w.code}\nThat's ${ghs(w.billPesewas)} + ${ghs(w.chargePesewas)} charge. Show the code at the bar once the club confirms it arrived.`);
+  return { walletPaymentId: wid, ...view(wid, w) };
+}
+
+const view = (wid, w) => ({ id: wid, orderId: w.orderId || '', tabId: w.tabId, tabNumber: w.tabNumber, table: w.table, waiterName: w.waiterName, billPesewas: w.billPesewas, chargePesewas: w.chargePesewas, duePesewas: w.duePesewas,
   reason: w.reason, code: w.code, wallet: w.wallet, status: w.status, phoneHint: w.customerPhone ? maskPhone(w.customerPhone) : '', createdAt: w.createdAt,
   ...(w.status === 'confirmed' ? { receivedPesewas: w.receivedPesewas, momoRef: w.momoRef, confirmedByName: w.confirmedByName, changePesewas: Math.max(0, w.receivedPesewas - w.duePesewas) } : {}) });
+
+// The customer, on their bill link (a bill above the limit): starts MoMo to the wallet themselves.
+export async function billWallet(env, t, bill, { phone } = {}) {
+  return startWallet(env, t, bill, { name: 'Customer (bill link)', uid: '' }, { phone });
+}
 
 // The Manager's list: waiting tonight (and the last confirmed ones).
 export async function walletList(env, user) {
@@ -107,6 +126,21 @@ export async function confirmWallet(env, b, user, { closeIfPaid }) {
     if (short && b?.acceptShort !== true) return { error: `That’s ${ghs(short)} short of ${ghs(w.duePesewas)}. Ask the customer to send the rest, then confirm with the total. Or accept it short, with a reason.`, code: 'short', shortPesewas: short };
     const note = clean(b?.note, 200);
     if (short && !note) return { error: 'Say why you’re accepting less.' };
+    if (w.orderId) {
+      const og = await batchGet(env, [`counter_orders/${w.orderId}`], tx);
+      const o = foundFields(og, `/counter_orders/${w.orderId}`);
+      if (!o || o.fields.status !== 'wallet_due') return { error: 'That QR order isn’t waiting any more.' };
+      const charge = Math.min(w.chargePesewas, received), at = now(), chargeId = id();
+      const writes = [
+        updateWrite(env, 'wallet_payments', wid, { ...w, status: 'confirmed', receivedPesewas: received, momoRef: ref, short, shortNote: note, confirmedBy: uidOf(user), confirmedByName: user.name || '', confirmedAt: at, evolveitChargeId: charge ? chargeId : '' }),
+        // Paid: the bar now hands it over against the code, like any paid QR order.
+        updateWrite(env, 'counter_orders', w.orderId, { ...o.fields, status: 'paid', paidVia: 'wallet', momoRef: ref, paidAt: at, businessDate: w.businessDate, walletPaymentId: wid }),
+        updateWrite(env, 'audit_logs', id(), { action: 'WALLET_PAYMENT_CONFIRMED', actorUid: uidOf(user), actorName: user.name || '', walletPaymentId: wid, orderId: w.orderId, receivedPesewas: received, momoRef: ref, short, timestamp: at }),
+      ];
+      if (charge) writes.push(updateWrite(env, 'evolveit_charges', chargeId, { businessDate: w.businessDate, source: 'wallet', reason: w.reason, walletPaymentId: wid, orderId: w.orderId, momoRef: ref, amountPesewas: charge, status: 'unsettled', createdAt: at }));
+      await commitTx(env, writes, tx);
+      return { confirmed: true, orderId: w.orderId, billPesewas: Math.min(w.billPesewas, received - charge), chargePesewas: charge, shortPesewas: short, changePesewas: Math.max(0, received - w.duePesewas) };
+    }
     const tabGot = await batchGet(env, [`tabs/${w.tabId}`], tx);
     const t = foundFields(tabGot, `/tabs/${w.tabId}`);
     if (!t) return { error: 'The tab is gone.', status: 404 };
@@ -123,7 +157,11 @@ export async function confirmWallet(env, b, user, { closeIfPaid }) {
     await commitTx(env, writes, tx);
     return { confirmed: true, tabId: w.tabId, billPesewas: billPart, chargePesewas: charge, shortPesewas: short, changePesewas: Math.max(0, received - w.duePesewas) };
   });
-  if (res.confirmed) res.tabClosed = await closeIfPaid(env, res.tabId);
+  if (res.confirmed && res.tabId) res.tabClosed = await closeIfPaid(env, res.tabId);
+  if (res.confirmed && res.orderId) {
+    const o = await getDoc(env, 'counter_orders', res.orderId);
+    if (o?.fields?.phone) await sendSms(env, o.fields.phone, `MEMORIES\nYour MoMo arrived. Show code ${o.fields.pickupCode} at ${o.fields.stationName} for your drinks.`);
+  }
   return res;
 }
 
@@ -136,7 +174,8 @@ export async function cancelWallet(env, b, user) {
   if (!requireRole(user, CONFIRMERS) && w.fields.waiterUid !== uidOf(user)) return FORBIDDEN;
   const reason = clean(b?.reason, 200) || 'Not arrived';
   await setDoc(env, 'wallet_payments', w.id, { ...w.fields, status: 'cancelled', cancelledAt: now(), cancelledByName: user.name || '', cancelReason: reason });
-  const t = await getDoc(env, 'tabs', w.fields.tabId);
+  if (w.fields.orderId) { const o = await getDoc(env, 'counter_orders', w.fields.orderId); if (o?.fields?.status === 'wallet_due') await setDoc(env, 'counter_orders', o.id, { ...o.fields, status: 'cancelled', cancelReason: 'momo_not_arrived', cancelledAt: now() }); }
+  const t = w.fields.tabId ? await getDoc(env, 'tabs', w.fields.tabId) : null;
   if (t && t.fields.walletWait === w.id) await setDoc(env, 'tabs', t.id, { ...t.fields, walletWait: '', closeWhenPaid: false });
   await audit(env, user, 'WALLET_PAYMENT_CANCELLED', { walletPaymentId: w.id, reason });
   return { cancelled: true };

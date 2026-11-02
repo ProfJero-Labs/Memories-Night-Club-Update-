@@ -144,7 +144,7 @@ test('a GHS 1,000 QR order: 5% split 50/50; the venue’s share is a cost in the
 test('above GHS 2,000: no Paystack (QR order refused with a plain message; a tab’s bill link too, even for a part of it)', async () => {
   const { store, call, qr } = setupLive();
   const r = await qr([{ itemId: 'royal', qty: 2 }]);
-  assert.match(r.data.error, /above GHS 2,000.*Cash at the bar/);
+  assert.match(r.data.error, /above GHS 2,000.*Pay cash/);
   assert.equal(store.paystackInits.length, 0);
   // A table's bill over GHS 2,000: the bill link won't take card or MoMo, even for what's left after a cash part payment.
   const t = (await call('POST', '/api/ops/tabs/open', { who: 'manager', body: { table: '1' } })).data;
@@ -236,4 +236,64 @@ test('with the new rules on, staff can’t record “MoMo to the club’s number
   assert.equal((await ctx.call('POST', '/api/ops/tabs/checkout', { who: 'manager', body: { tabId: t.id, method: 'momo_club', momoRef: 'MP999888777' } })).data.code, 'momo_direct_off');
   assert.equal((await ctx.call('POST', '/api/ops/quick-sale', { who: 'manager', body: { lines: [{ productId: 'beer', qty: 1 }], method: 'momo', momoRef: 'MP999888776' } })).data.code, 'momo_direct_off');
   assert.equal((await ctx.call('POST', '/api/ops/tabs/pay', { who: 'manager', body: { tabId: t.id, method: 'cash', amountPesewas: 2500 } })).status, 200, 'cash still fine');
+});
+
+test('big bills, customer side: the bill link and the QR menu offer only cash or MoMo to the wallet; a manager confirms', async () => {
+  const ctx = setupLive();
+  // The bill link of a GHS 3,000 table
+  const t = await bigTab(ctx);
+  const token = ctx.store.get('tabs', t.id).fields.billToken;
+  const w = (await ctx.call('POST', `/api/guest/bill/${token}/wallet`, { body: { phone: '0247770000' } })).data.wallet;
+  assert.deepEqual([w.duePesewas, w.number], [310000, '0595986313']);
+  assert.equal((await ctx.call('GET', `/api/guest/bill/${token}`)).data.walletWait.code, w.code, 'the bill page shows what to send');
+  // A GHS 3,000 QR order
+  const o = (await ctx.qr([{ itemId: 'royal', qty: 2 }]).then(r => r)).data;
+  assert.match(o.error, /Pay cash/, 'no Paystack');
+  const ow = (await ctx.call('POST', '/api/guest/counter/checkout', { body: { station: 'b'.repeat(32), phone: '0241234567', payWith: 'wallet', items: [{ itemId: 'royal', qty: 2 }] } })).data;
+  assert.equal(ow.wallet.duePesewas, 310000);
+  assert.equal((await ctx.call('GET', `/api/guest/counter/${ow.orderId}`)).data.status, 'wallet_due');
+  const list = (await ctx.call('GET', '/api/ops/wallet', { who: 'manager' })).data.waiting;
+  assert.equal(list.length, 2);
+  const qrW = list.find(x => x.orderId === ow.orderId);
+  ok3(await ctx.call('POST', '/api/ops/wallet/confirm', { who: 'manager', body: { id: qrW.id, receivedPesewas: 310000, momoRef: 'MP555444333' } }));
+  const after = (await ctx.call('GET', `/api/guest/counter/${ow.orderId}`)).data;
+  assert.equal(after.status, 'paid', 'now the bar hands it over like any paid QR order');
+  const sales = (await ctx.call('GET', '/api/ops/sales', { who: 'manager' })).data;
+  assert.deepEqual([sales.totals.momoPesewas, sales.totals.digitalPesewas], [300000, 0], 'counted as MoMo, not Paystack');
+});
+const ok3 = r => { assert.equal(r.status, 200, r.data.error); return r.data; };
+
+test('what is due to EvolveIT: the directors only; a director ticks off what the partner paid', async () => {
+  const ctx = setupLive();
+  ctx.store.seed('evolveit_charges', 'c1', { businessDate: '2026-10-01', amountPesewas: 10000, status: 'unsettled', createdAt: '2026-10-01T22:00:00Z' });
+  ctx.store.seed('evolveit_charges', 'c2', { businessDate: '2026-10-30', amountPesewas: 10000, status: 'unsettled', createdAt: '2026-10-30T22:00:00Z' });
+  assert.equal((await ctx.call('GET', '/api/ops/evolveit', { who: 'manager' })).status, 403, 'not the Manager');
+  const d = ok3(await ctx.call('GET', '/api/ops/evolveit', { who: 'director' }));
+  assert.deepEqual([d.totals.outstandingPesewas, d.byDay.find(x => x.date === '2026-10-01').overdue], [20000, true], 'over 10 days: flagged');
+  assert.equal((await ctx.call('POST', '/api/ops/evolveit/paid', { who: 'manager', body: { amountPesewas: 10000, momoRef: 'MP1234567' } })).status, 403);
+  const p = ok3(await ctx.call('POST', '/api/ops/evolveit/paid', { who: 'director', body: { amountPesewas: 15000, momoRef: 'MP1234567' } }));
+  assert.deepEqual([p.rows, p.differencePesewas], [1, 5000], 'the oldest charge settled; 50 doesn’t match whole charges and is flagged');
+  assert.equal(ok3(await ctx.call('GET', '/api/ops/evolveit', { who: 'director' })).totals.outstandingPesewas, 10000);
+  // Finance sees the rules but not what EvolveIT earns.
+  const look = (await ctx.call('GET', '/api/ops/commercial', { who: 'manager' }));
+  assert.equal(look.status, 403);
+});
+
+test('a QR customer paying cash at a table: the waitress takes it; it’s in her cash and goes to the bar as her order', async () => {
+  const ctx = setupLive();
+  ctx.store.seed('users', 'w5', { name: 'Efua Waitress', role: 'waitStaff', phone: '0240005555' });
+  const o = (await ctx.call('POST', '/api/guest/counter/checkout', { body: { station: 'b'.repeat(32), phone: '0241239999', spot: '7', payWith: 'cash', items: [{ itemId: 'magnum', qty: 1 }] } })).data;
+  assert.ok(o.pickupCode);
+  const { idToken: tok } = await import('./mock-firestore.js');
+  const as = async (method, path, body) => {
+    const r = await worker.fetch(new Request(`https://api.test${path}`, { method, headers: { 'Content-Type': 'application/json', 'CF-Connecting-IP': '10.77.0.9', Authorization: `Bearer ${await tok({ role: 'waitStaff' }, { uid: 'w5' })}` }, body: body ? JSON.stringify(body) : undefined }), ctx.env);
+    return { status: r.status, data: JSON.parse((await r.text()) || '{}') };
+  };
+  assert.equal((await as('GET', '/api/bar/queue')).data.cashDue.length, 1, 'she sees it');
+  const r = (await as('POST', '/api/bar/order', { orderId: o.orderId, action: 'cash' })).data;
+  assert.deepEqual([r.status, r.atTable], ['cash_paid', true]);
+  const mine = (await as('GET', '/api/ops/my-report')).data.figures;
+  assert.equal(mine.cashCollectedPesewas, 100000, 'in her cash for tonight');
+  const round = ctx.store.list('rounds').map(d => d.fields).find(x => x.waiterUid === 'w5');
+  assert.equal(round.status, 'waiting', 'the bar makes it as her order');
 });

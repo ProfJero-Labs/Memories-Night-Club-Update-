@@ -319,13 +319,18 @@ never in sales, money in or profit.
   paid [waiter] in cash**. Ticked: the cash is recorded under that waiter for that night (it shows
   in what they owe if they didn't hand it in). Not ticked: written off.
 
-## QR menu: pay cash at the bar
+## QR menu: pay cash (whoever serves takes it)
 
-- The customer picks **Cash at the bar** instead of MoMo or card, types their phone number and
-  gets a code at once (also by text). No service charge, no tip on this screen.
-- The bar sees it at the top of App orders, marked **PAY CASH FIRST**. Take the cash, tap **Cash
-  received**, then hand over the drinks. It's recorded as a cash sale at the bar: in your cash for
-  the night and in every report.
+- The customer picks **Pay cash** instead of MoMo or card, types their phone number and gets a
+  code at once (also by text). No service charge, no tip on this screen.
+- **Whoever serves them takes the cash**, after checking the code on their phone:
+  - **A waitress** (at a table): the order shows at the top of **My tables** under *QR orders paying
+    cash*. Tap **Cash received**: it's in her cash for the night, and the order goes to the bar
+    under her name; she collects it and takes it to the table.
+  - **The bar** (at the counter): it's at the top of App orders, marked **PAY CASH FIRST**. Tap
+    **Cash received**, then hand over the drinks.
+- Above GHS 2,000 the QR menu offers only **Pay cash** or **MoMo to the wallet** (the club confirms
+  the MoMo arrived, then the bar hands it over with the code).
 - **They didn't pay** drops it. An unpaid cash order lapses by itself after 30 minutes, and a phone
   can only have one unpaid cash order at a time.
 
@@ -343,6 +348,11 @@ never in sales, money in or profit.
 - **Paystack is down tonight** (directors: More): any bill can then use MoMo to the wallet, at the
   usual card/MoMo price. It ends when the night closes; **Paystack works again** turns it off.
 - "MoMo to the club's number" is no longer used: cash, Paystack, or the wallet.
+- Customers can do it themselves too: a big bill's **bill link** and the **QR menu** offer only cash
+  or **MoMo to the wallet**; they appear on *MoMo to confirm* the same way.
+- **Due to EvolveIT** (directors only, More): the GHS 100 charges collected in the wallet, day by
+  day, with anything waiting over 10 days in red. The partner pays EvolveIT; a director can tick a
+  payment off (amount and transaction ID). Nobody else sees what EvolveIT earns.
 
 ## Paystack's code (OTP)
 

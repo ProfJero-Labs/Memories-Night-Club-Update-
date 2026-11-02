@@ -175,7 +175,7 @@ export async function moneyReport(env, user, q = {}) {
     byNight: [...days.values()].filter(d => d.inPesewas || d.outPesewas).map(d => ({ ...d, profitPesewas: d.inPesewas - d.outPesewas })).sort((a, b) => b.date.localeCompare(a.date)),
     serviceFees: { totalPesewas: sum(ledLive, r => r.serviceChargePesewas), payments: ledLive.filter(r => r.serviceChargePesewas > 0).length, note: 'Paid by customers on top of online and MoMo payments. Kept apart from the drinks and tables money above, and not counted as profit.' },
     paymentCosts: { processingFeesPesewas: sum(led.filter(r => r.feeStatus === 'actual'), r => r.processingFeePesewas), feesPending: led.filter(r => r.feeStatus !== 'actual').length,
-      commissionPesewas: sum(led.filter(r => ['payable', 'paid'].includes(r.commission?.status)), r => r.commission.amountPesewas), serviceChargesPesewas: sum(ledLive, r => r.serviceChargePesewas),
+      commissionPesewas: requireRole(user, ['superAdmin', 'director']) ? sum(led.filter(r => ['payable', 'paid'].includes(r.commission?.status)), r => r.commission.amountPesewas) : null, serviceChargesPesewas: sum(ledLive, r => r.serviceChargePesewas),
       clubBornePesewas: sum(led, r => r.clubBorneCostPesewas), payments: led.length,
       note: 'Paystack’s fees and the developer commission, against the service charge customers paid. What the charge doesn’t cover, the club bears. Shown apart: not in money out above.' },
     tips: { ...tipsIn, note: 'Tips are the staff’s money: not in money in or profit. MoMo and card tips came into the club’s account; finance pays them out.' },

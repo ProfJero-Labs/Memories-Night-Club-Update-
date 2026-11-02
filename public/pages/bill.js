@@ -2,7 +2,7 @@
 // what's left, and one big Pay now (MoMo or card on Paystack). The link can only show and pay this
 // bill; prices come from the Worker. Back from Paystack (?reference=), the payment is confirmed on
 // the server before it shows as paid.
-import { api, esc, money, params, $, loadFee, feeLabel, feeOn as feeFor, paystackOk, paystackLimit } from '../app.js';
+import { api, esc, money, params, $, loadFee, feeLabel, feeOn as feeFor, paystackOk, paystackLimit, walletOk } from '../app.js';
 
 const root = $('#root');
 const token = params.get('t') || '';
@@ -18,8 +18,8 @@ const tipNow = () => (pick.tip === 'other' ? ghsIn(pick.other) : pick.tip);
 async function load(note = '') {
   clearTimeout(timer);
   await loadFee();
-  let b, tip, open = false, menuUrl = '', codeNeeded = false;
-  try { ({ bill: b, tip, open, menuUrl, codeNeeded } = await api(`/api/guest/bill/${encodeURIComponent(token)}`)); }
+  let b, tip, open = false, menuUrl = '', codeNeeded = false, walletWait = null;
+  try { ({ bill: b, tip, open, menuUrl, codeNeeded, walletWait } = await api(`/api/guest/bill/${encodeURIComponent(token)}`)); }
   catch (e) { root.innerHTML = `<div class="say bad"><b>${e.status === 404 ? 'This bill link isn’t valid' : 'Couldn’t load your bill'}</b>${esc(e.status === 404 ? 'Ask your waiter to show it again.' : e.message)}</div>`; return; }
   const paid = ['paid', 'overpaid'].includes(b.status);
   // The whole bill decides how it can be paid (a big bill can't be paid in Paystack pieces).
@@ -38,8 +38,14 @@ async function load(note = '') {
       ${b.payments.map(p => `<div class="ln sub"><span>Paid · ${esc(p.method)}<small>${esc(when(p.at))}</small></span><span>−${money(p.amountPesewas)}</span></div>`).join('')}
       <div class="ln due"><span>${paid ? 'Paid in full' : 'To pay'}</span><span>${money(b.balancePesewas)}</span></div></div>
     <p style="margin:0"><span class="st ${esc(b.status)}">${esc(b.statusLabel)}</span></p>
-    ${tooBig ? `<div class="say warn"><b>Pay your waiter</b>Bills above ${money(paystackLimit())} can’t be paid by card or MoMo here. Your waiter will take the payment.</div>` : ''}
-    ${due ? `<div class="pay-box">${tipPart(tip)}<div class="field"><label for="ph">Your MoMo number (optional, for the receipt)</label><input id="ph" type="tel" inputmode="tel" autocomplete="tel" placeholder="024 123 4567" value="${esc(pick.phone)}"></div>
+    ${walletWait ? `<div class="pay-box" id="walletBox"><h2 style="margin:0">Send ${money(walletWait.duePesewas)} by MoMo</h2>
+      <p style="margin:0">To <b style="font-size:22px">${esc(walletWait.number)}</b><br>${esc(walletWait.name)}<br>Reference: <b>${esc(walletWait.code)}</b></p>
+      <p class="fine" style="margin:0">That’s your bill ${money(walletWait.billPesewas)} + ${money(walletWait.chargePesewas)} charge. This page updates once the club sees the money arrive; your waiter is told.</p></div>`
+    : tooBig || (due && walletOk(b.balancePesewas, b.totalPesewas)) ? `<div class="pay-box"><h2 style="margin:0">${tooBig ? 'How to pay' : 'Card payments are down tonight'}</h2>
+      <p style="margin:0">${tooBig ? `Bills above ${money(paystackLimit())} are paid in <b>cash</b> to your waiter, or by <b>MoMo to the club’s wallet</b>.` : 'Pay in cash to your waiter, or by MoMo to the club’s wallet.'}</p>
+      <div class="field"><label for="wph">Your phone (we text you the details)</label><input id="wph" type="tel" inputmode="tel" autocomplete="tel" placeholder="024 123 4567" value="${esc(pick.phone)}"></div>
+      <button class="big" id="walletGo" type="button">Pay by MoMo to the wallet</button></div>` : ''}
+    ${due && !walletWait && !walletOk(b.balancePesewas, b.totalPesewas) ? `<div class="pay-box">${tipPart(tip)}<div class="field"><label for="ph">Your MoMo number (optional, for the receipt)</label><input id="ph" type="tel" inputmode="tel" autocomplete="tel" placeholder="024 123 4567" value="${esc(pick.phone)}"></div>
       <button class="big" id="pay" type="button">Pay ${money(b.balancePesewas + tipNow() + feeOn(b.balancePesewas))}</button><p class="fine">${feeOn(b.balancePesewas) ? `Includes the ${feeLabel().replace(/^Service charge/, 'service charge')}: ${money(feeOn(b.balancePesewas))}. ` : ''}MoMo or card, by Paystack. <b>Paystack may text you a code first: check your messages.</b> Your waiter sees it the moment it’s confirmed.</p></div>` : ''}
     ${paid ? `<div class="say good"><b>Thank you!</b>${open ? 'Paid so far. Staying? Your table stays open: order more any time and it’s added to this bill.' : 'This page is your receipt. Show it to your waiter if they ask.'}</div>
       ${open && menuUrl ? `<a class="big" href="${esc(menuUrl)}" style="text-align:center;text-decoration:none">Order more drinks</a>` : ''}
@@ -47,6 +53,11 @@ async function load(note = '') {
       <button class="big ghost" id="save" type="button">Save receipt</button>
       <p class="foot-small" style="text-align:center;margin:10px 0 0">How was your night? <a href="review.html?s=bill&back=${encodeURIComponent(`bill.html?t=${token}`)}">Rate us</a> (optional)</p>` : ''}`;
   $('#save') && ($('#save').onclick = () => print());
+  $('#walletGo') && ($('#walletGo').onclick = async () => {
+    const btn = $('#walletGo'); btn.disabled = true; btn.textContent = 'One moment…';
+    try { await api(`/api/guest/bill/${encodeURIComponent(token)}/wallet`, { method: 'POST', body: { phone: $('#wph').value.trim() } }); load(); }
+    catch (e) { btn.disabled = false; btn.textContent = 'Pay by MoMo to the wallet'; load({ kind: 'bad', text: e.message }); }
+  });
   $('#otpGo') && ($('#otpGo').onclick = async () => {
     const btn = $('#otpGo'); btn.disabled = true; btn.textContent = 'Sending…';
     try { const r = await api(`/api/guest/bill/${encodeURIComponent(token)}/code`, { method: 'POST', body: { otp: $('#otp').value } }); load({ kind: 'good', text: r.message }); }

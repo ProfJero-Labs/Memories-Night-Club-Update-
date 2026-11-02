@@ -25,7 +25,7 @@ import { addMoves, stockError } from './stock.js';
 import { prepareTip, tipFields, textTip, phoneOf, guestTipPeople } from './tips.js';
 import { paymentAlert } from './alerts.js';
 import { momoPrompt, submitMomoCode } from '../lib/momo.js';
-import { startWallet, momoDirectBlocked } from './wallet.js';
+import { startWallet, momoDirectBlocked, billWallet } from './wallet.js';
 import { serviceFee } from '../lib/fee.js';
 
 export const BOSS = ['superAdmin', 'director', 'manager'];
@@ -685,10 +685,24 @@ export async function publicBill(env, token) {
   const cw = t.fields.codeWait, waitingCode = cw && Date.now() - new Date(cw.at).getTime() < 15 * 60e3
     ? (await getDoc(env, 'pending_checkouts', cw.reference))?.fields : null;
   const codeNeeded = !!(waitingCode && waitingCode.status === 'pending' && waitingCode.otpAsked && !waitingCode.otpSubmittedAt);
-  return { codeNeeded, open: t.fields.status === 'open', menuUrl, bill: { label: `Tab ${t.fields.number}`, table: t.fields.table, waiterFirstName: t.fields.waiterNickname || String(t.fields.waiterName || '').split(/\s+/)[0], date: t.fields.businessDate, lines: bill.lines, grossPesewas: bill.grossPesewas, discountPesewas: bill.discountPesewas, totalPesewas: bill.totalPesewas, paidPesewas: bill.paidPesewas, balancePesewas: bill.balancePesewas, status: bill.status, statusLabel: PAY_LABEL[bill.status],
+  // MoMo to the wallet in progress (a big bill): what to send, until a manager confirms it.
+  const ww = t.fields.walletWait ? (await getDoc(env, 'wallet_payments', t.fields.walletWait))?.fields : null;
+  const walletWait = ww && ww.status === 'waiting' ? { duePesewas: ww.duePesewas, billPesewas: ww.billPesewas, chargePesewas: ww.chargePesewas, code: ww.code, number: ww.wallet.number, name: ww.wallet.name } : null;
+  return { codeNeeded, walletWait, open: t.fields.status === 'open', menuUrl, bill: { label: `Tab ${t.fields.number}`, table: t.fields.table, waiterFirstName: t.fields.waiterNickname || String(t.fields.waiterName || '').split(/\s+/)[0], date: t.fields.businessDate, lines: bill.lines, grossPesewas: bill.grossPesewas, discountPesewas: bill.discountPesewas, totalPesewas: bill.totalPesewas, paidPesewas: bill.paidPesewas, balancePesewas: bill.balancePesewas, status: bill.status, statusLabel: PAY_LABEL[bill.status],
     payments: (t.fields.payments || []).map(p => ({ method: p.method === 'cash' ? 'Cash' : 'MoMo', amountPesewas: p.amountPesewas, at: p.at })), paying: !!(t.fields.pending && Date.now() - new Date(t.fields.pending.at).getTime() < 30 * 60e3) },
     // A tip with the payment: for their waiter by default, or anyone on the team.
     tip: { people: (await guestTipPeople(env)).people, defaultId: t.fields.waiterUid || '' } };
+}
+
+// A big bill on the customer's bill link: they start MoMo to the wallet themselves.
+export async function startBillWallet(env, token, b) {
+  const t = await tabByToken(env, token); if (!t) return PUBLIC;
+  if (t.fields.status !== 'open' && t.fields.status !== 'owed') return { error: 'This bill is closed.' };
+  const bill = billOf(t.fields, await roundsOf(env, t.id));
+  if (bill.balancePesewas < 100) return { error: 'This bill is already paid. Thank you!' };
+  const phone = b?.phone ? normalizePhone(b.phone) : '';
+  const w = await billWallet(env, t, bill, { phone });
+  return w.error ? w : { wallet: { duePesewas: w.duePesewas, billPesewas: w.billPesewas, chargePesewas: w.chargePesewas, code: w.code, number: w.wallet.number, name: w.wallet.name } };
 }
 
 // The customer types the code Paystack texted them, on their bill page. Paystack then sends the

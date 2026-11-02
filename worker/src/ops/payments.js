@@ -46,7 +46,7 @@ function paymentsOf({ tabs, qr, name, stationName, tipBy = new Map() }) {
       momoRef: p.momoRef || p.reference || '', wholeBill: !t.quick, lines: t.bill.lines.map(l => ({ qty: l.qty, name: l.name, amountPesewas: l.amountPesewas })), billTotalPesewas: t.bill.totalPesewas, billLeftPesewas: t.bill.balancePesewas, ...(tipBy.get(p.id) || {}) });
   }
   for (const o of qr) {
-    out.push({ id: o.id, at: o.paidAt, amountPesewas: o.totalPesewas, method: 'qr', methodLabel: METHOD.qr, takenByName: 'Customer, by QR', servedByName: o.deliveredBy ? name[o.deliveredBy] || 'The bar' : o.status === 'paid' ? 'Not collected yet' : '',
+    out.push({ id: o.id, at: o.paidAt, amountPesewas: o.totalPesewas, method: o.paidVia === 'wallet' ? 'momo' : 'qr', methodLabel: o.paidVia === 'wallet' ? 'MoMo to the wallet (confirmed)' : METHOD.qr, takenByName: 'Customer, by QR', servedByName: o.deliveredBy ? name[o.deliveredBy] || 'The bar' : o.status === 'paid' ? 'Not collected yet' : '',
       where: o.spot ? `Table ${o.spot}` : 'QR at the bar', tab: `Code ${o.pickupCode || ''}`, bar: o.stationName || '', customerName: '', customerPhone: o.phone || '', momoRef: o.reference || '', wholeBill: false,
       lines: (o.lines || []).map(l => ({ qty: l.qty, name: l.name, amountPesewas: l.qty * l.unitPesewas })), refund: ['refund_due', 'refunded'].includes(o.status) ? o.status : '', ...(tipBy.get(o.id) || {}) });
   }

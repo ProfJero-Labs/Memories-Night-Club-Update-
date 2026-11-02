@@ -62,7 +62,7 @@ export async function nightAccounts(env, user, { date } = {}) {
   const handed = rounds.filter(r => HANDED.includes(r.status)), atBar = rounds.filter(r => AT_BAR.includes(r.status));
   const owedTabs = tabs.filter(t => ['open', 'owed'].includes(t.status) && t.bill.balancePesewas > 0);
   const money = {
-    cashPesewas: byMethod('cash'), momoPesewas: byMethod('momo'), onlinePesewas: byMethod('digital') + qrValue,
+    cashPesewas: byMethod('cash'), momoPesewas: byMethod('momo') + sum(qr.filter(o => o.paidVia === 'wallet'), o => o.totalPesewas), onlinePesewas: byMethod('digital') + qrValue - sum(qr.filter(o => o.paidVia === 'wallet'), o => o.totalPesewas),
     owedPesewas: sum(owedTabs, t => t.bill.balancePesewas),
     freePesewas: lineSum(handed, 'compQty'), brokenPesewas: lineSum(handed, 'brokenQty'), discountsPesewas: sum(tabs, t => t.bill.discountPesewas),
     pendingReturnsPesewas: lineSum(handed, 'returnPending'),
