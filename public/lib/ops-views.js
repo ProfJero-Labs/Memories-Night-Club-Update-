@@ -963,10 +963,22 @@ const pct = n => `${Number(n || 0)}%`;
 export async function chargesView(el) {
   el.innerHTML = '<div class="loading">Loading…</div>';
   const c = await sapi('/api/ops/commercial');
-  const sc = c.serviceCharge, cm = c.commission, ro = c.canEdit ? '' : 'disabled';
+  const sc = c.serviceCharge, cm = c.commission, rt = c.routes, ro = c.canEdit ? '' : 'disabled';
   const tick = (name, map, on) => Object.entries(map).map(([k, l]) => `<label class="tick"><input type="checkbox" name="${name}" value="${esc(k)}" ${on.includes(k) ? 'checked' : ''} ${ro}> ${esc(l)}</label>`).join('');
   el.innerHTML = `<div class="vstack" style="display:grid;gap:14px"><h1>Service charge &amp; commission</h1>
     <p class="lead">${c.updatedByName ? `Last changed by ${esc(c.updatedByName)} ${when(c.updatedAt)}.` : 'Not changed yet: the defaults are in force.'}${c.canEdit ? '' : ' Only a director or the admin can change these.'}</p>
+    <h3 class="group-h">New payment rules</h3>
+    <div class="say warn"><b>Not switched on yet</b>These rules take over from the service charge below once the new payment screens are ready. Until then nothing changes for customers. You can set the numbers and check the examples now.</div>
+    <div class="grid2"><div class="sfield"><label for="rtPct">Charge (% of the bill)</label><input id="rtPct" inputmode="decimal" value="${esc(rt.percent)}" ${ro}></div>
+      ${moneyField('rtOnly', 'Customer pays it all, bills up to (GHS)', String(rt.customerOnlyUpToPesewas / 100))}
+      ${moneyField('rtPs', 'Paystack offered for bills up to (GHS)', String(rt.paystackUpToPesewas / 100))}
+      <div class="sfield"><label for="rtVen">Above that first limit, the venue pays (% of the charge)</label><input id="rtVen" inputmode="decimal" value="${esc(rt.venueSharePercent)}" ${ro}></div>
+      ${moneyField('rtMin', 'But the customer pays at least (GHS)', String(rt.customerMinPesewas / 100))}
+      ${moneyField('rtFlat', 'Big bills by MoMo: flat charge (GHS)', String(rt.bigFlatPesewas / 100))}</div>
+    <p class="group-h">What it means for some bills</p>
+    <div class="lines-list">${(c.routeExamples || []).map(x => { const p = x.paystack || x.momo; return lineRow(`<b>Bill ${money(x.billPesewas)}</b> · cash or ${x.paystack ? 'Paystack' : 'MoMo to the wallet'}`, `pays ${money(p.customerPaysPesewas)}`, `Venue records ${money(p.venueRecordsPesewas)} · EvolveIT ${x.paystack ? 'about ' : ''}${money(x.paystack ? p.evolveitEstimatePesewas : p.evolveitPesewas)}`); }).join('')}</div>
+    <p class="muted" style="margin:0">Cash never has a charge. On Paystack, Paystack’s fee comes out of the charge and EvolveIT keeps the rest (the real fee is what Paystack reports). Above the Paystack limit, the customer sends MoMo to the wallet and pays the flat charge, which is owed to EvolveIT.</p>
+    ${c.canEdit ? '<button class="big ghost" id="rtSave">Save the payment rules</button><div id="rtMsg"></div>' : ''}
     <h3 class="group-h">Customer service charge</h3>
     <div class="say ${sc.enabled ? 'good' : 'warn'}"><b>${sc.enabled ? `On: ${pct(sc.percent)} of the bill, at most ${money(sc.capPesewas)}` : 'Off'}</b>Added once per bill to payments made online or by MoMo through the site. Not on cash. Shown to the customer before they pay.</div>
     <label class="tick"><input type="checkbox" id="scOn" ${sc.enabled ? 'checked' : ''} ${ro}> Charge customers a service charge</label>
@@ -989,6 +1001,12 @@ export async function chargesView(el) {
     <button class="mid" id="simGo">Run the simulation</button><div id="simOut"></div></div>`;
   const val = id => $(`#${id}`, el).value;
   const checked = name => $$(`input[name="${name}"]:checked`, el).map(x => x.value);
+  $('#rtSave', el) && ($('#rtSave', el).onclick = async () => {
+    try {
+      await busy($('#rtSave', el), () => sapi('/api/ops/commercial', { method: 'POST', body: { routes: { percent: val('rtPct'), customerOnlyUpToPesewas: ghsIn(val('rtOnly')), paystackUpToPesewas: ghsIn(val('rtPs')), venueSharePercent: val('rtVen'), customerMinPesewas: ghsIn(val('rtMin')), bigFlatPesewas: ghsIn(val('rtFlat')) } } }));
+      await chargesView(el); say($('#rtMsg', el), 'Saved. The examples show the new numbers.', 'good');
+    } catch (e) { say($('#rtMsg', el), e.message, 'bad'); }
+  });
   $('#cmSave', el) && ($('#cmSave', el).onclick = async () => {
     try {
       await busy($('#cmSave', el), () => sapi('/api/ops/commercial', { method: 'POST', body: {

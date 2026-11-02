@@ -6,6 +6,7 @@ import { setDoc } from '../lib/firestore.js';
 import { now } from '../lib/util.js';
 import { requireRole, uidOf } from '../lib/auth.js';
 import { FORBIDDEN, audit, logChange, int } from './common.js';
+import { routeFor, cleanRoutes, DEFAULT_ROUTES } from '../lib/routes.js';
 import { commercialConfig, clearCommercialCache, MAX_RATE_PERCENT, COMMISSION_KINDS, COMMISSION_CHANNELS, COMMISSION_BASES, DEFAULT_SERVICE_CHARGE } from '../lib/fee.js';
 
 export const COMMERCIAL_EDITORS = ['superAdmin', 'director'];
@@ -16,7 +17,10 @@ export async function getCommercial(env, user) {
   const cfg = await commercialConfig(env);
   return { ...cfg, canEdit: !!requireRole(user, COMMERCIAL_EDITORS), maxRatePercent: MAX_RATE_PERCENT, kinds: COMMISSION_KINDS, channels: COMMISSION_CHANNELS, bases: COMMISSION_BASES,
     // Nothing on the Paystack side is split automatically: the commission is recorded as payable.
-    settlementModes: { payable: 'Recorded as payable to the developers (paid out separately)' } };
+    settlementModes: { payable: 'Recorded as payable to the developers (paid out separately)' },
+    // The new payment rules, with what they mean for a few bills (so directors can check before
+    // switching them on).
+    routeExamples: [5000, 20000, 30000, 30100, 60000, 150000, 200000, 250000, 2000000].map(b => routeFor(b, cfg.routes)) };
 }
 
 const rate = v => { const n = Number(v); return Number.isFinite(n) && n >= 0 && n <= MAX_RATE_PERCENT ? Math.round(n * 100) / 100 : NaN; };
@@ -27,7 +31,8 @@ const pesewas = v => { const n = int(v); return n >= 0 && n <= 10_000_000 ? n : 
 export async function saveCommercial(env, b, user) {
   if (!requireRole(user, COMMERCIAL_EDITORS)) return { error: 'Only a director or the admin can change the service charge or the commission.', status: 403 };
   const cur = await commercialConfig(env);
-  const next = { serviceCharge: { ...DEFAULT_SERVICE_CHARGE, ...cur.serviceCharge }, commission: { ...cur.commission }, processing: { ...cur.processing } };
+  const next = { serviceCharge: { ...DEFAULT_SERVICE_CHARGE, ...cur.serviceCharge }, routes: { ...DEFAULT_ROUTES, ...cur.routes }, commission: { ...cur.commission }, processing: { ...cur.processing } };
+  if (b?.routes) { const r = cleanRoutes(b.routes, next.routes); if (r.error) return r; next.routes = r; }
   if (b?.serviceCharge) {
     const s = b.serviceCharge;
     if (s.enabled !== undefined) next.serviceCharge.enabled = s.enabled === true;
@@ -55,7 +60,7 @@ export async function saveCommercial(env, b, user) {
   await setDoc(env, 'settings', 'commercial', { ...next, updatedAt: now(), updatedBy: uidOf(user), updatedByName: user.name || '' });
   clearCommercialCache();
   const flat = o => JSON.stringify(o);
-  for (const k of ['serviceCharge', 'commission', 'processing']) if (flat(cur[k]) !== flat(next[k])) await logChange(env, user, { kind: 'commercial', refId: k, refName: { serviceCharge: 'Service charge', commission: 'Developer commission', processing: 'Paystack fee estimate' }[k], field: k, from: flat(cur[k]), to: flat(next[k]) });
-  await audit(env, user, 'COMMERCIAL_SETTINGS_UPDATED', { serviceCharge: next.serviceCharge, commission: next.commission });
+  for (const k of ['serviceCharge', 'routes', 'commission', 'processing']) if (flat(cur[k]) !== flat(next[k])) await logChange(env, user, { kind: 'commercial', refId: k, refName: { serviceCharge: 'Service charge', routes: 'Payment rules (cash, Paystack, big bills)', commission: 'Developer commission', processing: 'Paystack fee estimate' }[k], field: k, from: flat(cur[k]), to: flat(next[k]) });
+  await audit(env, user, 'COMMERCIAL_SETTINGS_UPDATED', { serviceCharge: next.serviceCharge, routes: next.routes, commission: next.commission });
   return getCommercial(env, user);
 }

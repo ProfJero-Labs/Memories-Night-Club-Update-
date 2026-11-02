@@ -16,6 +16,7 @@
 // asked for (amount + tip + service charge), and that is what the payment check compares.
 import { getDoc } from './firestore.js';
 import { getSettings } from '../public.js';
+import { DEFAULT_ROUTES } from './routes.js';
 
 export const MAX_RATE_PERCENT = 20;
 export const DEFAULT_SERVICE_CHARGE = { enabled: true, percent: 5, capPesewas: 10000 };
@@ -45,7 +46,7 @@ async function readCommercial(env, siteSettings) {
     const legacy = Number((siteSettings || await getSettings(env))?.serviceFeePercent);
     if (Number.isFinite(legacy) && legacy >= 0 && legacy <= MAX_RATE_PERCENT) serviceCharge = { ...serviceCharge, percent: legacy, enabled: legacy > 0 };
   }
-  return { serviceCharge, commission: { ...DEFAULT_COMMISSION, ...(doc?.commission || {}) }, processing: { estimatePercent: null, ...(doc?.processing || {}) }, updatedAt: doc?.updatedAt || '', updatedByName: doc?.updatedByName || '' };
+  return { serviceCharge, routes: { ...DEFAULT_ROUTES, ...(doc?.routes || {}) }, commission: { ...DEFAULT_COMMISSION, ...(doc?.commission || {}) }, processing: { estimatePercent: null, ...(doc?.processing || {}) }, updatedAt: doc?.updatedAt || '', updatedByName: doc?.updatedByName || '' };
 }
 
 // customerCharge = min(eligibleSubtotal × rate, cap), once per bill, never negative; 0 when off.
