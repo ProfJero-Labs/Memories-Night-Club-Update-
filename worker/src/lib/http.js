@@ -10,7 +10,7 @@ export const ok = (req, env, data = {}) => json(req, env, { success: true, ...da
 export const fail = (req, env, message, status = 400) => json(req, env, { success: false, error: message }, status);
 // Route helper: a handler returns {error,status} or a payload.
 // A short machine-readable `code` (e.g. 'locked') travels with the message, so a screen can show the next step.
-export const reply = (req, env, r) => (r && r.error ? json(req, env, { success: false, error: r.error, ...(r.code ? { code: r.code } : {}), ...(r.atBar ? { atBar: r.atBar } : {}) }, r.status || 400) : ok(req, env, r));
+export const reply = (req, env, r) => (r && r.error ? json(req, env, { success: false, error: r.error, ...(r.code ? { code: r.code } : {}), ...(r.atBar ? { atBar: r.atBar } : {}), ...(r.shortPesewas ? { shortPesewas: r.shortPesewas } : {}) }, r.status || 400) : ok(req, env, r));
 export const allowedOrigin = (url, env) => {
   try { return (env.ALLOWED_ORIGINS || '').split(',').map(s => s.trim()).includes(new URL(url).origin); } catch { return false; }
 };

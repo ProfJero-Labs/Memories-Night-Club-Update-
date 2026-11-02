@@ -19,7 +19,7 @@ import * as bar from './bar.js';
 import * as promos from './promos.js';
 import * as staffauth from './staffauth.js';
 import { opsRoute } from './ops/router.js';
-import { loadNight } from './ops/common.js';
+import { loadNight, bizDate } from './ops/common.js';
 import { publicBill, startBillPayment, billCode } from './ops/tabs.js';
 import { guestNight } from './ops/payments.js';
 import { leaveReview } from './ops/reviews.js';
@@ -54,7 +54,7 @@ async function route(req, env, ctx) {
   // ── Public ──
   if (m === 'GET' && p === '/api/events') return ok(req, env, { events: await publicEvents(env) });
   if (m === 'GET' && p.startsWith('/api/events/')) { const d = await eventBundle(env, last(p)); return d ? ok(req, env, d) : fail(req, env, 'Event not found.', 404); }
-  if (m === 'GET' && p === '/api/settings') { const s = await getSettings(env); delete s.closedDates; delete s.updatedAt; const { serviceCharge, routes } = await commercialConfig(env, s); delete s.serviceFeePercent; const { paystackSubaccount, ...payRules } = routes || {}; return ok(req, env, { settings: { ...s, serviceCharge, payRules } }); }
+  if (m === 'GET' && p === '/api/settings') { const s = await getSettings(env); delete s.closedDates; delete s.updatedAt; const { serviceCharge, routes } = await commercialConfig(env, s); delete s.serviceFeePercent; const { paystackSubaccount, paystackDown, ...payRules } = routes || {}; payRules.paystackDownTonight = !!(paystackDown?.date && paystackDown.date === bizDate()); return ok(req, env, { settings: { ...s, serviceCharge, payRules } }); }
   if (m === 'GET' && p === '/api/calendar') return ok(req, env, await calendar(env, Math.min(26, Math.max(1, Number(u.searchParams.get('weeks')) || 10))));
   // A promo code typed in: a strict limit per phone/IP, so codes can't be found by guessing.
   const codeThrottled = async b => !!b?.promoCode && await throttled(req, env, 'promo-code', 'strict');

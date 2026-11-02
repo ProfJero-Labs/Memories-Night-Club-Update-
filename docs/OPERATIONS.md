@@ -329,6 +329,21 @@ never in sales, money in or profit.
 - **They didn't pay** drops it. An unpaid cash order lapses by itself after 30 minutes, and a phone
   can only have one unpaid cash order at a time.
 
+## Big bills: MoMo to the wallet (with the new payment rules on)
+
+- A bill above GHS 2,000 can't be paid by card or a MoMo prompt. On **Close tab** the waiter picks
+  **Cash** or **MoMo to the wallet**. The screen shows what to send (the bill + GHS 100), the wallet
+  (059 598 6313, Samuel Forson / Memories Night Club) and a reference code; it's texted to the
+  customer too. **Never accept a screenshot.**
+- The Manager (or a director, or finance) sees it on **Tonight → MoMo to confirm**. Look in the
+  wallet itself; when it's there, tap **Arrived**, type the amount and the transaction ID. The tab
+  closes by itself and the waiter's screen says so. Too little: it says how much is short (ask for
+  the rest, or accept it short with a reason). Too much: it says how much change to give back.
+  **Not yet** cancels it if the customer pays another way.
+- **Paystack is down tonight** (directors: More): any bill can then use MoMo to the wallet, at the
+  usual card/MoMo price. It ends when the night closes; **Paystack works again** turns it off.
+- "MoMo to the club's number" is no longer used: cash, Paystack, or the wallet.
+
 ## Paystack's code (OTP)
 
 - Paystack sometimes texts a customer a code before the MoMo prompt (new numbers). **Staff never

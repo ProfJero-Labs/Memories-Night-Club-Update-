@@ -26,6 +26,8 @@ export const DEFAULT_ROUTES = {
   bigFlatPesewas: 10000,          // above GHS 2,000: the flat charge on MoMo to the wallet
   paystackFeePercent: 1.95,       // only for estimates shown before paying; the real fee is Paystack's
   paystackSubaccount: '',         // the partner's Paystack subaccount (ACCT_…): his share goes straight to him
+  bigWalletNumber: '0595986313',  // the partner's MoMo merchant wallet, for bills above the Paystack limit
+  bigWalletName: 'Samuel Forson / Memories Night Club', // the name customers see when they send to it
 };
 
 const int = v => Math.max(0, Math.round(Number(v) || 0));

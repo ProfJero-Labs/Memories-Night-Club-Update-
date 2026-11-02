@@ -7,7 +7,7 @@
 //     once paid.
 //   Quick sale: pick drinks → Cash or MoMo → the bar makes it → "I got them" → done.
 // "Bookings": booked tables and the bottles they paid for. "My report": sales, cash, hand in, submit.
-import { $, $$, esc, normalizePhone, loadFee, paystackOk, paystackLimit } from '../app.js';
+import { $, $$, esc, normalizePhone, loadFee, paystackOk, paystackLimit, momoDirectOff, walletOk } from '../app.js';
 loadFee().catch(() => {});
 import { requireStaff, staffHeader, sapi } from '../staff.js';
 import { qrSvg } from '../ticket-art.js';
@@ -90,8 +90,9 @@ async function tabView(id) {
       ${open && t.quick ? '<div class="say warn"><b>Quick sale</b>Collect the drinks at the bar, then tap “I got them”. It closes by itself.</div>' : ''}
       ${open && !t.quick ? `<div class="pay-now"><b>${money(b.balancePesewas)} ${b.paidPesewas && !b.balancePesewas ? 'paid' : 'so far'}</b>
         <div class="btn-row"><button class="big ghost" id="add">Add drinks</button><button class="big" id="close">Close tab</button></div>
-        ${b.balancePesewas && canCash ? '<button class="big ghost" id="cash">Customer paid (cash or MoMo)</button>' : ''}
+        ${b.balancePesewas && canCash ? `<button class="big ghost" id="cash">${momoDirectOff() ? 'Customer paid cash' : 'Customer paid (cash or MoMo)'}</button>` : ''}
         ${atBarOf(t).length ? `<span class="sub">${atBarOf(t).length} order${atBarOf(t).length > 1 ? 's' : ''} still at the bar (below).</span>` : ''}</div>` : ''}
+      ${open && t.walletWait ? '<div class="say warn"><b>Waiting for MoMo to the wallet</b>A manager confirms it when the money arrives; the tab then closes by itself.</div>' : ''}
       ${!open ? `<div class="say ${t.status === 'closed' ? 'good' : 'warn'}"><b>${t.status === 'closed' ? 'Closed' : 'Written off'}</b>This tab is finished.</div>` : ''}
       <h2>Orders</h2>
       <div class="cards">${t.rounds.map(roundCard).join('') || '<div class="empty-box"><b>No drinks yet</b>Tap “Add drinks”.</div>'}</div>
@@ -149,7 +150,8 @@ function closeSheet(t) {
     ${paid ? '<button class="big" id="csDone">Close the tab</button>' : `<p class="lead" style="margin:0">How is the customer paying?</p>
     <div class="btn-row"><button class="big" id="csCash" ${canCash ? '' : 'disabled'}>Cash</button>${paystackOk(b.balancePesewas, b.totalPesewas) ? '<button class="big" id="csMomo">MoMo prompt</button>' : ''}</div>
     ${paystackOk(b.balancePesewas, b.totalPesewas) ? '' : `<p class="muted" style="margin:0">Bills above ${money(paystackLimit())} can’t be paid by a MoMo prompt.</p>`}
-    ${canCash ? `<button class="big ghost" id="csClub">MoMo to the club’s number</button>
+    ${walletOk(b.balancePesewas, b.totalPesewas) ? `<button class="big" id="csWallet">MoMo to the wallet</button><span class="hint" style="margin-top:-8px">The customer sends MoMo to the club’s wallet; a manager confirms it arrived.</span>` : ''}
+    ${canCash && !momoDirectOff() ? `<button class="big ghost" id="csClub">MoMo to the club’s number</button>
     <div id="csClubBox" hidden style="display:grid;gap:12px">
       <div id="csPaste"></div>
       <div class="sfield"><label for="csRef">MoMo transaction ID</label><input id="csRef" maxlength="40" autocomplete="off" autocapitalize="characters" placeholder="From the MoMo text"><span class="hint">Fastest when it’s busy: no code from Paystack. Only record MoMo you can see arrived.</span></div>
@@ -167,6 +169,7 @@ function closeSheet(t) {
     if (phone() && !normalizePhone(phone())) return say($('#csMsg', box), 'That phone number doesn’t look right.', 'bad');
     try {
       const r = await busy(btn, () => sapi('/api/ops/tabs/checkout', { method: 'POST', body: { tabId: t.id, method, phone: phone(), customerName: $('#csName', box)?.value.trim(), note: $('#csNote', box)?.value.trim(), momoRef: $('#csRef', box)?.value.trim() } }), method === 'momo' ? 'Sending…' : 'Closing…');
+      if (r.method === 'wallet') return waitWallet(r.wallet);
       if (r.method === 'momo_club') return done(`${money(r.momoPesewas)} MoMo recorded. ${t.label} closed.`);
       if (r.method === 'debt') return done(`${t.label} closed as owed: ${money(r.owedPesewas)}. The invoice is texted to ${r.phoneHint}; the Manager sees it under what’s owed.`);
       if (r.closed) return done(`${r.cashPesewas ? `${money(r.cashPesewas)} cash taken: hand it to the bar.` : 'Paid.'} ${t.label} closed.${r.receiptSent ? ` Receipt texted to ${r.phoneHint}.` : ''}`);
@@ -182,6 +185,30 @@ function closeSheet(t) {
     $('#csRef', box).focus();
   });
   $('#csClubGo', box) && ($('#csClubGo', box).onclick = e => go('momo_club', e.currentTarget));
+  $('#csWallet', box) && ($('#csWallet', box).onclick = e => go('wallet', e.currentTarget));
+  // MoMo to the wallet: show the customer what to send, then wait for a manager to confirm it.
+  // Nothing is handed over on a screenshot: the tab closes only when the manager confirms.
+  async function waitWallet(w) {
+    $('#csBody', box).innerHTML = `<div class="result warn" role="status" style="text-align:left"><h1 class="display">Send ${money(w.duePesewas)}</h1>
+      <p style="margin:0">Ask the customer to send <b>${money(w.duePesewas)}</b> by MoMo to:</p>
+      <div class="pickup" style="font-size:34px;letter-spacing:2px">${esc(w.wallet.number.replace(/(\d{3})(\d{3})(\d{4})/, '$1 $2 $3'))}</div>
+      <p style="margin:0"><b>${esc(w.wallet.name)}</b><br>Reference: <b style="font-size:22px">${esc(w.code)}</b></p>
+      <p class="muted" style="margin:0">That’s the bill ${money(w.billPesewas)} + ${money(w.chargePesewas)} charge.${w.phoneHint ? ` Also texted to ${esc(w.phoneHint)}.` : ''} <b>Don’t accept a screenshot.</b> The tab closes when a manager sees the money in the wallet.</p>
+      <p class="muted" style="margin:0" id="wWait">Waiting for a manager to confirm…</p></div>
+      <button class="big ghost" id="wLater">Back to my tables (it closes when confirmed)</button><button class="mid" id="wCancel">They’ll pay another way</button>`;
+    $('#wLater', box).onclick = backToTables;
+    $('#wCancel', box).onclick = async () => { try { await sapi('/api/ops/wallet/cancel', { method: 'POST', body: { id: w.id, reason: 'Customer paying another way' } }); close(); setTimeout(route, 0); } catch (e) { say($('#wWait', box), e.message, 'bad'); } };
+    const until = Date.now() + 30 * 60e3;
+    while (box.isConnected && Date.now() < until) {
+      await new Promise(res => setTimeout(res, 4000));
+      if (!box.isConnected) return;
+      try {
+        const { payment: p } = await sapi(`/api/ops/wallet/one?id=${encodeURIComponent(w.id)}`);
+        if (p.status === 'confirmed') return done(`MoMo confirmed: ${money(p.receivedPesewas)} arrived (ID ${p.momoRef}).${p.changePesewas ? ` Give back ${money(p.changePesewas)} change.` : ''} ${t.label} closed.`);
+        if (p.status === 'cancelled') { $('#wWait', box).textContent = 'Cancelled: it didn’t arrive. Take the payment another way.'; return; }
+      } catch { /* weak signal: keep checking */ }
+    }
+  }
   $('#csDone', box) && ($('#csDone', box).onclick = e => go('cash', e.currentTarget));
   $('#csCash', box) && ($('#csCash', box).onclick = () => {
     const btn = $('#csCash', box); btn.textContent = `Got ${money(b.balancePesewas)} cash · close`; btn.classList.add('okc');
@@ -295,7 +322,7 @@ function sendInvoice(t) {
 // "Customer paid": cash (into your cash bag) or MoMo sent to the club's number (with its ID).
 function takePayment(t) {
   const { box, close } = sheet(`<h2>Customer paid · ${esc(t.label)}</h2>
-    <div class="seg" role="radiogroup" aria-label="How they paid"><button type="button" class="mid on" data-m="cash" role="radio" aria-checked="true">Cash</button><button type="button" class="mid" data-m="momo" role="radio" aria-checked="false">MoMo</button></div>
+    <div class="seg" role="radiogroup" aria-label="How they paid"><button type="button" class="mid on" data-m="cash" role="radio" aria-checked="true">Cash</button>${momoDirectOff() ? '' : '<button type="button" class="mid" data-m="momo" role="radio" aria-checked="false">MoMo</button>'}</div>
     ${moneyField('tcAmt', 'Amount paid (GHS)', (t.bill.balancePesewas / 100).toString(), `Still to pay: ${money(t.bill.balancePesewas)}.`)}
     <div id="tcMomo" hidden>
       <div id="tcPaste"></div>

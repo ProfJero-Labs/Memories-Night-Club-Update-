@@ -968,7 +968,7 @@ export async function chargesView(el) {
   el.innerHTML = `<div class="vstack" style="display:grid;gap:14px"><h1>Service charge &amp; commission</h1>
     <p class="lead">${c.updatedByName ? `Last changed by ${esc(c.updatedByName)} ${when(c.updatedAt)}.` : 'Not changed yet: the defaults are in force.'}${c.canEdit ? '' : ' Only a director or the admin can change these.'}</p>
     <h3 class="group-h">New payment rules</h3>
-    <div class="say ${rt.enabled ? 'good' : 'warn'}"><b>${rt.enabled ? 'On: every card and MoMo payment uses these rules' : 'Off: payments still use the service charge below'}</b>${rt.enabled ? 'The partner’s share of each Paystack payment goes straight to his subaccount. Bills above the Paystack limit are paid in cash (MoMo to the wallet comes next).' : 'Enter the partner’s Paystack subaccount, check the examples, then switch them on.'}</div>
+    <div class="say ${rt.enabled ? 'good' : 'warn'}"><b>${rt.enabled ? 'On: every card and MoMo payment uses these rules' : 'Off: payments still use the service charge below'}</b>${rt.enabled ? 'The partner’s share of each Paystack payment goes straight to his subaccount. Bills above the Paystack limit are paid in cash or by MoMo to the wallet (a manager confirms each).' : 'Enter the partner’s Paystack subaccount, check the examples, then switch them on.'}</div>
     <label class="tick"><input type="checkbox" id="rtOn" ${rt.enabled ? 'checked' : ''} ${ro}> Use the new payment rules</label>
     <div class="sfield"><label for="rtSub">Partner’s Paystack subaccount</label><input id="rtSub" value="${esc(rt.paystackSubaccount || '')}" placeholder="ACCT_…" autocapitalize="off" spellcheck="false" ${ro}><span class="hint">From Paystack → Subaccounts. His share of every Paystack payment is sent there.</span></div>
     <div class="grid2"><div class="sfield"><label for="rtPct">Charge (% of the bill)</label><input id="rtPct" inputmode="decimal" value="${esc(rt.percent)}" ${ro}></div>
@@ -976,7 +976,9 @@ export async function chargesView(el) {
       ${moneyField('rtPs', 'Paystack offered for bills up to (GHS)', String(rt.paystackUpToPesewas / 100))}
       <div class="sfield"><label for="rtVen">Above that first limit, the venue pays (% of the charge)</label><input id="rtVen" inputmode="decimal" value="${esc(rt.venueSharePercent)}" ${ro}></div>
       ${moneyField('rtMin', 'But the customer pays at least (GHS)', String(rt.customerMinPesewas / 100))}
-      ${moneyField('rtFlat', 'Big bills by MoMo: flat charge (GHS)', String(rt.bigFlatPesewas / 100))}</div>
+      ${moneyField('rtFlat', 'Big bills by MoMo: flat charge (GHS)', String(rt.bigFlatPesewas / 100))}
+      <div class="sfield"><label for="rtWal">Partner’s MoMo wallet (big bills)</label><input id="rtWal" type="tel" inputmode="tel" value="${esc(rt.bigWalletNumber || '')}" ${ro}></div>
+      <div class="sfield"><label for="rtWalN">Name customers see on it</label><input id="rtWalN" maxlength="60" value="${esc(rt.bigWalletName || '')}" ${ro}></div></div>
     <p class="group-h">What it means for some bills</p>
     <div class="lines-list">${(c.routeExamples || []).map(x => { const p = x.paystack || x.momo; return lineRow(`<b>Bill ${money(x.billPesewas)}</b> · cash or ${x.paystack ? 'Paystack' : 'MoMo to the wallet'}`, `pays ${money(p.customerPaysPesewas)}`, `Venue records ${money(p.venueRecordsPesewas)} · EvolveIT ${x.paystack ? 'about ' : ''}${money(x.paystack ? p.evolveitEstimatePesewas : p.evolveitPesewas)}`); }).join('')}</div>
     <p class="muted" style="margin:0">Cash never has a charge. On Paystack, Paystack’s fee comes out of the charge and EvolveIT keeps the rest (the real fee is what Paystack reports). Above the Paystack limit, the customer sends MoMo to the wallet and pays the flat charge, which is owed to EvolveIT.</p>
@@ -1005,7 +1007,7 @@ export async function chargesView(el) {
   const checked = name => $$(`input[name="${name}"]:checked`, el).map(x => x.value);
   $('#rtSave', el) && ($('#rtSave', el).onclick = async () => {
     try {
-      await busy($('#rtSave', el), () => sapi('/api/ops/commercial', { method: 'POST', body: { routes: { enabled: $('#rtOn', el).checked, paystackSubaccount: val('rtSub').trim(), percent: val('rtPct'), customerOnlyUpToPesewas: ghsIn(val('rtOnly')), paystackUpToPesewas: ghsIn(val('rtPs')), venueSharePercent: val('rtVen'), customerMinPesewas: ghsIn(val('rtMin')), bigFlatPesewas: ghsIn(val('rtFlat')) } } }));
+      await busy($('#rtSave', el), () => sapi('/api/ops/commercial', { method: 'POST', body: { routes: { enabled: $('#rtOn', el).checked, paystackSubaccount: val('rtSub').trim(), percent: val('rtPct'), customerOnlyUpToPesewas: ghsIn(val('rtOnly')), paystackUpToPesewas: ghsIn(val('rtPs')), venueSharePercent: val('rtVen'), customerMinPesewas: ghsIn(val('rtMin')), bigFlatPesewas: ghsIn(val('rtFlat')), bigWalletNumber: val('rtWal'), bigWalletName: val('rtWalN') } } }));
       await chargesView(el); say($('#rtMsg', el), $('#rtOn', el)?.checked ? 'Saved. New payments use the new rules.' : 'Saved. The examples show the new numbers.', 'good');
     } catch (e) { say($('#rtMsg', el), e.message, 'bad'); }
   });

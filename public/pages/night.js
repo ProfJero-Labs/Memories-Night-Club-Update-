@@ -15,7 +15,9 @@
 import { $, $$, esc } from '../app.js';
 import { requireStaff, staffHeader, sapi } from '../staff.js';
 import { bottomNav, sheet, say, st, every, money, when, ask, backBar, bindBackBar, upcomingBookings, dayName } from '../lib/ops-ui.js';
-import { accraDayKey } from '../app.js';
+import { accraDayKey, loadFee, momoDirectOff } from '../app.js';
+import { pasteMomoButton, ghsIn, moneyField, busy } from '../lib/ops-ui.js';
+loadFee().catch(() => {});
 import { accountsView, ticketsView, findOrderView, expensesView, nightsView, salesView, closingView, approvalsView, productsView, stockAdminView, eodListView, eodView, moneyView, expenseSheet, explainSheet, budgetView, paymentsView, commissionsView, toApproveView, stockValueView, salesListView, openSales, purchasesView, cashReceiveView, feedbackInboxView, chargesView, financeNightView, tabClearView } from '../lib/ops-views.js';
 import { payView, reviewsView, perfView } from '../lib/people-views.js';
 import { staffView } from '../lib/staff-view.js';
@@ -83,8 +85,8 @@ let flash = null;
 const flashNote = (text, kind = 'good') => { flash = { text, kind, at: Date.now() }; say($('#msg'), text, kind); };
 const note = flashNote;
 async function tonight(alive = () => location.hash.slice(1).split('/')[0] in { '': 1, tonight: 1 }) {
-  const [s, a, t, ex, m, ta] = await Promise.all([sapi('/api/ops/sales'), sapi('/api/ops/approvals'), sapi('/api/ops/tabs?all=1'), sapi('/api/ops/stock/to-explain').catch(() => ({ counts: [] })),
-    director ? sapi('/api/ops/money?period=today').catch(() => null) : null, director ? sapi('/api/ops/to-approve').catch(() => null) : null]);
+  const [s, a, t, ex, m, ta, wl] = await Promise.all([sapi('/api/ops/sales'), sapi('/api/ops/approvals'), sapi('/api/ops/tabs?all=1'), sapi('/api/ops/stock/to-explain').catch(() => ({ counts: [] })),
+    director ? sapi('/api/ops/money?period=today').catch(() => null) : null, director ? sapi('/api/ops/to-approve').catch(() => null) : null, sapi('/api/ops/wallet').catch(() => null)]);
   if (!alive()) return;
   const x = s.totals, waiting = a.approvals.filter(p => p.canDecide), toExplain = ex.counts || [];
   const open = t.tabs.filter(tb => tb.status === 'open');
@@ -107,6 +109,11 @@ async function tonight(alive = () => location.hash.slice(1).split('/')[0] in { '
     ${top}
     <div style="display:flex;flex-wrap:wrap;gap:6px"><button type="button" class="mid" data-sl="cash" style="min-height:40px;padding:0 12px">Cash ${money(x.cashPesewas)} ›</button><button type="button" class="mid" data-sl="momo" style="min-height:40px;padding:0 12px">MoMo ${money((x.momoPesewas || 0))} ›</button><button type="button" class="mid" data-sl="phone" style="min-height:40px;padding:0 12px">Paid on phone ${money(x.digitalPesewas)} ›</button></div>
     <div id="msg"></div>
+    ${wl?.waiting?.length ? `<section class="pos-need"><h2>MoMo to confirm <span class="count">${wl.waiting.length}</span></h2>
+      <p class="muted" style="margin:0">Check the wallet (${esc(wl.wallet.number)}) itself, never a screenshot.</p>
+      ${wl.waiting.map((w, i) => `<div class="need"><div><b>${money(w.duePesewas)} · ${esc(w.table && w.table !== 'Walk-in' ? `Table ${w.table}` : `Tab ${w.tabNumber}`)}</b><span>Reference ${esc(w.code)} · ${esc(w.waiterName)} · ${when(w.createdAt)}</span><small>Bill ${money(w.billPesewas)} + ${money(w.chargePesewas)} charge${w.reason === 'paystack_down' ? ' (Paystack down)' : ''}</small></div>
+        <div class="need-btns"><button class="mid okc" data-wok="${i}">Arrived</button><button class="mid" data-wno="${i}">Not yet</button></div></div>`).join('')}</section>` : ''}
+    ${wl?.paystackDown ? `<div class="say warn"><b>Paystack is down tonight</b>Any bill can be paid by MoMo to the wallet (a manager confirms each one). Turned on by ${esc(wl.paystackDown.byName || 'a director')}.${director ? '<br><button class="mid" id="psUp" style="margin-top:8px">Paystack works again</button>' : ''}</div>` : ''}
     ${director && toPay ? `<button class="big red" data-goto="approve">${toPay} payment${toPay > 1 ? 's' : ''} to approve</button>` : ''}
     ${toExplain.length ? `<section class="pos-need"><h2>Stock to explain <span class="count">${toExplain.length}</span></h2>
       ${toExplain.map((c, i) => `<div class="need"><div><b>${esc(c.stationName)}: the bar found a different number</b><span>${c.differences.map(d => `${esc(d.name)} ${Math.abs(d.difference)} ${d.difference < 0 ? 'fewer' : 'more'}`).join(' · ')}</span><small>${esc(c.byName)} counted when the bar opened · ${esc(c.date)}</small></div>
@@ -137,6 +144,14 @@ async function tonight(alive = () => location.hash.slice(1).split('/')[0] in { '
   $$('[data-explain]', app).forEach(b => b.onclick = () => explainSheet(toExplain[Number(b.dataset.explain)], () => { note('Explanation saved. Finance can see it.'); tonight().catch(fail); }));
   $('#addExp') && ($('#addExp').onclick = async () => { const m = await sapi('/api/ops/money?period=today').catch(() => null); expenseSheet(m, r => note(r?.needsApproval ? 'Saved. It’s above the limit, so it waits for a director.' : 'Expense saved.')); });
   $$('[data-goto]:not(.back-btn)', app).forEach(b => b.onclick = () => { location.hash = b.dataset.goto; });
+  $$('[data-wok]', app).forEach(b => b.onclick = () => walletSheet(wl.waiting[Number(b.dataset.wok)]));
+  $$('[data-wno]', app).forEach(b => b.onclick = async () => {
+    const w = wl.waiting[Number(b.dataset.wno)];
+    const why = await ask({ title: `MoMo for ${w.table ? `table ${w.table}` : `Tab ${w.tabNumber}`} hasn’t arrived?`, label: 'Cancel it only if they won’t pay this way. Why?', quick: ['Didn’t arrive', 'Paying cash instead', 'Customer left'], send: 'Cancel it', danger: true });
+    if (!why) return;
+    try { await sapi('/api/ops/wallet/cancel', { method: 'POST', body: { id: w.id, reason: why } }); flashNote('Cancelled. The waiter takes the payment another way.'); tonight().catch(fail); } catch (e) { flashNote(e.message, 'bad'); }
+  });
+  $('#psUp') && ($('#psUp').onclick = async () => { try { await sapi('/api/ops/paystack-down', { method: 'POST', body: { on: false } }); flashNote('Paystack is back on.'); tonight().catch(fail); } catch (e) { flashNote(e.message, 'bad'); } });
   const decide = async (id, approve) => {
     const note = approve ? '' : await ask({ title: 'Refuse this?', label: 'Why? (optional)', quick: ['Not tonight', 'Too much', 'Ask me first', 'Wrong table'], send: 'Refuse', required: false, danger: true }); if (note === null) return;
     try { await sapi('/api/ops/approvals/decide', { method: 'POST', body: { id, approve, note } }); flashNote(approve ? 'Approved.' : 'Refused.'); tonight().catch(fail); }
@@ -144,6 +159,29 @@ async function tonight(alive = () => location.hash.slice(1).split('/')[0] in { '
   };
   $$('[data-yes]', app).forEach(b => b.onclick = () => decide(b.dataset.yes, true));
   $$('[data-no]', app).forEach(b => b.onclick = () => decide(b.dataset.no, false));
+}
+
+// A manager saw the money in the wallet: what arrived and its transaction ID. A short amount is
+// refused unless the manager accepts it with a reason.
+function walletSheet(w) {
+  const { box, close } = sheet(`<h2>MoMo arrived? ${money(w.duePesewas)}</h2>
+    <p class="muted" style="margin:0">${esc(w.table && w.table !== 'Walk-in' ? `Table ${w.table}` : `Tab ${w.tabNumber}`)} · reference ${esc(w.code)} · ${esc(w.waiterName)}. Look in the wallet itself.</p>
+    <div id="wsPaste"></div>
+    ${moneyField('wsAmt', 'Amount that arrived (GHS)', String(w.duePesewas / 100))}
+    <div class="sfield"><label for="wsRef">MoMo transaction ID</label><input id="wsRef" maxlength="40" autocomplete="off" autocapitalize="characters" placeholder="From the wallet’s message"></div>
+    <div id="wsShort" hidden><div class="sfield"><label for="wsWhy">Accept it short? Why</label><input id="wsWhy" maxlength="200" placeholder="e.g. regular customer, paying the rest tomorrow"></div></div>
+    <div id="wsMsg"></div><button class="big okc" id="wsGo">Confirm: it arrived</button><button class="big ghost" data-close>Cancel</button>`, { label: 'MoMo arrived' });
+  $('#wsPaste', box).append(pasteMomoButton(m => { if (m.ref) $('#wsRef', box).value = m.ref; if (m.amountPesewas) $('#wsAmt', box).value = String(m.amountPesewas / 100); }));
+  let acceptShort = false;
+  $('#wsGo', box).onclick = async () => {
+    try {
+      const r = await busy($('#wsGo', box), () => sapi('/api/ops/wallet/confirm', { method: 'POST', body: { id: w.id, receivedPesewas: ghsIn($('#wsAmt', box).value), momoRef: $('#wsRef', box).value, acceptShort, note: $('#wsWhy', box).value } }), 'Confirming…');
+      close(); flashNote(`Confirmed.${r.changePesewas ? ` ${money(r.changePesewas)} too much: give it back as change.` : ''}${r.tabClosed ? ' The tab is closed.' : ''}`); tonight().catch(fail);
+    } catch (e) {
+      if (e.code === 'short') { acceptShort = true; $('#wsShort', box).hidden = false; $('#wsGo', box).textContent = 'Accept it short'; }
+      say($('#wsMsg', box), e.message, 'bad');
+    }
+  };
 }
 
 // One table: where, who serves it, what it owes, paid or not.
@@ -187,7 +225,7 @@ function more() {
   // Grouped, so each thing is quick to find (no scrolling through one long list).
   const groups = director ? [
     ['Money', [['accounts', 'Night accounts', 'What the drinks should bring; who isn’t aligned'], ['salaries', 'Salaries and loans', 'What staff are paid'], ['budget', 'Bills and budget', 'What’s due this month'], ['commissions', 'Commissions', '10% on tables over GHS 3,000'], ['reports', 'End-of-day reports', 'Each night, signed off'], ['saleslist', 'Every sale', 'One by one: what, who, how paid'], ['sales', 'Tonight in detail', 'By waiter, by bar, by drink'], ['stockvalue', 'Stock value', 'What’s in the bars, at cost'], ['finance', 'Night’s finances', 'Sales, Paystack fees, settlement, every payment'], ['charges', 'Service charge & commission', 'The customer charge, the developer commission, a simulation']]],
-    ['Tabs', [['opentabs', 'Tabs left open', 'Clear tabs still open after a night']]],
+    ['Tabs', [['opentabs', 'Tabs left open', 'Clear tabs still open after a night'], ['@paystackdown', 'Paystack is down tonight', 'Let any bill be paid by MoMo to the wallet']]],
     ['People', [['staff', 'Staff', 'Add people, send PINs'], ['feedback', 'Staff feedback', 'Complaints and ideas'], ['perf', 'Performance reviews', 'Each staff member, every month'], ['@admin.html#members', 'Members', 'Members and passes']]],
     ['Floor', [['tables', 'Tables', 'Open tables and what they owe'], ['reviews', 'Customer reviews', 'What customers say'], ...(user.role === 'superAdmin' ? [['@admin.html', 'Control room', 'Site, nights, settings']] : [])]],
   ] : [
@@ -196,7 +234,15 @@ function more() {
     ['Records', [['nights', 'Nights coming up', 'Tickets sold, tables booked'], ['reports', 'Past nights', 'End-of-day reports'], ['@admin.html#members', 'Members', 'Members and passes']]],
   ];
   const { box, close } = sheet(`<h2>More</h2>${groups.map(([g, items]) => `<p class="group-h">${esc(g)}</p><div class="more-list">${items.map(([k, l, sub]) => `<button type="button" data-more="${esc(k)}"><b>${esc(l)}</b><span>${esc(sub)}</span></button>`).join('')}</div>`).join('')}`, { label: 'More', full: true });
-  $$('[data-more]', box).forEach(b => b.onclick = () => { close(); const k = b.dataset.more; if (k.startsWith('@')) location.href = k.slice(1); else location.hash = k; });
+  $$('[data-more]', box).forEach(b => b.onclick = async () => {
+    close(); const k = b.dataset.more;
+    if (k === '@paystackdown') {
+      if (!confirm('Paystack is down tonight? Any bill can then be paid by MoMo to the wallet, at the normal card/MoMo price. A manager confirms each payment. It turns off when the night closes.')) return;
+      try { await sapi('/api/ops/paystack-down', { method: 'POST', body: { on: true } }); location.hash = 'tonight'; flashNote('On for tonight: any bill can use MoMo to the wallet.'); } catch (e) { flashNote(e.message, 'bad'); }
+      return;
+    }
+    if (k.startsWith('@')) location.href = k.slice(1); else location.hash = k;
+  });
 }
 
 route();

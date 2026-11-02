@@ -88,6 +88,10 @@ export const feeOn = (pesewas, whole) => {
 // Card / MoMo through Paystack offered for this bill? (No, above the limit when the rules are on.)
 export const paystackOk = (pesewas, whole) => !PR || !!routeFor(pesewas, PR, { bandBillPesewas: whole }).paystack;
 export const paystackLimit = () => (PR ? Number(PR.paystackUpToPesewas) : null);
+// The new rules are on: staff no longer record "MoMo to the club's number" (big bills use the wallet).
+export const momoDirectOff = () => !!PR;
+// MoMo to the partner's wallet is offered: a bill above the Paystack limit, or Paystack down tonight.
+export const walletOk = (pesewas, whole) => !!PR && (!paystackOk(pesewas, whole) || !!PR.paystackDownTonight);
 // "Service charge (5%, capped at GHS 100)": the label wherever the charge is shown.
 export const feeLabel = () => (PR ? 'Card / MoMo charge' : `Service charge (${feePct()}%${Number(SC.capPesewas) >= 0 ? `, capped at ${money(SC.capPesewas)}` : ''})`);
 const digits = s => String(s || '').replace(/\D/g, '');

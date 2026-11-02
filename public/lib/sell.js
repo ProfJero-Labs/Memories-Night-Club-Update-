@@ -3,6 +3,8 @@
 import { $, $$, esc } from '../app.js';
 import { sheet, say, busy, money, moneyField, ghsIn, pasteMomoButton } from './ops-ui.js';
 import { drinkMatch, drinkMatchAny } from './shared.js';
+import { momoDirectOff, loadFee } from '../app.js';
+loadFee().catch(() => {});
 
 // Draws a drink list into `el`. products: from /api/ops/products?stationId=… (with `left`).
 // onSend(lines, total) runs when the big button is tapped; it may throw to show an error.
@@ -114,7 +116,7 @@ export function tipSheet(sapi, defaultUid, done = () => {}) {
 // The payment sheet for a fixed amount. pay({ method, momoRef, momoFrom }) records it; it may throw.
 export function paySheet(totalPesewas, pay, { title = 'Customer pays', sapi = null, tipFor = '' } = {}) {
   const { box, close } = sheet(`<h2>${esc(title)}: ${money(totalPesewas)}</h2>
-    <div class="seg" role="radiogroup" aria-label="How they paid"><button type="button" class="mid on" data-pm="cash" role="radio" aria-checked="true">Cash</button><button type="button" class="mid" data-pm="momo" role="radio" aria-checked="false">MoMo</button></div>
+    <div class="seg" role="radiogroup" aria-label="How they paid"><button type="button" class="mid on" data-pm="cash" role="radio" aria-checked="true">Cash</button>${momoDirectOff() ? '' : '<button type="button" class="mid" data-pm="momo" role="radio" aria-checked="false">MoMo</button>'}</div>
     <div id="psMomo" hidden>
       <div id="psPaste"></div>
       <div class="sfield"><label for="psRef">MoMo transaction ID</label><input id="psRef" maxlength="40" autocomplete="off" autocapitalize="characters" placeholder="From the MoMo text, e.g. 51234567890"><span class="hint">Only when you can see the money arrived on the club’s MoMo number.</span></div>

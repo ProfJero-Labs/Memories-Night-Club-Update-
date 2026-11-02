@@ -1,6 +1,7 @@
 // The payment rules (public/lib/charge-rules.js: shared with the pages, so the total shown before
 // paying is the total charged), plus the settings check, the Worker's only.
 import { DEFAULT_ROUTES } from '../../../public/lib/charge-rules.js';
+import { normalizePhone } from './util.js';
 export { DEFAULT_ROUTES, routeFor } from '../../../public/lib/charge-rules.js';
 
 // Checks a settings change; returns the cleaned settings, or { error }.
@@ -28,6 +29,12 @@ export function cleanRoutes(input, current = DEFAULT_ROUTES) {
     if (code && !SUBACCOUNT_RE.test(code)) return { error: 'The partner’s Paystack subaccount code starts with ACCT_ (copy it from Paystack → Subaccounts).' };
     n.paystackSubaccount = code;
   }
+  if (b.bigWalletNumber !== undefined) {
+    const given = String(b.bigWalletNumber || '').trim(), num = given ? normalizePhone(given) : '';
+    if (given && !num) return { error: 'The wallet number is a Ghana number, e.g. 059 598 6313.' };
+    n.bigWalletNumber = num;
+  }
+  if (b.bigWalletName !== undefined) n.bigWalletName = String(b.bigWalletName || '').replace(/[<>]/g, '').trim().slice(0, 60);
   if (b.enabled !== undefined) n.enabled = b.enabled === true;
   if (n.enabled && !n.paystackSubaccount) return { error: 'Enter the partner’s Paystack subaccount code before switching the new rules on: without it his share wouldn’t reach him.' };
   if (n.customerOnlyUpToPesewas > n.paystackUpToPesewas) return { error: 'The “customer pays it all” limit (GHS 300) must be at or below the Paystack limit (GHS 2,000).' };

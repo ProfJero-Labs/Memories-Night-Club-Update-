@@ -25,6 +25,7 @@ import { addMoves, stockError } from './stock.js';
 import { prepareTip, tipFields, textTip, phoneOf, guestTipPeople } from './tips.js';
 import { paymentAlert } from './alerts.js';
 import { momoPrompt, submitMomoCode } from '../lib/momo.js';
+import { startWallet, momoDirectBlocked } from './wallet.js';
 import { serviceFee } from '../lib/fee.js';
 
 export const BOSS = ['superAdmin', 'director', 'manager'];
@@ -76,8 +77,8 @@ const tabView = (t, rounds, { full = true } = {}) => {
   return {
     id: t.id, number: t.number, label: `Tab ${t.number}`, quick: !!t.quick, businessDate: t.businessDate, table: t.table || '', customerName: t.customerName || '', customerPhoneHint: t.customerPhone ? maskPhone(t.customerPhone) : '',
     waiterUid: t.waiterUid, waiterName: t.waiterName, stationId: t.stationId, stationName: t.stationName, status: t.status, payStatus: bill.status, payLabel: PAY_LABEL[bill.status],
-    bill, payments: (t.payments || []).map(p => ({ method: p.method, label: METHOD_LABEL[p.method] || p.method, amountPesewas: p.amountPesewas, at: p.at, byName: p.byName || '', momoRef: p.momoRef || '' })),
-    openRounds: rounds.filter(r => !['delivered', 'cancelled'].includes(r.status)).length,
+    bill, payments: (t.payments || []).map(p => ({ method: p.method, label: p.viaWallet ? METHOD_LABEL.wallet : METHOD_LABEL[p.method] || p.method, amountPesewas: p.amountPesewas, at: p.at, byName: p.byName || '', momoRef: p.momoRef || '' })),
+    openRounds: rounds.filter(r => !['delivered', 'cancelled'].includes(r.status)).length, walletWait: t.walletWait || '',
     ...(full ? { rounds: rounds.sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt))).map(roundView), billUrl: null } : {}),
     createdAt: t.createdAt,
   };
@@ -359,7 +360,7 @@ async function staffRecord(env, user) { return (await getDoc(env, 'users', uidOf
 // only if a manager ticked "Can collect cash" on their staff record.
 export const PAY_TAKERS = [...CASH_TAKERS, 'waitStaff', 'barManager', 'barStaff', 'eventManager'];
 export async function canTakeCash(env, user) { return requireRole(user, PAY_TAKERS) || (await staffRecord(env, user)).canCollectCash === true; }
-export const METHOD_LABEL = { cash: 'Cash', momo: 'MoMo (to the club’s number)', digital: 'MoMo / card (paid on the bill link)' };
+export const METHOD_LABEL = { cash: 'Cash', momo: 'MoMo (to the club’s number)', digital: 'MoMo / card (paid on the bill link)', wallet: 'MoMo to the wallet (confirmed)' };
 
 // "Customer paid": cash (into this person's cash bag for the night) or MoMo sent straight to the
 // club's MoMo number. A MoMo payment needs the transaction ID from the MoMo text, so finance can
@@ -392,6 +393,7 @@ export async function momoCheck(env, b, date) {
 }
 
 async function recordMomo(env, b, user, tip = null) {
+  const off = await momoDirectBlocked(env); if (off) return off;
   if (!(await canTakeCash(env, user))) return { error: 'Your job doesn’t include recording payments. Send the customer to the cashier.', status: 403 };
   const amount = int(b?.amountPesewas);
   if (!(amount >= 100)) return { error: 'Enter the amount (at least GHS 1).' };
@@ -489,7 +491,7 @@ export async function quickSale(env, b, user) {
   if (b?.customerPhone && !custPhone) return { error: 'That customer phone number doesn’t look right, or leave it blank.' };
   const tip = await prepareTip(env, b); if (tip.error) return tip;
   let momo = null, bag = null;
-  if (method === 'momo') { momo = await momoCheck(env, b, date); if (momo.error) return momo; }
+  if (method === 'momo') { const off = await momoDirectBlocked(env); if (off) return off; momo = await momoCheck(env, b, date); if (momo.error) return momo; }
   else { bag = await cashBag(env, user, date); if (bag.error) return bag; }
   const tabId = id(), rid = id(), payId = id(), at = now(), uid = uidOf(user), byName = user.name || '';
   const pay = { id: payId, method, amountPesewas: total, at, businessDate: date, by: uid, byName, ...(momo ? { momoRef: momo.ref, momoFrom: momo.from } : { sessionId: bag.sid }) };
@@ -594,9 +596,18 @@ export async function checkoutTab(env, b, user) {
     return { method: 'momo', prompt, reference: prompt ? reference : '', invoiceSent: texted, phoneHint: maskPhone(phone), amountPesewas: bill.balancePesewas, feePesewas: fee.feePesewas, chargePesewas: charge, billUrl: siteUrl(env, `/bill.html?t=${t.fields.billToken}`),
       message: prompt ? `A MoMo prompt for ${ghs(charge)}${fee.feePesewas ? ` (bill ${ghs(bill.balancePesewas)} + ${ghs(fee.feePesewas)} service charge)` : ''} is on ${maskPhone(phone)}. They approve it, or pay from the invoice text.` : `The invoice is texted to ${maskPhone(phone)}: they pay from its link, or scan the QR.` };
   }
+  // A big bill (or tonight, if Paystack is down): MoMo straight to the partner's wallet. The bill
+  // waits until a manager confirms the money arrived (ops/wallet.js); it closes by itself then.
+  if (b?.method === 'wallet') {
+    if (bill.balancePesewas < 100) return { error: 'Nothing to pay. Close the tab.' };
+    const w = await startWallet(env, { id: t.id, fields }, bill, user, { phone });
+    if (w.error) return w;
+    return { method: 'wallet', wallet: w };
+  }
   // MoMo sent straight to the club's number (no Paystack, so no OTP and no service charge): the
   // transaction ID from the MoMo text is recorded for what's left, then the tab closes.
   if (b?.method === 'momo_club') {
+    const off = await momoDirectBlocked(env); if (off) return off;
     if (bill.balancePesewas > 0) {
       const r = await recordPayment(env, { tabId: t.id, method: 'momo', amountPesewas: bill.balancePesewas, momoRef: b?.momoRef, momoFrom: b?.momoFrom }, user);
       if (r.error) return r;
@@ -618,7 +629,7 @@ export async function checkoutTab(env, b, user) {
 }
 
 // After a MoMo payment: a tab the waiter asked to close, now fully paid, closes by itself.
-async function closeIfPaid(env, tabId) {
+export async function closeIfPaid(env, tabId) {
   const t = await getDoc(env, 'tabs', tabId);
   if (!t || !((t.fields.status === 'open' && t.fields.closeWhenPaid) || t.fields.status === 'owed')) return false;
   const rounds = await roundsOf(env, tabId), bill = billOf(t.fields, rounds);

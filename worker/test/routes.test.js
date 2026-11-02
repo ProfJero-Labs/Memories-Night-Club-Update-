@@ -177,3 +177,63 @@ test('tickets online: the same 5% rule, and EvolveIT’s 10% ticket share stays 
   assert.equal(init.transaction_charge, 1500 + shares.evolveitSharePesewas, 'the charge plus EvolveIT’s ticket share stay with EvolveIT');
   assert.ok(shares.evolveitSharePesewas > 0);
 });
+
+// ── Step 3: big bills by MoMo to the partner's wallet ──
+async function bigTab(ctx, qty = 2) {
+  const t = (await ctx.call('POST', '/api/ops/tabs/open', { who: 'manager', body: { table: 'VIP 1' } })).data;
+  const r = (await ctx.call('POST', '/api/ops/tabs/round', { who: 'manager', body: { tabId: t.id, lines: [{ productId: 'royal', qty }] } })).data;
+  ctx.store.seed('rounds', r.roundId || r.id, { ...ctx.store.get('rounds', r.roundId || r.id).fields, status: 'handed' });
+  return t;
+}
+test('a GHS 3,000 bill: MoMo to the wallet; it waits until a manager confirms; a short amount isn’t accepted; the GHS 100 is owed to EvolveIT', async () => {
+  const ctx = setupLive();
+  const t = await bigTab(ctx);
+  assert.match((await ctx.call('POST', '/api/ops/tabs/checkout', { who: 'manager', body: { tabId: t.id, method: 'momo', phone: '0244445555' } })).data.error, /above GHS 2,000/, 'no Paystack prompt');
+  const s = (await ctx.call('POST', '/api/ops/tabs/checkout', { who: 'manager', body: { tabId: t.id, method: 'wallet', phone: '0244445555' } })).data;
+  assert.equal(s.method, 'wallet');
+  assert.deepEqual([s.wallet.duePesewas, s.wallet.chargePesewas, s.wallet.wallet.number, s.wallet.wallet.name], [310000, 10000, '0595986313', 'Samuel Forson / Memories Night Club']);
+  assert.match(ctx.store.sms.at(-1).message, /send GHS 3,100 by MoMo to 0595986313 \(Samuel Forson \/ Memories Night Club\)[\s\S]*Reference: [A-Z0-9]{4}/);
+  assert.equal(ctx.store.get('tabs', t.id).fields.status, 'open', 'not closed on a promise');
+  const list = (await ctx.call('GET', '/api/ops/wallet', { who: 'manager' })).data;
+  assert.equal(list.waiting.length, 1);
+  const wid = list.waiting[0].id;
+  const short = (await ctx.call('POST', '/api/ops/wallet/confirm', { who: 'manager', body: { id: wid, receivedPesewas: 300000, momoRef: 'MP111222333' } })).data;
+  assert.deepEqual([short.code, short.shortPesewas], ['short', 10000]);
+  const ok3 = (await ctx.call('POST', '/api/ops/wallet/confirm', { who: 'manager', body: { id: wid, receivedPesewas: 310000, momoRef: 'MP111222333' } })).data;
+  assert.deepEqual([ok3.confirmed, ok3.billPesewas, ok3.chargePesewas, ok3.tabClosed], [true, 300000, 10000, true]);
+  const tab = ctx.store.get('tabs', t.id).fields;
+  assert.deepEqual([tab.status, tab.payments[0].method, tab.payments[0].viaWallet, tab.payments[0].amountPesewas], ['closed', 'momo', true, 300000]);
+  const owed = ctx.store.list('evolveit_charges').map(d => d.fields);
+  assert.deepEqual(owed.map(r => [r.amountPesewas, r.status, r.source]), [[10000, 'unsettled', 'wallet']]);
+  // The same transaction ID can't be used again.
+  const t2 = await bigTab(ctx);
+  await ctx.call('POST', '/api/ops/tabs/checkout', { who: 'manager', body: { tabId: t2.id, method: 'wallet' } });
+  const w2 = (await ctx.call('GET', '/api/ops/wallet', { who: 'manager' })).data.waiting[0];
+  assert.match((await ctx.call('POST', '/api/ops/wallet/confirm', { who: 'manager', body: { id: w2.id, receivedPesewas: 310000, momoRef: 'MP111222333' } })).data.error, /already used/);
+  // Sales: counted as MoMo, the bill’s part only.
+  const sales = (await ctx.call('GET', '/api/ops/sales', { who: 'manager' })).data;
+  assert.equal(sales.totals.momoPesewas, 300000);
+});
+
+test('the wallet is only for big bills, unless a director says Paystack is down tonight (then the normal Paystack price)', async () => {
+  const ctx = setupLive();
+  const t = (await ctx.call('POST', '/api/ops/tabs/open', { who: 'manager', body: { table: '2' } })).data;
+  const r = (await ctx.call('POST', '/api/ops/tabs/round', { who: 'manager', body: { tabId: t.id, lines: [{ productId: 'magnum', qty: 1 }] } })).data;
+  ctx.store.seed('rounds', r.roundId || r.id, { ...ctx.store.get('rounds', r.roundId || r.id).fields, status: 'handed' });
+  assert.match((await ctx.call('POST', '/api/ops/tabs/checkout', { who: 'manager', body: { tabId: t.id, method: 'wallet' } })).data.error, /for bills above GHS 2,000/);
+  assert.equal((await ctx.call('POST', '/api/ops/paystack-down', { who: 'manager', body: { on: true } })).status, 403, 'a director only');
+  assert.ok((await ctx.call('POST', '/api/ops/paystack-down', { who: 'director', body: { on: true } })).data.paystackDown);
+  const s = (await ctx.call('POST', '/api/ops/tabs/checkout', { who: 'manager', body: { tabId: t.id, method: 'wallet' } })).data;
+  assert.deepEqual([s.wallet.reason, s.wallet.duePesewas, s.wallet.chargePesewas], ['paystack_down', 102500, 2500], 'GHS 1,000 bill: the customer’s usual 25');
+});
+
+test('with the new rules on, staff can’t record “MoMo to the club’s number” any more', async () => {
+  const ctx = setupLive();
+  const t = (await ctx.call('POST', '/api/ops/tabs/open', { who: 'manager', body: { table: '3' } })).data;
+  const r = (await ctx.call('POST', '/api/ops/tabs/round', { who: 'manager', body: { tabId: t.id, lines: [{ productId: 'beer', qty: 1 }] } })).data;
+  ctx.store.seed('rounds', r.roundId || r.id, { ...ctx.store.get('rounds', r.roundId || r.id).fields, status: 'handed' });
+  assert.equal((await ctx.call('POST', '/api/ops/tabs/pay', { who: 'manager', body: { tabId: t.id, method: 'momo', amountPesewas: 2500, momoRef: 'MP999888777' } })).data.code, 'momo_direct_off');
+  assert.equal((await ctx.call('POST', '/api/ops/tabs/checkout', { who: 'manager', body: { tabId: t.id, method: 'momo_club', momoRef: 'MP999888777' } })).data.code, 'momo_direct_off');
+  assert.equal((await ctx.call('POST', '/api/ops/quick-sale', { who: 'manager', body: { lines: [{ productId: 'beer', qty: 1 }], method: 'momo', momoRef: 'MP999888776' } })).data.code, 'momo_direct_off');
+  assert.equal((await ctx.call('POST', '/api/ops/tabs/pay', { who: 'manager', body: { tabId: t.id, method: 'cash', amountPesewas: 2500 } })).status, 200, 'cash still fine');
+});

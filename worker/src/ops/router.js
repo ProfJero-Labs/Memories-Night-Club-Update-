@@ -24,6 +24,7 @@ import * as fin from './finance-night.js';
 import * as trial from './trial-reset.js';
 import * as tabClear from './tab-clear.js';
 import * as salesList from './sales-list.js';
+import * as wallet from './wallet.js';
 
 export async function opsRoute(m, p, u, b, env, user) {
   const q = k => u.searchParams.get(k) || undefined;
@@ -49,6 +50,8 @@ export async function opsRoute(m, p, u, b, env, user) {
       case '/api/ops/my-report': return closing.myReport(env, user, { date: q('date') });
       case '/api/ops/front-report': return closing.frontOfficeReport(env, user, { date: q('date') });
       case '/api/ops/sales': return closing.todaySales(env, user, { date: q('date') });
+      case '/api/ops/wallet': return wallet.walletList(env, user);
+      case '/api/ops/wallet/one': return wallet.walletOne(env, user, q('id'));
       case '/api/ops/sales/list': return salesList.salesList(env, user, { period: q('period'), from: q('from'), to: q('to'), method: q('method'), person: q('person'), drink: q('drink') });
       case '/api/ops/closing': return closing.closingStatus(env, user, { date: q('date') });
       case '/api/ops/eod': return closing.eodReport(env, user, { date: q('date') });
@@ -100,6 +103,9 @@ export async function opsRoute(m, p, u, b, env, user) {
     case '/api/ops/stock/fix': return stock.fixDelivery(env, b, user);
     case '/api/ops/stock/set-level': return stock.setStockLevel(env, b, user);
     case '/api/ops/quick-sale': return tabs.quickSale(env, b, user);
+    case '/api/ops/wallet/confirm': return wallet.confirmWallet(env, b, user, { closeIfPaid: tabs.closeIfPaid });
+    case '/api/ops/wallet/cancel': return wallet.cancelWallet(env, b, user);
+    case '/api/ops/paystack-down': return wallet.setPaystackDown(env, b, user);
     case '/api/ops/stock/transfer': return stock.recordTransfer(env, b, user);
     case '/api/ops/stock/waste': return stock.recordWaste(env, b, user);
     case '/api/ops/stock/count': return stock.submitCount(env, b, user);
