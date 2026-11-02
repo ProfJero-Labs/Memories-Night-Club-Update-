@@ -83,6 +83,25 @@ re-read; "Phone offline" on Tonight when the phone hasn't checked in for a few m
 4. Yes/no: confirm automatically on one clear match with the balance adding up (recommended), or
    only pre-fill for a manager to tap.
 
+## Owner's direction (2 Nov 2026): don't rely on the Manager — automate
+
+The current Manager isn't diligent. The system must stay credible even when he fails: nothing
+important may depend on him alone, and anything risky he does must reach the directors
+automatically (he can't stop it). Build these with the SMS phone:
+
+| Today the Manager… | Automate |
+|---|---|
+| Confirms MoMo to the wallet by hand | The SMS phone confirms automatically. Manual confirm only when the phone is offline or the match is unclear, and **every manual confirm texts the directors at once**. Accepting a short payment: directors only. |
+| Closes the night | If still open with no sales for 3 hours after 5AM, the system closes it, sends the report and texts the directors (owner to confirm). |
+| Sends the end-of-day report (by closing) | **Directors' morning text every day, regardless:** sales, cash, MoMo, Paystack, shortfalls, cash not handed in (named), tabs left open by waiter, stock missing by bar and drink, approvals given, manual MoMo confirms. |
+| Receives staff cash | Short or not handed in by morning: named in the morning text; the Manager's own received cash is checked the same way. |
+| Approves free drinks, discounts, write-offs | Nightly limit; above it a director approves; every approval listed in the morning text. |
+| Explains stock differences | Missing stock and its value in the morning text. |
+| Watches waiting wallet payments | Waiting over 20 minutes: text the directors. |
+
+Owner to decide (tomorrow): auto-close yes/no; morning text time and which directors' phones;
+approval limit per night (e.g. GHS 300); short MoMo payments directors-only (recommended yes).
+
 ## Later (agreed, not started)
 
 - Table bookings → reservations without payment (see owner decisions above).
