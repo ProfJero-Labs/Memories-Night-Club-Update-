@@ -18,11 +18,11 @@ export function momoProvider(phone) {
 // the customer a code (it does this for numbers it doesn't know yet): staff type the code in
 // (submitMomoCode) and then the prompt comes. { sent: false } when it couldn't be sent (unknown
 // network, or it failed): then the customer pays with the link they're texted.
-export async function momoPrompt(env, { phone, amountPesewas, reference, email, metadata }) {
+export async function momoPrompt(env, { phone, amountPesewas, reference, email, metadata, split }) {
   const provider = momoProvider(phone);
   if (!provider) return { sent: false };
   try {
-    const c = await paystackPost(env, '/charge', { email, amount: amountPesewas, currency: 'GHS', reference, mobile_money: { phone, provider }, metadata });
+    const c = await paystackPost(env, '/charge', { email, amount: amountPesewas, currency: 'GHS', reference, mobile_money: { phone, provider }, ...(split || {}), metadata });
     if (c?.status === 'send_otp') return { otp: true };
     return { sent: c?.status !== 'failed' };
   } catch { return { sent: false }; }

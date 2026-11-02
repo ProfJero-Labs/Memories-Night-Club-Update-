@@ -16,7 +16,7 @@
 // asked for (amount + tip + service charge), and that is what the payment check compares.
 import { getDoc } from './firestore.js';
 import { getSettings } from '../public.js';
-import { DEFAULT_ROUTES } from './routes.js';
+import { DEFAULT_ROUTES, routeFor } from './routes.js';
 
 export const MAX_RATE_PERCENT = 20;
 export const DEFAULT_SERVICE_CHARGE = { enabled: true, percent: 5, capPesewas: 10000 };
@@ -58,8 +58,22 @@ export const serviceChargeOf = (subtotalPesewas, sc) => {
 };
 
 // The service charge on a bill, with the rule it was worked out under (spread onto the checkout).
-export async function serviceFee(env, pesewas, siteSettings) {
-  const { serviceCharge: sc } = await commercialConfig(env, siteSettings);
+// With the new payment rules on (lib/routes.js): the customer's share of the 5% charge, the route
+// (charge, customer's and venue's shares, the rule) and Paystack's split: the main account (EvolveIT)
+// keeps the charge and bears Paystack's fee; the partner's subaccount gets everything else.
+// opts.bandBillPesewas: the whole bill, when paying part of it. opts.mainExtraPesewas: what else the
+// main account keeps (EvolveIT's share of a ticket or table). A bill above the Paystack limit gets
+// { blocked: true }: it can't go through Paystack.
+export async function serviceFee(env, pesewas, siteSettings, opts = {}) {
+  const { serviceCharge: sc, routes: rt } = await commercialConfig(env, siteSettings);
+  if (rt?.enabled) {
+    const r = routeFor(pesewas, rt, { bandBillPesewas: opts.bandBillPesewas });
+    if (!r.paystack) return { blocked: true, feePesewas: 0, limitPesewas: Number(rt.paystackUpToPesewas) };
+    const p = r.paystack, extra = Math.max(0, Math.round(Number(opts.mainExtraPesewas) || 0));
+    return { feePercent: Number(rt.percent), feeCapPesewas: null, feePesewas: p.customerSharePesewas,
+      route: { band: r.band, chargePesewas: p.chargePesewas, customerSharePesewas: p.customerSharePesewas, venueSharePesewas: p.venueSharePesewas, mainExtraPesewas: extra, subaccount: rt.paystackSubaccount, rule: r.rule },
+      split: rt.paystackSubaccount ? { subaccount: rt.paystackSubaccount, transaction_charge: p.chargePesewas + extra, bearer: 'account' } : null };
+  }
   return { feePercent: sc.enabled ? Number(sc.percent) : 0, feeCapPesewas: sc.enabled ? Number(sc.capPesewas) : 0, feePesewas: serviceChargeOf(pesewas, sc) };
 }
 

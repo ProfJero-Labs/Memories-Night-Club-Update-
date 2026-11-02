@@ -111,6 +111,7 @@ export async function counterCheckout(env, b) {
   const tipPart = tip.none ? {} : { tipPesewas: tip.amount, tipToUid: tip.to.uid, tipToName: tip.to.name, tipToRole: tip.to.role };
   // The service charge (on the drinks, not the tip) is the customer's, on top (lib/fee.js).
   const fee = await serviceFee(env, totalPesewas);
+  if (fee.blocked) return { error: `Orders above ${money(fee.limitPesewas)} can’t be paid by card or MoMo here. Pick “Cash at the bar”, or order less at a time.` };
   const charge = totalPesewas + (tip.none ? 0 : tip.amount) + fee.feePesewas;
   const orderId = id(), reference = paymentRef();
   const spot = cleanSpot(b?.spot);
@@ -119,7 +120,7 @@ export async function counterCheckout(env, b) {
   await setDoc(env, 'pending_checkouts', reference, { reference, kind: 'counter', orderId, eventName: st.fields.name, amountPesewas: charge - fee.feePesewas, ...fee, chargePesewas: charge, ...tipPart, buyerPhone: phone, status: 'pending', createdAt: now() });
   try {
     const email = validEmail(b?.email) ? b.email : `guest-${phone}@${new URL(env.PUBLIC_SITE_URL || 'https://memoriesnightclub.com').hostname.replace(/^www\./, '')}`;
-    const p = await paystackInit(env, { email, amount: charge, currency: 'GHS', reference, callback_url: siteUrl(env, '/counter.html'), metadata: { kind: 'counter', orderId, serviceFee: fee.feePesewas } });
+    const p = await paystackInit(env, { email, amount: charge, currency: 'GHS', reference, callback_url: siteUrl(env, '/counter.html'), ...(fee.split || {}), metadata: { kind: 'counter', orderId, serviceFee: fee.feePesewas } });
     await setDoc(env, 'counter_orders', orderId, { ...order, authorizationUrl: p.authorization_url });
     return { orderId, authorizationUrl: p.authorization_url, feePesewas: fee.feePesewas, chargePesewas: charge };
   } catch (e) {

@@ -133,7 +133,10 @@ export async function moneyReport(env, user, q = {}) {
 
   const buyCost = d => Number(d.totalCostPesewas ?? (d.unitCostPesewas != null ? d.unitCostPesewas * (d.confirmedQty ?? d.qty) : 0));
   const bought = sum(buys, buyCost), spent = sum(live, e => e.amountPesewas);
-  const moneyIn = drinksPaid + sum(tables, share), moneyOut = bought + spent;
+  // New payment rules: the venue's share of the card / MoMo charge (and Paystack's fee on refunds)
+  // comes off the venue's takings, so revenue = bill − the venue's share.
+  const venueCharges = sum(led.filter(r => r.route), r => r.clubBorneCostPesewas);
+  const moneyIn = drinksPaid + sum(tables, share), moneyOut = bought + spent + venueCharges;
 
   // Night by night.
   const days = new Map();
@@ -163,6 +166,7 @@ export async function moneyReport(env, user, q = {}) {
     ],
     moneyOut: [
       { key: 'drinks_bought', label: 'Drinks bought', amountPesewas: bought },
+      ...(venueCharges ? [{ key: 'pay_charges', label: 'Card / MoMo charges (the venue’s share)', amountPesewas: venueCharges }] : []),
       ...[...byCat.entries()].map(([k, v]) => ({ key: k, label: EXPENSE_CATEGORIES[k] || k, amountPesewas: v })).sort((a, b) => b.amountPesewas - a.amountPesewas),
     ],
     drinks: { soldPesewas: drinksSold, costPesewas: drinksCost, profitPesewas: drinksSold - drinksCost, paidPesewas: drinksPaid, unpaidPesewas: sum(tabs.filter(t => t.status !== 'written_off'), t => t.bill.balancePesewas), rows: drinkRows.slice(0, 40), missingCost: noCost },

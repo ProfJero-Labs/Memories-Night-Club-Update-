@@ -4,7 +4,7 @@
 // payment → show it at the bar. Paying cash? Order at the bar as usual.
 // A search box finds a drink even with small spelling mistakes (drinkMatch). "My night" shows
 // everything paid tonight from the customer's phone (asked with the id of an order they paid).
-import { api, esc, money, normalizePhone, $, $$, loadFee, feeLabel, feeOn } from '../app.js';
+import { api, esc, money, normalizePhone, $, $$, loadFee, feeLabel, feeOn, paystackOk, paystackLimit } from '../app.js';
 import { drinkMatch, drinkMatchAny } from '../lib/shared.js';
 
 const app = $('#app');
@@ -185,10 +185,12 @@ async function start() {
   const fieldErr = (sel, text) => { const f = $(sel).closest('.field'); f.classList.add('bad'); f.querySelector('.err').textContent = text; $(sel).focus(); f.scrollIntoView({ block: 'center', behavior: 'smooth' }); };
   const clearErr = sel => { const f = $(sel)?.closest('.field'); if (f) { f.classList.remove('bad'); f.querySelector('.err').textContent = ''; } };
   function drawOrder() {
+    if (!paystackOk(total())) payPick.cash = true;
     $('#orderBody').innerHTML = `<div id="orderItems">${orderItems()}</div>
       <div class="totals" id="orderTotals" aria-live="polite">${totals()}</div>
+      ${paystackOk(total()) ? '' : `<p class="hint" style="margin:0">Orders above ${money(paystackLimit())} are paid in cash at the bar.</p>`}
       <div class="field"><span class="label" id="payL">How will you pay?</span>
-        <div class="tipseg" role="radiogroup" aria-labelledby="payL"><button type="button" data-pw="momo" role="radio" aria-pressed="${!payPick.cash}" aria-checked="${!payPick.cash}">MoMo or card</button><button type="button" data-pw="cash" role="radio" aria-pressed="${payPick.cash}" aria-checked="${payPick.cash}">Cash at the bar</button></div></div>
+        <div class="tipseg" role="radiogroup" aria-labelledby="payL"><button type="button" data-pw="momo" role="radio" aria-pressed="${!payPick.cash}" aria-checked="${!payPick.cash}" ${paystackOk(total()) ? '' : 'disabled'}>MoMo or card</button><button type="button" data-pw="cash" role="radio" aria-pressed="${payPick.cash}" aria-checked="${payPick.cash}">Cash at the bar</button></div></div>
       <div class="field"><label for="ph">${payPick.cash ? 'Your phone number' : 'MoMo number'}</label><input id="ph" type="tel" inputmode="tel" autocomplete="tel" placeholder="024 123 4567" value="${esc(phoneNow.v)}"><span class="err" role="alert"></span><span class="hint">${payPick.cash ? 'Your code is texted here too.' : 'Your pickup code also comes here by text.'}</span></div>
       ${payPick.cash ? '' : tipPart()}
       <div id="err"></div>`;

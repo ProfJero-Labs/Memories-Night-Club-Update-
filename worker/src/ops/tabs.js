@@ -572,10 +572,11 @@ export async function checkoutTab(env, b, user) {
     const reference = paymentRef();
     const host = new URL(env.PUBLIC_SITE_URL || 'https://memoriesnightclub.com').hostname.replace(/^www\./, '');
     // The customer pays the service charge on top (lib/fee.js); the bill gets the balance.
-    const fee = await serviceFee(env, bill.balancePesewas), charge = bill.balancePesewas + fee.feePesewas;
+    const fee = await serviceFee(env, bill.balancePesewas, undefined, { bandBillPesewas: bill.totalPesewas }), charge = bill.balancePesewas + fee.feePesewas;
+    if (fee.blocked) return { error: `This bill is above ${ghs(fee.limitPesewas)}: it can’t be paid by a MoMo prompt. Take cash.`, code: 'too_big_for_paystack' };
     await setDoc(env, 'pending_checkouts', reference, { reference, kind: 'tab', tabId: t.id, eventName: `Tab ${t.fields.number}`, amountPesewas: bill.balancePesewas, ...fee, chargePesewas: charge, buyerPhone: phone, prompt: true, status: 'pending', createdAt: now(), by: uidOf(user) });
     await setDoc(env, 'tabs', t.id, { ...fields, closeWhenPaid: true, closeAskedByName: user.name || '' });
-    const sent = await momoPrompt(env, { phone, amountPesewas: charge, reference, email: `tab-${phone}@${host}`, metadata: { kind: 'tab', tabId: t.id } });
+    const sent = await momoPrompt(env, { phone, amountPesewas: charge, reference, email: `tab-${phone}@${host}`, split: fee.split, metadata: { kind: 'tab', tabId: t.id } });
     const prompt = !!sent.sent, otp = !!sent.otp;
     if (otp) {
       // Paystack texted the customer a code first. The customer types it on their own bill page
@@ -717,10 +718,11 @@ export async function startBillPayment(env, token, b) {
   const host = new URL(env.PUBLIC_SITE_URL || 'https://memoriesnightclub.com').hostname.replace(/^www\./, '');
   // The charge is the bill plus the tip plus the service charge (on the bill only); the tip is split
   // off again when Paystack confirms it, and the fee never reaches the bill.
-  const fee = await serviceFee(env, bill.balancePesewas), charge = bill.balancePesewas + tipPesewas + fee.feePesewas;
+  const fee = await serviceFee(env, bill.balancePesewas, undefined, { bandBillPesewas: bill.totalPesewas }), charge = bill.balancePesewas + tipPesewas + fee.feePesewas;
+  if (fee.blocked) return { error: `This bill is above ${ghs(fee.limitPesewas)}, so it can’t be paid by card or MoMo here. Pay your waiter in cash.` };
   await setDoc(env, 'pending_checkouts', reference, { reference, kind: 'tab', tabId: t.id, eventName: `Tab ${t.fields.number}`, amountPesewas: bill.balancePesewas + tipPesewas, ...fee, chargePesewas: charge, ...(tipPesewas ? { tipPesewas, tipToUid, tipToName: tip.to.name, tipToRole: tip.to.role } : {}), buyerPhone: phone, status: 'pending', createdAt: now() });
   try {
-    const d = await paystackInit(env, { email: validEmail(b?.email) ? b.email : `tab-${phone || t.id.slice(0, 8)}@${host}`, amount: charge, currency: 'GHS', reference, callback_url: siteUrl(env, `/bill.html?t=${t.fields.billToken}`), metadata: { kind: 'tab', tabId: t.id, serviceFee: fee.feePesewas } });
+    const d = await paystackInit(env, { email: validEmail(b?.email) ? b.email : `tab-${phone || t.id.slice(0, 8)}@${host}`, amount: charge, currency: 'GHS', reference, callback_url: siteUrl(env, `/bill.html?t=${t.fields.billToken}`), ...(fee.split || {}), metadata: { kind: 'tab', tabId: t.id, serviceFee: fee.feePesewas } });
     await setDoc(env, 'tabs', t.id, { ...t.fields, pending: { reference, amountPesewas: bill.balancePesewas, tipPesewas, tipToUid, at: now(), url: d.authorization_url } });
     return { authorizationUrl: d.authorization_url, reference, feePesewas: fee.feePesewas, chargePesewas: charge };
   } catch (e) {

@@ -968,7 +968,9 @@ export async function chargesView(el) {
   el.innerHTML = `<div class="vstack" style="display:grid;gap:14px"><h1>Service charge &amp; commission</h1>
     <p class="lead">${c.updatedByName ? `Last changed by ${esc(c.updatedByName)} ${when(c.updatedAt)}.` : 'Not changed yet: the defaults are in force.'}${c.canEdit ? '' : ' Only a director or the admin can change these.'}</p>
     <h3 class="group-h">New payment rules</h3>
-    <div class="say warn"><b>Not switched on yet</b>These rules take over from the service charge below once the new payment screens are ready. Until then nothing changes for customers. You can set the numbers and check the examples now.</div>
+    <div class="say ${rt.enabled ? 'good' : 'warn'}"><b>${rt.enabled ? 'On: every card and MoMo payment uses these rules' : 'Off: payments still use the service charge below'}</b>${rt.enabled ? 'The partner’s share of each Paystack payment goes straight to his subaccount. Bills above the Paystack limit are paid in cash (MoMo to the wallet comes next).' : 'Enter the partner’s Paystack subaccount, check the examples, then switch them on.'}</div>
+    <label class="tick"><input type="checkbox" id="rtOn" ${rt.enabled ? 'checked' : ''} ${ro}> Use the new payment rules</label>
+    <div class="sfield"><label for="rtSub">Partner’s Paystack subaccount</label><input id="rtSub" value="${esc(rt.paystackSubaccount || '')}" placeholder="ACCT_…" autocapitalize="off" spellcheck="false" ${ro}><span class="hint">From Paystack → Subaccounts. His share of every Paystack payment is sent there.</span></div>
     <div class="grid2"><div class="sfield"><label for="rtPct">Charge (% of the bill)</label><input id="rtPct" inputmode="decimal" value="${esc(rt.percent)}" ${ro}></div>
       ${moneyField('rtOnly', 'Customer pays it all, bills up to (GHS)', String(rt.customerOnlyUpToPesewas / 100))}
       ${moneyField('rtPs', 'Paystack offered for bills up to (GHS)', String(rt.paystackUpToPesewas / 100))}
@@ -1003,8 +1005,8 @@ export async function chargesView(el) {
   const checked = name => $$(`input[name="${name}"]:checked`, el).map(x => x.value);
   $('#rtSave', el) && ($('#rtSave', el).onclick = async () => {
     try {
-      await busy($('#rtSave', el), () => sapi('/api/ops/commercial', { method: 'POST', body: { routes: { percent: val('rtPct'), customerOnlyUpToPesewas: ghsIn(val('rtOnly')), paystackUpToPesewas: ghsIn(val('rtPs')), venueSharePercent: val('rtVen'), customerMinPesewas: ghsIn(val('rtMin')), bigFlatPesewas: ghsIn(val('rtFlat')) } } }));
-      await chargesView(el); say($('#rtMsg', el), 'Saved. The examples show the new numbers.', 'good');
+      await busy($('#rtSave', el), () => sapi('/api/ops/commercial', { method: 'POST', body: { routes: { enabled: $('#rtOn', el).checked, paystackSubaccount: val('rtSub').trim(), percent: val('rtPct'), customerOnlyUpToPesewas: ghsIn(val('rtOnly')), paystackUpToPesewas: ghsIn(val('rtPs')), venueSharePercent: val('rtVen'), customerMinPesewas: ghsIn(val('rtMin')), bigFlatPesewas: ghsIn(val('rtFlat')) } } }));
+      await chargesView(el); say($('#rtMsg', el), $('#rtOn', el)?.checked ? 'Saved. New payments use the new rules.' : 'Saved. The examples show the new numbers.', 'good');
     } catch (e) { say($('#rtMsg', el), e.message, 'bad'); }
   });
   $('#cmSave', el) && ($('#cmSave', el).onclick = async () => {

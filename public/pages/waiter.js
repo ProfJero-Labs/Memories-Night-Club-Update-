@@ -7,7 +7,8 @@
 //     once paid.
 //   Quick sale: pick drinks → Cash or MoMo → the bar makes it → "I got them" → done.
 // "Bookings": booked tables and the bottles they paid for. "My report": sales, cash, hand in, submit.
-import { $, $$, esc, normalizePhone } from '../app.js';
+import { $, $$, esc, normalizePhone, loadFee, paystackOk, paystackLimit } from '../app.js';
+loadFee().catch(() => {});
 import { requireStaff, staffHeader, sapi } from '../staff.js';
 import { qrSvg } from '../ticket-art.js';
 import { sheet, say, st, every, bottomNav, busy, ghsIn, moneyField, money, when, backBar, bindBackBar, returnTo, pasteMomoButton, upcomingBookings } from '../lib/ops-ui.js';
@@ -146,7 +147,8 @@ function closeSheet(t) {
     <div class="sfield"><label for="csPhone">Customer’s phone (gets the ${paid ? 'receipt' : 'invoice'})</label><input id="csPhone" type="tel" inputmode="tel" autocomplete="off" placeholder="${esc(t.customerPhoneHint || '024 123 4567')}">${t.customerPhoneHint ? `<span class="hint">Empty: it goes to ${esc(t.customerPhoneHint)}.</span>` : '<span class="hint">Optional for cash. Needed for MoMo, or if they owe.</span>'}</div>
     <div id="csMsg"></div>
     ${paid ? '<button class="big" id="csDone">Close the tab</button>' : `<p class="lead" style="margin:0">How is the customer paying?</p>
-    <div class="btn-row"><button class="big" id="csCash" ${canCash ? '' : 'disabled'}>Cash</button><button class="big" id="csMomo">MoMo prompt</button></div>
+    <div class="btn-row"><button class="big" id="csCash" ${canCash ? '' : 'disabled'}>Cash</button>${paystackOk(b.balancePesewas, b.totalPesewas) ? '<button class="big" id="csMomo">MoMo prompt</button>' : ''}</div>
+    ${paystackOk(b.balancePesewas, b.totalPesewas) ? '' : `<p class="muted" style="margin:0">Bills above ${money(paystackLimit())} can’t be paid by a MoMo prompt.</p>`}
     ${canCash ? `<button class="big ghost" id="csClub">MoMo to the club’s number</button>
     <div id="csClubBox" hidden style="display:grid;gap:12px">
       <div id="csPaste"></div>

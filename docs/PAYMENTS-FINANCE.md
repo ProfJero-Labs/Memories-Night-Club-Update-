@@ -1,5 +1,32 @@
 # Payments, costs and the night's finances
 
+## The payment rules (owner's decision, November 2026)
+
+Switched on by a director (More → Service charge & commission → New payment rules), once the
+partner's Paystack subaccount code is entered. When on, they replace the service charge and the
+developer commission below for every purchase: drinks, QR orders, tickets, gate sales, pay-in-bits.
+
+| Bill (whole bill, after discounts, never tips) | How it can be paid | The 5% charge |
+|---|---|---|
+| Any amount | Cash | None |
+| Up to and including GHS 300 | Paystack (card or MoMo) | The customer pays all of it |
+| GHS 300.01 to 2,000 | Paystack | Split 50/50 with the venue, but the customer pays at least GHS 15 |
+| Above GHS 2,000 | MoMo straight to the partner's merchant wallet (step 3; until then, cash) | Flat GHS 100, paid by the customer, owed to EvolveIT |
+
+- **Paystack split:** each Paystack payment is sent with the partner's subaccount. EvolveIT's main
+  account keeps the 5% charge (plus EvolveIT's 10% share on tickets and tables) and bears
+  Paystack's fee; everything else goes straight to the partner. The ledger stores, per payment:
+  the charge, both shares, Paystack's actual fee, EvolveIT's earning (charge − fee) and the
+  partner's amount.
+- **Venue revenue** = bill − the venue's share; the Money report lists the venue's share under
+  money out ("Card / MoMo charges").
+- **Refunds:** the customer gets everything back; Paystack keeps its fee and the venue bears it.
+- Every number (5%, 300, 2,000, 50/50, GHS 15, GHS 100) is a setting; each payment keeps a copy of
+  the rule it was charged under. Logic: `public/lib/charge-rules.js` (shared by the pages and the
+  Worker), `worker/src/lib/routes.js`, `worker/src/lib/fee.js` (serviceFee).
+
+## The service charge and commission (before the new rules)
+
 Three separate things, never mixed:
 
 | | What it is | Who pays | Where it's set |
