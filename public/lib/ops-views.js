@@ -4,7 +4,7 @@
 // an element to draw into.
 import { $, $$, esc } from '../app.js';
 import { sapi } from '../staff.js';
-import { sheet, say, st, busy, ghsIn, moneyField, money, when, dayName, ask } from './ops-ui.js';
+import { sheet, say, st, busy, ghsIn, moneyField, money, when, dayName, ask, pasteMomoButton } from './ops-ui.js';
 // One-tap reasons for refusing a request or a payment (they can still type their own).
 const REFUSE_QUICK = ['Wrong amount', 'Not in this month’s budget', 'Too expensive', 'Not needed now', 'Ask me first'];
 
@@ -135,7 +135,7 @@ export async function closingView(el, date, { canClose = false } = {}) {
 export async function approvalsView(el) {
   el.innerHTML = '<div class="loading">Loading…</div>';
   const { approvals } = await sapi('/api/ops/approvals');
-  el.innerHTML = `<h1>Approvals</h1><p class="lead">Free drinks, discounts, unpaid bills, cash out and stock-count corrections. You can’t approve your own.</p><div id="apMsg"></div>
+  el.innerHTML = `<h1>Approvals</h1><p class="lead">Discounts (the Manager approves them), cash out and stock-count corrections. You can’t approve your own.</p><div id="apMsg"></div>
     <div class="cards">${approvals.map(a => `<div class="tcard warn" style="cursor:default"><span class="row"><span class="t" style="font-size:20px">${esc(a.label)}</span><span class="sub">${when(a.requestedAt)}</span></span>
       <span>${esc(a.summary)}</span><span class="sub">Asked by ${esc(a.requestedByName)} · “${esc(a.reason)}”</span>
       ${a.canDecide ? `<span class="btn-row"><button class="mid okc" data-yes="${esc(a.id)}">Approve</button><button class="mid" data-no="${esc(a.id)}">Refuse</button></span>` : '<span class="sub">Someone else must decide this one.</span>'}</div>`).join('') || '<div class="empty-box"><b>Nothing waiting</b></div>'}</div>`;
@@ -384,6 +384,50 @@ export async function evolveitView(el) {
       try { const r = await busy($('#evGo', box), () => sapi('/api/ops/evolveit/paid', { method: 'POST', body: { amountPesewas: ghsIn($('#evA', box).value), momoRef: $('#evR', box).value } })); close(); await evolveitView(el); say($('#evMsg', el), r.message, r.differencePesewas ? 'warn' : 'good'); }
       catch (e) { say($('#evM', box), e.message, 'bad'); }
     };
+  });
+}
+
+// A manager saw the money in the wallet: what arrived and its transaction ID. A short amount is
+// refused unless the manager accepts it with a reason.
+export function walletSheet(w, done = () => {}) {
+  const { box, close } = sheet(`<h2>MoMo arrived? ${money(w.duePesewas)}</h2>
+    <p class="muted" style="margin:0">${esc(w.table && w.table !== 'Walk-in' ? `Table ${w.table}` : `Tab ${w.tabNumber}`)} · reference ${esc(w.code)} · ${esc(w.waiterName)}. Look in the wallet itself.</p>
+    <div id="wsPaste"></div>
+    ${moneyField('wsAmt', 'Amount that arrived (GHS)', String(w.duePesewas / 100))}
+    <div class="sfield"><label for="wsRef">MoMo transaction ID</label><input id="wsRef" maxlength="40" autocomplete="off" autocapitalize="characters" placeholder="From the wallet’s message"></div>
+    <div id="wsShort" hidden><div class="sfield"><label for="wsWhy">Accept it short? Why</label><input id="wsWhy" maxlength="200" placeholder="e.g. regular customer, paying the rest tomorrow"></div></div>
+    <div id="wsMsg"></div><button class="big okc" id="wsGo">Confirm: it arrived</button><button class="big ghost" data-close>Cancel</button>`, { label: 'MoMo arrived' });
+  $('#wsPaste', box).append(pasteMomoButton(m => { if (m.ref) $('#wsRef', box).value = m.ref; if (m.amountPesewas) $('#wsAmt', box).value = String(m.amountPesewas / 100); }));
+  let acceptShort = false;
+  $('#wsGo', box).onclick = async () => {
+    try {
+      const r = await busy($('#wsGo', box), () => sapi('/api/ops/wallet/confirm', { method: 'POST', body: { id: w.id, receivedPesewas: ghsIn($('#wsAmt', box).value), momoRef: $('#wsRef', box).value, acceptShort, note: $('#wsWhy', box).value } }), 'Confirming…');
+      close(); done(`Confirmed.${r.changePesewas ? ` ${money(r.changePesewas)} too much: give it back as change.` : ''}${r.tabClosed ? ' The tab is closed.' : ''}`);
+    } catch (e) {
+      if (e.code === 'short') { acceptShort = true; $('#wsShort', box).hidden = false; $('#wsGo', box).textContent = 'Accept it short'; }
+      say($('#wsMsg', box), e.message, 'bad');
+    }
+  };
+}
+
+
+// "MoMo to confirm": MoMo to the wallet waiting for the Manager or the Human manager. wl: from
+// /api/ops/wallet. done(message, kind) after a confirm or a cancel.
+export function walletWaitingHtml(wl) {
+  if (!wl?.waiting?.length) return '';
+  const where = w => (w.table && w.table !== 'Walk-in' ? (String(w.table).startsWith('QR') ? w.table : `Table ${w.table}`) : `Tab ${w.tabNumber}`);
+  return `<section class="pos-need"><h2>MoMo to confirm <span class="count">${wl.waiting.length}</span></h2>
+      <p class="muted" style="margin:0">Check the wallet (${esc(wl.wallet.number)}) itself, never a screenshot.</p>
+      ${wl.waiting.map((w, i) => `<div class="need"><div><b>${money(w.duePesewas)} · ${esc(where(w))}</b><span>Reference ${esc(w.code)} · ${esc(w.waiterName)} · ${when(w.createdAt)}</span><small>Bill ${money(w.billPesewas)} + ${money(w.chargePesewas)} charge${w.reason === 'paystack_down' ? ' (Paystack down)' : ''}</small></div>
+        <div class="need-btns"><button class="mid okc" data-wok="${i}">Arrived</button><button class="mid" data-wno="${i}">Not yet</button></div></div>`).join('')}</section>`;
+}
+export function bindWalletWaiting(el, wl, done) {
+  $$('[data-wok]', el).forEach(b => b.onclick = () => walletSheet(wl.waiting[Number(b.dataset.wok)], done));
+  $$('[data-wno]', el).forEach(b => b.onclick = async () => {
+    const w = wl.waiting[Number(b.dataset.wno)];
+    const why = await ask({ title: 'This MoMo hasn’t arrived?', label: 'Cancel it only if they won’t pay this way. Why?', quick: ['Didn’t arrive', 'Paying cash instead', 'Customer left'], send: 'Cancel it', danger: true });
+    if (!why) return;
+    try { await sapi('/api/ops/wallet/cancel', { method: 'POST', body: { id: w.id, reason: why } }); done('Cancelled. The payment is taken another way.'); } catch (e) { done(e.message, 'bad'); }
   });
 }
 
@@ -674,16 +718,17 @@ export async function toApproveView(el, { onCount } = {}) {
   const d = await sapi('/api/ops/to-approve');
   onCount?.(d.items.length);
   const KIND = { payroll: 'Salaries', loan: 'Staff loan', bill: 'Bill', commission: 'Commission', purchase: 'Drinks to buy', expense: 'Expense' };
-  el.innerHTML = `<h1>To approve</h1><p class="lead" style="margin:0">${d.items.length ? `${d.items.length} waiting · ${money(d.totalPesewas)}. Finance pays only what a director approves.` : 'Nothing waiting. Finance pays only what a director approves.'}</p>
+  const rule = d.financeLimitPesewas ? `You approve up to ${money(d.financeLimitPesewas)}, except what you recorded or checked yourself. Bigger ones wait for a director.` : 'Finance approves up to GHS 2,000; the rest waits for you.';
+  el.innerHTML = `<h1>To approve</h1><p class="lead" style="margin:0">${d.items.length ? `${d.items.length} waiting · ${money(d.totalPesewas)}.` : 'Nothing waiting.'} ${rule}</p>
     <div id="taMsg"></div>
     <div class="cards">${d.items.map((x, i) => `<div class="tcard" style="cursor:default"><span class="row"><span class="t" style="font-size:16px">${esc(x.title)}</span><span class="amt">${money(x.amountPesewas)}</span></span>
       <span class="sub">${esc(KIND[x.kind])} · ${esc(x.detail || '')}</span><span class="sub">Asked by ${esc(x.byName || '—')}${x.at ? ` · ${esc(dayName(String(x.at).slice(0, 10)))}` : ''}</span>
       ${x.lines?.length ? `<details class="fold"><summary>Details</summary><div class="lines-list">${x.lines.map(l => `<div class="ln"><span>${esc(l.label)}${l.sub ? `<br><small class="muted">${esc(l.sub)}</small>` : ''}</span><span>${money(l.amountPesewas)}</span></div>`).join('')}</div></details>` : ''}
-      <span class="btn-row"><button class="mid okc" data-yes="${i}">Approve</button><button class="mid" data-no="${i}">Refuse</button></span></div>`).join('') || '<div class="empty-box"><b>All clear</b>New requests appear here.</div>'}</div>`;
+      ${x.canDecide === false ? `<span class="sub"><b>${esc(x.whyNot)}</b></span>` : `<span class="btn-row"><button class="mid okc" data-yes="${i}">Approve</button><button class="mid" data-no="${i}">Refuse</button></span>`}</div>`).join('') || '<div class="empty-box"><b>All clear</b>New requests appear here.</div>'}</div>`;
   const decide = async (x, approve) => {
     let note = '';
     if (!approve) { note = await ask(x.kind === 'payroll' ? { title: 'Send salaries back', label: 'What needs changing? It goes back to the Human manager.', quick: ['A salary is wrong', 'A bonus needs checking', 'Someone is missing', 'Someone shouldn’t be paid'], send: 'Send back', danger: true } : { title: 'Refuse this payment', label: 'Why? They see your reason.', quick: REFUSE_QUICK, send: 'Refuse', danger: true }); if (!note) return; }
-    try { await sapi('/api/ops/approve', { method: 'POST', body: { kind: x.kind, id: x.id, approve, note } }); await toApproveView(el, { onCount }); say($('#taMsg', el), approve ? 'Approved. Finance can pay it now.' : 'Refused.'); }
+    try { await sapi('/api/ops/approve', { method: 'POST', body: { kind: x.kind, id: x.id, approve, note } }); await toApproveView(el, { onCount }); say($('#taMsg', el), approve ? 'Approved. It can be paid now.' : 'Refused.'); }
     catch (e) { say($('#taMsg', el), e.message, 'bad'); }
   };
   $$('[data-yes]', el).forEach(b => b.onclick = () => decide(d.items[Number(b.dataset.yes)], true));

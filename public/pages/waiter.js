@@ -115,7 +115,7 @@ async function tabView(id) {
         <div class="ln total"><span>Still to pay</span><span>${money(b.balancePesewas)}</span></div></div>
       ${open && !t.quick ? `<details class="fold"><summary>More</summary><div class="btn-row" style="margin-top:10px">
         ${b.balancePesewas ? '<button class="mid" id="showBill">Show QR to pay</button><button class="mid" id="invoice">Text the invoice now</button>' : ''}
-        <button class="mid" id="ask">Ask the manager</button></div></details>` : ''}`;
+        <button class="mid" id="ask">Ask for a discount</button></div></details>` : ''}`;
     bindBackBar(app);
     const flash = sessionStorage.getItem('waiter-flash'); if (flash) { sessionStorage.removeItem('waiter-flash'); say($('#msg'), flash); }
     $('#add') && ($('#add').onclick = () => { location.hash = `add/${t.id}`; });
@@ -368,11 +368,11 @@ function takePayment(t) {
 
 function askManager(t) {
   const lines = t.rounds.filter(r => r.status !== 'cancelled').flatMap(r => r.lines.map(l => ({ ...l, roundId: r.id })));
-  const { box, close } = sheet(`<h2>Ask the manager</h2><p class="muted" style="margin:0">The manager approves it on their phone. Nothing changes until they do.</p>
-    <div class="sfield"><label for="amKind">What do you need?</label><select id="amKind"><option value="comp">A free drink</option><option value="discount">Money off the bill</option><option value="write_off">The customer can’t pay</option></select></div>
-    <div id="amComp"><div class="sfield"><label for="amLine">Which drink</label><select id="amLine">${lines.map(l => `<option value="${esc(l.roundId)}|${esc(l.lineId)}">${esc(l.name)} (${l.qty})</option>`).join('')}</select></div>
-      <div class="sfield"><label for="amQty">How many free</label><input id="amQty" inputmode="numeric" value="1"></div></div>
-    <div id="amDisc" hidden>${moneyField('amAmt', 'Amount off (GHS)')}</div>
+  // Only discounts (the Manager approves). No free drinks or write-offs at Memories; a customer who
+  // can't pay is closed as "customer owes" from Close tab.
+  const { box, close } = sheet(`<h2>Ask for a discount</h2><p class="muted" style="margin:0">The Manager approves it on their phone. Nothing changes until they do. A customer who can’t pay: Close tab → “customer owes”.</p>
+    <input type="hidden" id="amKind" value="discount"><div id="amComp" hidden></div>
+    <div id="amDisc">${moneyField('amAmt', 'Amount off (GHS)')}</div>
     <div class="sfield"><label for="amWhy">Why</label><input id="amWhy" maxlength="200" placeholder="e.g. birthday, drink was wrong"></div>
     <div id="amMsg"></div><button class="big" id="amGo">Send to manager</button><button class="big ghost" data-close>Cancel</button>`);
   const sync = () => { const k = $('#amKind', box).value; $('#amComp', box).hidden = k !== 'comp'; $('#amDisc', box).hidden = k !== 'discount'; };

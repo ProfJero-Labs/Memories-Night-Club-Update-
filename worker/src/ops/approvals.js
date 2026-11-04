@@ -11,8 +11,10 @@ import { FORBIDDEN, bizDate, who, audit, int, ghs } from './common.js';
 
 const BOSS = ['superAdmin', 'director', 'manager'];
 // Who may approve which kind.
-// The Human manager is on the floor (free drinks, discounts); the Event manager can give discounts.
-const APPROVERS = { comp: [...BOSS, 'hrManager'], discount: [...BOSS, 'hrManager', 'eventManager'], write_off: [...BOSS, 'finance'], cash_out: [...BOSS, 'finance'], count_correction: [...STOCK, 'barManager'] };
+// Owner's rules (Nov 2026): discounts are approved by the Manager only. There are no free drinks and
+// no write-offs at Memories: those requests are refused (NOT_USED), so they can't hide a sale.
+export const NOT_USED = ['comp', 'write_off'];
+const APPROVERS = { comp: [], discount: ['manager'], write_off: [], cash_out: [...BOSS, 'finance'], count_correction: [...STOCK, 'barManager'] };
 const REQUESTERS = { comp: [...BOSS, 'hrManager', 'waitStaff', 'barManager', 'barStaff'], discount: [...BOSS, 'hrManager', 'eventManager', 'waitStaff', 'cashier'], write_off: [...BOSS, 'waitStaff', 'cashier'], cash_out: [...BOSS, 'cashier', 'waitStaff', 'finance'], count_correction: [...STOCK, 'barManager', 'barStaff'] };
 export const APPROVAL_LABEL = { comp: 'Free drink', discount: 'Discount', write_off: 'Unpaid tab written off', cash_out: 'Cash out', count_correction: 'Stock count correction' };
 
@@ -21,6 +23,7 @@ async function roundsOf(env, tabId) { return (await queryWhere(env, 'rounds', [{
 export async function requestApproval(env, b, user) {
   const kind = b?.kind;
   if (!APPROVAL_LABEL[kind]) return { error: 'Unknown request.' };
+  if (NOT_USED.includes(kind)) return { error: kind === 'comp' ? 'Free drinks aren’t given at Memories. Every drink is paid for.' : 'Unpaid bills aren’t written off. Close it as “customer owes” with their name and phone.', status: 403 };
   if (!requireRole(user, REQUESTERS[kind])) return FORBIDDEN;
   const data = {}, reason = clean(b.reason, 200);
   if (!reason) return { error: 'Say why, in a few words.' };

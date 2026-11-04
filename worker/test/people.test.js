@@ -315,3 +315,18 @@ test('QR menu, pay cash at the bar: a code at once; the bar takes the cash; it c
   assert.equal(my.figures.cashCollectedPesewas, 5000, 'in the bartender’s cash');
   assert.equal((await ctx.call('POST', '/api/bar/order', { who: ctx.B1, body: { orderId: o.orderId, action: 'cash' } })).data.error, 'Already paid and handed over.');
 });
+
+test('finance approves up to GHS 2,000, never what finance recorded; bigger ones wait for a director', async () => {
+  const ctx = setup();
+  const exp = async (who, amount) => ok(await ctx.call('POST', '/api/ops/expenses', { who, body: { category: 'supplies', description: 'Ice', amountPesewas: amount } }), 'expense').id;
+  const small = await exp(ctx.M1, 50000), big = await exp(ctx.M1, 300000), own = await exp(ctx.F1, 20000);
+  const list = ok(await ctx.call('GET', '/api/ops/to-approve', { who: ctx.F1 }), 'finance list');
+  const can = Object.fromEntries(list.items.map(i => [i.id, i.canDecide]));
+  assert.deepEqual([can[small], can[big], can[own]], [true, false, false]);
+  assert.match((await ctx.call('POST', '/api/ops/approve', { who: ctx.F1, body: { kind: 'expense', id: big, approve: true } })).data.error, /director approves/);
+  assert.match((await ctx.call('POST', '/api/ops/approve', { who: ctx.F1, body: { kind: 'expense', id: own, approve: true } })).data.error, /someone else approves/);
+  ok(await ctx.call('POST', '/api/ops/approve', { who: ctx.F1, body: { kind: 'expense', id: small, approve: true } }), 'finance approves');
+  assert.equal(ctx.store.get('expenses', small).fields.approval, 'approved');
+  ok(await ctx.call('POST', '/api/ops/approve', { who: ctx.D1, body: { kind: 'expense', id: big, approve: true } }), 'a director approves the big one');
+  assert.equal((await ctx.call('POST', '/api/ops/approve', { who: ctx.M1, body: { kind: 'expense', id: own, approve: true } })).status, 403, 'not the Manager');
+});

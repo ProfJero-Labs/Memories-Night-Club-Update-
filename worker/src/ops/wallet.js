@@ -24,7 +24,9 @@ import { routeFor } from '../lib/routes.js';
 import { commercialConfig } from '../lib/fee.js';
 import { FORBIDDEN, bizDate, audit, ghs, int } from './common.js';
 
-export const CONFIRMERS = ['superAdmin', 'director', 'manager', 'finance'];
+// At the club: the Manager or the Human manager (one is always there); a director if present.
+// Finance is never at the club, so can't check the wallet.
+export const CONFIRMERS = ['superAdmin', 'director', 'manager', 'hrManager'];
 const CODE = '23456789ABCDEFGHJKMNPQRSTUVWXYZ';
 const code = () => Array.from(crypto.getRandomValues(new Uint8Array(4)), b => CODE[b % CODE.length]).join('');
 const sum = (xs, f) => xs.reduce((n, x) => n + Number(f(x) || 0), 0);
@@ -107,7 +109,7 @@ export async function walletOne(env, user, wid) {
 
 // A manager saw the money in the wallet. { id, receivedPesewas, momoRef, acceptShort, note }
 export async function confirmWallet(env, b, user, { closeIfPaid }) {
-  if (!requireRole(user, CONFIRMERS)) return { error: 'A manager confirms MoMo to the wallet (they check the wallet itself).', status: 403 };
+  if (!requireRole(user, CONFIRMERS)) return { error: 'The Manager or the Human manager confirms MoMo to the wallet (they check the wallet itself).', status: 403 };
   const ref = String(b?.momoRef || '').toUpperCase().replace(/[^A-Z0-9.]/g, '').slice(0, 40);
   if (ref.length < 6) return { error: 'Type the MoMo transaction ID from the wallet’s message (at least 6 letters or numbers).' };
   const received = int(b?.receivedPesewas);

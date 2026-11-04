@@ -20,6 +20,7 @@ import * as promos from './promos.js';
 import * as staffauth from './staffauth.js';
 import { opsRoute } from './ops/router.js';
 import { loadNight, bizDate } from './ops/common.js';
+import { runAutopilot } from './ops/autopilot.js';
 import { publicBill, startBillPayment, billCode, startBillWallet } from './ops/tabs.js';
 import { guestNight } from './ops/payments.js';
 import { leaveReview } from './ops/reviews.js';
@@ -352,6 +353,9 @@ const handler = {
     // Two crons (wrangler.toml): every 10 minutes the payment reconciliation, daily the forfeit sweep.
     if (event.cron === '*/10 * * * *') {
       ctx.waitUntil(reconcilePayments(env, event.scheduledTime));
+      // The autopilot: MoMo waiting alerts, a forgotten night closing itself, the 10AM report and
+      // the midday sign-off reminder (ops/autopilot.js). Nothing depends on one person.
+      ctx.waitUntil(runAutopilot(env, event.scheduledTime).catch(e => { logError('autopilot failed', e); return reportError(env, 'cron.autopilot', e); }));
       // One-time: put back the 14 Nov ticket deleted by mistake (src/fixes/nov14-ticket.js).
       ctx.waitUntil(restoreNov14Ticket(env).catch(e => { logError('restoreNov14Ticket failed', e); return reportError(env, 'cron.restoreNov14Ticket', e); }));
     }
