@@ -1,0 +1,45 @@
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    namespace 'com.memories.momophone'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId 'com.memories.momophone'
+        minSdk 23            // Android 6: the club's business phone
+        targetSdk 34
+        versionCode Integer.parseInt(System.getenv('MOMO_VERSION_CODE') ?: '1')
+        versionName '1.0.' + (System.getenv('MOMO_VERSION_CODE') ?: '1')
+    }
+
+    // One fixed signing key (from GitHub secrets), so each new version installs over the old one.
+    // Without the secrets the app is signed with a throwaway key: fine for a first try, but a new
+    // build then has to be uninstalled and paired again.
+    def ks = System.getenv('MOMO_KEYSTORE_FILE')
+    signingConfigs {
+        release {
+            if (ks) {
+                storeFile file(ks)
+                storePassword System.getenv('MOMO_KEYSTORE_PASSWORD')
+                keyAlias System.getenv('MOMO_KEY_ALIAS')
+                keyPassword System.getenv('MOMO_KEY_PASSWORD')
+            }
+        }
+    }
+    buildTypes {
+        release {
+            minifyEnabled false
+            signingConfig ks ? signingConfigs.release : signingConfigs.debug
+        }
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
+    }
+    lint {
+        abortOnError false
+        checkReleaseBuilds false
+    }
+}

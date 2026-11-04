@@ -1,0 +1,45 @@
+# Builds the Memories MoMo phone app (android/momo-phone) whenever it changes, or on demand
+# (Actions → MoMo phone app → Run workflow). The app file (APK) is attached to the run: download it
+# on the business phone and install it.
+name: MoMo phone app
+
+on:
+  push:
+    paths: ['android/momo-phone/**', '.github/workflows/momo-phone.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+      # Optional fixed signing key (repository secrets): MOMO_KEYSTORE_B64 (the keystore file,
+      # base64), MOMO_KEYSTORE_PASSWORD, MOMO_KEY_ALIAS, MOMO_KEY_PASSWORD.
+      - name: Signing key
+        env:
+          KS: ${{ secrets.MOMO_KEYSTORE_B64 }}
+        run: |
+          if [ -n "$KS" ]; then echo "$KS" | base64 -d > "$RUNNER_TEMP/momo.jks"; echo "MOMO_KEYSTORE_FILE=$RUNNER_TEMP/momo.jks" >> "$GITHUB_ENV"; fi
+      - name: Build the app
+        working-directory: android/momo-phone
+        env:
+          MOMO_VERSION_CODE: ${{ github.run_number }}
+          MOMO_KEYSTORE_PASSWORD: ${{ secrets.MOMO_KEYSTORE_PASSWORD }}
+          MOMO_KEY_ALIAS: ${{ secrets.MOMO_KEY_ALIAS }}
+          MOMO_KEY_PASSWORD: ${{ secrets.MOMO_KEY_PASSWORD }}
+        run: gradle assembleRelease --no-daemon
+      - uses: actions/upload-artifact@v4
+        with:
+          name: memories-momo-phone-${{ github.run_number }}
+          path: android/momo-phone/app/build/outputs/apk/release/*.apk
