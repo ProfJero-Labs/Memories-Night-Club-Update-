@@ -381,6 +381,12 @@ export async function recordPayment(env, b, user) {
   if (r.recorded && !r.balancePesewas) r.closed = await closeIfPaid(env, String(b?.tabId || ''), { byName: user.name || '' });
   return r;
 }
+// The cashier takes cash for a bill: like any payment, a bill paid in full closes by itself.
+export async function cashierCash(env, b, user) {
+  const r = await recordCash(env, b, user);
+  if (r.recorded && !r.balancePesewas) r.closed = await closeIfPaid(env, String(b?.tabId || ''), { byName: user.name || '' });
+  return r;
+}
 const tipWrite = (env, tip, extra) => (tip && !tip.none ? [updateWrite(env, 'tips', id(), tipFields(tip, extra))] : []);
 
 // The MoMo transaction ID (from the customer's MoMo text): needed, and only once a night.

@@ -1142,26 +1142,25 @@ test('a night at the bar: tab without QR → bar → delivered → the customer 
   assert.match(await cust.textContent('#root'), /2 × Club beer/); assert.match(await cust.textContent('#pay'), /GHS 84/); assert.match(await cust.textContent('#root'), /service charge \(5%, capped at GHS 100\): GHS 4/, 'the bill page says why it is GHS 84');
   await cust.click('#pay'); await cust.waitForURL(/dev\/paystack/); await cust.getByRole('button', { name: 'Pay' }).click();
   await cust.waitForURL(/bill\.html/); await cust.getByText('Payment confirmed. Thank you!').waitFor({ timeout: 20000 });
-  // Paid, but staying: the table stays open and they can order more from the bar menu.
-  await cust.getByText(/your table stays open/i).waitFor();
-  assert.match(await cust.getAttribute('a:has-text("Order more drinks")', 'href'), /^counter\.html\?s=[0-9a-f]{32}&t=12$/);
-  await w.locator('.st').getByText('Paid', { exact: true }).waitFor({ timeout: 10000 });
-  // Another round, paid in cash at the cashier
-  await w.click('#add'); await w.waitForURL(/#add\//); await w.click('[data-p="dev-m-water"]'); await w.click('#send'); await w.waitForURL(/#tabs$/);
-  await w.locator('[data-tab]', { hasText: '12' }).first().click(); await w.waitForURL(/#tab\//);
+  // Paid in full: the tab closes by itself (owner's rule); the page is their receipt.
+  await cust.getByText(/This page is your receipt/i).waitFor();
+  await w.locator('.say', { hasText: 'Closed' }).waitFor({ timeout: 10000 });
+  assert.equal(docs('tabs').find(t => t.id === tabId).status, 'closed');
+  // Another round for table 12 goes on a new tab, paid in cash at the cashier.
+  await w.click('.back-btn'); await w.waitForSelector('#newTab');
+  await w.click('#newTab'); await w.waitForURL(/#order$/); await w.fill('#odTable', '12'); await w.click('[data-p="dev-m-water"]'); await w.click('#send'); await w.waitForURL(/#tabs$/);
   await bar.locator('#rounds .ord').filter({ hasText: '12' }).locator('[data-a="hand"]').click();
-  await w.locator('[data-act="delivered"]').waitFor({ timeout: 10000 }); await w.click('[data-act="delivered"]');
+  await bar.locator('#msgTop').getByText(/Handed over/).waitFor();
   const cash = await phone(390); await signInAs(cash, 'cashier@dev'); await cash.waitForURL(/cashier\.html/);
   await cash.click('[data-k="cash"]'); await cash.fill('#fl', '100'); await cash.click('#openGo'); await cash.waitForSelector('#cnt');
   await cash.click('[data-k="bills"]'); await cash.fill('#q', '12'); await cash.locator('[data-id]').first().click();
   await cash.click('#cGo'); await cash.getByText('Cash recorded').waitFor();
   await cash.click('[data-close]');
-  // Paid at the cashier: Close tab just closes it.
-  // Close tab right from My tables.
-  await w.locator('.pay-now').getByText(/paid/).waitFor({ timeout: 10000 }); await w.click('.back-btn'); await w.waitForSelector('#newTab');
-  await w.locator('.tcard', { hasText: '12' }).locator('[data-pay]').click(); await w.click('#csDone');
-  await w.locator('.sheet').getByText('Tab closed').waitFor(); await w.click('#csBack'); await w.waitForSelector('#newTab');
+  // Paid at the cashier: it closed by itself; nothing left for the waiter to close.
+  await w.goto(`${base}/waiter.html#tabs`); await w.waitForSelector('#newTab');
+  await w.locator('details.fold summary', { hasText: 'Closed tonight' }).click();
   await w.locator('.tcard.done', { hasText: '12' }).first().waitFor({ state: 'attached' });
+  assert.ok(docs('tabs').filter(t => t.table === '12').every(t => t.status === 'closed'), 'both of table 12’s tabs closed themselves');
   // Poor signal: an action that can't reach the server never shows as done.
   await w.click('#newTab'); await w.waitForSelector('#odTable'); await w.fill('#odTable', '14'); await w.click('[data-p="dev-m-water"]');
   await w.context().setOffline(true);
@@ -1172,7 +1171,7 @@ test('a night at the bar: tab without QR → bar → delivered → the customer 
   // The bar opens any waiter's tables: what it gave them, per table, and what's unpaid.
   await bar.click('[data-k="waiters"]');
   await bar.locator('#vWaiters [data-w]', { hasText: 'Dev Waiter' }).first().click();
-  await bar.locator('.sheet').getByText(/table 12/).waitFor();
+  await bar.locator('.sheet').getByText(/table 12/).first().waitFor(); // two tabs for table 12: before and after paying
   await bar.locator('.sheet').getByText(/2 ×/).first().waitFor();
   await bar.click('.sheet [data-close]'); await bar.click('[data-k="orders"]');
   // End of night: waiter report, bar count, cash count, front office, the close, finance.
