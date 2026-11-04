@@ -111,7 +111,7 @@ async function tonight(alive = () => location.hash.slice(1).split('/')[0] in { '
     <p class="kicker">Night of ${esc(dayName(s.date))}${s.startedAt ? ` · started ${esc(when(s.startedAt))}` : ''}${closed ? ' · closed' : ' · open'}</p>
     ${stale ? `<div class="say warn"><b>This night is still open</b>It started ${esc(dayName(s.date))}. If it has ended, close it so the next night starts fresh.</div>` : ''}
     ${top}
-    <div style="display:flex;flex-wrap:wrap;gap:6px"><button type="button" class="mid" data-sl="cash" style="min-height:40px;padding:0 12px">Cash ${money(x.cashPesewas)} ›</button><button type="button" class="mid" data-sl="momo" style="min-height:40px;padding:0 12px">MoMo ${money((x.momoPesewas || 0))} ›</button><button type="button" class="mid" data-sl="phone" style="min-height:40px;padding:0 12px">Paid on phone ${money(x.digitalPesewas)} ›</button></div>
+    <div style="display:flex;flex-wrap:wrap;gap:6px"><button type="button" class="mid" data-sl="cash" style="min-height:40px;padding:0 12px">Cash ${money(x.cashPesewas)} ›</button><button type="button" class="mid" data-sl="phone" style="min-height:40px;padding:0 12px">Paystack ${money(x.digitalPesewas)} ›</button><button type="button" class="mid" data-sl="momo" style="min-height:40px;padding:0 12px">MoMo ${money((x.momoPesewas || 0))} ›</button></div>
     <div id="msg"></div>
     ${walletWaitingHtml(wl)}
     ${wl?.paystackDown ? `<div class="say warn"><b>Paystack is down tonight</b>Any bill can be paid by MoMo to the wallet (a manager confirms each one). Turned on by ${esc(wl.paystackDown.byName || 'the admin')}.${admin ? '<br><button class="mid" id="psUp" style="margin-top:8px">Paystack works again</button>' : ''}</div>` : ''}

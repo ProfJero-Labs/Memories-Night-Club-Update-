@@ -17,7 +17,7 @@ import { FORBIDDEN, bizDate, dateOr, paidNight } from './common.js';
 import { billOf } from './tabs.js';
 
 const sum = (arr, f) => arr.reduce((n, x) => n + Number(f(x) || 0), 0);
-const METHOD = { cash: 'Cash', momo: 'MoMo to the club’s number', digital: 'MoMo / card on their phone', qr: 'QR order (MoMo / card)' };
+const METHOD = { cash: 'Cash', momo: 'MoMo', digital: 'Paystack', qr: 'Paystack' };
 const where = t => (t.quick ? (t.soldAtBar ? 'At the bar' : 'Quick sale') : t.table === 'Walk-in' ? 'No table' : `Table ${t.table}`);
 
 async function night(env, date) {

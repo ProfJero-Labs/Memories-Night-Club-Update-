@@ -143,7 +143,7 @@ async function sellView() {
   let p; try { if (!station) station = (await sapi('/api/ops/products')).stations[0]?.id || ''; p = await sapi(`/api/ops/products?stationId=${encodeURIComponent(station)}`); } catch (e) { el.innerHTML = `<div class="say bad">${esc(e.message)}</div>`; return; }
   const sid = station || p.stations[0]?.id;
   drinkPicker(el, p.products, {
-    title: 'Sell', top: '<p class="lead" style="margin:0">The customer pays you now. Pick the drinks, then Cash or MoMo.</p>', button: n => `Customer pays · ${n}`,
+    title: 'Sell', top: '<p class="lead" style="margin:0">Cash: pick the drinks, then <b>Cash received</b>. Paystack: the customer scans the bar’s QR code and pays on their phone (the order comes to you). Above GHS 2,000 the QR switches to MoMo by itself.</p>', button: n => `Customer pays · ${n}`,
     onSend: async (lines, total) => {
       paySheet(total, async pay => {
         const r = await sapi('/api/ops/quick-sale', { method: 'POST', body: { lines, stationId: sid, fromBar: true, ...pay } });

@@ -363,7 +363,7 @@ async function staffRecord(env, user) { return (await getDoc(env, 'users', uidOf
 // only if a manager ticked "Can collect cash" on their staff record.
 export const PAY_TAKERS = [...CASH_TAKERS, 'waitStaff', 'barManager', 'barStaff', 'eventManager'];
 export async function canTakeCash(env, user) { return requireRole(user, PAY_TAKERS) || (await staffRecord(env, user)).canCollectCash === true; }
-export const METHOD_LABEL = { cash: 'Cash', momo: 'MoMo (to the club’s number)', digital: 'MoMo / card (paid on the bill link)', wallet: 'MoMo to the wallet (confirmed)' };
+export const METHOD_LABEL = { cash: 'Cash', momo: 'MoMo', digital: 'Paystack', wallet: 'MoMo' };
 
 // "Customer paid": cash (into this person's cash bag for the night) or MoMo sent straight to the
 // club's MoMo number. A MoMo payment needs the transaction ID from the MoMo text, so finance can

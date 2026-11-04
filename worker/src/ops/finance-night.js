@@ -25,7 +25,7 @@ import { commercialConfig, serviceChargeOf, commissionOf } from '../lib/fee.js';
 export const FINANCE_VIEW = ['superAdmin', 'director', 'finance'];
 export const COMMISSION_PAYERS = ['superAdmin', 'director'];
 const sum = (xs, f) => xs.reduce((n, x) => n + Number(f(x) || 0), 0);
-const CHANNELS = { cash: 'Cash', momo_direct: 'MoMo to the club’s number', mobile_money: 'Mobile money (Paystack)', card: 'Card (Paystack)', other: 'Other (Paystack)' };
+const CHANNELS = { cash: 'Cash', momo_direct: 'MoMo', mobile_money: 'Paystack (MoMo on their phone)', card: 'Paystack (card)', other: 'Paystack (other)' };
 const paystackChannel = ch => (ch === 'mobile_money' || ch === 'card' ? ch : 'other');
 const KIND = { ticket: 'Tickets online', table: 'Table booking', installment_topup: 'Pay in bits', gate: 'Gate (MoMo)', tab: 'Bill (MoMo/card)', counter: 'QR bar order' };
 
