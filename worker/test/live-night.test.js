@@ -139,3 +139,38 @@ test('a live night, every role, with the owner’s payment rules on', async () =
   const eod = ok(await call('GET', '/api/ops/eod/list', { who: 'f1' }), 'finance: reports');
   assert.ok(JSON.stringify(eod).length > 2);
 });
+
+test('waiter quick sale by Paystack or MoMo: a walk-in tab with the drinks; it closes itself once paid', async () => {
+  const { store, call, paystackPays, barMakes } = setup();
+  ok(await call('POST', '/api/ops/stock/count', { who: 'b1', body: { stationId: 'main', kind: 'opening', lines: [{ productId: 'beer', counted: 100 }, { productId: 'magnum', counted: 5 }] } }), 'opening count');
+  // Small: Paystack on the customer's phone (the bill QR).
+  const o = ok(await call('POST', '/api/ops/tabs/order', { who: 'w1', body: { stationId: 'main', lines: [{ productId: 'beer', qty: 2 }] } }), 'walk-in order');
+  const t = ok(await call('GET', `/api/ops/tab?id=${o.tabId}`, { who: 'w1' }), 'tab').tab;
+  const pay = ok(await call('POST', `/api/guest/bill/${new URL(t.billUrl).searchParams.get('t')}/pay`, { body: {} }), 'customer pays');
+  await paystackPays(pay.reference, 5250);
+  await barMakes(o.roundId);
+  assert.equal(store.get('tabs', o.tabId).fields.status, 'closed', 'paid and handed: closed');
+  // Big: MoMo to the wallet, started before the bar has made it.
+  const big = ok(await call('POST', '/api/ops/tabs/order', { who: 'w1', body: { stationId: 'main', lines: [{ productId: 'magnum', qty: 2 }] } }), 'big walk-in');
+  const bt = ok(await call('GET', `/api/ops/tab?id=${big.tabId}`, { who: 'w1' }), 'big tab').tab;
+  const w = ok(await call('POST', `/api/guest/bill/${new URL(bt.billUrl).searchParams.get('t')}/wallet`, { body: { phone: '0244445555' } }), 'customer picks MoMo on the bill QR');
+  assert.deepEqual([w.wallet.duePesewas, w.wallet.number], [310000, '0595986313'], 'above GHS 2,000: MoMo to the wallet, charge included');
+});
+
+test('Paystack refuses the partner’s split: the customer still pays (no split), and the directors are told', async () => {
+  const { store, call } = setup();
+  ok(await call('POST', '/api/ops/stock/count', { who: 'b1', body: { stationId: 'main', kind: 'opening', lines: [{ productId: 'beer', counted: 100 }, { productId: 'magnum', counted: 5 }] } }), 'opening count');
+  store.refuseSplit = true;
+  const qr = await call('POST', '/api/guest/counter/checkout', { body: { station: 'a'.repeat(32), phone: '0241234567', items: [{ itemId: 'beer', qty: 2 }] } });
+  assert.equal(qr.status, 200, qr.data.error);
+  assert.ok(qr.data.authorizationUrl, 'the customer goes to Paystack');
+  const init = store.paystackInits.at(-1);
+  assert.deepEqual([init.amount, init.subaccount], [5250, undefined], 'same amount, no split');
+  assert.equal(store.list('split_failures').length, 1, 'recorded: the partner’s share is paid by hand');
+  const al = ok(await call('GET', '/api/ops/alerts', { who: 'd1' }), 'director alerts').alerts;
+  assert.match(al[0].text, /refused the partner's split/);
+  // The bill link and gate payments use the same safety net.
+  const t = ok(await call('POST', '/api/ops/tabs/order', { who: 'w1', body: { table: '2', lines: [{ productId: 'beer', qty: 1 }] } }), 'tab');
+  const tab = ok(await call('GET', `/api/ops/tab?id=${t.tabId}`, { who: 'w1' }), 'tab view').tab;
+  assert.equal((await call('POST', `/api/guest/bill/${new URL(tab.billUrl).searchParams.get('t')}/pay`, { body: {} })).status, 200, 'bill link still pays');
+});

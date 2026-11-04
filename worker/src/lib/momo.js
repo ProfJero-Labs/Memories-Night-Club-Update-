@@ -1,10 +1,13 @@
+import { sendSplitSafe } from './split-safe.js';
 // MoMo prompts through Paystack's Charge API: a payment request appears on the customer's own
 // phone and they approve it there. Used at the gate and when a waiter closes a tab.
 export async function paystackPost(env, path, body) {
-  const r = await fetch(`https://api.paystack.co${path}`, { method: 'POST', headers: { Authorization: `Bearer ${env.PAYSTACK_SECRET_KEY}`, 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
-  const d = await r.json().catch(() => ({}));
-  if (!r.ok || !d.status) throw new Error(d.message || 'Paystack request failed');
-  return d.data;
+  return sendSplitSafe(env, body, async b => {
+    const r = await fetch(`https://api.paystack.co${path}`, { method: 'POST', headers: { Authorization: `Bearer ${env.PAYSTACK_SECRET_KEY}`, 'Content-Type': 'application/json' }, body: JSON.stringify(b) });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok || !d.status) throw new Error(d.message || 'Paystack request failed');
+    return d.data;
+  });
 }
 // The MoMo network from the number (Paystack's provider codes for Ghana).
 export function momoProvider(phone) {

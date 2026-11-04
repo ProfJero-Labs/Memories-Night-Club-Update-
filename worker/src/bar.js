@@ -17,6 +17,7 @@
 //                         pending_payment → paid → delivered, or refund_due / cancelled
 // Payment goes through pending_checkouts (kind 'counter') and the same confirmCharge/fulfil path
 // as tickets, so the webhook, the return page and the reconciliation job all complete it.
+import { sendSplitSafe } from './lib/split-safe.js';
 import { getDoc, setDoc, listDocs, queryWhere, batchGet, commitTx, updateWrite, foundFields, withTransaction } from './lib/firestore.js';
 import { now, id, clean, normalizePhone, money, paymentRef, validEmail, nightKey } from './lib/util.js';
 import { requireRole, ADMIN, uidOf } from './lib/auth.js';
@@ -41,10 +42,12 @@ const pickupCode = () => Array.from(crypto.getRandomValues(new Uint8Array(4)), b
 const audit = (env, user, action, data) => setDoc(env, 'audit_logs', id(), { action, actorUid: uidOf(user), ...data, timestamp: now() });
 
 async function paystackInit(env, payload) {
-  const r = await fetch('https://api.paystack.co/transaction/initialize', { method: 'POST', headers: { Authorization: `Bearer ${env.PAYSTACK_SECRET_KEY}`, 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
-  const d = await r.json();
-  if (!r.ok || !d.status) throw new Error(d.message || 'Paystack request failed');
-  return d.data;
+  return sendSplitSafe(env, payload, async body => {
+    const r = await fetch('https://api.paystack.co/transaction/initialize', { method: 'POST', headers: { Authorization: `Bearer ${env.PAYSTACK_SECRET_KEY}`, 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    const d = await r.json();
+    if (!r.ok || !d.status) throw new Error(d.message || 'Paystack request failed');
+    return d.data;
+  });
 }
 async function stationByToken(env, token) {
   if (!/^[0-9a-f]{32}$/.test(String(token || ''))) return null;

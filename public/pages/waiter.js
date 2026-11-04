@@ -298,7 +298,7 @@ function pickLine(r, action) {
 
 async function showBill(t) {
   const { box } = sheet(`<h2>${esc(t.label)}: ${money(t.bill.balancePesewas)} to pay</h2>
-    <p class="muted" style="margin:0">The customer scans this with their phone camera, sees every drink, and pays by MoMo or card.</p>
+    <p class="muted" style="margin:0">The customer scans this with their phone camera, sees every drink and pays on their phone: Paystack, or above GHS 2,000 MoMo to the wallet. The tab closes by itself once paid.</p>
     <div class="qrbox" id="sbQr"></div>
     <div class="btn-row"><button class="mid" id="sbShare">Send the link</button><button class="mid" id="sbCopy">Copy link</button></div>
     <div class="sfield"><label for="sbPhone">Or text it to their phone</label><input id="sbPhone" type="tel" inputmode="tel" placeholder="024 123 4567"></div>
@@ -442,7 +442,16 @@ async function quickSale(stationId) {
         const r = await sapi('/api/ops/quick-sale', { method: 'POST', body: { lines, stationId, ...pay } });
         sessionStorage.setItem('waiter-flash', `${pay.method === 'momo' ? 'MoMo' : 'Cash'} ${money(total)} recorded.${tipSaid(r)} Collect the drinks at the bar, then tap “I got them”.`);
         returnTo('tabs');
-      }, { title: 'Quick sale', sapi, tipFor: user.uid });
+      }, { title: 'Quick sale', sapi, tipFor: user.uid, alt: [{
+        label: paystackOk(total) ? 'Paystack (customer pays on their phone)' : `MoMo to the wallet (above ${money(paystackLimit())})`,
+        run: async close => {
+          const o = await sapi('/api/ops/tabs/order', { method: 'POST', body: { lines, stationId } });
+          const t = (await sapi(`/api/ops/tab?id=${encodeURIComponent(o.tabId)}`)).tab;
+          close();
+          sessionStorage.setItem('waiter-flash', 'Sent to the bar. It closes by itself once the customer has paid.');
+          showBill(t); // the bill page offers Paystack, or above GHS 2,000 MoMo to the wallet
+        },
+      }] });
     },
   });
   $('#qsBar') && ($('#qsBar').onchange = e => { sessionStorage.setItem('waiter-bar', e.target.value); quickSale(e.target.value); });
