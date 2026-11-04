@@ -88,6 +88,8 @@ export const feeOn = (pesewas, whole) => {
 // Card / MoMo through Paystack offered for this bill? (No, above the limit when the rules are on.)
 export const paystackOk = (pesewas, whole) => !PR || !!routeFor(pesewas, PR, { bandBillPesewas: whole }).paystack;
 export const paystackLimit = () => (PR ? Number(PR.paystackUpToPesewas) : null);
+// The flat charge on a big bill paid by MoMo to the wallet (GHS 100).
+export const bigFlat = () => (PR ? Number(PR.bigFlatPesewas || 0) : 0);
 // The new rules are on: staff no longer record "MoMo to the club's number" (big bills use the wallet).
 export const momoDirectOff = () => !!PR;
 // MoMo to the partner's wallet is offered: a bill above the Paystack limit, or Paystack down tonight.

@@ -204,8 +204,8 @@ function closeSheet(t) {
       <p style="margin:0">Ask the customer to send <b>${money(w.duePesewas)}</b> by MoMo to:</p>
       <div class="pickup" style="font-size:34px;letter-spacing:2px">${esc(w.wallet.number.replace(/(\d{3})(\d{3})(\d{4})/, '$1 $2 $3'))}</div>
       <p style="margin:0"><b>${esc(w.wallet.name)}</b><br>Reference: <b style="font-size:22px">${esc(w.code)}</b></p>
-      <p class="muted" style="margin:0">That’s the bill ${money(w.billPesewas)} + ${money(w.chargePesewas)} charge.${w.phoneHint ? ` Also texted to ${esc(w.phoneHint)}.` : ''} <b>Don’t accept a screenshot.</b> The tab closes when a manager sees the money in the wallet.</p>
-      <p class="muted" style="margin:0" id="wWait">Waiting for a manager to confirm…</p></div>
+      <p class="muted" style="margin:0">${w.phoneHint ? ` Also texted to ${esc(w.phoneHint)}.` : ''} <b>Don’t accept a screenshot.</b> The tab closes by itself when the money arrives (or the Manager / Human manager confirms it).</p>
+      <p class="muted" style="margin:0" id="wWait">Waiting for the money to arrive…</p></div>
       <button class="big ghost" id="wLater">Back to my tables (it closes when confirmed)</button><button class="mid" id="wCancel">They’ll pay another way</button>`;
     $('#wLater', box).onclick = backToTables;
     $('#wCancel', box).onclick = async () => { try { await sapi('/api/ops/wallet/cancel', { method: 'POST', body: { id: w.id, reason: 'Customer paying another way' } }); close(); setTimeout(route, 0); } catch (e) { say($('#wWait', box), e.message, 'bad'); } };

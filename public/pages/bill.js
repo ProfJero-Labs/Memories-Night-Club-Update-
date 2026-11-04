@@ -2,7 +2,7 @@
 // what's left, and one big Pay now (MoMo or card on Paystack). The link can only show and pay this
 // bill; prices come from the Worker. Back from Paystack (?reference=), the payment is confirmed on
 // the server before it shows as paid.
-import { api, esc, money, params, $, loadFee, feeLabel, feeOn as feeFor, paystackOk, paystackLimit, walletOk } from '../app.js';
+import { api, esc, money, params, $, loadFee, feeLabel, feeOn as feeFor, paystackOk, paystackLimit, bigFlat, walletOk } from '../app.js';
 
 const root = $('#root');
 const token = params.get('t') || '';
@@ -26,6 +26,8 @@ async function load(note = '') {
   const feeOn = x => feeFor(x, b.totalPesewas);
   const due = b.balancePesewas >= 100 && !paid && b.status !== 'written_off' && paystackOk(b.balancePesewas, b.totalPesewas);
   const tooBig = b.balancePesewas >= 100 && !paid && b.status !== 'written_off' && !due;
+  // The charge is part of what they pay: shown on the bill, inside "To pay".
+  const chargeNow = walletWait ? Number(walletWait.chargePesewas || 0) : due && !walletOk(b.balancePesewas, b.totalPesewas) ? feeOn(b.balancePesewas) : 0;
   root.innerHTML = `<h1>${esc(b.label)}</h1><p class="lead">${esc(b.table)}${b.waiterFirstName ? ` · served by ${esc(b.waiterFirstName)}` : ''}</p>
     ${note ? `<div class="say ${note.kind}" role="status">${esc(note.text)}</div>` : ''}
     ${codeNeeded && !paid ? `<div class="pay-box" id="codeBox"><h2 style="margin:0">Type your code</h2>
@@ -36,13 +38,14 @@ async function load(note = '') {
       ${b.discountPesewas ? `<div class="ln sub"><span>Discount</span><span>−${money(b.discountPesewas)}</span></div>` : ''}
       <div class="ln total"><span>Total</span><span>${money(b.totalPesewas)}</span></div>
       ${b.payments.map(p => `<div class="ln sub"><span>Paid · ${esc(p.method)}<small>${esc(when(p.at))}</small></span><span>−${money(p.amountPesewas)}</span></div>`).join('')}
-      <div class="ln due"><span>${paid ? 'Paid in full' : 'To pay'}</span><span>${money(b.balancePesewas)}</span></div></div>
+      ${chargeNow && !paid ? `<div class="ln sub"><span>${walletWait ? 'MoMo charge' : 'Card / MoMo charge'}</span><span>${money(chargeNow)}</span></div>` : ''}
+      <div class="ln due"><span>${paid ? 'Paid in full' : 'To pay'}</span><span>${money(b.balancePesewas + (paid ? 0 : chargeNow))}</span></div></div>
     <p style="margin:0"><span class="st ${esc(b.status)}">${esc(b.statusLabel)}</span></p>
     ${walletWait ? `<div class="pay-box" id="walletBox"><h2 style="margin:0">Send ${money(walletWait.duePesewas)} by MoMo</h2>
       <p style="margin:0">To <b style="font-size:22px">${esc(walletWait.number)}</b><br>${esc(walletWait.name)}<br>Reference: <b>${esc(walletWait.code)}</b></p>
-      <p class="fine" style="margin:0">That’s your bill ${money(walletWait.billPesewas)} + ${money(walletWait.chargePesewas)} charge. This page updates once the club sees the money arrive; your waiter is told.</p></div>`
+      <p class="fine" style="margin:0">This page updates once the club sees the money arrive; your waiter is told.</p></div>`
     : tooBig || (due && walletOk(b.balancePesewas, b.totalPesewas)) ? `<div class="pay-box"><h2 style="margin:0">${tooBig ? 'How to pay' : 'Card payments are down tonight'}</h2>
-      <p style="margin:0">${tooBig ? `Bills above ${money(paystackLimit())} are paid in <b>cash</b> to your waiter, or by <b>MoMo to the club’s wallet</b>.` : 'Pay in cash to your waiter, or by MoMo to the club’s wallet.'}</p>
+      <p style="margin:0">${tooBig ? `Bills above ${money(paystackLimit())}: pay <b>${money(b.balancePesewas)} in cash</b> to your waiter, or <b>${money(b.balancePesewas + bigFlat())} by MoMo</b> to the club’s wallet.` : 'Pay in cash to your waiter, or by MoMo to the club’s wallet.'}</p>
       <div class="field"><label for="wph">Your phone (we text you the details)</label><input id="wph" type="tel" inputmode="tel" autocomplete="tel" placeholder="024 123 4567" value="${esc(pick.phone)}"></div>
       <button class="big" id="walletGo" type="button">Pay by MoMo to the wallet</button></div>` : ''}
     ${due && !walletWait && !walletOk(b.balancePesewas, b.totalPesewas) ? `<div class="pay-box">${tipPart(tip)}<div class="field"><label for="ph">Your MoMo number (optional, for the receipt)</label><input id="ph" type="tel" inputmode="tel" autocomplete="tel" placeholder="024 123 4567" value="${esc(pick.phone)}"></div>
