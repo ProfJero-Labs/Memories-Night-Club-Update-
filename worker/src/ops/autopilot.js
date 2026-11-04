@@ -25,10 +25,24 @@ const dayAfter = d => new Date(new Date(`${d}T12:00:00Z`).getTime() + 864e5).toI
 async function phonesOf(env, roles) {
   return (await listDocs(env, 'users')).filter(u => roles.includes(u.fields.role) && !u.fields.removed && u.fields.phone).map(u => u.fields.phone);
 }
+// Texts the roles' phones. Directors are not texted (owner's rule): their alerts wait in the app,
+// at the top of their Tonight screen (app_alerts, read by /api/ops/alerts).
 async function textAll(env, roles, message) {
-  const phones = [...new Set(await phonesOf(env, roles))];
+  let n = 0;
+  if (roles.includes('director')) { await setDoc(env, 'app_alerts', `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, { roles: ['director'], text: String(message).replace(/^MEMORIES\n/, ''), at: now() }); n += 1; }
+  const phones = [...new Set(await phonesOf(env, roles.filter(r => r !== 'director')))];
   for (const p of phones) await sendSms(env, p, message);
-  return phones.length;
+  return n + phones.length;
+}
+
+// The directors' alerts, newest first (the last 14 days).
+export async function appAlerts(env, user) {
+  const { requireRole } = await import('../lib/auth.js');
+  if (!requireRole(user, ['superAdmin', 'director'])) return { error: 'Not allowed.', status: 403 };
+  const since = new Date(Date.now() - 14 * 864e5);
+  const list = (await queryRecent(env, 'app_alerts', 'at', since, 200)).map(d => ({ id: d.id, text: d.fields.text, at: d.fields.at }))
+    .sort((x, y) => String(y.at).localeCompare(String(x.at))).slice(0, 20);
+  return { alerts: list };
 }
 
 // 1. Wallet payments waiting.

@@ -91,6 +91,8 @@ const note = flashNote;
 async function tonight(alive = () => location.hash.slice(1).split('/')[0] in { '': 1, tonight: 1 }) {
   const [s, a, t, ex, m, ta, wl] = await Promise.all([sapi('/api/ops/sales'), sapi('/api/ops/approvals'), sapi('/api/ops/tabs?all=1'), sapi('/api/ops/stock/to-explain').catch(() => ({ counts: [] })),
     director ? sapi('/api/ops/money?period=today').catch(() => null) : null, director ? sapi('/api/ops/to-approve').catch(() => null) : null, sapi('/api/ops/wallet').catch(() => null)]);
+  // Directors' alerts (no texts to directors): the latest few, here at the top.
+  const al = director ? ((await sapi('/api/ops/alerts').catch(() => null))?.alerts || []).slice(0, 5) : [];
   if (!alive()) return;
   const x = s.totals, waiting = a.approvals.filter(p => p.canDecide), toExplain = ex.counts || [];
   const open = t.tabs.filter(tb => tb.status === 'open');
@@ -110,6 +112,7 @@ async function tonight(alive = () => location.hash.slice(1).split('/')[0] in { '
   app.innerHTML = `<div class="pos">
     <p class="kicker">Night of ${esc(dayName(s.date))}${s.startedAt ? ` · started ${esc(when(s.startedAt))}` : ''}${closed ? ' · closed' : ' · open'}</p>
     ${stale ? `<div class="say warn"><b>This night is still open</b>It started ${esc(dayName(s.date))}. If it has ended, close it so the next night starts fresh.</div>` : ''}
+    ${al.length ? `<details class="fold" ${Date.now() - Date.parse(al[0].at) < 864e5 ? 'open' : ''}><summary>Alerts (${al.length})</summary><div class="rows">${al.map(x => `<div class="row-btn plain"><span class="t" style="white-space:pre-line">${esc(x.text)}</span><span class="s">${esc(when(x.at))}</span></div>`).join('')}</div></details>` : ''}
     ${top}
     <div style="display:flex;flex-wrap:wrap;gap:6px"><button type="button" class="mid" data-sl="cash" style="min-height:40px;padding:0 12px">Cash ${money(x.cashPesewas)} ›</button><button type="button" class="mid" data-sl="phone" style="min-height:40px;padding:0 12px">Paystack ${money(x.digitalPesewas)} ›</button><button type="button" class="mid" data-sl="momo" style="min-height:40px;padding:0 12px">MoMo ${money((x.momoPesewas || 0))} ›</button></div>
     <div id="msg"></div>
