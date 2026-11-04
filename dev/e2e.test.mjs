@@ -960,8 +960,8 @@ test('finance fixes stock: a purchase entered twice is deleted (kept, marked del
   assert.deepEqual(fin.errors, []);
 });
 
-test('service charge & commission: a director sees the capped charge, records a commission and runs the simulation; the night’s finances open for the director and finance', async () => {
-  const dir = await phone(390); await signInAs(dir, 'director@dev'); await dir.waitForURL(/night\.html/);
+test('payment settings: only the admin changes them (charge, commission, simulation); directors and finance see the rules in plain words; the night’s finances open for both', async () => {
+  const dir = await phone(390); await signInAs(dir, 'admin@dev'); await dir.waitForURL(/admin\.html/);
   await dir.goto(`${base}/night.html#charges`); await dir.locator('#app').getByText('On: 5% of the bill, at most GHS 100').waitFor();
   await dir.check('#cmOn'); await dir.fill('#cmPct', '0'); await dir.click('#cmSave');
   await dir.locator('#cmMsg').getByText(/Enter the agreed commission/).waitFor();
@@ -973,12 +973,17 @@ test('service charge & commission: a director sees the capped charge, records a 
   // Back off again so later tests aren't affected.
   await dir.uncheck('#cmOn'); await dir.click('#cmSave'); await dir.locator('#cmMsg').getByText(/Saved/).waitFor();
   assert.equal(store.get('settings', 'commercial').fields.commission.enabled, false);
+  const boss = await phone(390); await signInAs(boss, 'director@dev'); await boss.waitForURL(/night\.html/);
+  await boss.goto(`${base}/night.html#charges`); await boss.locator('#app').getByRole('heading', { name: 'How customers pay' }).waitFor();
+  assert.equal(await boss.locator('#app input, #app button#rtSave, #app button#cmSave').count(), 0, 'a director has nothing to switch');
+  await boss.locator('#app').getByText(/ask the admin/).waitFor();
+  dir.errors.push(...boss.errors);
   await dir.goto(`${base}/night.html#finance`); await dir.locator('#app .ln.total', { hasText: 'Net product sales' }).waitFor();
   await dir.locator('#app').getByText('Paystack should settle').waitFor();
   await dir.selectOption('#fnCh', 'cash'); await dir.locator('#fnCh').evaluate(el => el.value === 'cash');
   await dir.locator('#app .ln.total', { hasText: 'Net product sales' }).waitFor();
   const fin = await phone(390); await signInAs(fin, 'finance@dev'); await fin.waitForURL(/finance\.html/);
-  await fin.goto(`${base}/finance.html#charges`); await fin.locator('#app').getByText('Only a director or the admin can change these', { exact: false }).waitFor();
+  await fin.goto(`${base}/finance.html#charges`); await fin.locator('#app').getByRole('heading', { name: 'How customers pay' }).waitFor();
   assert.equal(await fin.locator('#cmSave').count(), 0, 'finance can look, not change');
   await fin.goto(`${base}/finance.html#finance`); await fin.locator('#app').getByText('C. Transactions', { exact: false }).waitFor();
   assert.deepEqual([...dir.errors, ...fin.errors], []);
