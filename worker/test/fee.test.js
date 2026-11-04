@@ -241,7 +241,7 @@ test('drinks and the gate: the bill link adds the capped charge on the bill (not
   const [r] = ledger(store);
   assert.deepEqual([r.productPesewas, r.tipPesewas, r.serviceChargePesewas, r.collectedPesewas], [GHS(50), GHS(10), GHS(2.5), GHS(62.5)]);
   const gate = ok(await call('POST', '/api/door/gate/sell', { who: 'door', body: { eventId: 'ev1', ticketTypeId: 'reg', quantity: 1, phone: '0245551234', method: 'momo' } }), 'gate');
-  assert.match(gate.message, /GHS 105 \(GHS 100 \+ GHS 5 service charge\)/);
+  assert.match(gate.message, /A MoMo prompt for GHS 105 is on/); // one amount, the charge never named
   const cashGate = ok(await call('POST', '/api/door/gate/sell', { who: 'door', body: { eventId: 'ev1', ticketTypeId: 'reg', quantity: 1, phone: '0245551235', method: 'cash' } }), 'cash');
   assert.equal(cashGate.amountPesewas, GHS(100), 'cash: no charge');
 });

@@ -38,7 +38,6 @@ async function load(note = '') {
       ${b.discountPesewas ? `<div class="ln sub"><span>Discount</span><span>−${money(b.discountPesewas)}</span></div>` : ''}
       <div class="ln total"><span>Total</span><span>${money(b.totalPesewas)}</span></div>
       ${b.payments.map(p => `<div class="ln sub"><span>Paid · ${esc(p.method)}<small>${esc(when(p.at))}</small></span><span>−${money(p.amountPesewas)}</span></div>`).join('')}
-      ${chargeNow && !paid ? `<div class="ln sub"><span>${walletWait ? 'MoMo charge' : 'Card / MoMo charge'}</span><span>${money(chargeNow)}</span></div>` : ''}
       <div class="ln due"><span>${paid ? 'Paid in full' : 'To pay'}</span><span>${money(b.balancePesewas + (paid ? 0 : chargeNow))}</span></div></div>
     <p style="margin:0"><span class="st ${esc(b.status)}">${esc(b.statusLabel)}</span></p>
     ${walletWait ? `<div class="pay-box" id="walletBox"><h2 style="margin:0">Send ${money(walletWait.duePesewas)} by MoMo</h2>
@@ -49,7 +48,7 @@ async function load(note = '') {
       <div class="field"><label for="wph">Your phone (we text you the details)</label><input id="wph" type="tel" inputmode="tel" autocomplete="tel" placeholder="024 123 4567" value="${esc(pick.phone)}"></div>
       <button class="big" id="walletGo" type="button">Pay by MoMo to the wallet</button></div>` : ''}
     ${due && !walletWait && !walletOk(b.balancePesewas, b.totalPesewas) ? `<div class="pay-box">${tipPart(tip)}<div class="field"><label for="ph">Your MoMo number (optional, for the receipt)</label><input id="ph" type="tel" inputmode="tel" autocomplete="tel" placeholder="024 123 4567" value="${esc(pick.phone)}"></div>
-      <button class="big" id="pay" type="button">Pay ${money(b.balancePesewas + tipNow() + feeOn(b.balancePesewas))}</button><p class="fine">${feeOn(b.balancePesewas) ? `Includes the ${feeLabel().replace(/^Service charge/, 'service charge')}: ${money(feeOn(b.balancePesewas))}. ` : ''}MoMo or card, by Paystack. <b>Paystack may text you a code first: check your messages.</b> Your waiter sees it the moment it’s confirmed.</p></div>` : ''}
+      <button class="big" id="pay" type="button">Pay ${money(b.balancePesewas + tipNow() + feeOn(b.balancePesewas))}</button><p class="fine">MoMo or card, by Paystack. <b>Paystack may text you a code first: check your messages.</b> Your waiter sees it the moment it’s confirmed.</p></div>` : ''}
     ${paid ? `<div class="say good"><b>Thank you!</b>${open ? 'Paid so far. Staying? Your table stays open: order more any time and it’s added to this bill.' : 'This page is your receipt. Show it to your waiter if they ask.'}</div>
       ${open && menuUrl ? `<a class="big" href="${esc(menuUrl)}" style="text-align:center;text-decoration:none">Order more drinks</a>` : ''}
       ${open ? `<p class="fine" style="margin:0">${menuUrl ? 'Or call' : 'Want more? Call'} ${b.waiterFirstName ? esc(b.waiterFirstName) : 'your waiter'}: new drinks show on this page to pay.</p>` : ''}

@@ -427,7 +427,7 @@ export function walletWaitingHtml(wl) {
   const where = w => (w.table && w.table !== 'Walk-in' ? (String(w.table).startsWith('QR') ? w.table : `Table ${w.table}`) : `Tab ${w.tabNumber}`);
   return `${phone}<section class="pos-need"><h2>MoMo to confirm <span class="count">${wl.waiting.length}</span></h2>
       <p class="muted" style="margin:0">${wl.phone?.online ? 'The MoMo phone confirms these by itself when the money arrives. Only step in if it can’t.' : `Check the wallet (${esc(wl.wallet.number)}) itself, never a screenshot.`}</p>
-      ${wl.waiting.map((w, i) => `<div class="need"><div><b>${money(w.duePesewas)} · ${esc(where(w))}</b><span>Reference ${esc(w.code)} · ${esc(w.waiterName)} · ${when(w.createdAt)}</span><small>Bill ${money(w.billPesewas)} + ${money(w.chargePesewas)} charge${w.reason === 'paystack_down' ? ' (Paystack down)' : ''}</small></div>
+      ${wl.waiting.map((w, i) => `<div class="need"><div><b>${money(w.duePesewas)} · ${esc(where(w))}</b><span>Reference ${esc(w.code)} · ${esc(w.waiterName)} · ${when(w.createdAt)}</span></div>
         <div class="need-btns"><button class="mid okc" data-wok="${i}">Arrived</button><button class="mid" data-wno="${i}">Not yet</button></div></div>`).join('')}</section>`;
 }
 export function bindWalletWaiting(el, wl, done) {

@@ -1149,7 +1149,7 @@ test('a night at the bar: tab without QR → bar → delivered → the customer 
   await w.click('[data-close]');
   const cust = await phone(360);
   await cust.goto(`${base}/bill.html?t=${token}`, { waitUntil: 'networkidle' });
-  assert.match(await cust.textContent('#root'), /2 × Club beer/); assert.match(await cust.textContent('#pay'), /GHS 84/); assert.match(await cust.textContent('#root'), /service charge \(5%, capped at GHS 100\): GHS 4/, 'the bill page says why it is GHS 84');
+  assert.match(await cust.textContent('#root'), /2 × Club beer/); assert.match(await cust.textContent('#pay'), /GHS 84/); assert.doesNotMatch(await cust.textContent('#root'), /charge/i, 'one amount to pay: the charge is never named');
   await cust.click('#pay'); await cust.waitForURL(/dev\/paystack/); await cust.getByRole('button', { name: 'Pay' }).click();
   await cust.waitForURL(/bill\.html/); await cust.getByText('Payment confirmed. Thank you!').waitFor({ timeout: 20000 });
   // Paid in full: the tab closes by itself (owner's rule); the page is their receipt.

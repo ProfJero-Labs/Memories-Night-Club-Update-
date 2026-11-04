@@ -164,7 +164,7 @@ export async function gateSell(env, b, user) {
     // page from the texted link, and types the code there (the door never has to).
     if (c?.status === 'send_otp' || c?.status === 'failed') throw new Error(c.status);
     await audit(env, user, 'GATE_SALE_MOMO_PROMPT', { reference, eventId: ev.id, amountPesewas: item.amountPesewas });
-    return { reference, method: 'momo', prompt: true, ...pay, message: `A MoMo prompt for ${money(charge)}${fee.feePesewas ? ` (${money(item.amountPesewas)} + ${money(fee.feePesewas)} service charge)` : ''} is on ${maskPhone(phone)}. Ask them to approve it.` };
+    return { reference, method: 'momo', prompt: true, ...pay, message: `A MoMo prompt for ${money(charge)} is on ${maskPhone(phone)}. Ask them to approve it.` };
   } catch {
     // The prompt couldn't be sent (network not recognised, or Paystack wants a voucher): the customer
     // pays on their phone with a link (texted, and shown as a QR to scan right there).
@@ -172,7 +172,7 @@ export async function gateSell(env, b, user) {
     await setDoc(env, 'pending_checkouts', reference, { reference, kind: 'gate', sale, eventId: ev.id, ...pay, status: 'failed', error: 'prompt_not_sent', failedAt: now() });
     await setDoc(env, 'pending_checkouts', fresh, { reference: fresh, kind: 'gate', sale, eventId: ev.id, eventName: sale.eventName, buyerPhone: phone, ...pay, status: 'pending', createdAt: now() });
     const p = await paystack(env, '/transaction/initialize', { email: email(env, phone), amount: charge, currency: 'GHS', reference: fresh, callback_url: siteUrl(env, '/payment-return.html'), channels: ['mobile_money', 'card'], ...(fee.split || {}), metadata: { kind: 'gate', eventId: ev.id } });
-    await sendSms(env, phone, `MEMORIES\nPay ${money(charge)}${fee.feePesewas ? ` (incl. ${money(fee.feePesewas)} service charge)` : ''} for ${ev.fields.name || 'tonight'}: ${p.authorization_url}\nPaying by MoMo? Paystack may text you a code first: check your messages.`);
+    await sendSms(env, phone, `MEMORIES\nPay ${money(charge)} for ${ev.fields.name || 'tonight'}: ${p.authorization_url}\nPaying by MoMo? Paystack may text you a code first: check your messages.`);
     return { reference: fresh, method: 'momo', prompt: false, link: p.authorization_url, ...pay, message: `Payment link texted to ${maskPhone(phone)}. They can also scan the code on your screen.` };
   }
 }

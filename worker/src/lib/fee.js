@@ -96,4 +96,5 @@ export function commissionOf(cfg, { kind, channel, productPesewas, serviceCharge
 }
 
 // The line for texts: "incl. GHS 5 service charge". Empty when there's none.
-export const feeNote = (feePesewas, money) => (Number(feePesewas) > 0 ? ` (incl. ${money(feePesewas)} service charge)` : '');
+// Customers see one amount; the charge is never named in texts or emails (owner's rule).
+export const feeNote = () => '';

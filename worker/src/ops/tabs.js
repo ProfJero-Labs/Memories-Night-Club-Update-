@@ -608,7 +608,7 @@ export async function checkoutTab(env, b, user) {
     if (otp) return { method: 'momo', prompt: false, otp: true, reference, invoiceSent: texted, phoneHint: maskPhone(phone), amountPesewas: bill.balancePesewas, feePesewas: fee.feePesewas, chargePesewas: charge, billUrl: siteUrl(env, `/bill.html?t=${t.fields.billToken}`),
       message: `Paystack has texted the customer a code. They type it on the link we texted to ${maskPhone(phone)} (or scan this QR), then approve the MoMo prompt. You don’t need to wait here.` };
     return { method: 'momo', prompt, reference: prompt ? reference : '', invoiceSent: texted, phoneHint: maskPhone(phone), amountPesewas: bill.balancePesewas, feePesewas: fee.feePesewas, chargePesewas: charge, billUrl: siteUrl(env, `/bill.html?t=${t.fields.billToken}`),
-      message: prompt ? `A MoMo prompt for ${ghs(charge)}${fee.feePesewas ? ` (bill ${ghs(bill.balancePesewas)} + ${ghs(fee.feePesewas)} service charge)` : ''} is on ${maskPhone(phone)}. They approve it, or pay from the invoice text.` : `The invoice is texted to ${maskPhone(phone)}: they pay from its link, or scan the QR.` };
+      message: prompt ? `A MoMo prompt for ${ghs(charge)} is on ${maskPhone(phone)}. They approve it, or pay from the invoice text.` : `The invoice is texted to ${maskPhone(phone)}: they pay from its link, or scan the QR.` };
   }
   // A big bill (or tonight, if Paystack is down): MoMo straight to the partner's wallet. The bill
   // waits until a manager confirms the money arrived (ops/wallet.js); it closes by itself then.
