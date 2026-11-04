@@ -114,7 +114,7 @@ export function tipSheet(sapi, defaultUid, done = () => {}) {
 }
 
 // The payment sheet for a fixed amount. pay({ method, momoRef, momoFrom }) records it; it may throw.
-export function paySheet(totalPesewas, pay, { title = 'Customer pays', sapi = null, tipFor = '' } = {}) {
+export function paySheet(totalPesewas, pay, { title = 'Customer pays', sapi = null, tipFor = '', alt = [] } = {}) {
   const { box, close } = sheet(`<h2>${esc(title)}: ${money(totalPesewas)}</h2>
     <div class="seg" role="radiogroup" aria-label="How they paid"><button type="button" class="mid on" data-pm="cash" role="radio" aria-checked="true">Cash</button>${momoDirectOff() ? '' : '<button type="button" class="mid" data-pm="momo" role="radio" aria-checked="false">MoMo</button>'}</div>
     <div id="psMomo" hidden>
@@ -124,7 +124,7 @@ export function paySheet(totalPesewas, pay, { title = 'Customer pays', sapi = nu
     <div class="sfield"><label for="psFrom">Customer’s phone (optional)</label><input id="psFrom" type="tel" inputmode="tel" placeholder="024 123 4567"><span class="hint">So the manager sees what each customer spends tonight. For MoMo, the number it came from.</span></div>
     <p class="muted" id="psHint" style="margin:0">Take ${money(totalPesewas)} and give change. It goes in your cash for tonight.</p>
     <div id="psTip"></div>
-    <div id="psMsg"></div><button class="big" id="psGo">Cash received</button><button class="big ghost" data-close>Cancel</button>`, { label: title });
+    <div id="psMsg"></div><button class="big" id="psGo">Cash received</button>${alt.map((a, i) => `<button class="big ghost" data-alt="${i}">${esc(a.label)}</button>`).join('')}<button class="big ghost" data-close>Cancel</button>`, { label: title });
   let method = 'cash';
   const tb = sapi ? tipBox($('#psTip', box), sapi, tipFor) : null;
   // Smart paste: the transaction ID (and the number it came from) out of the customer's MoMo text.
@@ -137,6 +137,7 @@ export function paySheet(totalPesewas, pay, { title = 'Customer pays', sapi = nu
     $('#psGo', box).textContent = method === 'momo' ? 'MoMo received' : 'Cash received';
     if (method === 'momo') $('#psRef', box).focus();
   });
+  $$('[data-alt]', box).forEach(b => b.onclick = async () => { try { await busy(b, () => alt[Number(b.dataset.alt)].run(close)); } catch (e) { say($('#psMsg', box), e.message, 'bad'); } });
   $('#psGo', box).onclick = async () => {
     const phone = $('#psFrom', box).value.trim() || undefined;
     try {
