@@ -108,6 +108,7 @@ payment rules** → **Save**.
 | What you see | What to do |
 |---|---|
 | "Couldn't load" on new screens | The Worker isn't deployed: step 1. |
+| Bills over GHS 2,000 still offer Paystack | The new rules are **off** until a director ticks **Use the new payment rules** (step 7), and the Worker must be deployed first (step 1). Then close and reopen the staff page so the phone loads the new version. |
 | App: "Not paired any more, or the phone's clock is wrong" | Date & time → automatic; or pair again (step 5). |
 | App: "No connection" | Data / Wi-Fi on; the app retries by itself. |
 | MoMo phone page: offline | Open the app, tap **Send a test**; check battery is Unrestricted. |
