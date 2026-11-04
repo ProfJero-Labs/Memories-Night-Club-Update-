@@ -1347,3 +1347,14 @@ test('finance clears the tabs left open after a night; they leave the waiter’s
   assert.ok(w <= 390, `the screen is ${w}px wide on a 390px phone`);
   assert.deepEqual(fin.errors, []);
 });
+
+test('Control room: the admin pairs the MoMo phone (the code shows on screen) and opens the payment settings', async () => {
+  const admin = await phone(390); await signInAs(admin, 'admin@dev'); await admin.waitForURL(/admin\.html/);
+  await openTab(admin, 'momophone');
+  await admin.click('#mpPair');
+  await admin.locator('.pickup').filter({ hasText: /^\d{6}$/ }).waitFor();
+  const code = (await admin.textContent('.pickup')).trim();
+  assert.ok(store.get('momo_pairing', code), 'the code is saved, ready for the phone');
+  await admin.goto(`${base}/admin.html#payrules`); await admin.locator('#panel').getByText('Payment settings').first().waitFor();
+  assert.deepEqual(admin.errors, []);
+});

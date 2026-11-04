@@ -23,7 +23,7 @@ Android 16; the app works on Android 6 and later.
       (Android 15 and 16 do this for apps not from the Play Store): the app offers **Open app info**
       → tap the **⋮** menu at the top right → **Allow restricted settings** → confirm, come back
       and tap step 1 again.
-   2. On the Memories system, a manager opens **More → MoMo phone → Pair a phone**: a 6-digit code
+   2. On the Memories system, the admin opens **Control room → Setup → MoMo phone → Pair a phone** (or the Manager: **More → MoMo phone**): a 6-digit code
       appears. Type it in the app → **Pair with the code**.
    3. **Keep it running (battery)** → Allow. On Samsung, Tecno, Infinix, Xiaomi and similar
       phones, also open **App info → Battery** and choose **Unrestricted**, so the phone's own
