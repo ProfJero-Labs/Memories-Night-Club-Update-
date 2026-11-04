@@ -155,9 +155,15 @@ test('no refunds at the bar: a paid quick sale can’t be cancelled by the bar; 
   const tab = ok(await call('POST', '/api/ops/tabs/open', { who: 'w1', body: { table: '2' } }), 'tab');
   const round = ok(await call('POST', '/api/ops/tabs/round', { who: 'w1', body: { tabId: tab.id, lines: [{ productId: 'beer', qty: 1 }] } }), 'round');
   ok(await call('POST', '/api/ops/bar/round', { who: 'b1', body: { roundId: round.id, action: 'cant_make', reason: 'x' } }), 'unpaid table order');
-  // One Champagne left: a guest paying for it holds it; the next guest can't buy it at all.
-  const basket = n => ({ station: STATION, items: [{ itemId: 'champ', qty: 1 }], phone: '024 123 4567', clientId: `a1b2c3d4-0000-4000-8000-00000000c0${n}` });
-  ok(await call('POST', '/api/guest/counter/checkout', { body: basket(1) }), 'first guest');
+  // One Champagne left: a guest who only starts paying holds nothing (owner's rule: stock goes
+  // when it's paid); once one has paid, the next guest can't buy it.
+  const basket = n => ({ station: STATION, items: [{ itemId: 'champ', qty: 1 }], phone: `024 123 456${n}`, clientId: `a1b2c3d4-0000-4000-8000-00000000c0${n}` });
+  const first = ok(await call('POST', '/api/guest/counter/checkout', { body: basket(1) }), 'first guest starts paying');
+  const menuNow = ok(await call('GET', `/api/guest/menu?station=${STATION}`), 'menu while paying');
+  assert.equal(menuNow.items.find(i => i.id === 'champ').available, true, 'still on the menu while the first guest is paying');
+  const ref = store.list('pending_checkouts').find(p => p.fields.orderId === first.orderId)?.id || store.paystackInits.at(-1).reference;
+  store.setPaystack(ref, { status: 'success', currency: 'GHS', amount: store.paystackInits.at(-1).amount });
+  ok(await call('POST', '/api/checkout/verify', { body: { reference: ref } }), 'first guest paid');
   const second = await call('POST', '/api/guest/counter/checkout', { body: basket(2) });
   assert.match(second.data.error, /Champagne is finished/);
   const menu = ok(await call('GET', `/api/guest/menu?station=${STATION}`), 'menu');
