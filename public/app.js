@@ -60,7 +60,8 @@ export async function api(path, { method = 'GET', body, token, headers: extra, r
       if (r.ok && d.success !== false) return d;
       if (r.status === 429) throw new ApiError(MSG.busy, 429);
       if (r.status >= 500 && attempt < retries) continue;
-      throw new ApiError(r.status >= 500 ? MSG.server : (d.error || MSG.server), r.status, d.code || '', d);
+      // A server error shows its reason and code, so a live problem can be reported exactly.
+      throw new ApiError(r.status >= 500 ? (d.error ? `${d.error} [${r.status}]` : `${MSG.server} [${r.status}]`) : (d.error || MSG.server), r.status, d.code || '', d);
     } catch (e) {
       if (e instanceof ApiError) throw e;
       if (attempt < retries) { await new Promise(res => setTimeout(res, 600)); continue; }

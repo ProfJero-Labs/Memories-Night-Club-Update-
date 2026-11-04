@@ -49,7 +49,7 @@ test('a failing payment route texts the team once, then stays quiet for 15 minut
   try {
     const r1 = await worker.fetch(post('/api/checkout/initiate', checkoutBody), env);
     assert.equal(r1.status, 500);
-    assert.deepEqual((await r1.json()).error, 'Something went wrong on our side. Try again.', 'guest sees a calm message, never the cause');
+    assert.match((await r1.json()).error, /^Something went wrong on our side \(code \d+\)\. Try again\.$/, 'guest sees a calm message and a code, never the cause');
     assert.equal(sms(store).length, 2, 'one text per alert phone');
     assert.ok(!sms(store).some(s => /0241234567|sk_live|tickets\//.test(s.message)), 'the text carries no secrets');
 
