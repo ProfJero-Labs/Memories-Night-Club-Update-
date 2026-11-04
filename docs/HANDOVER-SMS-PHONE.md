@@ -111,6 +111,34 @@ Owner to decide: auto-close yes/no; morning text time and phones (finance + dire
 up to which finance approves "To approve" items; whether discounts stay. Unchanged: **Due to
 EvolveIT stays directors only**.
 
+## Decisions (4 Nov 2026): easy, and never dependent on one person
+
+| Job | Decision | If that person is missing |
+|---|---|---|
+| MoMo to the wallet | **SMS phone confirms automatically** on one clear match: real sender, paired phone, signed, balance adds up (old + amount = new), transaction ID never seen. | By hand: **Manager or Human manager** (add `hrManager` to the confirmers and the list to their screen). Every hand confirm recorded with who, and in the morning report. |
+| Payment waiting | 20 min: text the **Manager and the Human manager**. | 60 min: text the directors too. |
+| Closing the night | Anyone allowed closes it. | **Closes itself** after 3 hours with no sales, past 5AM; report goes out. |
+| The night's report | **Automatic at 10AM daily** to every finance officer and every director, using the phones on their staff records (no numbers to set). | Never depends on anyone closing the night. |
+| Sign-off | **Any finance officer.** | Not signed off by midday: the directors are told. |
+| "To approve" items | **Finance up to GHS 2,000** (never what finance recorded/paid); above: **any one director**. | Any director can always approve. |
+| Discounts | Stay; **only the Manager approves** (today the Event manager also can: change it). Every discount listed in the morning report. | No discount that night. |
+| Free drinks, write-offs | **Switched off** for staff (and the "Ask the manager" requests for them). | — |
+| Due to EvolveIT | Directors only (unchanged). | — |
+| SMS sender name | Start with MTN's "MobileMoney"; the raw log of the first real payments shows the real name; adjust. | — |
+
+**The business phone:** Android **6**, number **0595986313**, wallet SIM in it.
+- Build the app with `minSdk 23` (Android 6). Ask for the SMS permission at runtime (Android 6
+  introduced that). Keep it running: a foreground notification, start on boot, and ask the
+  owner to turn off battery optimisation for the app.
+- **Certificates:** Android 6 doesn't trust many certificate authorities newer than ~2016 (e.g. Let's
+  Encrypt's ISRG Root X1 since 2024). The Worker's domain may not be reachable from it out of the
+  box. Bundle the needed root certificate in the app (custom trust in the HTTP client; Android 6
+  has no network-security-config) and test against the real Worker URL early, on the real phone.
+- Recommend a cheap Android 10+ phone as a spare: the SIM moves over and the app installs in minutes.
+
+**Still needed:** 5–10 real "money received" SMS from 0595986313 (names/numbers replaced with X),
+copied at the start of the build session.
+
 ## Later (agreed, not started)
 
 - Table bookings → reservations without payment (see owner decisions above).
