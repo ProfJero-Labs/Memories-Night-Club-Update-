@@ -62,7 +62,7 @@ function showOrder(orderId) {
     if (o.status === 'wallet_due') {
       app.innerHTML = `<p class="kicker red" style="text-align:center">Send ${money(o.wallet?.duePesewas || o.totalPesewas)} by MoMo</p>
         <div class="summary"><div class="r"><span>To</span><span><b>${esc(o.wallet?.number || '')}</b></span></div><div class="r"><span>Name</span><span>${esc(o.wallet?.name || '')}</span></div><div class="r t"><span>Reference</span><span>${esc(o.pickupCode)}</span></div></div>
-        <div class="summary">${o.lines.map(l => `<div class="r"><span>${l.qty} × ${esc(l.name)}</span></div>`).join('')}${o.wallet ? `<div class="r"><span>MoMo charge</span><span>${money(o.wallet.chargePesewas)}</span></div>` : ''}<div class="r t"><span>To pay</span><span>${money(o.wallet?.duePesewas || o.totalPesewas)}</span></div></div>
+        <div class="summary">${o.lines.map(l => `<div class="r"><span>${l.qty} × ${esc(l.name)}</span></div>`).join('')}<div class="r t"><span>To pay</span><span>${money(o.wallet?.duePesewas || o.totalPesewas)}</span></div></div>
         <p class="foot-small">Once the club sees your MoMo arrive, this page shows your pickup code. We’ve also texted you the details. Nothing is made before that.</p>`;
       timer = setTimeout(poll, 6000); return;
     }
@@ -175,7 +175,7 @@ async function start() {
 
   const orderItems = () => `<div class="op-items">${Object.keys(cart).map(id => r.items.find(i => i.id === id)).filter(Boolean).map(i => `<div class="drink"><div class="grow">${esc(i.name)}<small>${money(i.pricePesewas)} each</small></div>${control(i)}<span class="line-t">${money(cart[i.id] * i.pricePesewas)}</span></div>`).join('')}
     <button type="button" class="more" id="addMore">+ Add more drinks</button></div>`;
-  const totals = () => `<div class="r"><span>${drinks(count())}</span><span>${money(total())}</span></div>${tipNow() ? `<div class="r"><span>Tip</span><span>${money(tipNow())}</span></div>` : ''}${feeOn(total()) && !payPick.cash ? `<div class="r"><span>${feeLabel()}</span><span>${money(feeOn(total()))}</span></div>` : ''}<div class="r t"><span>Total</span><span>${money(grand())}</span></div>`;
+  const totals = () => `<div class="r"><span>${drinks(count())}</span><span>${money(total())}</span></div>${tipNow() ? `<div class="r"><span>Tip</span><span>${money(tipNow())}</span></div>` : ''}<div class="r t"><span>Total</span><span>${money(grand())}</span></div>`;
   const payLabel = () => {
     const b = $('#pay'); if (!b.disabled) b.textContent = payPick.cash ? `Order · pay ${money(grand())} cash` : `Pay ${money(grand())}`;
     if (!b.disabled && payPick.wallet) b.textContent = 'Order · pay by MoMo to the wallet';

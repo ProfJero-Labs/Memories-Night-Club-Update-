@@ -117,7 +117,7 @@ function syncPay() {
     : `Any amount from ${money(100)} up to ${money(total())}.`;
   $('#depHint').textContent = hint;
   const fee = feeOn(payAmount());
-  if ($('#sumFee')) $('#sumFee').innerHTML = fee ? `<div class="r"><span>${feeLabel()}</span><span>${money(fee)}</span></div><div class="r t"><span>Total to pay${bits ? ' now' : ''}</span><span>${money(payAmount() + fee)}</span></div>` : '';
+  if ($('#sumFee')) $('#sumFee').innerHTML = fee ? `<div class="r t"><span>Total to pay${bits ? ' now' : ''}</span><span>${money(payAmount() + fee)}</span></div>` : '';
   $('#pay').innerHTML = payAmount() > 0 ? `Pay ${money(payAmount() + fee)}${bits ? ' now' : ''} <span class="arrow">→</span>` : 'Pay <span class="arrow">→</span>';
 }
 function syncLine() {
