@@ -66,7 +66,7 @@ export async function startWallet(env, t, bill, user, { phone } = {}) {
     customerPhone: phone || t.fields.customerPhone || '', status: 'waiting', startedBy: uidOf(user), startedByName: user.name || '', createdAt: at };
   await setDoc(env, 'wallet_payments', wid, w);
   await setDoc(env, 'tabs', t.id, { ...t.fields, ...(phone ? { customerPhone: phone } : {}), closeWhenPaid: true, closeAskedByName: user.name || '', walletWait: wid });
-  if (w.customerPhone) await sendSms(env, w.customerPhone, `MEMORIES\nTab ${w.tabNumber}: send ${ghs(w.duePesewas)} by MoMo to ${w.wallet.number}${w.wallet.name ? ` (${w.wallet.name})` : ''}.\nReference: ${w.code}\n${q.reason === 'big' ? `That's your bill ${ghs(w.billPesewas)} + ${ghs(w.chargePesewas)} charge.` : `That's your bill ${ghs(w.billPesewas)} + ${ghs(w.chargePesewas)} charge.`} Your bill closes once the club sees the money arrive.`);
+  if (w.customerPhone) await sendSms(env, w.customerPhone, `MEMORIES\nTab ${w.tabNumber}: send ${ghs(w.duePesewas)} by MoMo to ${w.wallet.number}${w.wallet.name ? ` (${w.wallet.name})` : ''}.\nReference: ${w.code}\nIncludes the ${ghs(w.chargePesewas)} MoMo charge. Your bill closes once the club sees the money arrive.`);
   await audit(env, user, 'WALLET_PAYMENT_STARTED', { walletPaymentId: wid, tabId: t.id, duePesewas: w.duePesewas, reason: w.reason });
   return view(wid, w);
 }
@@ -80,7 +80,7 @@ export async function startOrderWallet(env, oid, order) {
     billPesewas: q.billPesewas, chargePesewas: q.chargePesewas, duePesewas: q.duePesewas, reason: q.reason, code: order.pickupCode, wallet: q.wallet, rule: q.rule,
     customerPhone: order.phone || '', status: 'waiting', startedBy: '', startedByName: 'Customer (QR)', createdAt: at };
   await setDoc(env, 'wallet_payments', wid, w);
-  if (w.customerPhone) await sendSms(env, w.customerPhone, `MEMORIES\nYour order at ${order.stationName}: send ${ghs(w.duePesewas)} by MoMo to ${w.wallet.number}${w.wallet.name ? ` (${w.wallet.name})` : ''}.\nReference: ${w.code}\nThat's ${ghs(w.billPesewas)} + ${ghs(w.chargePesewas)} charge. Show the code at the bar once the club confirms it arrived.`);
+  if (w.customerPhone) await sendSms(env, w.customerPhone, `MEMORIES\nYour order at ${order.stationName}: send ${ghs(w.duePesewas)} by MoMo to ${w.wallet.number}${w.wallet.name ? ` (${w.wallet.name})` : ''}.\nReference: ${w.code}\nIncludes the ${ghs(w.chargePesewas)} MoMo charge. Show the code at the bar once the club confirms it arrived.`);
   return { walletPaymentId: wid, ...view(wid, w) };
 }
 

@@ -62,7 +62,7 @@ function showOrder(orderId) {
     if (o.status === 'wallet_due') {
       app.innerHTML = `<p class="kicker red" style="text-align:center">Send ${money(o.wallet?.duePesewas || o.totalPesewas)} by MoMo</p>
         <div class="summary"><div class="r"><span>To</span><span><b>${esc(o.wallet?.number || '')}</b></span></div><div class="r"><span>Name</span><span>${esc(o.wallet?.name || '')}</span></div><div class="r t"><span>Reference</span><span>${esc(o.pickupCode)}</span></div></div>
-        <div class="summary">${o.lines.map(l => `<div class="r"><span>${l.qty} × ${esc(l.name)}</span></div>`).join('')}<div class="r"><span>Drinks</span><span>${money(o.totalPesewas)}</span></div>${o.wallet ? `<div class="r"><span>Charge</span><span>${money(o.wallet.chargePesewas)}</span></div>` : ''}</div>
+        <div class="summary">${o.lines.map(l => `<div class="r"><span>${l.qty} × ${esc(l.name)}</span></div>`).join('')}${o.wallet ? `<div class="r"><span>MoMo charge</span><span>${money(o.wallet.chargePesewas)}</span></div>` : ''}<div class="r t"><span>To pay</span><span>${money(o.wallet?.duePesewas || o.totalPesewas)}</span></div></div>
         <p class="foot-small">Once the club sees your MoMo arrive, this page shows your pickup code. We’ve also texted you the details. Nothing is made before that.</p>`;
       timer = setTimeout(poll, 6000); return;
     }
