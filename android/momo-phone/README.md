@@ -2,7 +2,8 @@
 
 A small Android app for the business phone that holds the wallet SIM (0595986313). It passes every
 incoming text to the Memories system, signed, and the system confirms MoMo-to-the-wallet payments by
-itself when everything checks out (see `worker/src/ops/momophone.js`). Works on Android 6 and later.
+itself when everything checks out (see `worker/src/ops/momophone.js`). The club's phone runs
+Android 16; the app works on Android 6 and later.
 
 ## Get the app file
 
@@ -14,13 +15,19 @@ itself when everything checks out (see `worker/src/ops/momophone.js`). Works on 
 ## Install it on the business phone (once)
 
 1. Copy the `.apk` to the phone (WhatsApp it to yourself, or download it on the phone directly).
-2. Tap it. Android asks to allow installing from this source: **Settings → Security → Unknown
-   sources → on** (Android 6), then tap the file again → **Install**.
+2. Tap it. Android asks to allow installing from that app (Chrome, Files or WhatsApp): **Settings →
+   Allow from this source → on**, go back, **Install**. If Play Protect warns about an unknown app,
+   tap **More details → Install anyway** (it's our own app, not from the Play Store).
 3. Open **Memories MoMo** and do the three steps on the screen:
-   1. **Allow reading texts** → Allow.
+   1. **Allow texts and notifications** → Allow both. If Android says **"Restricted setting"**
+      (Android 15 and 16 do this for apps not from the Play Store): the app offers **Open app info**
+      → tap the **⋮** menu at the top right → **Allow restricted settings** → confirm, come back
+      and tap step 1 again.
    2. On the Memories system, a manager opens **More → MoMo phone → Pair a phone**: a 6-digit code
       appears. Type it in the app → **Pair with the code**.
-   3. **Keep it running (battery)** → Allow.
+   3. **Keep it running (battery)** → Allow. On Samsung, Tecno, Infinix, Xiaomi and similar
+      phones, also open **App info → Battery** and choose **Unrestricted**, so the phone's own
+      battery saver never stops it.
 4. Tap **Send a test**: "It works" means the system hears the phone. The MoMo phone page on the
    system now says **online**.
 
@@ -37,7 +44,8 @@ read again after a fix.
 
 ## For the engineer
 
-- Plain Java, no libraries, `minSdk 23`. Built by `.github/workflows/momo-phone.yml` (Gradle 8.9,
+- Plain Java, no libraries, `minSdk 23`, `targetSdk 34`; always-on as a `specialUse` foreground
+  service (no daily time limit, may start after boot on Android 15+). Built by `.github/workflows/momo-phone.yml` (Gradle 8.9,
   Android Gradle Plugin 8.5.2, JDK 17). Type-checked in development with `javac` against Robolectric's
   `android-all` jar.
 - **Signing:** set these repository secrets once so each new version installs over the old one
@@ -46,9 +54,9 @@ read again after a fix.
   `MOMO_KEY_PASSWORD`. Make the keystore with
   `keytool -genkeypair -v -keystore momo.jks -alias momo -keyalg RSA -keysize 2048 -validity 10000`.
   Keep `momo.jks` safe and out of the repository.
-- **Certificates:** Android 6 doesn't trust newer roots, so `app/src/main/assets/roots` holds ISRG
-  Root X1/X2 (Let's Encrypt) and GTS Root R1/R3/R4 (Google Trust Services), trusted alongside the
-  phone's own. Test against the real Worker on the real phone early ("Send a test").
+- **Certificates:** `app/src/main/assets/roots` holds ISRG Root X1/X2 (Let's Encrypt) and GTS Root
+  R1/R3/R4 (Google Trust Services), trusted alongside the phone's own. Only needed on old phones
+  (Android 7 and below); harmless on Android 16.
 - **Protocol:** `POST /api/momo-phone/pair {code, name}` → `{deviceId, secret}`. Then signed:
   headers `x-momo-device`, `x-momo-time` (ms), `x-momo-sign` = hex HMAC-SHA256(secret,
   `time + "." + body`). `POST /api/momo-phone/texts {messages:[{from, body, receivedAt}]}` (oldest

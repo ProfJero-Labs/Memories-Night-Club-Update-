@@ -348,9 +348,12 @@ export async function barRound(env, b, user) {
       moves = back.map(l => ({ productId: l.productId, productName: l.name, stationId: f.stationId, qty: l.returnPending, kind: 'return_in', ref: rid, tabId: f.tabId, fromWaiterUid: f.waiterUid, fromWaiterName: f.waiterName }));
     } else return { error: 'Unknown action.' };
     await commitTx(env, [updateWrite(env, 'rounds', rid, next), updateWrite(env, 'audit_logs', id(), { action: `BAR_ROUND_${String(b.action).toUpperCase()}`, actorUid: uidOf(user), actorName: byName, roundId: rid, timestamp: at })], tx);
-    return { status: next.status };
+    return { status: next.status, tabId: f.tabId };
   });
   if (!res.error && moves) await addMoves(env, moves, user);
+  // The last drinks of a tab that's already paid: it closes now.
+  if (!res.error && res.tabId && ['handed', 'received'].includes(res.status)) await closeIfPaid(env, res.tabId).catch(() => false);
+  delete res.tabId;
   return res;
 }
 
@@ -374,6 +377,8 @@ export async function recordPayment(env, b, user) {
   if (r.recorded && !tip.none) { r.tip = { toName: tip.to.name, amountPesewas: tip.amount }; await textTip(env, await phoneOf(env, tip.to.uid), tip, method); }
   // MoMo to the club's number: the Manager is texted (cash is counted at the cash count instead).
   if (r.recorded && method === 'momo') await paymentAlert(env, { amountPesewas: int(b?.amountPesewas), kind: 'momo', where: `Tab ${r.tabNumber}`, byName: user.name, tipPesewas: tip.none ? 0 : tip.amount });
+  // Fully paid: the tab closes by itself.
+  if (r.recorded && !r.balancePesewas) r.closed = await closeIfPaid(env, String(b?.tabId || ''), { byName: user.name || '' });
   return r;
 }
 const tipWrite = (env, tip, extra) => (tip && !tip.none ? [updateWrite(env, 'tips', id(), tipFields(tip, extra))] : []);
@@ -527,6 +532,7 @@ export async function closeTab(env, b, user) {
   const t = await getDoc(env, 'tabs', String(b?.tabId || ''));
   if (!t) return { error: 'Tab not found.', status: 404 };
   if (!mineOrBoss(user, t.fields) && !requireRole(user, ['cashier'])) return FORBIDDEN;
+  if (t.fields.status === 'closed') return { closed: true, already: true }; // it closed itself when paid
   if (t.fields.status !== 'open') return { error: 'Already closed.' };
   const rounds = await roundsOf(env, t.id);
   const atBar = await settleHanded(env, rounds, user); if (atBar) return atBar;
@@ -548,6 +554,7 @@ export async function checkoutTab(env, b, user) {
   const t = await getDoc(env, 'tabs', String(b?.tabId || ''));
   if (!t) return { error: 'Tab not found.', status: 404 };
   if (!mineOrBoss(user, t.fields)) return { error: 'This is another waiter’s tab.', status: 403 };
+  if (t.fields.status === 'closed') return { method: 'cash', closed: true, already: true, cashPesewas: 0 }; // it closed itself when paid
   if (t.fields.status !== 'open') return { error: 'This tab is already closed.' };
   const rounds = await roundsOf(env, t.id);
   const atBar = await settleHanded(env, rounds, user); if (atBar) return atBar;
@@ -628,13 +635,26 @@ export async function checkoutTab(env, b, user) {
   return { method: 'cash', closed: true, cashPesewas: bill.balancePesewas, receiptSent: receipt, phoneHint: phone ? maskPhone(phone) : '' };
 }
 
-// After a MoMo payment: a tab the waiter asked to close, now fully paid, closes by itself.
-export async function closeIfPaid(env, tabId) {
+// A tab closes by itself the moment it's fully paid, however it was paid (cash, MoMo to the wallet
+// confirmed by the phone or by hand, Paystack by prompt or by the bill link), as long as nothing is
+// still being made at the bar. Drinks already handed over count as delivered. Called after every
+// payment, and when the bar hands over the last drinks of a paid tab. A customer who wants more
+// gets a new tab. Also settles a debt ("owed") once it's paid.
+const AT_BAR = ['waiting', 'preparing', 'ready', 'taken'];
+const HOW = { cash: 'cash', momo: 'MoMo', digital: 'card / MoMo' };
+export async function closeIfPaid(env, tabId, { byName = '' } = {}) {
   const t = await getDoc(env, 'tabs', tabId);
-  if (!t || !((t.fields.status === 'open' && t.fields.closeWhenPaid) || t.fields.status === 'owed')) return false;
+  // Quick sales are paid first and close when the waiter has the drinks (closeQuickIfDone).
+  if (!t || t.fields.quick || !['open', 'owed'].includes(t.fields.status)) return false;
   const rounds = await roundsOf(env, tabId), bill = billOf(t.fields, rounds);
-  if (bill.balancePesewas > 0 || rounds.some(r => !['delivered', 'cancelled'].includes(r.status))) return false;
-  await setDoc(env, 'tabs', tabId, { ...t.fields, status: 'closed', closedAt: now(), closedByName: t.fields.status === 'owed' ? `${t.fields.closedByName || 'Waiter'} (debt paid by MoMo)` : `${t.fields.closeAskedByName || 'Waiter'} (paid by MoMo)` });
+  if (!(bill.paidPesewas > 0) || bill.balancePesewas > 0 || rounds.some(r => AT_BAR.includes(r.status))) return false;
+  const at = now();
+  for (const r of rounds.filter(x => ['handed', 'received'].includes(x.status))) { const { id: rid, ...f } = r; await setDoc(env, 'rounds', rid, { ...f, status: 'delivered', receivedAt: f.receivedAt || at, deliveredAt: at, deliveredOnClose: true }); }
+  const last = (t.fields.payments || []).at(-1), how = last ? (last.viaWallet ? 'MoMo to the wallet' : HOW[last.method] || 'payment') : 'payment';
+  const who = byName || t.fields.closeAskedByName || t.fields.waiterName || 'Automatic';
+  await setDoc(env, 'tabs', tabId, { ...t.fields, status: 'closed', closedAt: at, autoClosed: true, closeWhenPaid: false,
+    closedByName: t.fields.status === 'owed' ? `${t.fields.closedByName || 'Waiter'} (debt paid, ${how})` : `${who} (paid by ${how})` });
+  await audit(env, { uid: 'system', name: 'Automatic' }, 'TAB_CLOSED_PAID', { tabId, how });
   return true;
 }
 

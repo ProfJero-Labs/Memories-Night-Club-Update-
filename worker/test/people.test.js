@@ -330,3 +330,35 @@ test('finance approves up to GHS 2,000, never what finance recorded; bigger ones
   ok(await ctx.call('POST', '/api/ops/approve', { who: ctx.D1, body: { kind: 'expense', id: big, approve: true } }), 'a director approves the big one');
   assert.equal((await ctx.call('POST', '/api/ops/approve', { who: ctx.M1, body: { kind: 'expense', id: own, approve: true } })).status, 403, 'not the Manager');
 });
+
+test('a tab closes by itself as soon as it’s fully paid: cash, the customer’s bill link (Paystack), or paid before the bar hands the drinks over', async () => {
+  const ctx = setup();
+  const W = ctx.M1;
+  const tabWith = async (qty, hand = true) => {
+    const t = ok(await ctx.call('POST', '/api/ops/tabs/open', { who: W, body: { table: String(qty) } }), 'open');
+    const r = ok(await ctx.call('POST', '/api/ops/tabs/round', { who: W, body: { tabId: t.id, lines: [{ productId: 'beer', qty }] } }), 'order');
+    if (hand) ok(await ctx.call('POST', '/api/ops/bar/round', { who: ctx.B1, body: { roundId: r.roundId || r.id, action: 'hand' } }), 'handed');
+    return { t, rid: r.roundId || r.id };
+  };
+  const status = id => ctx.store.get('tabs', id).fields.status;
+  // Cash in two parts: open after the first, closed after the second.
+  const a = await tabWith(2);
+  ok(await ctx.call('POST', '/api/ops/tabs/pay', { who: W, body: { tabId: a.t.id, method: 'cash', amountPesewas: 2000 } }), 'part');
+  assert.equal(status(a.t.id), 'open');
+  const last = ok(await ctx.call('POST', '/api/ops/tabs/pay', { who: W, body: { tabId: a.t.id, method: 'cash', amountPesewas: 3000 } }), 'rest');
+  assert.deepEqual([last.closed, status(a.t.id)], [true, 'closed']);
+  assert.equal((await ctx.call('POST', '/api/ops/tabs/checkout', { who: W, body: { tabId: a.t.id, method: 'cash' } })).data.already, true, 'tapping Close again is fine');
+  // Paystack on the customer's bill link.
+  const b = await tabWith(1);
+  const token = ctx.store.get('tabs', b.t.id).fields.billToken;
+  const start = await ctx.call('POST', `/api/guest/bill/${token}/pay`, { body: {} });
+  ctx.store.setPaystack(start.data.reference, { status: 'success', currency: 'GHS', amount: start.data.chargePesewas });
+  ok(await ctx.call('POST', '/api/checkout/verify', { body: { reference: start.data.reference } }), 'verify');
+  assert.equal(status(b.t.id), 'closed', 'paid on the phone: closed');
+  // Paid while the drinks are still at the bar: closes when the bar hands them over.
+  const c = await tabWith(1, false);
+  ok(await ctx.call('POST', '/api/ops/tabs/pay', { who: W, body: { tabId: c.t.id, method: 'cash', amountPesewas: 2500 } }), 'paid early');
+  assert.equal(status(c.t.id), 'open', 'the drink is still being made');
+  ok(await ctx.call('POST', '/api/ops/bar/round', { who: ctx.B1, body: { roundId: c.rid, action: 'hand' } }), 'handed');
+  assert.equal(status(c.t.id), 'closed');
+});

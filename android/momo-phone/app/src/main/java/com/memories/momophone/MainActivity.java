@@ -37,13 +37,13 @@ public class MainActivity extends Activity {
         TextView title = text("Memories MoMo phone", 24);
         title.setTypeface(Typeface.DEFAULT_BOLD);
         col.addView(title);
-        col.addView(text("Keep this phone on, charged and connected at the club. It passes the wallet’s MoMo texts to the Memories system, and payments confirm themselves.", 15));
+        col.addView(text("Keep this phone on, charged and connected at the club. It passes the wallet’s MoMo texts to the Memories system, and payments confirm themselves. On Samsung, Xiaomi, Tecno and Infinix phones, also set the app’s battery to “Unrestricted” in its App info.", 15));
 
         status = text("", 17);
         status.setPadding(0, dp(14), 0, dp(14));
         col.addView(status);
 
-        Button allow = button("1. Allow reading texts");
+        Button allow = button("1. Allow texts and notifications");
         allow.setOnClickListener(v -> askSms());
         col.addView(allow);
 
@@ -91,6 +91,7 @@ public class MainActivity extends Activity {
         String err = store.lastError();
         StringBuilder s = new StringBuilder();
         s.append(sms ? "✓ Can read texts\n" : "✗ Not allowed to read texts yet (step 1)\n");
+        if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission("android.permission.POST_NOTIFICATIONS") != PackageManager.PERMISSION_GRANTED) s.append("• Notifications off: allow them in step 1 so you can see it’s running\n");
         s.append(store.paired() ? "✓ Paired\n" : "✗ Not paired yet (step 2)\n");
         s.append(ignoringBattery() ? "✓ Kept running\n" : "• Battery saving may stop it (step 3)\n");
         s.append("Last contact with the system: ").append(Util.ago(store.lastOk())).append('\n');
@@ -100,8 +101,26 @@ public class MainActivity extends Activity {
     }
 
     private void askSms() {
-        if (Build.VERSION.SDK_INT >= 23) requestPermissions(new String[] { Manifest.permission.RECEIVE_SMS }, 1);
-        else toast("Already allowed.");
+        if (Build.VERSION.SDK_INT < 23) { toast("Already allowed."); return; }
+        if (Build.VERSION.SDK_INT >= 33) requestPermissions(new String[] { Manifest.permission.RECEIVE_SMS, "android.permission.POST_NOTIFICATIONS" }, 1);
+        else requestPermissions(new String[] { Manifest.permission.RECEIVE_SMS }, 1);
+    }
+
+    @Override public void onRequestPermissionsResult(int code, String[] perms, int[] results) {
+        super.onRequestPermissionsResult(code, perms, results);
+        if (Build.VERSION.SDK_INT >= 23 && checkSelfPermission(Manifest.permission.RECEIVE_SMS) != PackageManager.PERMISSION_GRANTED) restrictedHelp();
+        show();
+    }
+
+    // Android 15 and later block texts for apps installed outside the Play Store until it's allowed:
+    // App info → ⋮ (top right) → Allow restricted settings, then step 1 again.
+    private void restrictedHelp() {
+        new android.app.AlertDialog.Builder(this)
+            .setTitle("Allow reading texts")
+            .setMessage("If Android said “Restricted setting”: tap Open app info, then the ⋮ menu at the top right → “Allow restricted settings”. Come back and tap step 1 again.")
+            .setPositiveButton("Open app info", (d, w) -> startActivity(new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:" + getPackageName()))))
+            .setNegativeButton("Later", null)
+            .show();
     }
 
     private void pair(final String code) {

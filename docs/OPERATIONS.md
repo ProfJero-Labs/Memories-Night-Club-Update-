@@ -354,6 +354,15 @@ never in sales, money in or profit.
   day, with anything waiting over 10 days in red. The partner pays EvolveIT; a director can tick a
   payment off (amount and transaction ID). Nobody else sees what EvolveIT earns.
 
+## A tab closes itself when it's paid
+
+- As soon as a tab is **fully paid**, however it was paid, it **closes by itself**: cash ("Customer
+  paid"), MoMo to the wallet (confirmed by the MoMo phone or by hand), card or MoMo by Paystack (the
+  waiter's prompt or the customer's own bill link). If drinks are still being made at the bar, it
+  closes the moment the bar hands them over. Drinks already handed over count as delivered.
+- Tapping **Close tab** on a tab that already closed itself is fine: it just says it's closed.
+- The customer wants more after paying: open a **new tab** for them.
+
 ## The MoMo phone, and what runs by itself
 
 - **The MoMo phone** (the business phone with the wallet SIM) confirms MoMo-to-the-wallet payments by

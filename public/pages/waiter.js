@@ -361,7 +361,7 @@ function takePayment(t) {
       if (method === 'momo') Object.assign(body, { momoRef: $('#tcRef', box).value, momoFrom: $('#tcFrom', box).value.trim() || undefined });
       const r = await busy($('#tcGo', box), () => sapi('/api/ops/tabs/pay', { method: 'POST', body }));
       const what = `${method === 'momo' ? 'MoMo recorded.' : 'Cash recorded.'}${tipSaid(r)}`;
-      close(); route(); setTimeout(() => say($('#msg'), r.balancePesewas ? `${what} ${money(r.balancePesewas)} still to pay.` : `${what} The table is paid.`), 50);
+      close(); if (r.closed) returnTo('tabs'); else route(); setTimeout(() => say($('#msg'), r.balancePesewas ? `${what} ${money(r.balancePesewas)} still to pay.` : r.closed ? `${what} Paid in full: ${t.label} is closed.` : `${what} The table is paid; it closes once the bar hands over the last drinks.`), 50);
     } catch (e) { say($('#tcMsg', box), e.message, 'bad'); }
   };
 }

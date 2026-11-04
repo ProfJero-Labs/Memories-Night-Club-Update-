@@ -7,6 +7,7 @@ import android.app.PendingIntent;
 import android.app.Service;
 import android.content.Context;
 import android.content.Intent;
+import android.content.pm.ServiceInfo;
 import android.os.Build;
 import android.os.IBinder;
 import android.os.PowerManager;
@@ -25,11 +26,14 @@ public class SenderService extends Service {
 
     static void kick(Context c) {
         Intent i = new Intent(c, SenderService.class);
-        if (Build.VERSION.SDK_INT >= 26) c.startForegroundService(i); else c.startService(i);
+        // Android may refuse a start from the background; the service is normally already running
+        // and picks the text up from the queue within 30 seconds anyway.
+        try { if (Build.VERSION.SDK_INT >= 26) c.startForegroundService(i); else c.startService(i); } catch (Exception ignored) { }
     }
 
     @Override public int onStartCommand(Intent intent, int flags, int startId) {
-        startForeground(1, notification("Listening for MoMo texts"));
+        Notification n = notification("Listening for MoMo texts");
+        if (Build.VERSION.SDK_INT >= 34) startForeground(1, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE); else startForeground(1, n);
         if (loop == null || !loop.isAlive()) {
             running = true;
             loop = new Thread(this::run, "momo-sender");

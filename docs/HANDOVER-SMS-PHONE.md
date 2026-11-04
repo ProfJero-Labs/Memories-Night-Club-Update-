@@ -133,7 +133,7 @@ EvolveIT stays directors only**.
 | Due to EvolveIT | Directors only (unchanged). | — |
 | SMS sender name | Start with MTN's "MobileMoney"; the raw log of the first real payments shows the real name; adjust. | — |
 
-**The business phone:** Android **6**, number **0595986313**, wallet SIM in it.
+**The business phone:** Android **16** (corrected 4 Nov; first noted as 6), number **0595986313**, wallet SIM in it. The app handles Android 16 (always-on type, notification permission, and the "Allow restricted settings" step for texts).
 - Build the app with `minSdk 23` (Android 6). Ask for the SMS permission at runtime (Android 6
   introduced that). Keep it running: a foreground notification, start on boot, and ask the
   owner to turn off battery optimisation for the app.
