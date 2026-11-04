@@ -164,7 +164,10 @@ export class MockFirestore {
         return jsonResponse({ status: true, data: { reference: b.reference, status: this.chargeStatus || 'pay_offline' } });
       }
       if (u.pathname === '/transaction/initialize') {
-        this.paystackInits.push(JSON.parse(options.body || '{}'));
+        const ib = JSON.parse(options.body || '{}');
+        // A test can make Paystack refuse the partner's split (a subaccount not on the account).
+        if (this.refuseSplit && ib.subaccount) return jsonResponse({ status: false, message: 'Invalid Subaccount' }, 400);
+        this.paystackInits.push(ib);
         return jsonResponse({ status: true, data: { authorization_url: 'https://paystack.test/pay' } });
       }
       return jsonResponse({ status: false, message: 'not mocked' }, 400);

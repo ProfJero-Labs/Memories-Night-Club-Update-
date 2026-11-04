@@ -16,6 +16,7 @@
 // Nothing is sold past zero: every order is checked against what's left at the bar (stockError).
 // Quick sale: one go, no table: drinks + Cash or MoMo. From a waiter it goes to the bar like any
 // order and the waiter confirms they got the drinks; from the bar it's served and closed at once.
+import { sendSplitSafe } from '../lib/split-safe.js';
 import { getDoc, setDoc, queryWhere, batchGet, commitTx, updateWrite, foundFields, withTransaction, listDocs, deleteDoc } from '../lib/firestore.js';
 import { now, id, clean, normalizePhone, maskPhone, paymentRef, validEmail } from '../lib/util.js';
 import { requireRole, uidOf } from '../lib/auth.js';
@@ -745,10 +746,12 @@ export async function billCode(env, token, b) {
 }
 
 async function paystackInit(env, payload) {
-  const r = await fetch('https://api.paystack.co/transaction/initialize', { method: 'POST', headers: { Authorization: `Bearer ${env.PAYSTACK_SECRET_KEY}`, 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
-  const d = await r.json();
-  if (!r.ok || !d.status) throw new Error(d.message || 'Paystack request failed');
-  return d.data;
+  return sendSplitSafe(env, payload, async body => {
+    const r = await fetch('https://api.paystack.co/transaction/initialize', { method: 'POST', headers: { Authorization: `Bearer ${env.PAYSTACK_SECRET_KEY}`, 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    const d = await r.json();
+    if (!r.ok || !d.status) throw new Error(d.message || 'Paystack request failed');
+    return d.data;
+  });
 }
 // Pay now: the balance at this moment. If more drinks are added while paying, the new amount
 // stays as balance (the payment only ever counts for what it was started for).

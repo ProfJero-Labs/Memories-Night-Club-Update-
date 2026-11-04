@@ -4,6 +4,7 @@
 //
 // All payments land in EvolveIT's Paystack account. The three-way split (EvolveIT / Memories /
 // organizer) is recorded on each order for the ledger; distribution happens out of band.
+import { sendSplitSafe } from './lib/split-safe.js';
 import { alreadyExists, getDoc, setDoc, createDoc, deleteDoc, queryWhere, batchGet, commitTx, updateWrite, foundFields, withTransaction } from './lib/firestore.js';
 import { BITS_POLICY_VERSION, now, id, paymentRef, claimSecret, sha256Hex, ticketToken, displayCode, tableCode, eventSlug, normalizePlanCode, sixDigits, clean, normalizePhone, validEmail, firstName, money, maskPhone, formatAccra } from './lib/util.js';
 import { sendSms, sendEmail, siteUrl } from './lib/notify.js';
@@ -21,11 +22,16 @@ import { recordPayment, ledgerRefund } from './ops/ledger.js';
 // Smallest payment accepted anywhere: GHS 1.
 export const MIN_TOPUP_PESEWAS = 100;
 
-async function paystack(env, path, options = {}) {
+async function paystackRaw(env, path, options = {}) {
   const r = await fetch(`https://api.paystack.co${path}`, { ...options, headers: { Authorization: `Bearer ${env.PAYSTACK_SECRET_KEY}`, 'Content-Type': 'application/json', ...(options.headers || {}) } });
   const d = await r.json();
   if (!r.ok || !d.status) throw new Error(d.message || 'Paystack request failed');
   return d.data;
+}
+// Starting a payment never fails because of the partner's split (lib/split-safe.js).
+async function paystack(env, path, options = {}) {
+  if (options.method !== 'POST' || !options.body) return paystackRaw(env, path, options);
+  return sendSplitSafe(env, JSON.parse(options.body), body => paystackRaw(env, path, { ...options, body: JSON.stringify(body) }));
 }
 
 // Computes EvolveIT's, Memories' and the organizer's amounts for a paid order. `evolveitSharePct`
