@@ -1,5 +1,7 @@
 # Handover: where the payment work stands, and the SMS phone
 
+> **Going live:** follow `docs/ENGINEER-CHECKLIST.md`.
+>
 > **Update 4 Nov 2026: built.** The automations (autopilot, finance approvals, Manager-only
 > discounts, no free drinks / write-offs, the Human manager confirming MoMo), the MoMo phone's
 > system side (`worker/src/ops/momophone.js`) and the Android app (`android/momo-phone`, built by
