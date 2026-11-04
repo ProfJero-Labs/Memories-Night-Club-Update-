@@ -4,7 +4,7 @@
 // an element to draw into.
 import { $, $$, esc } from '../app.js';
 import { sapi } from '../staff.js';
-import { sheet, say, st, busy, ghsIn, moneyField, money, when, dayName, ask } from './ops-ui.js';
+import { sheet, say, st, busy, ghsIn, moneyField, money, when, dayName, ask, pasteMomoButton } from './ops-ui.js';
 // One-tap reasons for refusing a request or a payment (they can still type their own).
 const REFUSE_QUICK = ['Wrong amount', 'Not in this month’s budget', 'Too expensive', 'Not needed now', 'Ask me first'];
 
@@ -83,12 +83,12 @@ export async function closingView(el, date, { canClose = false } = {}) {
   const h = d.closer?.handover;
   const who = closed ? '' : `<div class="say ${h && !h.acceptedByName ? 'warn' : 'good'}"><b>Who closes tonight</b>${h
     ? `${esc(h.byName)} can’t close: “${esc(h.note)}”. ${h.acceptedByName ? `<b>${esc(h.acceptedByName)}</b> is closing instead.` : 'Waiting for the Human manager or the Event manager to take it.'}`
-    : 'The Manager.'}
+    : 'The Manager or a director, whenever the night ends.'}
     ${d.closer?.canHandOver ? '<br><button class="mid" id="clHand" style="margin-top:8px">I can’t close tonight</button>' : ''}${d.closer?.canAccept ? '<br><button class="mid okc" id="clAccept" style="margin-top:8px">I’ll close tonight</button>' : ''}</div>`;
-  el.innerHTML = `<h1>Close the night</h1>${dateBar(d.date)}<p class="lead">${esc(dayName(d.date))}. You can close at any time; what isn’t done yet is listed in the report.</p>${who}
+  el.innerHTML = `<h1>Close the night</h1>${dateBar(d.date)}<p class="lead">${esc(dayName(d.date))}${d.open?.date === d.date && d.open.startedAt ? ` · started ${esc(when(d.open.startedAt))}` : ''}. There’s no set closing time: close when the night ends. What isn’t done yet is listed in the report.</p>${who}
     <div class="stepbar">${d.steps.map(s => `<div class="${s.done ? 'done' : ''}"><span><b>${esc(s.label)}</b><small>${esc(s.detail)}</small></span>${s.done ? st('paid', 'Done') : st('unpaid', 'Waiting')}</div>`).join('')}</div>
     <div id="clMsg"></div>
-    ${closed ? `<div class="say good"><b>Closed: the report is with finance</b>Staff can keep working. Anything sold after this goes in the report if you close again.</div>` : ''}${canClose ? `<p class="muted" style="margin:0">This prepares the end-of-day report and sends it to finance. It doesn’t stop anyone working: you can close at any time, and close again later to update it.</p><button class="big" id="closeGo">${closed ? 'Close again and send the updated report' : 'Close the night and send the report'}</button>` : ''}
+    ${closed ? `<div class="say good"><b>Closed: the report is with finance</b>Anything recorded after closing is still kept: close again to update the report. The next night starts on its own the next day.</div>` : ''}${canClose ? `<p class="muted" style="margin:0">This ends the night: the end-of-day report goes to finance and the next sale starts a new night. You can close again later to update the report.</p><button class="big" id="closeGo">${closed ? 'Close again and send the updated report' : 'Close the night and send the report'}</button>` : ''}
     <details class="fold"><summary>See the details: tabs, bar stock, cash</summary>
     <h2>1. Waiters</h2><div class="tbl-wrap"><table class="tbl"><thead><tr><th>Waiter</th><th class="num">Sales</th><th class="num">Not delivered</th><th class="num">Owed / unpaid</th><th>Tabs</th></tr></thead><tbody>
       ${d.waiters.map(w => `<tr><td><strong>${esc(w.name)}</strong>${w.explanation ? `<br><small class="muted">“${esc(w.explanation)}”</small>` : ''}</td><td class="num">${money(w.salesPesewas)}</td><td class="num">${w.withYouQty ? `<span class="diff-neg">${w.withYouQty}</span>` : 0}</td><td class="num">${w.unpaidPesewas ? `<span class="diff-neg">${money(w.unpaidPesewas)}</span>` : money(0)}</td><td>${w.openTabs ? st('unpaid', `${w.openTabs} open`) : st('paid', 'All closed')}</td></tr>`).join('') || '<tr><td colspan="5" class="empty-row">No waiters worked tonight.</td></tr>'}</tbody></table></div>
@@ -124,7 +124,6 @@ export async function closingView(el, date, { canClose = false } = {}) {
         await closingView(el, d.date, { canClose });
         return say($('#clMsg', el), r.note, r.sent ? 'good' : 'warn', 'Night closed');
       } catch (e) {
-        if (e.code === 'early' && confirm('The night isn’t over yet (it runs until 4AM). Close it anyway?')) { extra = { ...extra, confirmEarly: true }; continue; }
         if (e.code === 'incomplete' && confirm(`${e.message}\n\nClose anyway? What’s missing is listed in the end-of-day report.`)) { extra = { ...extra, closeAnyway: true }; continue; }
         return say($('#clMsg', el), e.message, 'bad');
       }
@@ -136,7 +135,7 @@ export async function closingView(el, date, { canClose = false } = {}) {
 export async function approvalsView(el) {
   el.innerHTML = '<div class="loading">Loading…</div>';
   const { approvals } = await sapi('/api/ops/approvals');
-  el.innerHTML = `<h1>Approvals</h1><p class="lead">Free drinks, discounts, unpaid bills, cash out and stock-count corrections. You can’t approve your own.</p><div id="apMsg"></div>
+  el.innerHTML = `<h1>Approvals</h1><p class="lead">Discounts (the Manager approves them), cash out and stock-count corrections. You can’t approve your own.</p><div id="apMsg"></div>
     <div class="cards">${approvals.map(a => `<div class="tcard warn" style="cursor:default"><span class="row"><span class="t" style="font-size:20px">${esc(a.label)}</span><span class="sub">${when(a.requestedAt)}</span></span>
       <span>${esc(a.summary)}</span><span class="sub">Asked by ${esc(a.requestedByName)} · “${esc(a.reason)}”</span>
       ${a.canDecide ? `<span class="btn-row"><button class="mid okc" data-yes="${esc(a.id)}">Approve</button><button class="mid" data-no="${esc(a.id)}">Refuse</button></span>` : '<span class="sub">Someone else must decide this one.</span>'}</div>`).join('') || '<div class="empty-box"><b>Nothing waiting</b></div>'}</div>`;
@@ -311,6 +310,189 @@ export async function stockAdminView(el, date, stationId, { role = '' } = {}) {
 
 // ── Money: is the club making money? Tonight / this week / this month ──
 // The answer first (profit, or my share of it), then money in and out, then the details folded.
+// ── Every sale, one by one (directors, the Manager, finance) ──
+// Opened from any figure on Tonight or Money, already filtered to what was tapped. o: { period,
+// method, person, drink }. onChange(o) keeps the address in step, so Back returns to the same list.
+export async function salesListView(el, o = {}, { onChange } = {}) {
+  el.innerHTML = '<div class="loading">Loading…</div>';
+  const qs = new URLSearchParams(Object.entries({ period: o.period || 'today', method: o.method || '', person: o.person || '', drink: o.drink || '' }).filter(([, v]) => v)).toString();
+  const d = await sapi(`/api/ops/sales/list?${qs}`), t = d.totals;
+  const go = patch => { const n = { ...o, ...patch }; onChange ? onChange(n) : salesListView(el, n, { onChange }); };
+  const chip = (k, label) => `<button type="button" class="mid ${d.filters.method === k ? 'on' : ''}" data-m="${esc(k)}" style="min-height:40px;padding:0 12px">${esc(label)}</button>`;
+  const stCls = s => (s.status === 'paid' || s.status === 'overpaid' ? 'paid' : s.status === 'part_paid' ? 'ready' : s.status === 'refunded' || s.status === 'refund_due' ? 'cancelled' : 'unpaid');
+  el.innerHTML = `<div class="vstack" style="display:grid;gap:14px"><h1>Sales</h1>
+    <div class="seg" role="radiogroup" aria-label="When" style="grid-template-columns:repeat(3,minmax(0,1fr))">${[['today', 'Tonight'], ['week', 'This week'], ['month', 'This month']].map(([k, l]) => `<button type="button" class="mid ${k === d.period.key ? 'on' : ''}" data-per="${k}" role="radio" aria-checked="${k === d.period.key}">${l}</button>`).join('')}</div>
+    <div style="display:flex;flex-wrap:wrap;gap:6px" role="group" aria-label="How it was paid">${chip('', 'All')}${Object.entries(d.methodOptions).map(([k, l]) => chip(k, l)).join('')}</div>
+    <div class="btn-row"><div class="sfield" style="flex:1;min-width:140px"><label for="slP">Staff</label><select id="slP"><option value="">Everyone</option>${d.people.map(p => `<option value="${esc(p.uid)}" ${p.uid === d.filters.person ? 'selected' : ''}>${esc(p.name)}</option>`).join('')}</select></div>
+      <div class="sfield" style="flex:1;min-width:140px"><label for="slD">Drink</label><select id="slD"><option value="">All drinks</option>${d.drinks.map(n => `<option ${n === d.filters.drink ? 'selected' : ''}>${esc(n)}</option>`).join('')}</select></div></div>
+    <div class="pos-money"><div class="big-line"><span>${t.count} sale${t.count === 1 ? '' : 's'} · ${esc(d.period.label)}</span><b>${money(t.salesPesewas)}</b></div>
+      <div class="big-line good"><span>${d.filters.method && d.filters.method !== 'unpaid' ? esc(d.methodOptions[d.filters.method]) : 'Received'}</span><b>${money(t.paidPesewas)}</b></div>
+      ${t.leftPesewas ? `<div class="big-line bad"><span>Not paid yet</span><b>${money(t.leftPesewas)}</b></div>` : ''}
+      ${d.drinkTotals ? `<p class="how">${d.drinkTotals.qty} × ${esc(d.drinkTotals.name)} sold in these: ${money(d.drinkTotals.amountPesewas)}</p>` : ''}</div>
+    ${d.sales.length ? `<div class="pos-tables">${d.sales.map((s, i) => `<button type="button" class="pos-row" data-sale="${i}"><span class="where">${d.period.key === 'today' ? '' : `${esc(dayName(s.date).split(' ').slice(0, 2).join(' '))} · `}${when(s.at)} · ${esc(s.where)}<small>${esc(s.label)} · ${esc(s.servedByName || '—')}${s.payments.length ? ` · ${esc([...new Set(s.payments.map(x => x.method === 'cash' ? 'Cash' : x.method === 'momo' ? 'MoMo' : x.method === 'qr' ? 'QR' : 'Phone'))].join(' + '))}` : ''}${s.customerName ? ` · ${esc(s.customerName)}` : ''}</small></span>
+      <span class="amt">${money(s.totalPesewas)}${st(stCls(s), s.statusLabel)}</span></button>`).join('')}</div>${d.more ? `<p class="muted">And ${d.more} more. Pick a staff member or a drink to narrow it down.</p>` : ''}`
+      : '<div class="empty-box"><b>No sales</b>Nothing matches. Try “All”, or a longer period.</div>'}
+    <button class="big ghost" id="slCsv">Download (spreadsheet)</button></div>`;
+  $$('[data-per]', el).forEach(b => b.onclick = () => go({ period: b.dataset.per }));
+  $$('[data-m]', el).forEach(b => b.onclick = () => go({ method: b.dataset.m }));
+  $('#slP', el).onchange = e => go({ person: e.target.value });
+  $('#slD', el).onchange = e => go({ drink: e.target.value });
+  $$('[data-sale]', el).forEach(b => b.onclick = () => {
+    const s = d.sales[Number(b.dataset.sale)];
+    sheet(`<h2>${esc(s.where)} · ${money(s.totalPesewas)}</h2>
+      <p class="muted" style="margin:0">${esc(dayName(s.date))} · ${when(s.at)} · ${esc(s.label)}${s.bar ? ` · ${esc(s.bar)}` : ''}</p>
+      <div class="lines-list">
+        <div class="ln"><span>Served by</span><span>${esc(s.servedByName || '—')}</span></div>
+        ${s.customerName || s.customerPhone ? `<div class="ln"><span>Customer</span><span>${esc(s.customerName)}${s.customerPhone ? ` <a href="tel:${esc(s.customerPhone)}">${esc(s.customerPhone)}</a>` : ''}</span></div>` : ''}
+        <div class="ln"><span>Status</span><span>${esc(s.statusLabel)}</span></div></div>
+      <h3 style="margin:6px 0 0">What was bought</h3>
+      <div class="lines-list">${s.lines.map(l => `<div class="ln"><span>${l.qty} × ${esc(l.name)}</span><span>${money(l.amountPesewas)}</span></div>`).join('') || '<div class="ln"><span class="muted">No drinks</span></div>'}
+        ${s.discountPesewas ? `<div class="ln"><span>Discount</span><span>−${money(s.discountPesewas)}</span></div>` : ''}
+        <div class="ln total"><span>Total</span><span>${money(s.totalPesewas)}</span></div></div>
+      <h3 style="margin:6px 0 0">How it was paid</h3>
+      <div class="lines-list">${s.payments.map(x => `<div class="ln"><span>${esc(x.methodLabel)} · ${when(x.at)}<br><small class="muted">Taken by ${esc(x.takenByName || '—')}${x.ref ? ` · ref ${esc(x.ref)}` : ''}${x.late ? ' · recorded after the night' : ''}</small></span><span>${money(x.amountPesewas)}</span></div>`).join('') || '<div class="ln"><span class="muted">No payment yet</span></div>'}
+        ${s.leftPesewas ? `<div class="ln total"><span>Not paid yet</span><span>${money(s.leftPesewas)}</span></div>` : ''}</div>
+      <button class="big ghost" data-close>Done</button>`, { label: 'Sale' });
+  });
+  $('#slCsv', el).onclick = () => saveCsv(`sales-${d.period.from}${d.period.to !== d.period.from ? `-to-${d.period.to}` : ''}.csv`, [
+    ['Sales', d.period.label], [],
+    ['Night', 'Time', 'Where', 'Bill', 'Served by', 'Customer', 'Drinks', 'Total GHS', 'Paid GHS', 'Not paid GHS', 'Paid how', 'Status'],
+    ...d.sales.map(s => [s.date, when(s.at), s.where, s.label, s.servedByName, s.customerName, s.lines.map(l => `${l.qty} x ${l.name}`).join('; '), cedis(s.totalPesewas), cedis(s.paidPesewas), cedis(s.leftPesewas), s.payments.map(x => `${x.methodLabel} ${cedis(x.amountPesewas)} (${x.takenByName})`).join('; '), s.statusLabel])]);
+}
+
+// ── Due to EvolveIT (directors only) ──
+// The charges collected in the partner's wallet (big bills by MoMo). The partner pays EvolveIT; a
+// director can tick a payment off here.
+export async function evolveitView(el) {
+  el.innerHTML = '<div class="loading">Loading…</div>';
+  const d = await sapi('/api/ops/evolveit'), t = d.totals;
+  el.innerHTML = `<div class="vstack" style="display:grid;gap:14px"><h1>Due to EvolveIT</h1>
+    <p class="lead">The GHS 100 charges on big bills paid to the wallet. Only directors see this.</p>
+    <div class="hero-stack"><div class="hero ${t.outstandingPesewas ? 'bad' : 'good'}"><span>Due now</span><b>${money(t.outstandingPesewas)}</b>${t.oldestUnsettled ? `<span>Oldest from ${esc(dayName(t.oldestUnsettled))}</span>` : '<span>Nothing due</span>'}</div>
+      <div class="hero-row"><div class="hero"><span>Collected so far</span><b>${money(t.owedPesewas)}</b></div><div class="hero good"><span>Paid to EvolveIT</span><b>${money(t.settledPesewas)}</b></div></div></div>
+    ${t.overduePesewas ? `<div class="say bad"><b>${money(t.overduePesewas)} waiting more than 10 days</b>Marked in red below.</div>` : ''}
+    <h2>Day by day</h2>
+    <div class="lines-list">${d.byDay.map(x => lineRow(`<b${x.overdue ? ' class="diff-neg"' : ''}>${esc(dayName(x.date))}</b>`, x.outstandingPesewas ? `<span class="${x.overdue ? 'diff-neg' : ''}">${money(x.outstandingPesewas)} due</span>` : 'Paid', `${x.payments} big bill${x.payments === 1 ? '' : 's'} · ${money(x.owedPesewas)} charged${x.settledPesewas ? ` · ${money(x.settledPesewas)} paid` : ''}${x.overdue ? ` · ${x.ageDays} days` : ''}`)).join('') || '<div class="ln"><span class="muted">No big bills paid to the wallet yet.</span></div>'}</div>
+    ${d.canRecord && t.outstandingPesewas ? '<button class="big ghost" id="evPaid">The partner paid EvolveIT</button>' : ''}<div id="evMsg"></div>
+    ${d.settlements.length ? `<h2>Payments to EvolveIT</h2><div class="lines-list">${d.settlements.map(s => lineRow(`<b>${money(s.amountPesewas)}</b> · ${when(s.at)} ${esc(dayName(String(s.at).slice(0, 10)))}`, s.differencePesewas ? `<span class="diff-neg">${money(s.differencePesewas)} doesn’t match</span>` : 'Matches', `ID ${esc(s.momoRef)} · ${s.rows} charge${s.rows === 1 ? '' : 's'}${s.from ? ` (${esc(s.from)} to ${esc(s.to)})` : ''} · by ${esc(s.byName)}`)).join('')}</div>` : ''}</div>`;
+  $('#evPaid', el) && ($('#evPaid', el).onclick = () => {
+    const { box, close } = sheet(`<h2>The partner paid EvolveIT</h2><p class="muted" style="margin:0">Due now: ${money(t.outstandingPesewas)}. It settles the oldest charges first.</p>
+      ${moneyField('evA', 'Amount paid (GHS)', String(t.outstandingPesewas / 100))}
+      <div class="sfield"><label for="evR">MoMo transaction ID</label><input id="evR" maxlength="40" autocomplete="off" autocapitalize="characters"></div>
+      <div id="evM"></div><button class="big" id="evGo">Save</button><button class="big ghost" data-close>Cancel</button>`, { label: 'Paid to EvolveIT' });
+    $('#evGo', box).onclick = async () => {
+      try { const r = await busy($('#evGo', box), () => sapi('/api/ops/evolveit/paid', { method: 'POST', body: { amountPesewas: ghsIn($('#evA', box).value), momoRef: $('#evR', box).value } })); close(); await evolveitView(el); say($('#evMsg', el), r.message, r.differencePesewas ? 'warn' : 'good'); }
+      catch (e) { say($('#evM', box), e.message, 'bad'); }
+    };
+  });
+}
+
+// A manager saw the money in the wallet: what arrived and its transaction ID. A short amount is
+// refused unless the manager accepts it with a reason.
+export function walletSheet(w, done = () => {}, texts = []) {
+  // The MoMo phone's texts for this amount (it couldn't be sure on its own): one tap, nothing to type.
+  const fits = texts.filter(x => x.amountPesewas === w.duePesewas); // exact only: a short payment needs a reason (typed below)
+  const { box, close } = sheet(`<h2>MoMo arrived? ${money(w.duePesewas)}</h2>
+    ${fits.length ? `<p class="group-h">From the MoMo phone</p><div class="lines-list">${fits.map((x, i) => `<div class="ln"><span><b>${money(x.amountPesewas)}</b> · ID ${esc(x.txId)}<br><small class="muted">${esc(x.payerName || x.payerPhone || '')}${x.reference ? ` · ref ${esc(x.reference)}` : ''} · ${when(x.receivedAt)}${x.status === 'check_balance' ? ` · <b>${esc(x.why || 'Check the wallet first.')}</b>` : ''}</small></span><span><button class="mid okc" data-usetext="${i}">This one</button></span></div>`).join('')}</div><p class="muted" style="margin:0">Or type it from the wallet:</p>` : ''}
+    <p class="muted" style="margin:0">${esc(w.table && w.table !== 'Walk-in' ? `Table ${w.table}` : `Tab ${w.tabNumber}`)} · reference ${esc(w.code)} · ${esc(w.waiterName)}. Look in the wallet itself.</p>
+    <div id="wsPaste"></div>
+    ${moneyField('wsAmt', 'Amount that arrived (GHS)', String(w.duePesewas / 100))}
+    <div class="sfield"><label for="wsRef">MoMo transaction ID</label><input id="wsRef" maxlength="40" autocomplete="off" autocapitalize="characters" placeholder="From the wallet’s message"></div>
+    <div id="wsShort" hidden><div class="sfield"><label for="wsWhy">Accept it short? Why</label><input id="wsWhy" maxlength="200" placeholder="e.g. regular customer, paying the rest tomorrow"></div></div>
+    <div id="wsMsg"></div><button class="big okc" id="wsGo">Confirm: it arrived</button><button class="big ghost" data-close>Cancel</button>`, { label: 'MoMo arrived' });
+  $$('[data-usetext]', box).forEach(b => b.onclick = async () => {
+    const x = fits[Number(b.dataset.usetext)];
+    try { const r = await busy(b, () => sapi('/api/ops/momo-phone/confirm', { method: 'POST', body: { messageId: x.id, walletPaymentId: w.id } }), 'Confirming…'); close(); done(`Confirmed from the MoMo phone’s text.${r.tabClosed ? ' The tab is closed.' : ''}`); }
+    catch (e) { say($('#wsMsg', box), e.message, 'bad'); }
+  });
+  $('#wsPaste', box).append(pasteMomoButton(m => { if (m.ref) $('#wsRef', box).value = m.ref; if (m.amountPesewas) $('#wsAmt', box).value = String(m.amountPesewas / 100); }));
+  let acceptShort = false;
+  $('#wsGo', box).onclick = async () => {
+    try {
+      const r = await busy($('#wsGo', box), () => sapi('/api/ops/wallet/confirm', { method: 'POST', body: { id: w.id, receivedPesewas: ghsIn($('#wsAmt', box).value), momoRef: $('#wsRef', box).value, acceptShort, note: $('#wsWhy', box).value } }), 'Confirming…');
+      close(); done(`Confirmed.${r.changePesewas ? ` ${money(r.changePesewas)} too much: give it back as change.` : ''}${r.tabClosed ? ' The tab is closed.' : ''}`);
+    } catch (e) {
+      if (e.code === 'short') { acceptShort = true; $('#wsShort', box).hidden = false; $('#wsGo', box).textContent = 'Accept it short'; }
+      say($('#wsMsg', box), e.message, 'bad');
+    }
+  };
+}
+
+
+// "MoMo to confirm": MoMo to the wallet waiting for the Manager or the Human manager. wl: from
+// /api/ops/wallet. done(message, kind) after a confirm or a cancel.
+export function walletWaitingHtml(wl) {
+  const phone = wl?.phone && !wl.phone.online ? `<div class="say warn"><b>The MoMo phone is offline</b>Last seen ${when(wl.phone.lastSeenAt)}. Until it’s back, confirm MoMo here by hand (check the wallet itself). Check it’s on, charged and has data.</div>` : '';
+  if (!wl?.waiting?.length) return phone;
+  const where = w => (w.table && w.table !== 'Walk-in' ? (String(w.table).startsWith('QR') ? w.table : `Table ${w.table}`) : `Tab ${w.tabNumber}`);
+  return `${phone}<section class="pos-need"><h2>MoMo to confirm <span class="count">${wl.waiting.length}</span></h2>
+      <p class="muted" style="margin:0">${wl.phone?.online ? 'The MoMo phone confirms these by itself when the money arrives. Only step in if it can’t.' : `Check the wallet (${esc(wl.wallet.number)}) itself, never a screenshot.`}</p>
+      ${wl.waiting.map((w, i) => `<div class="need"><div><b>${money(w.duePesewas)} · ${esc(where(w))}</b><span>Reference ${esc(w.code)} · ${esc(w.waiterName)} · ${when(w.createdAt)}</span><small>Bill ${money(w.billPesewas)} + ${money(w.chargePesewas)} charge${w.reason === 'paystack_down' ? ' (Paystack down)' : ''}</small></div>
+        <div class="need-btns"><button class="mid okc" data-wok="${i}">Arrived</button><button class="mid" data-wno="${i}">Not yet</button></div></div>`).join('')}</section>`;
+}
+export function bindWalletWaiting(el, wl, done) {
+  $$('[data-wok]', el).forEach(b => b.onclick = () => walletSheet(wl.waiting[Number(b.dataset.wok)], done, wl.texts || []));
+  $$('[data-wno]', el).forEach(b => b.onclick = async () => {
+    const w = wl.waiting[Number(b.dataset.wno)];
+    const why = await ask({ title: 'This MoMo hasn’t arrived?', label: 'Cancel it only if they won’t pay this way. Why?', quick: ['Didn’t arrive', 'Paying cash instead', 'Customer left'], send: 'Cancel it', danger: true });
+    if (!why) return;
+    try { await sapi('/api/ops/wallet/cancel', { method: 'POST', body: { id: w.id, reason: why } }); done('Cancelled. The payment is taken another way.'); } catch (e) { done(e.message, 'bad'); }
+  });
+}
+
+
+// ── The MoMo phone (Manager, Human manager, directors) ──
+export async function momoPhoneView(el) {
+  el.innerHTML = '<div class="loading">Loading…</div>';
+  const d = await sapi('/api/ops/momo-phone');
+  const label = { confirmed: 'Confirmed a bill', waiting: 'No bill waiting for it', ambiguous: 'Several bills: a person picks', check_balance: 'Balance didn’t add up: check', used_id: 'ID already used', bad_sender: 'Not from MTN: ignored', not_payment: 'Not a payment (balance noted)', unreadable: 'Couldn’t read it' };
+  el.innerHTML = `<div class="vstack" style="display:grid;gap:14px"><h1>MoMo phone</h1>
+    <p class="lead">The business phone with the wallet SIM sends its MoMo texts here, and payments confirm themselves.</p>
+    ${d.devices.length ? d.devices.map(x => `<div class="say ${x.online ? 'good' : 'warn'}"><b>${esc(x.name)}: ${x.online ? 'online' : 'offline'}</b>Last seen ${esc(dayName(String(x.lastSeenAt).slice(0, 10)))} ${when(x.lastSeenAt)} · paired by ${esc(x.pairedByName || '')}${d.canManage ? `<br><button class="sbtn" data-unpair="${esc(x.id)}" style="margin-top:6px">Unpair</button>` : ''}</div>`).join('') : '<div class="say warn"><b>No phone paired yet</b>Pair the business phone below.</div>'}
+    ${d.canManage ? '<button class="big" id="mpPair">Pair a phone</button>' : ''}<div id="mpMsg"></div>
+    <h2>Texts it sent (last 2 days)</h2>
+    <div class="lines-list">${d.messages.map(m => lineRow(`<b>${m.read?.amountPesewas ? money(m.read.amountPesewas) : '—'}</b> · ${esc(label[m.status] || m.status)}`, when(m.receivedAt), `${esc(String(m.body).slice(0, 140))}${m.why ? `<br>${esc(m.why)}` : ''}`)).join('') || '<div class="ln"><span class="muted">Nothing yet.</span></div>'}</div>
+    ${d.canManage ? `<h2>Test a text</h2><p class="muted" style="margin:0">Paste a MoMo text exactly as it arrived. It shows how it’s read. Nothing is saved.</p>
+      <div class="sfield"><textarea id="mpT" rows="4" style="width:100%"></textarea></div><button class="mid" id="mpTest">Read it</button><div id="mpOut"></div>` : ''}</div>`;
+  $('#mpPair', el) && ($('#mpPair', el).onclick = async () => {
+    try {
+      const r = await sapi('/api/ops/momo-phone/code', { method: 'POST', body: {} });
+      sheet(`<h2>Pair the MoMo phone</h2><p style="margin:0">On the business phone, open the Memories MoMo app and type this code:</p><div class="pickup" style="font-size:44px;letter-spacing:6px">${esc(r.code)}</div><p class="muted" style="margin:0">It works once, for ${r.minutes} minutes.</p><button class="big ghost" data-close>Done</button>`, { label: 'Pair' });
+    } catch (e) { say($('#mpMsg', el), e.message, 'bad'); }
+  });
+  $$('[data-unpair]', el).forEach(b => b.onclick = async () => { if (!confirm('Unpair this phone? It stops confirming payments.')) return; try { await sapi('/api/ops/momo-phone/unpair', { method: 'POST', body: { id: b.dataset.unpair } }); momoPhoneView(el); } catch (e) { say($('#mpMsg', el), e.message, 'bad'); } });
+  $('#mpTest', el) && ($('#mpTest', el).onclick = async () => {
+    try { const r = await sapi('/api/ops/momo-phone/test', { method: 'POST', body: { body: $('#mpT', el).value } }); const x = r.read || {};
+      $('#mpOut', el).innerHTML = `<div class="say ${x.amountPesewas ? 'good' : 'warn'}"><b>${esc(r.says)}</b>Amount ${x.amountPesewas ? money(x.amountPesewas) : '—'} · ID ${esc(x.txId || '—')} · balance ${x.balancePesewas != null ? money(x.balancePesewas) : '—'} · from ${esc(x.payerName || x.payerPhone || '—')}${x.reference ? ` · ref ${esc(x.reference)}` : ''}</div>`; }
+    catch (e) { say($('#mpOut', el), e.message, 'bad'); }
+  });
+}
+
+// ── What the stock is worth ──
+// Everything finance recorded buying, minus what left the bars, valued at cost (and at selling price).
+export async function stockValueView(el) {
+  el.innerHTML = '<div class="loading">Loading…</div>';
+  const v = await sapi('/api/ops/stock/value'), t = v.totals;
+  el.innerHTML = `<div class="vstack" style="display:grid;gap:14px"><h1>Stock value</h1>
+    <p class="lead">What’s in the bars now, at what the club paid for it.</p>
+    <div class="hero-stack"><div class="hero good"><span>Stock at cost</span><b>${money(t.costValuePesewas)}</b><span>${t.qty} item${t.qty === 1 ? '' : 's'} in the bars</span></div>
+      <div class="hero-row"><div class="hero"><span>At selling prices</span><b>${money(t.priceValuePesewas)}</b></div><div class="hero"><span>Bought this month</span><b>${money(v.bought.thisMonthPesewas)}</b></div></div></div>
+    ${v.noCostPrice.length ? `<div class="say warn"><b>No cost price for ${v.noCostPrice.length} drink${v.noCostPrice.length > 1 ? 's' : ''}</b>${v.noCostPrice.map(esc).join(', ')}. They count as GHS 0 until finance adds the cost (Drinks &amp; prices).</div>` : ''}
+    ${v.belowZero.length ? `<div class="say bad"><b>Below zero: stock left the bar that was never recorded coming in</b>${v.belowZero.map(x => `${esc(x.name)} ${x.qty}`).join(', ')}. Finance records the missing purchase, or the bar counts it.</div>` : ''}
+    ${v.notCounted.length ? `<p class="muted" style="margin:0">Not counted at the bar, so not in this value: ${v.notCounted.map(esc).join(', ')}.</p>` : ''}
+    <h2>By bar</h2><div class="lines-list">${v.bars.map(b => lineRow(`<b>${esc(b.name)}</b>`, money(b.costValuePesewas), `${b.qty} items · ${money(b.priceValuePesewas)} at selling prices${b.countedTonight ? ' · counted tonight' : ''}`)).join('') || '<div class="ln"><span class="muted">No bars set up</span></div>'}</div>
+    <h2>By drink</h2><div class="lines-list">${v.rows.map(r => lineRow(`<b>${esc(r.name)}</b>`, money(r.costValuePesewas), `${r.qty} × ${r.costPesewas ? money(r.costPesewas) : '<b>no cost</b>'}${v.bars.length > 1 ? ` · ${r.bars.map(b => `${esc(b.name)} ${b.qty}`).join(', ')}` : ''}`)).join('') || '<div class="ln"><span class="muted">Nothing in stock</span></div>'}
+      <div class="ln total"><span>Total at cost</span><span>${money(t.costValuePesewas)}</span></div></div>
+    <p class="muted" style="margin:0">All stock finance has recorded buying, ever: ${money(v.bought.allTimePesewas)}${v.bought.noCost ? ` (${v.bought.noCost} purchase${v.bought.noCost > 1 ? 's' : ''} without what was paid)` : ''}. The bars’ stock goes down as drinks are handed out, broken or moved.</p>
+    <button class="big ghost" id="svCsv">Download (spreadsheet)</button></div>`;
+  $('#svCsv', el).onclick = () => saveCsv(`stock-value-${v.date}.csv`, [
+    ['Stock value', v.date], [], ['Drink', 'Category', 'In stock', 'Cost each GHS', 'Value at cost GHS', 'Value at selling price GHS'],
+    ...v.rows.map(r => [r.name, r.category, r.qty, cedis(r.costPesewas), cedis(r.costValuePesewas), cedis(r.priceValuePesewas)]),
+    [], ['Total', '', t.qty, '', cedis(t.costValuePesewas), cedis(t.priceValuePesewas)]]);
+}
+
+// Opens the sales list behind a figure: { period, method, person, drink }.
+export const openSales = o => { location.hash = `saleslist/${new URLSearchParams(Object.entries(o).filter(([, v]) => v)).toString()}`; };
 export async function moneyView(el, period = 'today') {
   el.innerHTML = '<div class="loading">Loading…</div>';
   const [m, due, com] = await Promise.all([sapi(`/api/ops/money?period=${encodeURIComponent(period)}`), sapi('/api/ops/budget').catch(() => null), sapi('/api/ops/commissions').catch(() => null)]);
@@ -322,7 +504,7 @@ export async function moneyView(el, period = 'today') {
     <div class="hero-stack">${m.myShare ? `<div class="hero ${m.myShare.profitPesewas >= 0 ? 'good' : 'bad'}"><span>Your share (${m.myShare.pct}%)</span><b>${signed(m.myShare.profitPesewas)}</b><span>${esc(m.period.label)} · club ${profit ? 'profit' : 'loss'} ${money(Math.abs(t.profitPesewas))}</span></div>`
       : `<div class="hero ${profit ? 'good' : 'bad'}"><span>${profit ? 'Profit' : 'Loss'} · ${esc(m.period.label)}</span><b>${money(Math.abs(t.profitPesewas))}</b></div>`}
     <div class="hero-row">
-      <div class="hero pos-money"><span>Money in</span><b>${money(t.inPesewas)}</b></div>
+      <button type="button" class="hero pos-money" data-sl=""><span>Money in</span><b>${money(t.inPesewas)}</b></button>
       <div class="hero pos-money"><span>Money out</span><b>${money(t.outPesewas)}</b></div>
     </div></div>
     ${t.waiting ? `<div class="say warn"><b>${t.waiting} expense${t.waiting > 1 ? 's' : ''} waiting for a director: ${money(t.waitingPesewas)}</b>Not counted until approved.</div>` : ''}
@@ -331,13 +513,13 @@ export async function moneyView(el, period = 'today') {
       ${due ? `<a class="row-btn" href="#budget" style="text-decoration:none"><span class="t">Bills this month</span><span class="s">${due.totals.overdue ? `<b class="diff-neg">${due.totals.overdue} overdue</b> · ` : ''}${money(due.totals.paidPesewas)} paid of ${money(due.totals.billsPesewas)}</span><span class="r">${money(due.totals.duePesewas)}</span></a>` : ''}
       ${com ? `<a class="row-btn" href="#commissions" style="text-decoration:none"><span class="t">Commissions this month</span><span class="s">${com.ratePct}% on tables over ${money(com.overPesewas)}${com.totals.unassigned ? ` · ${com.totals.unassigned} not named yet` : ''}</span><span class="r">${money(com.totals.owedPesewas)}</span></a>` : ''}</div>` : ''}
     <details class="fold"><summary>Money in and out</summary>
-      <h3 class="group-h">Money in</h3><div class="lines-list">${rows(m.moneyIn)}<div class="ln total"><span>Total</span><span>${money(t.inPesewas)}</span></div></div>
+      <h3 class="group-h">Money in</h3><div class="lines-list">${m.moneyIn.filter(r => r.amountPesewas).map(r => r.key === 'drinks' ? `<div class="ln tap" data-sl=""><span>${esc(r.label)}</span><span>${money(r.amountPesewas)}</span></div>` : lineRow(esc(r.label), money(r.amountPesewas))).join('') || '<div class="ln"><span class="muted">Nothing yet</span></div>'}<div class="ln total"><span>Total</span><span>${money(t.inPesewas)}</span></div></div>
       ${d.unpaidPesewas ? `<p class="muted" style="margin:0">Not counted yet: ${money(d.unpaidPesewas)} of drinks still unpaid on open tables.</p>` : ''}
       <h3 class="group-h">Money out</h3><div class="lines-list">${rows(m.moneyOut)}<div class="ln total"><span>Total</span><span>${money(t.outPesewas)}</span></div></div></details>
     <details class="fold"><summary>Drinks <span class="muted">${signed(d.profitPesewas)} made</span></summary>
-      <div class="lines-list">${lineRow('Sold', money(d.soldPesewas))}${lineRow('What they cost us', money(d.costPesewas))}<div class="ln total"><span>Made on drinks</span><span class="${d.profitPesewas >= 0 ? '' : 'diff-neg'}">${signed(d.profitPesewas)}</span></div></div>
+      <div class="lines-list"><div class="ln tap" data-sl=""><span>Sold</span><span>${money(d.soldPesewas)}</span></div>${lineRow('What they cost us', money(d.costPesewas))}<div class="ln total"><span>Made on drinks</span><span class="${d.profitPesewas >= 0 ? '' : 'diff-neg'}">${signed(d.profitPesewas)}</span></div></div>
       ${d.missingCost.length ? `<p style="margin:0">${amber('No cost entered for:')} ${d.missingCost.map(esc).join(', ')}. Finance can add it under Drinks &amp; prices.</p>` : ''}
-      ${d.rows.length ? `<h3 class="group-h">By drink</h3><div class="lines-list">${d.rows.map(r => lineRow(esc(r.name), signed(r.profitPesewas), `${r.qty} sold · ${money(r.salesPesewas)} · cost ${money(r.costPesewas)}`)).join('')}</div>` : ''}</details>
+      ${d.rows.length ? `<h3 class="group-h">By drink <small class="muted">(tap one: who bought it)</small></h3><div class="lines-list">${d.rows.map(r => `<div class="ln tap" data-sldrink="${esc(r.name)}"><span>${esc(r.name)}<br><small>${r.qty} sold · ${money(r.salesPesewas)} · cost ${money(r.costPesewas)}</small></span><span style="white-space:nowrap">${signed(r.profitPesewas)}</span></div>`).join('')}</div>` : ''}</details>
     <details class="fold"><summary>Expenses (${live.length})</summary>
       ${m.expenses.length ? `<div class="lines-list">${m.expenses.map(e => `<div class="ln" style="${e.removed ? 'opacity:.55' : ''}"><span><b>${esc(e.description)}</b><br><small class="muted">${esc(e.categoryLabel)} · ${esc(dayName(e.date))} · ${esc(e.paidWith)} · ${esc(e.recordedByName)}${e.removed ? ` · taken off by ${esc(e.removedByName)}: ${esc(e.removedReason)}` : ''}${e.approval === 'pending' ? ' · <b>waiting for a director</b>' : e.approval === 'refused' ? ` · <b>refused by ${esc(e.decidedByName)}</b>: ${esc(e.decisionNote)}` : ''}</small></span>
         <span>${e.removed ? `<s>${money(e.amountPesewas)}</s>` : money(e.amountPesewas)}${e.canRemove ? `<br><button class="sbtn" data-rmexp="${esc(e.id)}">Take off</button>` : ''}</span></div>`).join('')}</div>` : '<p class="muted" style="margin:0">No expenses recorded.</p>'}</details>
@@ -347,7 +529,7 @@ export async function moneyView(el, period = 'today') {
       ${lineRow(`Paid on top of ${m.serviceFees.payments} online / MoMo payment${m.serviceFees.payments > 1 ? 's' : ''}`, money(m.serviceFees.totalPesewas))}</div>
       <p class="muted" style="margin:0">${esc(m.serviceFees.note)}</p></details>` : ''}
     ${m.paymentCosts?.payments ? `<details class="fold"><summary>Payment costs: the club bears ${money(m.paymentCosts.clubBornePesewas)}</summary><div class="lines-list">
-      ${lineRow(`Paystack’s fees (${m.paymentCosts.payments} payments)`, money(m.paymentCosts.processingFeesPesewas), m.paymentCosts.feesPending ? `${m.paymentCosts.feesPending} fee${m.paymentCosts.feesPending > 1 ? 's' : ''} not given by Paystack yet` : '')}${lineRow('Developer commission', money(m.paymentCosts.commissionPesewas))}${lineRow('Service charges customers paid', money(m.paymentCosts.serviceChargesPesewas))}
+      ${lineRow(`Paystack’s fees (${m.paymentCosts.payments} payments)`, money(m.paymentCosts.processingFeesPesewas), m.paymentCosts.feesPending ? `${m.paymentCosts.feesPending} fee${m.paymentCosts.feesPending > 1 ? 's' : ''} not given by Paystack yet` : '')}${m.paymentCosts.commissionPesewas == null ? '' : lineRow('Developer commission', money(m.paymentCosts.commissionPesewas))}${lineRow('Service charges customers paid', money(m.paymentCosts.serviceChargesPesewas))}
       <div class="ln total"><span>The club bears (where a charge didn’t cover the payment’s costs)</span><span>${money(m.paymentCosts.clubBornePesewas)}</span></div></div><p class="muted" style="margin:0">${esc(m.paymentCosts.note)}</p></details>` : ''}
     ${m.tips?.totalPesewas ? `<details class="fold"><summary>Tips for staff</summary><div class="lines-list">
       ${lineRow(`Tips given (${m.tips.count})`, money(m.tips.totalPesewas))}${lineRow('MoMo / card: came into the club’s account', money(m.tips.momoPesewas + m.tips.digitalPesewas))}${lineRow('Cash: the staff kept it', money(m.tips.cashPesewas))}
@@ -355,6 +537,8 @@ export async function moneyView(el, period = 'today') {
       <p class="muted" style="margin:0">${esc(m.tips.note)}</p></details>` : ''}
     ${m.owners?.length ? `<details class="fold"><summary>Directors’ shares</summary><div class="lines-list">${m.owners.map(o => lineRow(`${esc(o.name)} <small class="muted">${o.pct}%</small>`, signed(o.profitPesewas))).join('')}</div></details>` : ''}</div>`;
   $$('[data-per]', el).forEach(b => b.onclick = () => moneyView(el, b.dataset.per));
+  $$('[data-sl]', el).forEach(b => b.onclick = () => openSales({ period: m.period.key === 'custom' ? 'today' : m.period.key, method: b.dataset.sl }));
+  $$('[data-sldrink]', el).forEach(b => b.onclick = () => openSales({ period: m.period.key === 'custom' ? 'today' : m.period.key, drink: b.dataset.sldrink }));
   $('#addExp', el) && ($('#addExp', el).onclick = () => expenseSheet(m, async r => { await moneyView(el, m.period.key); say($('#mMsg', el), r?.needsApproval ? 'Saved. It’s above the limit, so it waits for a director.' : 'Expense saved.'); }));
   $$('[data-rmexp]', el).forEach(b => b.onclick = () => {
     const { box, close } = sheet(`<h2>Take off this expense</h2><p class="muted" style="margin:0">It stays on record, crossed out.</p>
@@ -571,16 +755,17 @@ export async function toApproveView(el, { onCount } = {}) {
   const d = await sapi('/api/ops/to-approve');
   onCount?.(d.items.length);
   const KIND = { payroll: 'Salaries', loan: 'Staff loan', bill: 'Bill', commission: 'Commission', purchase: 'Drinks to buy', expense: 'Expense' };
-  el.innerHTML = `<h1>To approve</h1><p class="lead" style="margin:0">${d.items.length ? `${d.items.length} waiting · ${money(d.totalPesewas)}. Finance pays only what a director approves.` : 'Nothing waiting. Finance pays only what a director approves.'}</p>
+  const rule = d.financeLimitPesewas ? `You approve up to ${money(d.financeLimitPesewas)}, except what you recorded or checked yourself. Bigger ones wait for a director.` : 'Finance approves up to GHS 2,000; the rest waits for you.';
+  el.innerHTML = `<h1>To approve</h1><p class="lead" style="margin:0">${d.items.length ? `${d.items.length} waiting · ${money(d.totalPesewas)}.` : 'Nothing waiting.'} ${rule}</p>
     <div id="taMsg"></div>
     <div class="cards">${d.items.map((x, i) => `<div class="tcard" style="cursor:default"><span class="row"><span class="t" style="font-size:16px">${esc(x.title)}</span><span class="amt">${money(x.amountPesewas)}</span></span>
       <span class="sub">${esc(KIND[x.kind])} · ${esc(x.detail || '')}</span><span class="sub">Asked by ${esc(x.byName || '—')}${x.at ? ` · ${esc(dayName(String(x.at).slice(0, 10)))}` : ''}</span>
       ${x.lines?.length ? `<details class="fold"><summary>Details</summary><div class="lines-list">${x.lines.map(l => `<div class="ln"><span>${esc(l.label)}${l.sub ? `<br><small class="muted">${esc(l.sub)}</small>` : ''}</span><span>${money(l.amountPesewas)}</span></div>`).join('')}</div></details>` : ''}
-      <span class="btn-row"><button class="mid okc" data-yes="${i}">Approve</button><button class="mid" data-no="${i}">Refuse</button></span></div>`).join('') || '<div class="empty-box"><b>All clear</b>New requests appear here.</div>'}</div>`;
+      ${x.canDecide === false ? `<span class="sub"><b>${esc(x.whyNot)}</b></span>` : `<span class="btn-row"><button class="mid okc" data-yes="${i}">Approve</button><button class="mid" data-no="${i}">Refuse</button></span>`}</div>`).join('') || '<div class="empty-box"><b>All clear</b>New requests appear here.</div>'}</div>`;
   const decide = async (x, approve) => {
     let note = '';
     if (!approve) { note = await ask(x.kind === 'payroll' ? { title: 'Send salaries back', label: 'What needs changing? It goes back to the Human manager.', quick: ['A salary is wrong', 'A bonus needs checking', 'Someone is missing', 'Someone shouldn’t be paid'], send: 'Send back', danger: true } : { title: 'Refuse this payment', label: 'Why? They see your reason.', quick: REFUSE_QUICK, send: 'Refuse', danger: true }); if (!note) return; }
-    try { await sapi('/api/ops/approve', { method: 'POST', body: { kind: x.kind, id: x.id, approve, note } }); await toApproveView(el, { onCount }); say($('#taMsg', el), approve ? 'Approved. Finance can pay it now.' : 'Refused.'); }
+    try { await sapi('/api/ops/approve', { method: 'POST', body: { kind: x.kind, id: x.id, approve, note } }); await toApproveView(el, { onCount }); say($('#taMsg', el), approve ? 'Approved. It can be paid now.' : 'Refused.'); }
     catch (e) { say($('#taMsg', el), e.message, 'bad'); }
   };
   $$('[data-yes]', el).forEach(b => b.onclick = () => decide(d.items[Number(b.dataset.yes)], true));
@@ -887,10 +1072,26 @@ const pct = n => `${Number(n || 0)}%`;
 export async function chargesView(el) {
   el.innerHTML = '<div class="loading">Loading…</div>';
   const c = await sapi('/api/ops/commercial');
-  const sc = c.serviceCharge, cm = c.commission, ro = c.canEdit ? '' : 'disabled';
+  const sc = c.serviceCharge, cm = c.commission, rt = c.routes, ro = c.canEdit ? '' : 'disabled';
   const tick = (name, map, on) => Object.entries(map).map(([k, l]) => `<label class="tick"><input type="checkbox" name="${name}" value="${esc(k)}" ${on.includes(k) ? 'checked' : ''} ${ro}> ${esc(l)}</label>`).join('');
   el.innerHTML = `<div class="vstack" style="display:grid;gap:14px"><h1>Service charge &amp; commission</h1>
     <p class="lead">${c.updatedByName ? `Last changed by ${esc(c.updatedByName)} ${when(c.updatedAt)}.` : 'Not changed yet: the defaults are in force.'}${c.canEdit ? '' : ' Only a director or the admin can change these.'}</p>
+    <h3 class="group-h">New payment rules</h3>
+    <div class="say ${rt.enabled ? 'good' : 'warn'}"><b>${rt.enabled ? 'On: every card and MoMo payment uses these rules' : 'Off: payments still use the service charge below'}</b>${rt.enabled ? 'The partner’s share of each Paystack payment goes straight to his subaccount. Bills above the Paystack limit are paid in cash or by MoMo to the wallet (a manager confirms each).' : 'Enter the partner’s Paystack subaccount, check the examples, then switch them on.'}</div>
+    <label class="tick"><input type="checkbox" id="rtOn" ${rt.enabled ? 'checked' : ''} ${ro}> Use the new payment rules</label>
+    <div class="sfield"><label for="rtSub">Partner’s Paystack subaccount</label><input id="rtSub" value="${esc(rt.paystackSubaccount || '')}" placeholder="ACCT_…" autocapitalize="off" spellcheck="false" ${ro}><span class="hint">From Paystack → Subaccounts. His share of every Paystack payment is sent there.</span></div>
+    <div class="grid2"><div class="sfield"><label for="rtPct">Charge (% of the bill)</label><input id="rtPct" inputmode="decimal" value="${esc(rt.percent)}" ${ro}></div>
+      ${moneyField('rtOnly', 'Customer pays it all, bills up to (GHS)', String(rt.customerOnlyUpToPesewas / 100))}
+      ${moneyField('rtPs', 'Paystack offered for bills up to (GHS)', String(rt.paystackUpToPesewas / 100))}
+      <div class="sfield"><label for="rtVen">Above that first limit, the venue pays (% of the charge)</label><input id="rtVen" inputmode="decimal" value="${esc(rt.venueSharePercent)}" ${ro}></div>
+      ${moneyField('rtMin', 'But the customer pays at least (GHS)', String(rt.customerMinPesewas / 100))}
+      ${moneyField('rtFlat', 'Big bills by MoMo: flat charge (GHS)', String(rt.bigFlatPesewas / 100))}
+      <div class="sfield"><label for="rtWal">Partner’s MoMo wallet (big bills)</label><input id="rtWal" type="tel" inputmode="tel" value="${esc(rt.bigWalletNumber || '')}" ${ro}></div>
+      <div class="sfield"><label for="rtWalN">Name customers see on it</label><input id="rtWalN" maxlength="60" value="${esc(rt.bigWalletName || '')}" ${ro}></div></div>
+    <p class="group-h">What it means for some bills</p>
+    <div class="lines-list">${(c.routeExamples || []).map(x => { const p = x.paystack || x.momo; return lineRow(`<b>Bill ${money(x.billPesewas)}</b> · cash or ${x.paystack ? 'Paystack' : 'MoMo to the wallet'}`, `pays ${money(p.customerPaysPesewas)}`, `Venue records ${money(p.venueRecordsPesewas)}${(x.paystack ? p.evolveitEstimatePesewas : p.evolveitPesewas) == null ? '' : ` · EvolveIT ${x.paystack ? 'about ' : ''}${money(x.paystack ? p.evolveitEstimatePesewas : p.evolveitPesewas)}`}`); }).join('')}</div>
+    <p class="muted" style="margin:0">Cash never has a charge. On Paystack, Paystack’s fee comes out of the charge and EvolveIT keeps the rest (the real fee is what Paystack reports). Above the Paystack limit, the customer sends MoMo to the wallet and pays the flat charge, which is owed to EvolveIT.</p>
+    ${c.canEdit ? '<button class="big ghost" id="rtSave">Save the payment rules</button><div id="rtMsg"></div>' : ''}
     <h3 class="group-h">Customer service charge</h3>
     <div class="say ${sc.enabled ? 'good' : 'warn'}"><b>${sc.enabled ? `On: ${pct(sc.percent)} of the bill, at most ${money(sc.capPesewas)}` : 'Off'}</b>Added once per bill to payments made online or by MoMo through the site. Not on cash. Shown to the customer before they pay.</div>
     <label class="tick"><input type="checkbox" id="scOn" ${sc.enabled ? 'checked' : ''} ${ro}> Charge customers a service charge</label>
@@ -913,6 +1114,12 @@ export async function chargesView(el) {
     <button class="mid" id="simGo">Run the simulation</button><div id="simOut"></div></div>`;
   const val = id => $(`#${id}`, el).value;
   const checked = name => $$(`input[name="${name}"]:checked`, el).map(x => x.value);
+  $('#rtSave', el) && ($('#rtSave', el).onclick = async () => {
+    try {
+      await busy($('#rtSave', el), () => sapi('/api/ops/commercial', { method: 'POST', body: { routes: { enabled: $('#rtOn', el).checked, paystackSubaccount: val('rtSub').trim(), percent: val('rtPct'), customerOnlyUpToPesewas: ghsIn(val('rtOnly')), paystackUpToPesewas: ghsIn(val('rtPs')), venueSharePercent: val('rtVen'), customerMinPesewas: ghsIn(val('rtMin')), bigFlatPesewas: ghsIn(val('rtFlat')), bigWalletNumber: val('rtWal'), bigWalletName: val('rtWalN') } } }));
+      await chargesView(el); say($('#rtMsg', el), $('#rtOn', el)?.checked ? 'Saved. New payments use the new rules.' : 'Saved. The examples show the new numbers.', 'good');
+    } catch (e) { say($('#rtMsg', el), e.message, 'bad'); }
+  });
   $('#cmSave', el) && ($('#cmSave', el).onclick = async () => {
     try {
       await busy($('#cmSave', el), () => sapi('/api/ops/commercial', { method: 'POST', body: {
@@ -942,7 +1149,7 @@ const TX_STATUS = { completed: 'Completed', pending: 'Paying now', abandoned: 'L
 export async function financeNightView(el, date, channel = 'all') {
   el.innerHTML = '<div class="loading">Loading…</div>';
   const r = await sapi(`/api/ops/finance-night?channel=${encodeURIComponent(channel)}${date ? `&date=${date}` : ''}`);
-  const S = r.sales, P = r.payments, c = P.commission;
+  const S = r.sales, P = r.payments, showC = !!P.commission, c = P.commission || { payablePesewas: 0, paidPesewas: 0, reversedPesewas: 0, toRecoverPesewas: 0 };
   const st = s => (s === 'completed' ? '<b style="color:#6fcfae">Completed</b>' : ['failed', 'refunded', 'refund_owed'].includes(s) ? `<b class="diff-neg">${TX_STATUS[s]}</b>` : amber(TX_STATUS[s] || s));
   el.innerHTML = `<div class="vstack" style="display:grid;gap:14px"><h1>Night’s finances</h1>${dateBar(r.date, 'fnDate')}
     <div class="sfield"><label for="fnCh">Payment channel</label><select id="fnCh"><option value="all">All</option>${Object.entries(r.channels).map(([k, l]) => `<option value="${esc(k)}" ${k === r.channel ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select><span class="hint">Filters the payments and the transactions. Sales are always the whole night.</span></div>
@@ -959,7 +1166,7 @@ export async function financeNightView(el, date, channel = 'all') {
       ${lineRow('Settled, per Paystack', money(P.settledPesewas), `${P.settledPayments} payment${P.settledPayments === 1 ? '' : 's'} matched${P.unsettledPayments ? ` · ${P.unsettledPayments} not settled yet` : ''}`)}
       <div class="ln total"><span>Still to settle</span><span>${money(P.outstandingSettlementPesewas)}</span></div>
       ${lineRow('Received by the club (recorded)', P.receivedByClub ? money(P.receivedByClub.amountPesewas) : amber('not recorded'), P.receivedByClub ? `${esc(P.receivedByClub.byName)} · ${esc(P.receivedByClub.note)}` : '')}</div>
-    <div class="lines-list">${lineRow('Refunds owed (not paid back yet)', money(P.refundsOwedPesewas))}${lineRow('Developer commission payable', money(c.payablePesewas), `${money(c.paidPesewas)} paid${c.reversedPesewas ? ` · ${money(c.reversedPesewas)} reversed` : ''}${c.toRecoverPesewas ? ` · ${money(c.toRecoverPesewas)} to recover` : ''}`)}
+    <div class="lines-list">${lineRow('Refunds owed (not paid back yet)', money(P.refundsOwedPesewas))}${showC ? lineRow('Developer commission payable', money(c.payablePesewas), `${money(c.paidPesewas)} paid${c.reversedPesewas ? ` · ${money(c.reversedPesewas)} reversed` : ''}${c.toRecoverPesewas ? ` · ${money(c.toRecoverPesewas)} to recover` : ''}`) : ''}
       ${lineRow('Service charges on these payments', money(P.serviceChargesPesewas))}<div class="ln total"><span>Payment costs the club bears</span><span>${money(P.clubBorneCostPesewas)}</span></div></div>
     <p class="muted" style="margin:0">${esc(P.note)}</p>
     <div class="btn-row"><button class="mid" id="fnSync">Check Paystack settlements</button><button class="mid" id="fnRecv">Record what was received</button>${r.canPayCommission && c.payablePesewas ? '<button class="mid" id="fnPaid">Commission paid</button>' : ''}</div><div id="fnMsg"></div>
@@ -994,17 +1201,24 @@ export async function financeNightView(el, date, channel = 'all') {
 export async function tabClearView(el) {
   el.innerHTML = '<div class="loading">Loading…</div>';
   const { nights } = await sapi('/api/ops/tabs/stale');
+  // Each unpaid tab asks one question: did the customer pay the waiter in cash? Ticked: the cash is
+  // recorded under that waiter for that night. Not ticked: it's written off.
+  const row = t => `<div class="ln" style="align-items:center"><span><b>Tab ${esc(t.number)}${t.table ? ` · ${esc(t.table)}` : ''}</b><br><small class="muted">${esc(t.waiterName)}${t.customerName ? ` · ${esc(t.customerName)}` : ''}</small>
+    ${t.balancePesewas ? `<label class="tick" style="display:flex;gap:8px;align-items:center;margin-top:6px;font-weight:600"><input type="checkbox" data-cash="${esc(t.id)}" style="width:22px;height:22px"> Customer paid ${esc(String(t.waiterName || 'the waiter').split(' ')[0])} in cash</label>` : ''}</span>
+    <span>${t.balancePesewas ? money(t.balancePesewas) : 'Paid'}</span></div>`;
   el.innerHTML = `<div class="vstack" style="display:grid;gap:14px"><h1>Tabs left open</h1>
-    <p class="lead">Tabs still open from nights that are over. Waiters keep seeing them until they’re cleared.</p><div id="tcMsg"></div>
-    ${nights.map(n => `<section class="card" style="display:grid;gap:8px"><div><b>${esc(dayName(n.date))}</b> · ${n.tabs.length} open tab${n.tabs.length === 1 ? '' : 's'}${n.unpaidPesewas ? ` · ${money(n.unpaidPesewas)} unpaid` : ''}</div>
-      <div class="tbl-wrap"><table class="tbl"><thead><tr><th>Tab</th><th>Waiter</th><th>Customer</th><th class="num">Owes</th></tr></thead><tbody>${n.tabs.map(t => `<tr><td>${esc(t.number)}${t.table ? ` · ${esc(t.table)}` : ''}</td><td>${esc(t.waiterName)}</td><td>${esc(t.customerName)}</td><td class="num">${money(t.balancePesewas)}</td></tr>`).join('')}</tbody></table></div>
+    <p class="lead">Tabs still open from nights that are over. For each unpaid one: if the customer paid the waiter in cash, tick it. The cash is then recorded under that waiter. Anything not ticked is written off.</p><div id="tcMsg"></div>
+    ${nights.map(n => `<section class="card" style="display:grid;gap:8px" data-night="${esc(n.date)}"><div><b>${esc(dayName(n.date))}</b> · ${n.tabs.length} open tab${n.tabs.length === 1 ? '' : 's'}${n.unpaidPesewas ? ` · ${money(n.unpaidPesewas)} unpaid` : ''}</div>
+      <div class="lines-list">${n.tabs.map(row).join('')}</div>
       <button class="mid red" data-clear="${esc(n.date)}">Clear these tabs</button></section>`).join('') || '<p class="muted">No tabs left open. Every past night is cleared.</p>'}</div>`;
   $$('[data-clear]', el).forEach(b => b.onclick = async () => {
-    const n = nights.find(x => x.date === b.dataset.clear);
-    const reason = await ask({ title: `Clear ${n.tabs.length} tab${n.tabs.length === 1 ? '' : 's'} from ${dayName(n.date)}?`, label: 'Why? (kept with your name)', quick: ['Trial night', 'Night finished, tabs left open'], send: 'Clear', danger: true, max: 200 });
+    const n = nights.find(x => x.date === b.dataset.clear), sec = b.closest('[data-night]');
+    const cashPaid = $$('[data-cash]', sec).filter(x => x.checked).map(x => x.dataset.cash);
+    const cashSum = n.tabs.filter(t => cashPaid.includes(t.id)).reduce((a, t) => a + t.balancePesewas, 0), lost = n.unpaidPesewas - cashSum;
+    const reason = await ask({ title: `Clear ${n.tabs.length} tab${n.tabs.length === 1 ? '' : 's'} from ${dayName(n.date)}?`, label: 'Why? (kept with your name)', quick: ['Night finished, tabs left open', 'Trial night'], send: 'Clear', danger: !!lost, max: 200 });
     if (reason === null) return;
-    if (n.unpaidPesewas && !confirm(`${money(n.unpaidPesewas)} is still unpaid on these tabs. It will be written off with your reason. Clear them?`)) return;
-    try { const r = await busy(b, () => sapi('/api/ops/tabs/clear', { method: 'POST', body: { date: n.date, reason } })); await tabClearView(el); say($('#tcMsg', el), r.message, 'good'); }
+    if (lost && !confirm(`${money(lost)} is unpaid and not ticked as cash. It will be written off. Clear them?`)) return;
+    try { const r = await busy(b, () => sapi('/api/ops/tabs/clear', { method: 'POST', body: { date: n.date, reason, cashPaid } })); await tabClearView(el); say($('#tcMsg', el), r.message, 'good'); }
     catch (e) { say($('#tcMsg', el), e.message, 'bad'); }
   });
 }

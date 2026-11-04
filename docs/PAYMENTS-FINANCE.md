@@ -1,5 +1,40 @@
 # Payments, costs and the night's finances
 
+## The payment rules (owner's decision, November 2026)
+
+Switched on by a director (More → Service charge & commission → New payment rules), once the
+partner's Paystack subaccount code is entered. When on, they replace the service charge and the
+developer commission below for every purchase: drinks, QR orders, tickets, gate sales, pay-in-bits.
+
+| Bill (whole bill, after discounts, never tips) | How it can be paid | The 5% charge |
+|---|---|---|
+| Any amount | Cash | None |
+| Up to and including GHS 300 | Paystack (card or MoMo) | The customer pays all of it |
+| GHS 300.01 to 2,000 | Paystack | Split 50/50 with the venue, but the customer pays at least GHS 15 |
+| Above GHS 2,000 | Cash, or MoMo straight to the partner's merchant wallet (0595986313, Samuel Forson / Memories Night Club), confirmed by a manager | Flat GHS 100, paid by the customer, owed to EvolveIT |
+
+- **Paystack split:** each Paystack payment is sent with the partner's subaccount. EvolveIT's main
+  account keeps the 5% charge (plus EvolveIT's 10% share on tickets and tables) and bears
+  Paystack's fee; everything else goes straight to the partner. The ledger stores, per payment:
+  the charge, both shares, Paystack's actual fee, EvolveIT's earning (charge − fee) and the
+  partner's amount.
+- **Venue revenue** = bill − the venue's share; the Money report lists the venue's share under
+  money out ("Card / MoMo charges").
+- **Refunds:** the customer gets everything back; Paystack keeps its fee and the venue bears it.
+- **MoMo to the wallet** (`worker/src/ops/wallet.js`): the waiter's Close tab shows the amount
+  (bill + GHS 100), the wallet and a reference code (also texted). The tab waits until a manager
+  confirms on Tonight → *MoMo to confirm* with the amount that arrived and the MoMo transaction ID
+  (once ever). Short amounts are refused unless accepted with a reason; extra is shown as change.
+  Each confirmed GHS 100 becomes a row in `evolveit_charges` (unsettled until the weekly settlement).
+- **Paystack is down tonight** (a director, More): any bill can use the wallet at the customer's
+  usual Paystack price; that charge is owed to EvolveIT the same way. It ends with the night.
+- With the rules on, staff can no longer record "MoMo to the club's number".
+- Every number (5%, 300, 2,000, 50/50, GHS 15, GHS 100) is a setting; each payment keeps a copy of
+  the rule it was charged under. Logic: `public/lib/charge-rules.js` (shared by the pages and the
+  Worker), `worker/src/lib/routes.js`, `worker/src/lib/fee.js` (serviceFee).
+
+## The service charge and commission (before the new rules)
+
 Three separate things, never mixed:
 
 | | What it is | Who pays | Where it's set |

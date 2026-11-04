@@ -158,15 +158,14 @@ test('the Event manager serves a table like a waiter: opens it, sends drinks, ta
   assert.equal(ok(await ctx.call('GET', '/api/ops/my-report', { who: EV }), 'report').figures.cashCollectedPesewas, 5000);
 });
 
-test('closing the night: the Manager closes it, not a director; if the Manager can’t, they hand it over and the Human manager or Event manager who accepts closes it', async () => {
+test('closing the night: the Manager (or a director) closes it; if the Manager can’t, they hand it over and the Human manager or Event manager who accepts closes it', async () => {
   const ctx = setup();
   ctx.store.seed('users', 'ev', { name: 'Yaa Events', role: 'eventManager', phone: '0240000299' });
   const EV = { uid: 'ev', role: 'eventManager' };
   const close = who => ctx.call('POST', '/api/ops/close-night', { who, body: { confirmEarly: true, closeAnyway: true } });
-  assert.match((await close(ctx.D1)).data.error, /The Manager closes the night, not the directors/);
   assert.equal((await close(ctx.HR)).status, 403, 'not without a handover');
   let st = ok(await ctx.call('GET', '/api/ops/closing', { who: ctx.D1 }), 'director looks');
-  assert.deepEqual([st.closer.canClose, st.closer.handover], [false, null]);
+  assert.deepEqual([st.closer.canClose, st.closer.handover], [true, null], 'a director can end the night');
   // The Manager can't be there tonight: hands over with a reason.
   assert.equal((await ctx.call('POST', '/api/ops/close-night/hand-over', { who: ctx.HR, body: { note: 'x' } })).status, 403);
   assert.match((await ctx.call('POST', '/api/ops/close-night/hand-over', { who: ctx.M1, body: {} })).data.error, /Say why/);
@@ -195,4 +194,171 @@ test('the Human manager sees only the staff he looks after: no directors, no sha
   assert.ok(!JSON.stringify(hr).includes('sharePct'));
   const d = ok(await ctx.call('GET', '/api/admin/people', { who: ctx.D1 }), 'director list');
   assert.ok(d.staff.some(s => s.role === 'director'), 'a director still sees everyone');
+});
+
+test('no fixed closing time: the night stays open until it is closed, then the next sale starts a new night', async () => {
+  const ctx = setup();
+  const day = ms => new Date(Date.now() + ms).toLocaleDateString('en-CA', { timeZone: 'Africa/Accra' });
+  const yesterday = day(-864e5), today = day(0);
+  // A night that started yesterday evening and is still going (it's long past 4AM).
+  ctx.store.seed('config', 'night', { date: yesterday, startedAt: new Date(Date.now() - 864e5).toISOString() });
+  const t1 = ok(await ctx.call('POST', '/api/ops/tabs/open', { who: ctx.M1, body: { table: '3' } }), 'open late');
+  assert.equal(ctx.store.get('tabs', t1.id).fields.businessDate, yesterday, 'still the open night, however late');
+  const s1 = ok(await ctx.call('GET', '/api/ops/sales', { who: ctx.D1 }), 'sales');
+  assert.deepEqual([s1.date, s1.isOpenNight], [yesterday, true]);
+  // A director ends it.
+  ok(await ctx.call('POST', '/api/ops/close-night', { who: ctx.D1, body: { date: yesterday } }), 'a director closes');
+  const t2 = ok(await ctx.call('POST', '/api/ops/tabs/open', { who: ctx.M1, body: { table: '4' } }), 'open after');
+  assert.equal(ctx.store.get('tabs', t2.id).fields.businessDate, today, 'the next night has started');
+  const s2 = ok(await ctx.call('GET', '/api/ops/sales', { who: ctx.M1 }), 'sales after');
+  assert.deepEqual([s2.date, s2.previous?.date], [today, yesterday], 'last night is one tap away');
+});
+
+test('closing a tab: drinks the bar handed over count as delivered; only drinks still at the bar stop it', async () => {
+  const ctx = setup();
+  const W = ctx.M1;
+  const t = ok(await ctx.call('POST', '/api/ops/tabs/open', { who: W, body: { table: '7' } }), 'open');
+  const r1 = ok(await ctx.call('POST', '/api/ops/tabs/round', { who: W, body: { tabId: t.id, lines: [{ productId: 'beer', qty: 2 }] } }), 'order');
+  const rid = r1.roundId || r1.id;
+  // Still at the bar: the close says so, and names it.
+  const blocked = await ctx.call('POST', '/api/ops/tabs/checkout', { who: W, body: { tabId: t.id, method: 'cash' } });
+  assert.equal(blocked.data.code, 'at_bar'); assert.equal(blocked.data.atBar.length, 1);
+  // The bar hands it over; the waiter never taps "I got them".
+  ok(await ctx.call('POST', '/api/ops/bar/round', { who: ctx.B1, body: { roundId: rid, action: 'hand' } }), 'handed');
+  const c = ok(await ctx.call('POST', '/api/ops/tabs/checkout', { who: W, body: { tabId: t.id, method: 'momo_club', momoRef: 'MP123456789' } }), 'close with MoMo to the club');
+  assert.deepEqual([c.closed, c.momoPesewas], [true, 5000]);
+  assert.equal(ctx.store.get('rounds', rid).fields.status, 'delivered');
+  // An empty tab (opened by mistake) closes too.
+  const e = ok(await ctx.call('POST', '/api/ops/tabs/open', { who: W, body: { table: '8' } }), 'open empty');
+  assert.equal(ok(await ctx.call('POST', '/api/ops/tabs/checkout', { who: W, body: { tabId: e.id, method: 'cash' } }), 'close empty').closed, true);
+});
+
+test('stock value: what finance recorded coming in, minus what left, at cost price; flags what makes it wrong', async () => {
+  const ctx = setup();
+  ctx.store.seed('menu_items', 'gin', { name: 'House gin', category: 'Spirits', unit: 'bottle', pricePesewas: 30000, available: true, tracked: true });
+  ctx.store.seed('stock_moves', 'gin-in', { productId: 'gin', stationId: 'main', qty: 2, kind: 'received', businessDate: '2000-01-01' });
+  ctx.store.seed('stock_moves', 'beer-out', { productId: 'beer', stationId: 'main', qty: -5, kind: 'issue', businessDate: '2000-01-02' });
+  assert.equal((await ctx.call('GET', '/api/ops/stock/value', { who: ctx.B1 })).status, 403, 'not the bartenders');
+  const v = ok(await ctx.call('GET', '/api/ops/stock/value', { who: ctx.D1 }), 'director');
+  assert.equal(v.totals.costValuePesewas, 15 * 1200, '15 beers at cost (gin has no cost yet)');
+  assert.equal(v.totals.priceValuePesewas, 15 * 2500 + 2 * 30000);
+  assert.deepEqual(v.noCostPrice, ['House gin']);
+  ok(await ctx.call('GET', '/api/ops/stock/value', { who: ctx.F1 }), 'finance');
+});
+
+test('Paystack asks for a code before the MoMo prompt: the customer types it on their bill link, the waiter does nothing', async () => {
+  const ctx = setup();
+  const real = globalThis.fetch, calls = [];
+  globalThis.fetch = async (url, init) => {
+    const u = String(url?.url || url);
+    if (u.startsWith('https://api.paystack.co/charge')) {
+      calls.push([u.replace('https://api.paystack.co', ''), JSON.parse(init.body)]);
+      const status = u.endsWith('/submit_otp') ? (JSON.parse(init.body).otp === '123456' ? 'pay_offline' : 'failed') : 'send_otp';
+      return new Response(JSON.stringify({ status: true, data: { status } }), { status: 200 });
+    }
+    return real(url, init);
+  };
+  try {
+    const t = ok(await ctx.call('POST', '/api/ops/tabs/open', { who: ctx.M1, body: { table: '2' } }), 'open');
+    const r = ok(await ctx.call('POST', '/api/ops/tabs/round', { who: ctx.M1, body: { tabId: t.id, lines: [{ productId: 'beer', qty: 1 }] } }), 'order');
+    ok(await ctx.call('POST', '/api/ops/bar/round', { who: ctx.B1, body: { roundId: r.roundId || r.id, action: 'hand' } }), 'handed');
+    const c = ok(await ctx.call('POST', '/api/ops/tabs/checkout', { who: ctx.M1, body: { tabId: t.id, method: 'momo', phone: '0241112222' } }), 'momo');
+    assert.equal(c.otp, true); assert.match(c.message, /They type it on the link/);
+    assert.equal(ctx.store.get('pending_checkouts', c.reference).fields.status, 'pending', 'still waiting, not failed');
+    const sms = ctx.store.sms.at(-1); assert.equal(sms.to, '0241112222'); assert.match(sms.message, /Paystack has texted you a code/);
+    const token = ctx.store.get('tabs', t.id).fields.billToken;
+    const pub = await ctx.call('GET', `/api/guest/bill/${token}`); assert.equal(pub.data.codeNeeded, true, 'the bill page asks for the code');
+    assert.match((await ctx.call('POST', `/api/guest/bill/${token}/code`, { body: { otp: '999999' } })).data.error, /didn’t accept/);
+    const okc = await ctx.call('POST', `/api/guest/bill/${token}/code`, { body: { otp: '123 456' } });
+    assert.equal(okc.data.accepted, true);
+    assert.deepEqual(calls.at(-1), ['/charge/submit_otp', { otp: '123456', reference: c.reference }]);
+    assert.equal((await ctx.call('GET', `/api/guest/bill/${token}`)).data.codeNeeded, false, 'asked once');
+  } finally { globalThis.fetch = real; }
+});
+
+test('every sale, one by one: the directors see what was bought, by whom, how it was paid; filters narrow it', async () => {
+  const ctx = setup();
+  ctx.store.seed('users', 'w9', { name: 'Efua Waiter', role: 'waitStaff', phone: '0240009999' });
+  const W = { uid: 'w9', role: 'waitStaff' };
+  ok(await ctx.call('POST', '/api/ops/quick-sale', { who: ctx.B1, body: { lines: [{ productId: 'beer', qty: 1 }], method: 'cash', fromBar: true } }), 'bar cash');
+  const t = ok(await ctx.call('POST', '/api/ops/tabs/open', { who: W, body: { table: '6', customerName: 'Kofi' } }), 'open');
+  const r = ok(await ctx.call('POST', '/api/ops/tabs/round', { who: W, body: { tabId: t.id, lines: [{ productId: 'beer', qty: 3 }] } }), 'order');
+  ok(await ctx.call('POST', '/api/ops/bar/round', { who: ctx.B1, body: { roundId: r.roundId || r.id, action: 'hand' } }), 'handed');
+  ok(await ctx.call('POST', '/api/ops/tabs/pay', { who: W, body: { tabId: t.id, method: 'momo', amountPesewas: 5000, momoRef: 'MP555666777' } }), 'part MoMo');
+  assert.equal((await ctx.call('GET', '/api/ops/sales/list', { who: ctx.B1 })).status, 403, 'not the bar');
+  const all = ok(await ctx.call('GET', '/api/ops/sales/list?period=today', { who: ctx.D1 }), 'all');
+  assert.deepEqual([all.totals.count, all.totals.salesPesewas, all.totals.paidPesewas, all.totals.leftPesewas], [2, 10000, 7500, 2500]);
+  const tab = all.sales.find(s => s.label === `Tab ${t.number}`);
+  assert.deepEqual([tab.where, tab.servedByName, tab.customerName, tab.lines[0].qty, tab.payments[0].takenByName, tab.payments[0].ref, tab.statusLabel], ['Table 6', 'Efua Waiter', 'Kofi', 3, 'Efua Waiter', 'MP555666777', 'Part paid']);
+  assert.equal(ok(await ctx.call('GET', '/api/ops/sales/list?method=cash', { who: ctx.D1 }), 'cash').totals.count, 1);
+  assert.equal(ok(await ctx.call('GET', '/api/ops/sales/list?method=unpaid', { who: ctx.D1 }), 'unpaid').sales[0].label, `Tab ${t.number}`);
+  assert.equal(ok(await ctx.call('GET', '/api/ops/sales/list?person=w9', { who: ctx.M1 }), 'one waiter').totals.count, 1);
+  assert.deepEqual(ok(await ctx.call('GET', '/api/ops/sales/list?period=week&drink=Club%20beer', { who: ctx.F1 }), 'one drink').drinkTotals, { name: 'Club beer', qty: 4, amountPesewas: 10000 });
+});
+
+test('QR menu, pay cash at the bar: a code at once; the bar takes the cash; it counts as a cash sale everywhere', async () => {
+  const ctx = setup();
+  const guest = (path, body) => ctx.call(body ? 'POST' : 'GET', path, { body });
+  const o = (await guest('/api/guest/counter/checkout', { station: 'a'.repeat(32), payWith: 'cash', phone: '0247778888', spot: '9', items: [{ itemId: 'beer', qty: 2 }] })).data;
+  assert.equal(o.cash, true); assert.ok(o.pickupCode);
+  assert.match(ctx.store.sms.at(-1).message, /pay GHS 50 cash/);
+  assert.match((await guest('/api/guest/counter/checkout', { station: 'a'.repeat(32), payWith: 'cash', phone: '0247778888', items: [{ itemId: 'beer', qty: 1 }] })).data.error, /already have an order waiting/, 'one unpaid cash order per phone');
+  assert.equal((await guest(`/api/guest/counter/${o.orderId}`)).data.status, 'cash_due');
+  const q = ok(await ctx.call('GET', '/api/bar/queue', { who: ctx.B1 }), 'queue');
+  assert.deepEqual([q.cashDue.length, q.cashDue[0].pickupCode, q.orders.length], [1, o.pickupCode, 0]);
+  const r = ok(await ctx.call('POST', '/api/bar/order', { who: ctx.B1, body: { orderId: o.orderId, action: 'cash' } }), 'cash received');
+  assert.equal(r.status, 'cash_paid');
+  assert.equal((await guest(`/api/guest/counter/${o.orderId}`)).data.status, 'cash_paid');
+  const s = ok(await ctx.call('GET', '/api/ops/sales', { who: ctx.M1 }), 'sales');
+  assert.deepEqual([s.totals.cashPesewas, s.totals.digitalPesewas, s.totals.salesPesewas], [5000, 0, 5000], 'cash, counted once');
+  const my = ok(await ctx.call('GET', '/api/ops/my-report', { who: ctx.B1 }), 'bartender report');
+  assert.equal(my.figures.cashCollectedPesewas, 5000, 'in the bartender’s cash');
+  assert.equal((await ctx.call('POST', '/api/bar/order', { who: ctx.B1, body: { orderId: o.orderId, action: 'cash' } })).data.error, 'Already paid and handed over.');
+});
+
+test('finance approves up to GHS 2,000, never what finance recorded; bigger ones wait for a director', async () => {
+  const ctx = setup();
+  const exp = async (who, amount) => ok(await ctx.call('POST', '/api/ops/expenses', { who, body: { category: 'supplies', description: 'Ice', amountPesewas: amount } }), 'expense').id;
+  const small = await exp(ctx.M1, 50000), big = await exp(ctx.M1, 300000), own = await exp(ctx.F1, 20000);
+  const list = ok(await ctx.call('GET', '/api/ops/to-approve', { who: ctx.F1 }), 'finance list');
+  const can = Object.fromEntries(list.items.map(i => [i.id, i.canDecide]));
+  assert.deepEqual([can[small], can[big], can[own]], [true, false, false]);
+  assert.match((await ctx.call('POST', '/api/ops/approve', { who: ctx.F1, body: { kind: 'expense', id: big, approve: true } })).data.error, /director approves/);
+  assert.match((await ctx.call('POST', '/api/ops/approve', { who: ctx.F1, body: { kind: 'expense', id: own, approve: true } })).data.error, /someone else approves/);
+  ok(await ctx.call('POST', '/api/ops/approve', { who: ctx.F1, body: { kind: 'expense', id: small, approve: true } }), 'finance approves');
+  assert.equal(ctx.store.get('expenses', small).fields.approval, 'approved');
+  ok(await ctx.call('POST', '/api/ops/approve', { who: ctx.D1, body: { kind: 'expense', id: big, approve: true } }), 'a director approves the big one');
+  assert.equal((await ctx.call('POST', '/api/ops/approve', { who: ctx.M1, body: { kind: 'expense', id: own, approve: true } })).status, 403, 'not the Manager');
+});
+
+test('a tab closes by itself as soon as it’s fully paid: cash, the customer’s bill link (Paystack), or paid before the bar hands the drinks over', async () => {
+  const ctx = setup();
+  const W = ctx.M1;
+  const tabWith = async (qty, hand = true) => {
+    const t = ok(await ctx.call('POST', '/api/ops/tabs/open', { who: W, body: { table: String(qty) } }), 'open');
+    const r = ok(await ctx.call('POST', '/api/ops/tabs/round', { who: W, body: { tabId: t.id, lines: [{ productId: 'beer', qty }] } }), 'order');
+    if (hand) ok(await ctx.call('POST', '/api/ops/bar/round', { who: ctx.B1, body: { roundId: r.roundId || r.id, action: 'hand' } }), 'handed');
+    return { t, rid: r.roundId || r.id };
+  };
+  const status = id => ctx.store.get('tabs', id).fields.status;
+  // Cash in two parts: open after the first, closed after the second.
+  const a = await tabWith(2);
+  ok(await ctx.call('POST', '/api/ops/tabs/pay', { who: W, body: { tabId: a.t.id, method: 'cash', amountPesewas: 2000 } }), 'part');
+  assert.equal(status(a.t.id), 'open');
+  const last = ok(await ctx.call('POST', '/api/ops/tabs/pay', { who: W, body: { tabId: a.t.id, method: 'cash', amountPesewas: 3000 } }), 'rest');
+  assert.deepEqual([last.closed, status(a.t.id)], [true, 'closed']);
+  assert.equal((await ctx.call('POST', '/api/ops/tabs/checkout', { who: W, body: { tabId: a.t.id, method: 'cash' } })).data.already, true, 'tapping Close again is fine');
+  // Paystack on the customer's bill link.
+  const b = await tabWith(1);
+  const token = ctx.store.get('tabs', b.t.id).fields.billToken;
+  const start = await ctx.call('POST', `/api/guest/bill/${token}/pay`, { body: {} });
+  ctx.store.setPaystack(start.data.reference, { status: 'success', currency: 'GHS', amount: start.data.chargePesewas });
+  ok(await ctx.call('POST', '/api/checkout/verify', { body: { reference: start.data.reference } }), 'verify');
+  assert.equal(status(b.t.id), 'closed', 'paid on the phone: closed');
+  // Paid while the drinks are still at the bar: closes when the bar hands them over.
+  const c = await tabWith(1, false);
+  ok(await ctx.call('POST', '/api/ops/tabs/pay', { who: W, body: { tabId: c.t.id, method: 'cash', amountPesewas: 2500 } }), 'paid early');
+  assert.equal(status(c.t.id), 'open', 'the drink is still being made');
+  ok(await ctx.call('POST', '/api/ops/bar/round', { who: ctx.B1, body: { roundId: c.rid, action: 'hand' } }), 'handed');
+  assert.equal(status(c.t.id), 'closed');
 });

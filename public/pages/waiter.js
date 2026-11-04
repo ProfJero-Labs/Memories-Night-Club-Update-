@@ -7,7 +7,8 @@
 //     once paid.
 //   Quick sale: pick drinks → Cash or MoMo → the bar makes it → "I got them" → done.
 // "Bookings": booked tables and the bottles they paid for. "My report": sales, cash, hand in, submit.
-import { $, $$, esc, normalizePhone } from '../app.js';
+import { $, $$, esc, normalizePhone, loadFee, paystackOk, paystackLimit, momoDirectOff, walletOk } from '../app.js';
+loadFee().catch(() => {});
 import { requireStaff, staffHeader, sapi } from '../staff.js';
 import { qrSvg } from '../ticket-art.js';
 import { sheet, say, st, every, bottomNav, busy, ghsIn, moneyField, money, when, backBar, bindBackBar, returnTo, pasteMomoButton, upcomingBookings } from '../lib/ops-ui.js';
@@ -42,6 +43,7 @@ async function tabsList() {
   app.innerHTML = `<h1>My tables</h1>
     <div id="msg"></div>
     <div class="btn-row"><button class="big" id="newTab">New tab</button><button class="big ghost" id="quick">Quick sale</button></div>
+    <div id="qrCash"></div>
     <div class="cards" id="list"><div class="loading">Loading…</div></div>
     <button class="mid ghost" id="tipOnly">Record a tip (no bill)</button>`;
   $('#newTab').onclick = () => { location.hash = 'order'; };
@@ -49,8 +51,18 @@ async function tabsList() {
   $('#tipOnly').onclick = () => tipSheet(sapi, user.uid, m => say($('#msg'), m));
   const flash = sessionStorage.getItem('waiter-flash'); if (flash) { sessionStorage.removeItem('waiter-flash'); say($('#msg'), flash); }
   stop = every(6000, async alive => {
-    const { tabs } = await sapi('/api/ops/tabs');
+    const [{ tabs }, q] = await Promise.all([sapi('/api/ops/tabs'), canCash ? sapi('/api/bar/queue').catch(() => null) : null]);
     if (!alive()) return;
+    // QR customers paying cash: whoever serves them takes it (code on their phone).
+    const due = q?.cashDue || [];
+    $('#qrCash').innerHTML = due.length ? `<h2>QR orders paying cash</h2><div class="cards">${due.map(o => `<div class="tcard warn" style="cursor:default"><span class="row"><span class="t">${esc(o.spot ? `Table ${o.spot}` : 'QR order')} · code ${esc(o.pickupCode)}</span><span class="amt">${money(o.totalPesewas)}</span></span>
+      <span class="sub">${o.lines.map(l => `${l.qty} × ${esc(l.name)}`).join(', ')} · phone …${esc(o.phoneLast4)}</span>
+      <span class="btn-row"><button type="button" class="mid okc" data-qrcash="${esc(o.id)}">Cash received · ${money(o.totalPesewas)}</button></span></div>`).join('')}</div>` : '';
+    $$('[data-qrcash]').forEach(b => b.onclick = async () => {
+      if (!confirm('Check the code on the customer’s phone. Cash received?')) return;
+      try { const r = await busy(b, () => sapi('/api/bar/order', { method: 'POST', body: { orderId: b.dataset.qrcash, action: 'cash' } })); b.closest('.tcard')?.remove(); if (!$('[data-qrcash]')) $('#qrCash').innerHTML = ''; say($('#msg'), r.message || 'Cash recorded.'); }
+      catch (e) { say($('#msg'), e.message, 'bad'); }
+    });
     const open = tabs.filter(t => t.status === 'open'), done = tabs.filter(t => t.status !== 'open');
     nav.setDot('tabs', open.length || 0);
     $('#list').innerHTML = (open.length ? open.map(card).join('') : '<div class="empty-box"><b>No open tabs</b>Tap “New tab” when a table or customer orders.</div>')
@@ -67,7 +79,7 @@ async function tabsList() {
 const card = t => t.status !== 'open' || t.quick ? doneCard(t) : `<div class="tcard ${t.openRounds ? 'warn' : ''}" style="cursor:default">
   <button type="button" class="tcard-open" data-tab="${esc(t.id)}"><span class="row"><span class="t">${esc(t.label)} · ${esc(t.table)}</span><span class="amt">${money(t.bill.balancePesewas || t.bill.totalPesewas)}</span></span>
   <span class="row"><span class="sub">${t.customerName ? `${esc(t.customerName)} · ` : ''}${t.openRounds ? `${t.openRounds} order${t.openRounds > 1 ? 's' : ''} to collect` : 'All collected'}</span>${st(t.payStatus, t.payLabel)}</span></button>
-  <span class="btn-row"><button type="button" class="mid" data-more="${esc(t.id)}">Add drinks</button><button type="button" class="mid okc" data-pay="${esc(t.id)}" ${t.bill.totalPesewas ? '' : 'disabled'}>Close tab</button></span></div>`;
+  <span class="btn-row"><button type="button" class="mid" data-more="${esc(t.id)}">Add drinks</button><button type="button" class="mid okc" data-pay="${esc(t.id)}">Close tab</button></span></div>`;
 const doneCard = t => `<button class="tcard ${t.status !== 'open' ? 'done' : t.openRounds ? 'warn' : ''}" data-tab="${esc(t.id)}">
   <span class="row"><span class="t">${esc(t.label)} · ${esc(t.table)}</span><span class="amt">${money(t.bill.balancePesewas || t.bill.totalPesewas)}</span></span>
   <span class="row"><span class="sub">${t.customerName ? `${esc(t.customerName)} · ` : ''}${t.status === 'owed' ? `Owed by ${esc(t.customerName || 'the customer')}` : t.status !== 'open' ? 'Closed' : t.openRounds ? `${t.openRounds} order${t.openRounds > 1 ? 's' : ''} to collect` : 'Add drinks or close'}</span>${st(t.payStatus, t.payLabel)}</span></button>`;
@@ -80,7 +92,7 @@ async function tabView(id) {
     const fresh = (await sapi(`/api/ops/tab?id=${encodeURIComponent(id)}`)).tab;
     if (!alive()) return;
     t = fresh;
-    const b = t.bill, toCollect = t.rounds.filter(r => !['delivered', 'cancelled'].includes(r.status)).length;
+    const b = t.bill;
     const open = t.status === 'open';
     app.innerHTML = `${backBar('', 'tabs')}
       <div class="row" style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap"><h1>${esc(t.label)} · ${esc(t.table)}</h1>${st(t.payStatus, t.payLabel)}</div>
@@ -88,8 +100,10 @@ async function tabView(id) {
       <div id="msg"></div>
       ${open && t.quick ? '<div class="say warn"><b>Quick sale</b>Collect the drinks at the bar, then tap “I got them”. It closes by itself.</div>' : ''}
       ${open && !t.quick ? `<div class="pay-now"><b>${money(b.balancePesewas)} ${b.paidPesewas && !b.balancePesewas ? 'paid' : 'so far'}</b>
-        <div class="btn-row"><button class="big ghost" id="add">Add drinks</button><button class="big" id="close" ${b.totalPesewas ? '' : 'disabled'}>Close tab</button></div>
-        ${toCollect ? `<span class="sub">${toCollect} order${toCollect > 1 ? 's' : ''} to collect from the bar first (below).</span>` : ''}</div>` : ''}
+        <div class="btn-row"><button class="big ghost" id="add">Add drinks</button><button class="big" id="close">Close tab</button></div>
+        ${b.balancePesewas && canCash ? `<button class="big ghost" id="cash">${momoDirectOff() ? 'Customer paid cash' : 'Customer paid (cash or MoMo)'}</button>` : ''}
+        ${atBarOf(t).length ? `<span class="sub">${atBarOf(t).length} order${atBarOf(t).length > 1 ? 's' : ''} still at the bar (below).</span>` : ''}</div>` : ''}
+      ${open && t.walletWait ? '<div class="say warn"><b>Waiting for MoMo to the wallet</b>A manager confirms it when the money arrives; the tab then closes by itself.</div>' : ''}
       ${!open ? `<div class="say ${t.status === 'closed' ? 'good' : 'warn'}"><b>${t.status === 'closed' ? 'Closed' : 'Written off'}</b>This tab is finished.</div>` : ''}
       <h2>Orders</h2>
       <div class="cards">${t.rounds.map(roundCard).join('') || '<div class="empty-box"><b>No drinks yet</b>Tap “Add drinks”.</div>'}</div>
@@ -101,8 +115,7 @@ async function tabView(id) {
         <div class="ln total"><span>Still to pay</span><span>${money(b.balancePesewas)}</span></div></div>
       ${open && !t.quick ? `<details class="fold"><summary>More</summary><div class="btn-row" style="margin-top:10px">
         ${b.balancePesewas ? '<button class="mid" id="showBill">Show QR to pay</button><button class="mid" id="invoice">Text the invoice now</button>' : ''}
-        ${b.balancePesewas && canCash ? '<button class="mid" id="cash">Part payment / MoMo to the club’s number</button>' : ''}
-        <button class="mid" id="ask">Ask the manager</button></div></details>` : ''}`;
+        <button class="mid" id="ask">Ask for a discount</button></div></details>` : ''}`;
     bindBackBar(app);
     const flash = sessionStorage.getItem('waiter-flash'); if (flash) { sessionStorage.removeItem('waiter-flash'); say($('#msg'), flash); }
     $('#add') && ($('#add').onclick = () => { location.hash = `add/${t.id}`; });
@@ -122,16 +135,38 @@ async function tabView(id) {
 
 // Close tab: cash or MoMo. Cash → take it, closed, receipt texted. MoMo → a prompt on their phone and
 // the invoice by text; it closes by itself once paid.
+// Orders the bar still has (not handed over yet). Drinks already handed over don't stop a close:
+// closing counts them as delivered.
+const atBarOf = t => (t.rounds || []).filter(r => ['waiting', 'preparing', 'ready', 'taken'].includes(r.status));
+function atBarSheet(t, list) {
+  const { box, close } = sheet(`<h2>Still at the bar</h2>
+    <p class="muted" style="margin:0">Close ${esc(t.label)} once the bar hands ${list.length === 1 ? 'this order' : 'these orders'} over. An order the bar hasn’t started can be cancelled.</p>
+    <div class="cards">${list.map(r => `<div class="tcard warn" style="cursor:default"><span class="row"><span class="sub">${esc(r.statusLabel || '')}</span></span>
+      <span>${esc(Array.isArray(r.lines) ? r.lines.map(l => (typeof l === 'string' ? l : `${l.qty} × ${l.name}`)).join(', ') : r.lines)}</span>
+      ${r.status === 'waiting' ? `<span class="btn-row"><button class="mid" data-cancel="${esc(r.id)}">Cancel this order</button></span>` : ''}</div>`).join('')}</div>
+    <div id="abMsg"></div><button class="big ghost" data-close>OK</button>`, { label: 'Still at the bar' });
+  $$('[data-cancel]', box).forEach(b => b.onclick = async () => {
+    try { await busy(b, () => sapi('/api/ops/tabs/round-action', { method: 'POST', body: { roundId: b.dataset.cancel, action: 'cancel' } })); b.closest('.tcard').remove(); if (!$('.tcard', box)) { close(); route(); } }
+    catch (e) { say($('#abMsg', box), e.message, 'bad'); }
+  });
+}
 function closeSheet(t) {
-  const b = t.bill, toCollect = t.rounds.filter(r => !['delivered', 'cancelled'].includes(r.status)).length;
-  if (toCollect) return say($('#msg'), `${toCollect === 1 ? 'One order isn’t' : `${toCollect} orders aren’t`} collected yet. Tap “I got them” (or cancel it) first, then close the tab.`, 'bad');
+  const b = t.bill, atBar = atBarOf(t);
+  if (atBar.length) return atBarSheet(t, atBar);
   const paid = !b.balancePesewas;
   const { box, close } = sheet(`<h2>Close ${esc(t.label)}</h2><div id="csBody" style="display:grid;gap:14px">
-    <div class="sale-total"><span>${paid ? 'Already paid' : 'To pay'}</span><b>${money(paid ? b.totalPesewas : b.balancePesewas)}</b></div>
+    <div class="sale-total"><span>${!b.totalPesewas ? 'Nothing ordered' : paid ? 'Already paid' : 'To pay'}</span><b>${money(paid ? b.totalPesewas : b.balancePesewas)}</b></div>
     <div class="sfield"><label for="csPhone">Customer’s phone (gets the ${paid ? 'receipt' : 'invoice'})</label><input id="csPhone" type="tel" inputmode="tel" autocomplete="off" placeholder="${esc(t.customerPhoneHint || '024 123 4567')}">${t.customerPhoneHint ? `<span class="hint">Empty: it goes to ${esc(t.customerPhoneHint)}.</span>` : '<span class="hint">Optional for cash. Needed for MoMo, or if they owe.</span>'}</div>
     <div id="csMsg"></div>
     ${paid ? '<button class="big" id="csDone">Close the tab</button>' : `<p class="lead" style="margin:0">How is the customer paying?</p>
-    <div class="btn-row"><button class="big" id="csCash" ${canCash ? '' : 'disabled'}>Cash</button><button class="big" id="csMomo">MoMo</button></div>
+    <div class="btn-row"><button class="big" id="csCash" ${canCash ? '' : 'disabled'}>Cash</button>${paystackOk(b.balancePesewas, b.totalPesewas) ? '<button class="big" id="csMomo">MoMo prompt</button>' : ''}</div>
+    ${paystackOk(b.balancePesewas, b.totalPesewas) ? '' : `<p class="muted" style="margin:0">Bills above ${money(paystackLimit())} can’t be paid by a MoMo prompt.</p>`}
+    ${walletOk(b.balancePesewas, b.totalPesewas) ? `<button class="big" id="csWallet">MoMo to the wallet</button><span class="hint" style="margin-top:-8px">The customer sends MoMo to the club’s wallet; a manager confirms it arrived.</span>` : ''}
+    ${canCash && !momoDirectOff() ? `<button class="big ghost" id="csClub">MoMo to the club’s number</button>
+    <div id="csClubBox" hidden style="display:grid;gap:12px">
+      <div id="csPaste"></div>
+      <div class="sfield"><label for="csRef">MoMo transaction ID</label><input id="csRef" maxlength="40" autocomplete="off" autocapitalize="characters" placeholder="From the MoMo text"><span class="hint">Fastest when it’s busy: no code from Paystack. Only record MoMo you can see arrived.</span></div>
+      <button class="big okc" id="csClubGo">Got ${money(b.balancePesewas)} MoMo · close</button></div>` : ''}
     <button class="big ghost" id="csOwe">They can’t pay now: customer owes</button>
     <div id="csOweBox" hidden style="display:grid;gap:12px">
       <div class="sfield"><label for="csName">Customer’s name</label><input id="csName" maxlength="60" autocomplete="off" value="${esc(t.customerName || '')}"></div>
@@ -144,12 +179,47 @@ function closeSheet(t) {
   const go = async (method, btn) => {
     if (phone() && !normalizePhone(phone())) return say($('#csMsg', box), 'That phone number doesn’t look right.', 'bad');
     try {
-      const r = await busy(btn, () => sapi('/api/ops/tabs/checkout', { method: 'POST', body: { tabId: t.id, method, phone: phone(), customerName: $('#csName', box)?.value.trim(), note: $('#csNote', box)?.value.trim() } }), method === 'momo' ? 'Sending…' : 'Closing…');
+      const r = await busy(btn, () => sapi('/api/ops/tabs/checkout', { method: 'POST', body: { tabId: t.id, method, phone: phone(), customerName: $('#csName', box)?.value.trim(), note: $('#csNote', box)?.value.trim(), momoRef: $('#csRef', box)?.value.trim() } }), method === 'momo' ? 'Sending…' : 'Closing…');
+      if (r.method === 'wallet') return waitWallet(r.wallet);
+      if (r.method === 'momo_club') return done(`${money(r.momoPesewas)} MoMo recorded. ${t.label} closed.`);
       if (r.method === 'debt') return done(`${t.label} closed as owed: ${money(r.owedPesewas)}. The invoice is texted to ${r.phoneHint}; the Manager sees it under what’s owed.`);
       if (r.closed) return done(`${r.cashPesewas ? `${money(r.cashPesewas)} cash taken: hand it to the bar.` : 'Paid.'} ${t.label} closed.${r.receiptSent ? ` Receipt texted to ${r.phoneHint}.` : ''}`);
       waitMomo(r);
-    } catch (e) { say($('#csMsg', box), e.status === 0 ? 'No connection. Nothing was recorded: try again.' : e.message, 'bad'); }
+    } catch (e) {
+      if (e.code === 'at_bar' && e.data?.atBar) { close(); return atBarSheet(t, e.data.atBar); }
+      say($('#csMsg', box), e.status === 0 ? 'No connection. Nothing was recorded: try again.' : e.message, 'bad');
+    }
   };
+  $('#csClub', box) && ($('#csClub', box).onclick = () => {
+    $('#csClubBox', box).hidden = false; $('#csClub', box).hidden = true;
+    $('#csPaste', box).append(pasteMomoButton(m => { if (m.ref) $('#csRef', box).value = m.ref; }));
+    $('#csRef', box).focus();
+  });
+  $('#csClubGo', box) && ($('#csClubGo', box).onclick = e => go('momo_club', e.currentTarget));
+  $('#csWallet', box) && ($('#csWallet', box).onclick = e => go('wallet', e.currentTarget));
+  // MoMo to the wallet: show the customer what to send, then wait for a manager to confirm it.
+  // Nothing is handed over on a screenshot: the tab closes only when the manager confirms.
+  async function waitWallet(w) {
+    $('#csBody', box).innerHTML = `<div class="result warn" role="status" style="text-align:left"><h1 class="display">Send ${money(w.duePesewas)}</h1>
+      <p style="margin:0">Ask the customer to send <b>${money(w.duePesewas)}</b> by MoMo to:</p>
+      <div class="pickup" style="font-size:34px;letter-spacing:2px">${esc(w.wallet.number.replace(/(\d{3})(\d{3})(\d{4})/, '$1 $2 $3'))}</div>
+      <p style="margin:0"><b>${esc(w.wallet.name)}</b><br>Reference: <b style="font-size:22px">${esc(w.code)}</b></p>
+      <p class="muted" style="margin:0">That’s the bill ${money(w.billPesewas)} + ${money(w.chargePesewas)} charge.${w.phoneHint ? ` Also texted to ${esc(w.phoneHint)}.` : ''} <b>Don’t accept a screenshot.</b> The tab closes when a manager sees the money in the wallet.</p>
+      <p class="muted" style="margin:0" id="wWait">Waiting for a manager to confirm…</p></div>
+      <button class="big ghost" id="wLater">Back to my tables (it closes when confirmed)</button><button class="mid" id="wCancel">They’ll pay another way</button>`;
+    $('#wLater', box).onclick = backToTables;
+    $('#wCancel', box).onclick = async () => { try { await sapi('/api/ops/wallet/cancel', { method: 'POST', body: { id: w.id, reason: 'Customer paying another way' } }); close(); setTimeout(route, 0); } catch (e) { say($('#wWait', box), e.message, 'bad'); } };
+    const until = Date.now() + 30 * 60e3;
+    while (box.isConnected && Date.now() < until) {
+      await new Promise(res => setTimeout(res, 4000));
+      if (!box.isConnected) return;
+      try {
+        const { payment: p } = await sapi(`/api/ops/wallet/one?id=${encodeURIComponent(w.id)}`);
+        if (p.status === 'confirmed') return done(`MoMo confirmed: ${money(p.receivedPesewas)} arrived (ID ${p.momoRef}).${p.changePesewas ? ` Give back ${money(p.changePesewas)} change.` : ''} ${t.label} closed.`);
+        if (p.status === 'cancelled') { $('#wWait', box).textContent = 'Cancelled: it didn’t arrive. Take the payment another way.'; return; }
+      } catch { /* weak signal: keep checking */ }
+    }
+  }
   $('#csDone', box) && ($('#csDone', box).onclick = e => go('cash', e.currentTarget));
   $('#csCash', box) && ($('#csCash', box).onclick = () => {
     const btn = $('#csCash', box); btn.textContent = `Got ${money(b.balancePesewas)} cash · close`; btn.classList.add('okc');
@@ -164,7 +234,7 @@ function closeSheet(t) {
     $('#csBack', box).onclick = backToTables; // closes the panel too
   }
   async function waitMomo(r) {
-    $('#csBody', box).innerHTML = `<div class="result warn" role="status"><h1 class="display">${r.prompt ? 'Approve on your phone' : 'Pay from the text'}</h1><p style="margin:0">${esc(r.message)}</p>
+    $('#csBody', box).innerHTML = `<div class="result warn" role="status"><h1 class="display">${r.otp ? 'Customer enters a code' : r.prompt ? 'Approve on your phone' : 'Pay from the text'}</h1><p style="margin:0">${esc(r.message)}</p>
       <div class="qr-big" id="csQr"></div><p class="muted" style="margin:0" id="csWait">Waiting for the payment… The tab closes by itself once paid.</p></div>
       <button class="big ghost" id="csLater">Back to my tables (it closes when paid)</button>`;
     $('#csQr', box).innerHTML = await qrSvg(r.billUrl).catch(() => '');
@@ -263,7 +333,7 @@ function sendInvoice(t) {
 // "Customer paid": cash (into your cash bag) or MoMo sent to the club's number (with its ID).
 function takePayment(t) {
   const { box, close } = sheet(`<h2>Customer paid · ${esc(t.label)}</h2>
-    <div class="seg" role="radiogroup" aria-label="How they paid"><button type="button" class="mid on" data-m="cash" role="radio" aria-checked="true">Cash</button><button type="button" class="mid" data-m="momo" role="radio" aria-checked="false">MoMo</button></div>
+    <div class="seg" role="radiogroup" aria-label="How they paid"><button type="button" class="mid on" data-m="cash" role="radio" aria-checked="true">Cash</button>${momoDirectOff() ? '' : '<button type="button" class="mid" data-m="momo" role="radio" aria-checked="false">MoMo</button>'}</div>
     ${moneyField('tcAmt', 'Amount paid (GHS)', (t.bill.balancePesewas / 100).toString(), `Still to pay: ${money(t.bill.balancePesewas)}.`)}
     <div id="tcMomo" hidden>
       <div id="tcPaste"></div>
@@ -291,18 +361,18 @@ function takePayment(t) {
       if (method === 'momo') Object.assign(body, { momoRef: $('#tcRef', box).value, momoFrom: $('#tcFrom', box).value.trim() || undefined });
       const r = await busy($('#tcGo', box), () => sapi('/api/ops/tabs/pay', { method: 'POST', body }));
       const what = `${method === 'momo' ? 'MoMo recorded.' : 'Cash recorded.'}${tipSaid(r)}`;
-      close(); route(); setTimeout(() => say($('#msg'), r.balancePesewas ? `${what} ${money(r.balancePesewas)} still to pay.` : `${what} The table is paid.`), 50);
+      close(); if (r.closed) returnTo('tabs'); else route(); setTimeout(() => say($('#msg'), r.balancePesewas ? `${what} ${money(r.balancePesewas)} still to pay.` : r.closed ? `${what} Paid in full: ${t.label} is closed.` : `${what} The table is paid; it closes once the bar hands over the last drinks.`), 50);
     } catch (e) { say($('#tcMsg', box), e.message, 'bad'); }
   };
 }
 
 function askManager(t) {
   const lines = t.rounds.filter(r => r.status !== 'cancelled').flatMap(r => r.lines.map(l => ({ ...l, roundId: r.id })));
-  const { box, close } = sheet(`<h2>Ask the manager</h2><p class="muted" style="margin:0">The manager approves it on their phone. Nothing changes until they do.</p>
-    <div class="sfield"><label for="amKind">What do you need?</label><select id="amKind"><option value="comp">A free drink</option><option value="discount">Money off the bill</option><option value="write_off">The customer can’t pay</option></select></div>
-    <div id="amComp"><div class="sfield"><label for="amLine">Which drink</label><select id="amLine">${lines.map(l => `<option value="${esc(l.roundId)}|${esc(l.lineId)}">${esc(l.name)} (${l.qty})</option>`).join('')}</select></div>
-      <div class="sfield"><label for="amQty">How many free</label><input id="amQty" inputmode="numeric" value="1"></div></div>
-    <div id="amDisc" hidden>${moneyField('amAmt', 'Amount off (GHS)')}</div>
+  // Only discounts (the Manager approves). No free drinks or write-offs at Memories; a customer who
+  // can't pay is closed as "customer owes" from Close tab.
+  const { box, close } = sheet(`<h2>Ask for a discount</h2><p class="muted" style="margin:0">The Manager approves it on their phone. Nothing changes until they do. A customer who can’t pay: Close tab → “customer owes”.</p>
+    <input type="hidden" id="amKind" value="discount"><div id="amComp" hidden></div>
+    <div id="amDisc">${moneyField('amAmt', 'Amount off (GHS)')}</div>
     <div class="sfield"><label for="amWhy">Why</label><input id="amWhy" maxlength="200" placeholder="e.g. birthday, drink was wrong"></div>
     <div id="amMsg"></div><button class="big" id="amGo">Send to manager</button><button class="big ghost" data-close>Cancel</button>`);
   const sync = () => { const k = $('#amKind', box).value; $('#amComp', box).hidden = k !== 'comp'; $('#amDisc', box).hidden = k !== 'discount'; };
@@ -348,7 +418,7 @@ async function takeOrder(tabId = '') {
       if (phone && !normalizePhone(phone)) throw new Error('That phone number doesn’t look right. Fix it, or leave it empty.');
       const r = await sapi('/api/ops/tabs/order', { method: 'POST', body: { tabId: t?.id, table: v('#odTable'), stationId: v('#odBar') || d.stationId, customerPhone: phone, broughtByName: v('#odBy'), broughtByPhone: v('#odByPh'), lines } });
       // Back to My tables: free to take the next order. The tab is one tap away to add or close.
-      sessionStorage.setItem('waiter-flash', `Sent to the bar: Tab ${r.number}${t?.table && t.table !== 'Walk-in' ? ` · table ${t.table}` : v('#odTable') ? ` · table ${v('#odTable')}` : ''}. Collect it when it’s ready, then tap “I got them”.`);
+      sessionStorage.setItem('waiter-flash', `Sent to the bar: Tab ${r.number}${t?.table && t.table !== 'Walk-in' ? ` · table ${t.table}` : v('#odTable') ? ` · table ${v('#odTable')}` : ''}. Collect it when it’s ready.`);
       returnTo('tabs');
     },
   });

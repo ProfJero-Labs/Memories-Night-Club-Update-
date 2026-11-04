@@ -24,7 +24,8 @@ import { FORBIDDEN, bizDate, who, audit, closedError, ghs, int } from './common.
 import { addMoves, stockError } from './stock.js';
 import { prepareTip, tipFields, textTip, phoneOf, guestTipPeople } from './tips.js';
 import { paymentAlert } from './alerts.js';
-import { momoPrompt } from '../lib/momo.js';
+import { momoPrompt, submitMomoCode } from '../lib/momo.js';
+import { startWallet, momoDirectBlocked, billWallet } from './wallet.js';
 import { serviceFee } from '../lib/fee.js';
 
 export const BOSS = ['superAdmin', 'director', 'manager'];
@@ -55,13 +56,29 @@ export function billOf(tab, rounds) {
 export const PAY_LABEL = { empty: 'Nothing ordered yet', unpaid: 'Waiting for payment', part_paid: 'Part paid', paid: 'Paid', overpaid: 'Overpaid', written_off: 'Written off (unpaid)' };
 
 async function roundsOf(env, tabId) { return (await queryWhere(env, 'rounds', [{ field: 'tabId', value: tabId }])).map(r => ({ id: r.id, ...r.fields })); }
+// Closing a tab: drinks the bar has already handed over count as delivered, so the waiter doesn't
+// have to tap "I got them" on each order first (the drinks left the bar's stock at the handover).
+// Returns what's still at the bar, in plain words, or null.
+async function settleHanded(env, rounds, user) {
+  const at = now();
+  for (const r of rounds.filter(x => ['handed', 'received'].includes(x.status))) {
+    const { id: rid, ...f } = r;
+    await setDoc(env, 'rounds', rid, { ...f, status: 'delivered', receivedAt: f.receivedAt || at, deliveredAt: at, deliveredOnClose: true });
+    r.status = 'delivered'; r.deliveredAt = at;
+  }
+  const atBar = rounds.filter(x => !['delivered', 'cancelled'].includes(x.status));
+  if (!atBar.length) return null;
+  const notStarted = atBar.filter(x => x.status === 'waiting').length;
+  return { error: `${atBar.length === 1 ? 'One order is' : `${atBar.length} orders are`} still at the bar${notStarted ? ` (${notStarted === atBar.length ? 'not started yet' : `${notStarted} not started yet`}: cancel ${notStarted === 1 ? 'it' : 'them'} if the customer doesn’t want ${notStarted === 1 ? 'it' : 'them'})` : ''}. Wait for the bar to hand ${atBar.length === 1 ? 'it' : 'them'} over, then close.`,
+    code: 'at_bar', atBar: atBar.map(x => ({ id: x.id, status: x.status, statusLabel: ROUND_LABEL[x.status], lines: x.lines.map(l => `${l.qty} × ${l.name}`).join(', ') })) };
+}
 const tabView = (t, rounds, { full = true } = {}) => {
   const bill = billOf(t, rounds);
   return {
     id: t.id, number: t.number, label: `Tab ${t.number}`, quick: !!t.quick, businessDate: t.businessDate, table: t.table || '', customerName: t.customerName || '', customerPhoneHint: t.customerPhone ? maskPhone(t.customerPhone) : '',
     waiterUid: t.waiterUid, waiterName: t.waiterName, stationId: t.stationId, stationName: t.stationName, status: t.status, payStatus: bill.status, payLabel: PAY_LABEL[bill.status],
-    bill, payments: (t.payments || []).map(p => ({ method: p.method, label: METHOD_LABEL[p.method] || p.method, amountPesewas: p.amountPesewas, at: p.at, byName: p.byName || '', momoRef: p.momoRef || '' })),
-    openRounds: rounds.filter(r => !['delivered', 'cancelled'].includes(r.status)).length,
+    bill, payments: (t.payments || []).map(p => ({ method: p.method, label: p.viaWallet ? METHOD_LABEL.wallet : METHOD_LABEL[p.method] || p.method, amountPesewas: p.amountPesewas, at: p.at, byName: p.byName || '', momoRef: p.momoRef || '' })),
+    openRounds: rounds.filter(r => !['delivered', 'cancelled'].includes(r.status)).length, walletWait: t.walletWait || '',
     ...(full ? { rounds: rounds.sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt))).map(roundView), billUrl: null } : {}),
     createdAt: t.createdAt,
   };
@@ -331,9 +348,12 @@ export async function barRound(env, b, user) {
       moves = back.map(l => ({ productId: l.productId, productName: l.name, stationId: f.stationId, qty: l.returnPending, kind: 'return_in', ref: rid, tabId: f.tabId, fromWaiterUid: f.waiterUid, fromWaiterName: f.waiterName }));
     } else return { error: 'Unknown action.' };
     await commitTx(env, [updateWrite(env, 'rounds', rid, next), updateWrite(env, 'audit_logs', id(), { action: `BAR_ROUND_${String(b.action).toUpperCase()}`, actorUid: uidOf(user), actorName: byName, roundId: rid, timestamp: at })], tx);
-    return { status: next.status };
+    return { status: next.status, tabId: f.tabId };
   });
   if (!res.error && moves) await addMoves(env, moves, user);
+  // The last drinks of a tab that's already paid: it closes now.
+  if (!res.error && res.tabId && ['handed', 'received'].includes(res.status)) await closeIfPaid(env, res.tabId).catch(() => false);
+  delete res.tabId;
   return res;
 }
 
@@ -343,7 +363,7 @@ async function staffRecord(env, user) { return (await getDoc(env, 'users', uidOf
 // only if a manager ticked "Can collect cash" on their staff record.
 export const PAY_TAKERS = [...CASH_TAKERS, 'waitStaff', 'barManager', 'barStaff', 'eventManager'];
 export async function canTakeCash(env, user) { return requireRole(user, PAY_TAKERS) || (await staffRecord(env, user)).canCollectCash === true; }
-export const METHOD_LABEL = { cash: 'Cash', momo: 'MoMo (to the club’s number)', digital: 'MoMo / card (paid on the bill link)' };
+export const METHOD_LABEL = { cash: 'Cash', momo: 'MoMo (to the club’s number)', digital: 'MoMo / card (paid on the bill link)', wallet: 'MoMo to the wallet (confirmed)' };
 
 // "Customer paid": cash (into this person's cash bag for the night) or MoMo sent straight to the
 // club's MoMo number. A MoMo payment needs the transaction ID from the MoMo text, so finance can
@@ -357,6 +377,14 @@ export async function recordPayment(env, b, user) {
   if (r.recorded && !tip.none) { r.tip = { toName: tip.to.name, amountPesewas: tip.amount }; await textTip(env, await phoneOf(env, tip.to.uid), tip, method); }
   // MoMo to the club's number: the Manager is texted (cash is counted at the cash count instead).
   if (r.recorded && method === 'momo') await paymentAlert(env, { amountPesewas: int(b?.amountPesewas), kind: 'momo', where: `Tab ${r.tabNumber}`, byName: user.name, tipPesewas: tip.none ? 0 : tip.amount });
+  // Fully paid: the tab closes by itself.
+  if (r.recorded && !r.balancePesewas) r.closed = await closeIfPaid(env, String(b?.tabId || ''), { byName: user.name || '' });
+  return r;
+}
+// The cashier takes cash for a bill: like any payment, a bill paid in full closes by itself.
+export async function cashierCash(env, b, user) {
+  const r = await recordCash(env, b, user);
+  if (r.recorded && !r.balancePesewas) r.closed = await closeIfPaid(env, String(b?.tabId || ''), { byName: user.name || '' });
   return r;
 }
 const tipWrite = (env, tip, extra) => (tip && !tip.none ? [updateWrite(env, 'tips', id(), tipFields(tip, extra))] : []);
@@ -376,6 +404,7 @@ export async function momoCheck(env, b, date) {
 }
 
 async function recordMomo(env, b, user, tip = null) {
+  const off = await momoDirectBlocked(env); if (off) return off;
   if (!(await canTakeCash(env, user))) return { error: 'Your job doesn’t include recording payments. Send the customer to the cashier.', status: 403 };
   const amount = int(b?.amountPesewas);
   if (!(amount >= 100)) return { error: 'Enter the amount (at least GHS 1).' };
@@ -473,7 +502,7 @@ export async function quickSale(env, b, user) {
   if (b?.customerPhone && !custPhone) return { error: 'That customer phone number doesn’t look right, or leave it blank.' };
   const tip = await prepareTip(env, b); if (tip.error) return tip;
   let momo = null, bag = null;
-  if (method === 'momo') { momo = await momoCheck(env, b, date); if (momo.error) return momo; }
+  if (method === 'momo') { const off = await momoDirectBlocked(env); if (off) return off; momo = await momoCheck(env, b, date); if (momo.error) return momo; }
   else { bag = await cashBag(env, user, date); if (bag.error) return bag; }
   const tabId = id(), rid = id(), payId = id(), at = now(), uid = uidOf(user), byName = user.name || '';
   const pay = { id: payId, method, amountPesewas: total, at, businessDate: date, by: uid, byName, ...(momo ? { momoRef: momo.ref, momoFrom: momo.from } : { sessionId: bag.sid }) };
@@ -509,9 +538,11 @@ export async function closeTab(env, b, user) {
   const t = await getDoc(env, 'tabs', String(b?.tabId || ''));
   if (!t) return { error: 'Tab not found.', status: 404 };
   if (!mineOrBoss(user, t.fields) && !requireRole(user, ['cashier'])) return FORBIDDEN;
+  if (t.fields.status === 'closed') return { closed: true, already: true }; // it closed itself when paid
   if (t.fields.status !== 'open') return { error: 'Already closed.' };
-  const rounds = await roundsOf(env, t.id), bill = billOf(t.fields, rounds);
-  if (rounds.some(r => !['delivered', 'cancelled'].includes(r.status))) return { error: 'Some drinks on this tab aren’t delivered yet.' };
+  const rounds = await roundsOf(env, t.id);
+  const atBar = await settleHanded(env, rounds, user); if (atBar) return atBar;
+  const bill = billOf(t.fields, rounds);
   if (bill.balancePesewas > 0) return { error: `${ghs(bill.balancePesewas)} is still unpaid. Take the payment first, or ask a manager to write it off.` };
   await setDoc(env, 'tabs', t.id, { ...t.fields, status: 'closed', closedAt: now(), closedByName: user.name || '' });
   await audit(env, user, 'TAB_CLOSED', { tabId: t.id });
@@ -529,10 +560,10 @@ export async function checkoutTab(env, b, user) {
   const t = await getDoc(env, 'tabs', String(b?.tabId || ''));
   if (!t) return { error: 'Tab not found.', status: 404 };
   if (!mineOrBoss(user, t.fields)) return { error: 'This is another waiter’s tab.', status: 403 };
+  if (t.fields.status === 'closed') return { method: 'cash', closed: true, already: true, cashPesewas: 0 }; // it closed itself when paid
   if (t.fields.status !== 'open') return { error: 'This tab is already closed.' };
   const rounds = await roundsOf(env, t.id);
-  const out = rounds.filter(r => !['delivered', 'cancelled'].includes(r.status));
-  if (out.length) return { error: `${out.length === 1 ? 'One order isn’t' : `${out.length} orders aren’t`} collected yet. Tap “I got them” (or cancel it) first, so the bill is final.` };
+  const atBar = await settleHanded(env, rounds, user); if (atBar) return atBar;
   const phone = b?.phone ? normalizePhone(b.phone) : t.fields.customerPhone || '';
   if (b?.phone && !phone) return { error: 'That phone number doesn’t look right. Fix it, or leave it empty.' };
   const fields = { ...t.fields, customerPhone: phone };
@@ -556,15 +587,47 @@ export async function checkoutTab(env, b, user) {
     const reference = paymentRef();
     const host = new URL(env.PUBLIC_SITE_URL || 'https://memoriesnightclub.com').hostname.replace(/^www\./, '');
     // The customer pays the service charge on top (lib/fee.js); the bill gets the balance.
-    const fee = await serviceFee(env, bill.balancePesewas), charge = bill.balancePesewas + fee.feePesewas;
+    const fee = await serviceFee(env, bill.balancePesewas, undefined, { bandBillPesewas: bill.totalPesewas }), charge = bill.balancePesewas + fee.feePesewas;
+    if (fee.blocked) return { error: `This bill is above ${ghs(fee.limitPesewas)}: it can’t be paid by a MoMo prompt. Take cash.`, code: 'too_big_for_paystack' };
     await setDoc(env, 'pending_checkouts', reference, { reference, kind: 'tab', tabId: t.id, eventName: `Tab ${t.fields.number}`, amountPesewas: bill.balancePesewas, ...fee, chargePesewas: charge, buyerPhone: phone, prompt: true, status: 'pending', createdAt: now(), by: uidOf(user) });
     await setDoc(env, 'tabs', t.id, { ...fields, closeWhenPaid: true, closeAskedByName: user.name || '' });
-    const prompt = await momoPrompt(env, { phone, amountPesewas: charge, reference, email: `tab-${phone}@${host}`, metadata: { kind: 'tab', tabId: t.id } });
-    if (!prompt) await setDoc(env, 'pending_checkouts', reference, { reference, kind: 'tab', tabId: t.id, status: 'failed', error: 'prompt_not_sent', failedAt: now() });
-    const sent = await sendSms(env, phone, invoiceText(env, fields, bill));
-    await audit(env, user, 'TAB_CHECKOUT_MOMO', { tabId: t.id, amountPesewas: bill.balancePesewas, prompt });
-    return { method: 'momo', prompt, reference: prompt ? reference : '', invoiceSent: sent, phoneHint: maskPhone(phone), amountPesewas: bill.balancePesewas, feePesewas: fee.feePesewas, chargePesewas: charge, billUrl: siteUrl(env, `/bill.html?t=${t.fields.billToken}`),
+    const sent = await momoPrompt(env, { phone, amountPesewas: charge, reference, email: `tab-${phone}@${host}`, split: fee.split, metadata: { kind: 'tab', tabId: t.id } });
+    const prompt = !!sent.sent, otp = !!sent.otp;
+    if (otp) {
+      // Paystack texted the customer a code first. The customer types it on their own bill page
+      // (the waiter is never asked to): the bill link knows this payment is waiting for it.
+      await setDoc(env, 'pending_checkouts', reference, { ...(await getDoc(env, 'pending_checkouts', reference)).fields, otpAsked: true });
+      await setDoc(env, 'tabs', t.id, { ...fields, closeWhenPaid: true, closeAskedByName: user.name || '', codeWait: { reference, at: now() } });
+    }
+    else if (!prompt) await setDoc(env, 'pending_checkouts', reference, { reference, kind: 'tab', tabId: t.id, status: 'failed', error: 'prompt_not_sent', failedAt: now() });
+    const texted = await sendSms(env, phone, otp
+      ? `MEMORIES\nPaystack has texted you a code. To pay ${ghs(charge)} for Tab ${fields.number}, open this link and type the code. Then approve the MoMo prompt:\n${siteUrl(env, `/bill.html?t=${fields.billToken}`)}`
+      : invoiceText(env, fields, bill));
+    await audit(env, user, 'TAB_CHECKOUT_MOMO', { tabId: t.id, amountPesewas: bill.balancePesewas, prompt, otp });
+    if (otp) return { method: 'momo', prompt: false, otp: true, reference, invoiceSent: texted, phoneHint: maskPhone(phone), amountPesewas: bill.balancePesewas, feePesewas: fee.feePesewas, chargePesewas: charge, billUrl: siteUrl(env, `/bill.html?t=${t.fields.billToken}`),
+      message: `Paystack has texted the customer a code. They type it on the link we texted to ${maskPhone(phone)} (or scan this QR), then approve the MoMo prompt. You don’t need to wait here.` };
+    return { method: 'momo', prompt, reference: prompt ? reference : '', invoiceSent: texted, phoneHint: maskPhone(phone), amountPesewas: bill.balancePesewas, feePesewas: fee.feePesewas, chargePesewas: charge, billUrl: siteUrl(env, `/bill.html?t=${t.fields.billToken}`),
       message: prompt ? `A MoMo prompt for ${ghs(charge)}${fee.feePesewas ? ` (bill ${ghs(bill.balancePesewas)} + ${ghs(fee.feePesewas)} service charge)` : ''} is on ${maskPhone(phone)}. They approve it, or pay from the invoice text.` : `The invoice is texted to ${maskPhone(phone)}: they pay from its link, or scan the QR.` };
+  }
+  // A big bill (or tonight, if Paystack is down): MoMo straight to the partner's wallet. The bill
+  // waits until a manager confirms the money arrived (ops/wallet.js); it closes by itself then.
+  if (b?.method === 'wallet') {
+    if (bill.balancePesewas < 100) return { error: 'Nothing to pay. Close the tab.' };
+    const w = await startWallet(env, { id: t.id, fields }, bill, user, { phone });
+    if (w.error) return w;
+    return { method: 'wallet', wallet: w };
+  }
+  // MoMo sent straight to the club's number (no Paystack, so no OTP and no service charge): the
+  // transaction ID from the MoMo text is recorded for what's left, then the tab closes.
+  if (b?.method === 'momo_club') {
+    const off = await momoDirectBlocked(env); if (off) return off;
+    if (bill.balancePesewas > 0) {
+      const r = await recordPayment(env, { tabId: t.id, method: 'momo', amountPesewas: bill.balancePesewas, momoRef: b?.momoRef, momoFrom: b?.momoFrom }, user);
+      if (r.error) return r;
+    }
+    const c = await closeTab(env, { tabId: t.id }, user);
+    if (c.error) return c;
+    return { method: 'momo_club', closed: true, momoPesewas: bill.balancePesewas };
   }
   // Cash: what's left, into the waiter's cash for the night; then the tab closes.
   if (bill.balancePesewas > 0) {
@@ -578,13 +641,26 @@ export async function checkoutTab(env, b, user) {
   return { method: 'cash', closed: true, cashPesewas: bill.balancePesewas, receiptSent: receipt, phoneHint: phone ? maskPhone(phone) : '' };
 }
 
-// After a MoMo payment: a tab the waiter asked to close, now fully paid, closes by itself.
-async function closeIfPaid(env, tabId) {
+// A tab closes by itself the moment it's fully paid, however it was paid (cash, MoMo to the wallet
+// confirmed by the phone or by hand, Paystack by prompt or by the bill link), as long as nothing is
+// still being made at the bar. Drinks already handed over count as delivered. Called after every
+// payment, and when the bar hands over the last drinks of a paid tab. A customer who wants more
+// gets a new tab. Also settles a debt ("owed") once it's paid.
+const AT_BAR = ['waiting', 'preparing', 'ready', 'taken'];
+const HOW = { cash: 'cash', momo: 'MoMo', digital: 'card / MoMo' };
+export async function closeIfPaid(env, tabId, { byName = '' } = {}) {
   const t = await getDoc(env, 'tabs', tabId);
-  if (!t || !((t.fields.status === 'open' && t.fields.closeWhenPaid) || t.fields.status === 'owed')) return false;
+  // Quick sales are paid first and close when the waiter has the drinks (closeQuickIfDone).
+  if (!t || t.fields.quick || !['open', 'owed'].includes(t.fields.status)) return false;
   const rounds = await roundsOf(env, tabId), bill = billOf(t.fields, rounds);
-  if (bill.balancePesewas > 0 || rounds.some(r => !['delivered', 'cancelled'].includes(r.status))) return false;
-  await setDoc(env, 'tabs', tabId, { ...t.fields, status: 'closed', closedAt: now(), closedByName: t.fields.status === 'owed' ? `${t.fields.closedByName || 'Waiter'} (debt paid by MoMo)` : `${t.fields.closeAskedByName || 'Waiter'} (paid by MoMo)` });
+  if (!(bill.paidPesewas > 0) || bill.balancePesewas > 0 || rounds.some(r => AT_BAR.includes(r.status))) return false;
+  const at = now();
+  for (const r of rounds.filter(x => ['handed', 'received'].includes(x.status))) { const { id: rid, ...f } = r; await setDoc(env, 'rounds', rid, { ...f, status: 'delivered', receivedAt: f.receivedAt || at, deliveredAt: at, deliveredOnClose: true }); }
+  const last = (t.fields.payments || []).at(-1), how = last ? (last.viaWallet ? 'MoMo to the wallet' : HOW[last.method] || 'payment') : 'payment';
+  const who = byName || t.fields.closeAskedByName || t.fields.waiterName || 'Automatic';
+  await setDoc(env, 'tabs', tabId, { ...t.fields, status: 'closed', closedAt: at, autoClosed: true, closeWhenPaid: false,
+    closedByName: t.fields.status === 'owed' ? `${t.fields.closedByName || 'Waiter'} (debt paid, ${how})` : `${who} (paid by ${how})` });
+  await audit(env, { uid: 'system', name: 'Automatic' }, 'TAB_CLOSED_PAID', { tabId, how });
   return true;
 }
 
@@ -602,7 +678,7 @@ export function invoiceText(env, tab, bill) {
     ...(bill.discountPesewas ? [`Discount -${ghs(bill.discountPesewas)}`] : []),
     `Total ${ghs(bill.totalPesewas)}`, ...(how.length ? [`Paid: ${how.join(', ')}`] : []),
     due ? `TO PAY ${ghs(bill.balancePesewas)}` : 'Paid in full. Thank you!',
-    ...(due ? [`Pay with MoMo or card: ${siteUrl(env, `/bill.html?t=${tab.billToken}`)}`] : ['Not right? Tell your waiter or the manager.'])].join('\n');
+    ...(due ? [`Pay with MoMo or card: ${siteUrl(env, `/bill.html?t=${tab.billToken}`)}`, 'Paystack may text you a code first: check your messages.'] : ['Not right? Tell your waiter or the manager.'])].join('\n');
 }
 
 export async function textBill(env, b, user) {
@@ -631,10 +707,41 @@ export async function publicBill(env, token) {
   // on this phone when the bar is taking app orders).
   const st = t.fields.status === 'open' && t.fields.stationId ? await getDoc(env, 'bar_stations', t.fields.stationId).catch(() => null) : null;
   const menuUrl = st?.fields?.open && /^[0-9a-f]{32}$/.test(st.fields.token || '') ? `counter.html?s=${st.fields.token}${t.fields.table && t.fields.table !== 'Walk-in' ? `&t=${encodeURIComponent(t.fields.table)}` : ''}` : '';
-  return { open: t.fields.status === 'open', menuUrl, bill: { label: `Tab ${t.fields.number}`, table: t.fields.table, waiterFirstName: t.fields.waiterNickname || String(t.fields.waiterName || '').split(/\s+/)[0], date: t.fields.businessDate, lines: bill.lines, grossPesewas: bill.grossPesewas, discountPesewas: bill.discountPesewas, totalPesewas: bill.totalPesewas, paidPesewas: bill.paidPesewas, balancePesewas: bill.balancePesewas, status: bill.status, statusLabel: PAY_LABEL[bill.status],
+  // A MoMo payment waiting for the code Paystack texted the customer (the last 15 minutes).
+  const cw = t.fields.codeWait, waitingCode = cw && Date.now() - new Date(cw.at).getTime() < 15 * 60e3
+    ? (await getDoc(env, 'pending_checkouts', cw.reference))?.fields : null;
+  const codeNeeded = !!(waitingCode && waitingCode.status === 'pending' && waitingCode.otpAsked && !waitingCode.otpSubmittedAt);
+  // MoMo to the wallet in progress (a big bill): what to send, until a manager confirms it.
+  const ww = t.fields.walletWait ? (await getDoc(env, 'wallet_payments', t.fields.walletWait))?.fields : null;
+  const walletWait = ww && ww.status === 'waiting' ? { duePesewas: ww.duePesewas, billPesewas: ww.billPesewas, chargePesewas: ww.chargePesewas, code: ww.code, number: ww.wallet.number, name: ww.wallet.name } : null;
+  return { codeNeeded, walletWait, open: t.fields.status === 'open', menuUrl, bill: { label: `Tab ${t.fields.number}`, table: t.fields.table, waiterFirstName: t.fields.waiterNickname || String(t.fields.waiterName || '').split(/\s+/)[0], date: t.fields.businessDate, lines: bill.lines, grossPesewas: bill.grossPesewas, discountPesewas: bill.discountPesewas, totalPesewas: bill.totalPesewas, paidPesewas: bill.paidPesewas, balancePesewas: bill.balancePesewas, status: bill.status, statusLabel: PAY_LABEL[bill.status],
     payments: (t.fields.payments || []).map(p => ({ method: p.method === 'cash' ? 'Cash' : 'MoMo', amountPesewas: p.amountPesewas, at: p.at })), paying: !!(t.fields.pending && Date.now() - new Date(t.fields.pending.at).getTime() < 30 * 60e3) },
     // A tip with the payment: for their waiter by default, or anyone on the team.
     tip: { people: (await guestTipPeople(env)).people, defaultId: t.fields.waiterUid || '' } };
+}
+
+// A big bill on the customer's bill link: they start MoMo to the wallet themselves.
+export async function startBillWallet(env, token, b) {
+  const t = await tabByToken(env, token); if (!t) return PUBLIC;
+  if (t.fields.status !== 'open' && t.fields.status !== 'owed') return { error: 'This bill is closed.' };
+  const bill = billOf(t.fields, await roundsOf(env, t.id));
+  if (bill.balancePesewas < 100) return { error: 'This bill is already paid. Thank you!' };
+  const phone = b?.phone ? normalizePhone(b.phone) : '';
+  const w = await billWallet(env, t, bill, { phone });
+  return w.error ? w : { wallet: { duePesewas: w.duePesewas, billPesewas: w.billPesewas, chargePesewas: w.chargePesewas, code: w.code, number: w.wallet.number, name: w.wallet.name } };
+}
+
+// The customer types the code Paystack texted them, on their bill page. Paystack then sends the
+// MoMo prompt to their phone.
+export async function billCode(env, token, b) {
+  const t = await tabByToken(env, token); if (!t) return PUBLIC;
+  const cw = t.fields.codeWait;
+  const pc = cw ? await getDoc(env, 'pending_checkouts', cw.reference) : null;
+  if (!pc || !pc.fields.otpAsked || pc.fields.status !== 'pending') return { error: pc?.fields?.status === 'issued' ? 'This bill is already paid. Thank you!' : 'No payment is waiting for a code. Tap Pay to start again.' };
+  const r = await submitMomoCode(env, cw.reference, b?.otp);
+  if (r.error) return r;
+  await setDoc(env, 'pending_checkouts', cw.reference, { ...pc.fields, otpSubmittedAt: now() });
+  return { accepted: true, message: 'Code accepted. Approve the MoMo prompt on your phone now.' };
 }
 
 async function paystackInit(env, payload) {
@@ -662,10 +769,11 @@ export async function startBillPayment(env, token, b) {
   const host = new URL(env.PUBLIC_SITE_URL || 'https://memoriesnightclub.com').hostname.replace(/^www\./, '');
   // The charge is the bill plus the tip plus the service charge (on the bill only); the tip is split
   // off again when Paystack confirms it, and the fee never reaches the bill.
-  const fee = await serviceFee(env, bill.balancePesewas), charge = bill.balancePesewas + tipPesewas + fee.feePesewas;
+  const fee = await serviceFee(env, bill.balancePesewas, undefined, { bandBillPesewas: bill.totalPesewas }), charge = bill.balancePesewas + tipPesewas + fee.feePesewas;
+  if (fee.blocked) return { error: `This bill is above ${ghs(fee.limitPesewas)}, so it can’t be paid by card or MoMo here. Pay your waiter in cash.` };
   await setDoc(env, 'pending_checkouts', reference, { reference, kind: 'tab', tabId: t.id, eventName: `Tab ${t.fields.number}`, amountPesewas: bill.balancePesewas + tipPesewas, ...fee, chargePesewas: charge, ...(tipPesewas ? { tipPesewas, tipToUid, tipToName: tip.to.name, tipToRole: tip.to.role } : {}), buyerPhone: phone, status: 'pending', createdAt: now() });
   try {
-    const d = await paystackInit(env, { email: validEmail(b?.email) ? b.email : `tab-${phone || t.id.slice(0, 8)}@${host}`, amount: charge, currency: 'GHS', reference, callback_url: siteUrl(env, `/bill.html?t=${t.fields.billToken}`), metadata: { kind: 'tab', tabId: t.id, serviceFee: fee.feePesewas } });
+    const d = await paystackInit(env, { email: validEmail(b?.email) ? b.email : `tab-${phone || t.id.slice(0, 8)}@${host}`, amount: charge, currency: 'GHS', reference, callback_url: siteUrl(env, `/bill.html?t=${t.fields.billToken}`), ...(fee.split || {}), metadata: { kind: 'tab', tabId: t.id, serviceFee: fee.feePesewas } });
     await setDoc(env, 'tabs', t.id, { ...t.fields, pending: { reference, amountPesewas: bill.balancePesewas, tipPesewas, tipToUid, at: now(), url: d.authorization_url } });
     return { authorizationUrl: d.authorization_url, reference, feePesewas: fee.feePesewas, chargePesewas: charge };
   } catch (e) {

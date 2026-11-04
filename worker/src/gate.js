@@ -17,6 +17,7 @@ import { sendSms, siteUrl } from './lib/notify.js';
 import { computeShares } from './shares.js';
 import { memberAtGate } from './members.js';
 import { cashBag } from './ops/tabs.js';
+import { bizDate } from './ops/common.js';
 import { serviceFee } from './lib/fee.js';
 
 const FORBIDDEN = { error: 'You can’t do that with your role.', status: 403 };
@@ -28,7 +29,7 @@ const audit = (env, user, action, data) => setDoc(env, 'audit_logs', id(), { act
 const shares = (env, ev, amount) => computeShares(amount, { evolveitSharePct: ev?.evolveitSharePct, organizerSharePct: ev?.organizerSharePct }, Number(env.EVOLVEIT_SHARE_PCT));
 const doorPrice = tt => Number(tt.doorPricePesewas || tt.pricePesewas || 0);
 const hhmm = d => (d ? new Date(d).toLocaleTimeString('en-GB', { timeZone: 'Africa/Accra', hour: '2-digit', minute: '2-digit' }) : '');
-const isTonight = ev => ev?.date && nightKey(ev.date) === nightKey(now());
+const isTonight = ev => ev?.date && nightKey(ev.date) === bizDate();
 
 const paystack = paystackPost;
 export { momoProvider };
@@ -127,7 +128,7 @@ export async function gateSell(env, b, user) {
 
   const sale = { ...item, eventId: ev.id, eventName: ev.fields.name || '', organizerId: ev.fields.organiserId || null, buyerName: name, buyerPhone: phone, soldBy: uidOf(user), soldByName: user.name || '', shares: shares(env, ev.fields, item.amountPesewas) };
   if (method === 'cash') {
-    const bag = await cashBag(env, user, nightKey(now())); if (bag.error) return bag;
+    const bag = await cashBag(env, user, bizDate()); if (bag.error) return bag;
     const r = await issueGateSale(env, sale, { paidWith: 'cash', reference: `gate_${id()}`, sessionId: bag.sid });
     if (r.error) return r;
     await audit(env, user, 'GATE_SALE_CASH', { orderId: r.orderId, eventId: ev.id, amountPesewas: item.amountPesewas, kind: item.kind });
@@ -136,14 +137,17 @@ export async function gateSell(env, b, user) {
   // MoMo: a payment prompt on the customer's phone. Nothing is issued until Paystack confirms it.
   const reference = paymentRef();
   // The customer pays the service charge on top of a MoMo sale (lib/fee.js); cash isn't charged it.
-  const fee = await serviceFee(env, item.amountPesewas), charge = item.amountPesewas + fee.feePesewas;
+  const fee = await serviceFee(env, item.amountPesewas, undefined, { mainExtraPesewas: sale.shares?.evolveitSharePesewas }), charge = item.amountPesewas + fee.feePesewas;
+  if (fee.blocked) return { error: `Above ${money(fee.limitPesewas)}, take cash (MoMo prompts aren’t offered for sales this big).` };
   const pay = { amountPesewas: item.amountPesewas, ...fee, chargePesewas: charge };
   // The sale itself is kept whole under `sale` (its own kind is ticket or table; this checkout's kind is gate).
   await setDoc(env, 'pending_checkouts', reference, { reference, kind: 'gate', sale, eventId: ev.id, eventName: sale.eventName, buyerPhone: phone, ...pay, status: 'pending', createdAt: now() });
   const provider = momoProvider(phone);
   try {
     if (!provider) throw new Error('unknown network');
-    const c = await paystack(env, '/charge', { email: email(env, phone), amount: charge, currency: 'GHS', reference, mobile_money: { phone, provider }, metadata: { kind: 'gate', eventId: ev.id } });
+    const c = await paystack(env, '/charge', { email: email(env, phone), amount: charge, currency: 'GHS', reference, mobile_money: { phone, provider }, ...(fee.split || {}), metadata: { kind: 'gate', eventId: ev.id } });
+    // Paystack wants a code first (numbers it doesn't know yet): the customer pays on Paystack's own
+    // page from the texted link, and types the code there (the door never has to).
     if (c?.status === 'send_otp' || c?.status === 'failed') throw new Error(c.status);
     await audit(env, user, 'GATE_SALE_MOMO_PROMPT', { reference, eventId: ev.id, amountPesewas: item.amountPesewas });
     return { reference, method: 'momo', prompt: true, ...pay, message: `A MoMo prompt for ${money(charge)}${fee.feePesewas ? ` (${money(item.amountPesewas)} + ${money(fee.feePesewas)} service charge)` : ''} is on ${maskPhone(phone)}. Ask them to approve it.` };
@@ -153,8 +157,8 @@ export async function gateSell(env, b, user) {
     const fresh = paymentRef();
     await setDoc(env, 'pending_checkouts', reference, { reference, kind: 'gate', sale, eventId: ev.id, ...pay, status: 'failed', error: 'prompt_not_sent', failedAt: now() });
     await setDoc(env, 'pending_checkouts', fresh, { reference: fresh, kind: 'gate', sale, eventId: ev.id, eventName: sale.eventName, buyerPhone: phone, ...pay, status: 'pending', createdAt: now() });
-    const p = await paystack(env, '/transaction/initialize', { email: email(env, phone), amount: charge, currency: 'GHS', reference: fresh, callback_url: siteUrl(env, '/payment-return.html'), channels: ['mobile_money', 'card'], metadata: { kind: 'gate', eventId: ev.id } });
-    await sendSms(env, phone, `MEMORIES\nPay ${money(charge)}${fee.feePesewas ? ` (incl. ${money(fee.feePesewas)} service charge)` : ''} for ${ev.fields.name || 'tonight'}: ${p.authorization_url}`);
+    const p = await paystack(env, '/transaction/initialize', { email: email(env, phone), amount: charge, currency: 'GHS', reference: fresh, callback_url: siteUrl(env, '/payment-return.html'), channels: ['mobile_money', 'card'], ...(fee.split || {}), metadata: { kind: 'gate', eventId: ev.id } });
+    await sendSms(env, phone, `MEMORIES\nPay ${money(charge)}${fee.feePesewas ? ` (incl. ${money(fee.feePesewas)} service charge)` : ''} for ${ev.fields.name || 'tonight'}: ${p.authorization_url}\nPaying by MoMo? Paystack may text you a code first: check your messages.`);
     return { reference: fresh, method: 'momo', prompt: false, link: p.authorization_url, ...pay, message: `Payment link texted to ${maskPhone(phone)}. They can also scan the code on your screen.` };
   }
 }
@@ -336,7 +340,7 @@ async function tableCap(env, f) { return f.packageId ? Number((await getDoc(env,
 export async function gateReport(env, b, user) {
   const ev = await gateNight(env, user, b?.eventId, CHECKERS); if (!ev) return FORBIDDEN;
   const ph = normalizePhone(b?.phone);
-  await setDoc(env, 'incidents', id(), { businessDate: nightKey(now()), kind: 'entry', note: `Not in the system: ${ph ? maskPhone(ph) : 'no number'}${clean(b?.note, 200) ? `: ${clean(b.note, 200)}` : ''}. Found by ${user.name || 'staff'} (${user.role}).`, people: '', needsManager: true, status: 'open', by: uidOf(user), byName: user.name || '', at: now() });
+  await setDoc(env, 'incidents', id(), { businessDate: bizDate(), kind: 'entry', note: `Not in the system: ${ph ? maskPhone(ph) : 'no number'}${clean(b?.note, 200) ? `: ${clean(b.note, 200)}` : ''}. Found by ${user.name || 'staff'} (${user.role}).`, people: '', needsManager: true, status: 'open', by: uidOf(user), byName: user.name || '', at: now() });
   await audit(env, user, 'GATE_NOT_IN_SYSTEM', { eventId: ev.id, phoneHint: ph ? maskPhone(ph) : '' });
   return { reported: true };
 }
@@ -348,7 +352,7 @@ export async function gateCounts(env, user, eventId) {
   const T = tickets.map(t => t.fields).filter(t => !t.revoked && !t.cancelled), O = orders.map(o => o.fields).filter(o => o.status === 'confirmed');
   const heads = xs => xs.reduce((n, t) => n + Number(t.admitCount || 1), 0);
   const gate = O.filter(o => o.channel === 'gate'), sum = xs => xs.reduce((n, o) => n + Number(o.amountPesewas || 0), 0);
-  const members = isTonight(ev.fields) ? (await queryWhere(env, 'member_entries', [{ field: 'night', value: nightKey(now()) }])).filter(e => e.fields.method !== 'reentry').length : 0;
+  const members = isTonight(ev.fields) ? (await queryWhere(env, 'member_entries', [{ field: 'night', value: bizDate() }])).filter(e => e.fields.method !== 'reentry').length : 0;
   return {
     event: { id: ev.id, name: ev.fields.name || '' },
     online: { sold: heads(T.filter(t => t.channel !== 'gate' && !t.comp)), in: heads(T.filter(t => t.channel !== 'gate' && !t.comp && t.status === 'used')) },

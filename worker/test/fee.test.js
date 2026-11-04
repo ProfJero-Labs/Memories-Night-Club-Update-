@@ -182,7 +182,8 @@ test('the night’s finances: product sales without the charge; cash without Pay
   paid(store, t.reference, GHS(3100), { fees: GHS(60.45), channel: 'card' });
   ok(await call('POST', '/api/checkout/verify', { body: { reference: t.reference } }), 'verify');
 
-  let n = ok(await call('GET', '/api/ops/finance-night', { who: 'f1' }), 'report');
+  let n = ok(await call('GET', '/api/ops/finance-night', { who: 'd1' }), 'report');
+  assert.equal(ok(await call('GET', '/api/ops/finance-night', { who: 'f1' }), 'finance').payments.commission, null, 'what EvolveIT earns: the directors only');
   assert.equal(n.sales.grossProductPesewas, GHS(100) + GHS(100) + GHS(3000), 'tab + QR + table, no service charge in it');
   assert.equal(n.sales.serviceChargesPesewas, GHS(5) + GHS(100));
   assert.equal(n.sales.netProductPesewas, GHS(3200));
@@ -200,7 +201,7 @@ test('the night’s finances: product sales without the charge; cash without Pay
   assert.deepEqual([q.refund.status, q.commission.status], ['pending', 'reversed']);
   ok(await call('POST', '/api/admin/refunds/mark', { who: 'sa', body: { source: 'counter', id: o.orderId, note: 'Paystack refund 123' } }), 'mark refunded');
   q = ledger(store).find(r => r.reference === qref);
-  n = ok(await call('GET', '/api/ops/finance-night', { who: 'f1' }), 'after the refund');
+  n = ok(await call('GET', '/api/ops/finance-night', { who: 'd1' }), 'after the refund');
   assert.equal(n.sales.productRefundsPesewas, GHS(100));
   assert.equal(n.sales.netProductPesewas, GHS(3100));
   assert.equal(n.payments.commission.payablePesewas, GHS(60), 'the refunded payment earns no commission');

@@ -24,9 +24,19 @@
 //                         fee; the commission is not deducted, it is payable separately)
 //   settlement            pending → settled (matched to a Paystack settlement, with what it paid)
 //   refund                none → pending → refunded
+//   route                 (new payment rules, lib/routes.js) the 5% charge, the customer's and the
+//                         venue's shares, what EvolveIT's main account kept besides (its ticket
+//                         share), the partner's subaccount, and the rule. With it:
+//                           evolveitPesewas     = charge − Paystack's actual fee (EvolveIT's earning)
+//                           clubBorneCostPesewas = the venue's share of the charge
+//                           partnerPesewas      = collected − charge − main extra (sent to the partner)
+//                         The old developer commission doesn't apply (replaced by the charge).
+//                         On a refund the customer gets everything back; Paystack keeps its fee,
+//                         and the venue absorbs it (owner's decision).
 import { getDoc, setDoc, createDoc, queryWhere, queryRecent, alreadyExists } from '../lib/firestore.js';
 import { now, nightKey } from '../lib/util.js';
 import { commercialConfig, commissionOf } from '../lib/fee.js';
+import { nightAt } from './common.js';
 
 const num = v => Number(v || 0);
 // The product part of a checkout: tabs and QR orders keep the tip inside amountPesewas.
@@ -37,6 +47,13 @@ export function partsOf(P) {
 }
 const derive = r => {
   const fee = r.feeStatus === 'actual' ? num(r.processingFeePesewas) : 0;
+  if (r.route) {
+    const refunded = r.refund && r.refund.status !== 'none';
+    return { clubBorneCostPesewas: num(r.route.venueSharePesewas) + (refunded ? fee : 0), expectedNetPesewas: num(r.collectedPesewas) - fee,
+      evolveitPesewas: refunded ? 0 : r.feeStatus === 'actual' ? Math.max(0, num(r.route.chargePesewas) - fee) : null,
+      partnerPesewas: num(r.collectedPesewas) - num(r.route.chargePesewas) - num(r.route.mainExtraPesewas),
+      ...(refunded ? { refundNote: 'Refunded in full. Paystack kept its fee; the venue bears it.' } : {}) };
+  }
   const commission = ['payable', 'paid'].includes(r.commission?.status) ? num(r.commission.amountPesewas) : 0;
   return { clubBorneCostPesewas: Math.max(0, fee + commission - num(r.serviceChargePesewas)), expectedNetPesewas: num(r.collectedPesewas) - fee };
 };
@@ -51,12 +68,13 @@ export async function recordPayment(env, reference, pending, payment) {
   const feeKnown = payment.fees !== undefined && payment.fees !== null && Number.isFinite(Number(payment.fees));
   const rec = {
     reference, kind: P.kind, eventId: P.eventId || '', label: P.eventName || P.ticketTypeName || P.packageName || '', tabId: P.tabId || '', orderId: P.orderId || '', planId: P.planId || '',
-    businessDate: nightKey(at), paidAt: at, recordedAt: now(), channel, currency: payment.currency || 'GHS',
+    businessDate: nightAt(at), paidAt: at, recordedAt: now(), channel, currency: payment.currency || 'GHS',
     ...parts, collectedPesewas: num(payment.amount),
     serviceCharge: { percent: num(P.feePercent), capPesewas: P.feeCapPesewas ?? null },
     processingFeePesewas: feeKnown ? num(payment.fees) : null, feeStatus: feeKnown ? 'actual' : 'pending',
-    commission: { status: c.eligible && c.amountPesewas > 0 ? 'payable' : 'not_eligible', amountPesewas: c.eligible ? c.amountPesewas : 0, basePesewas: c.basePesewas ?? 0, reason: c.reason || '',
-      rule: { type: cc.type, percent: cc.percent, fixedPesewas: cc.fixedPesewas, basis: cc.basis, refunds: cc.refunds, settlement: cc.settlement } },
+    ...(P.route ? { route: P.route } : {}),
+    commission: (P.route ? { status: 'not_eligible', amountPesewas: 0, basePesewas: 0, reason: 'replaced_by_charge', rule: {} } : { status: c.eligible && c.amountPesewas > 0 ? 'payable' : 'not_eligible', amountPesewas: c.eligible ? c.amountPesewas : 0, basePesewas: c.basePesewas ?? 0, reason: c.reason || '',
+      rule: { type: cc.type, percent: cc.percent, fixedPesewas: cc.fixedPesewas, basis: cc.basis, refunds: cc.refunds, settlement: cc.settlement } }),
     settlement: { status: 'pending' }, refund: { status: 'none', amountPesewas: 0 },
   };
   Object.assign(rec, derive(rec));

@@ -26,6 +26,7 @@ import { now, id, clean, normalizePhone, maskPhone, firstName, sixDigits, sha256
 import { requireRole, MEMBERS, STAFF_ROLES, uidOf } from './lib/auth.js';
 import { sendSms, siteUrl } from './lib/notify.js';
 import { securitySignal } from './lib/monitor.js';
+import { bizDate } from './ops/common.js';
 
 const FORBIDDEN = { error: 'Forbidden.', status: 403 };
 // Who may verify members at the gate. Organisers run their own nights' doors only, not the club's staff.
@@ -58,7 +59,7 @@ async function memberByPhone(env, phone) {
 }
 // Tonight's first entry for this member (re-entries don't count), or null.
 export async function enteredTonight(env, memberId) {
-  const tonight = nightKey(now());
+  const tonight = bizDate();
   return (await queryWhere(env, 'member_entries', [{ field: 'memberId', value: memberId }]))
     .map(d => d.fields).filter(e => e.night === tonight && e.method !== 'reentry')
     .sort((a, b) => String(a.at).localeCompare(String(b.at)))[0] || null;
@@ -190,7 +191,7 @@ export async function attendance(env, { days = 30, memberId } = {}, user) {
   const d = Math.min(366, Math.max(1, Number(days) || 30));
   let entries = (await queryRecent(env, 'member_entries', 'at', new Date(Date.now() - d * 864e5), 5000)).map(e => ({ id: e.id, ...e.fields }));
   if (memberId) entries = entries.filter(e => e.memberId === memberId);
-  // Per person: nights present (a night runs to 04:00, see nightKey), first and last seen.
+  // Per person: nights present (each entry carries the night that was open), first and last seen.
   const people = new Map();
   for (const e of entries) {
     const p = people.get(e.memberId) || { memberId: e.memberId, name: e.name, type: e.type, department: e.department || '', nights: new Set(), last: e.at };
@@ -309,7 +310,7 @@ async function logEntry(env, user, mid, m, method, note = '') {
   const at = now();
   // Who let them in, by name, for the attendance log (the staff record has the email if the token doesn't).
   const byEmail = user.email || (await getDoc(env, 'users', uidOf(user)).catch(() => null))?.fields?.email || '';
-  await setDoc(env, 'member_entries', id(), { memberId: mid, name: m.name, type: m.type, department: m.department || '', at, by: uidOf(user), byEmail, method, night: nightKey(at), ...(note ? { note } : {}) });
+  await setDoc(env, 'member_entries', id(), { memberId: mid, name: m.name, type: m.type, department: m.department || '', at, by: uidOf(user), byEmail, method, night: bizDate(), ...(note ? { note } : {}) });
 }
 const result = (st, m, extra = {}) => ({ valid: st.ok, code: st.ok ? 'member_ok' : st.code, message: st.ok ? (m.fields.type === 'staff' ? 'STAFF VERIFIED' : 'MEMBER VERIFIED') : st.message, member: m ? memberCard(m.id, m.fields) : null, ...extra });
 
@@ -341,7 +342,7 @@ export async function doorManualAdmit(env, user, { phone, reason }) {
   if (!st.ok) return result(st, { id: hit.id, fields: hit.m });
   const twice = await alreadyIn(env, hit.id, hit.m); if (twice) return twice;
   await logEntry(env, user, hit.id, hit.m, 'manual');
-  await setDoc(env, 'incidents', id(), { businessDate: nightKey(now()), kind: 'other', note: `Let in without the app: ${hit.m.name} (${why}). Check their photo/ID was seen.`, people: hit.m.name, needsManager: true, status: 'open', by: uidOf(user), byName: user.name || '', at: now(), updates: [] });
+  await setDoc(env, 'incidents', id(), { businessDate: bizDate(), kind: 'other', note: `Let in without the app: ${hit.m.name} (${why}). Check their photo/ID was seen.`, people: hit.m.name, needsManager: true, status: 'open', by: uidOf(user), byName: user.name || '', at: now(), updates: [] });
   return result(st, { id: hit.id, fields: hit.m }, { hint: 'Let in by hand: recorded for the manager.' });
 }
 

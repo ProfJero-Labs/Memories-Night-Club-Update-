@@ -178,7 +178,7 @@ test('10, 14: the cashier has less cash than expected (explanation required); a 
   assert.equal((await ctx.call('GET', '/api/ops/products', { who: ctx.W1 })).data.products[0].costPesewas, undefined, 'waiters never see costs');
 });
 
-test('5, 11, 12: an unpaid tab, free drinks by approval, Today’s sales, the guided close, the end-of-day report to finance, sign-off; closing doesn’t stop anyone and can be done again', async () => {
+test('5, 11, 12: an unpaid tab, a discount the Manager approves (no free drinks, no write-offs), Today’s sales, the guided close, the end-of-day report to finance, sign-off; closing doesn’t stop anyone and can be done again', async () => {
   const ctx = setup();
   ctx.env.BREVO_API_KEY = 'k'; ctx.env.BREVO_SENDER_EMAIL = 'noreply@memories.test';
   ok(await ctx.call('POST', '/api/ops/finance-contact', { who: ctx.F1, body: { email: 'finance@memories.test' } }), 'finance contact');
@@ -189,10 +189,12 @@ test('5, 11, 12: an unpaid tab, free drinks by approval, Today’s sales, the gu
   const ra = ok(await ctx.call('POST', '/api/ops/tabs/round', { who: ctx.W1, body: { tabId: paid.id, lines: [{ productId: 'beer', qty: 2 }, { productId: 'shot', qty: 2 }] } }), 'ra');
   await barMakes(ctx, ra.id);
   ok(await ctx.call('POST', '/api/ops/tabs/round-action', { who: ctx.W1, body: { roundId: ra.id, action: 'delivered' } }), 'delivered');
-  // A free shot needs the manager.
+  // No free drinks at Memories (owner's rule): refused. A discount, approved by the Manager only.
   const shotLine = ok(await ctx.call('GET', `/api/ops/tab?id=${paid.id}`, { who: ctx.W1 }), 'tab').tab.rounds[0].lines.find(l => l.productId === 'shot');
-  const comp = ok(await ctx.call('POST', '/api/ops/approvals/request', { who: ctx.W1, body: { kind: 'comp', tabId: paid.id, roundId: ra.id, lineId: shotLine.lineId, qty: 1, reason: 'birthday' } }), 'comp');
-  ok(await ctx.call('POST', '/api/ops/approvals/decide', { who: ctx.M1, body: { id: comp.id, approve: true } }), 'approve comp');
+  assert.equal((await ctx.call('POST', '/api/ops/approvals/request', { who: ctx.W1, body: { kind: 'comp', tabId: paid.id, roundId: ra.id, lineId: shotLine.lineId, qty: 1, reason: 'birthday' } })).status, 403, 'no free drinks');
+  assert.equal((await ctx.call('POST', '/api/ops/approvals/request', { who: ctx.W1, body: { kind: 'write_off', tabId: paid.id, reason: 'left' } })).status, 403, 'no write-offs');
+  const disc = ok(await ctx.call('POST', '/api/ops/approvals/request', { who: ctx.W1, body: { kind: 'discount', tabId: paid.id, amountPesewas: 3000, reason: 'birthday' } }), 'discount');
+  ok(await ctx.call('POST', '/api/ops/approvals/decide', { who: ctx.M1, body: { id: disc.id, approve: true } }), 'the Manager approves');
   ok(await ctx.call('POST', '/api/ops/tabs/cash', { who: ctx.C1, body: { tabId: paid.id, amountPesewas: 8000 } }), 'pay 50+30');
   // 5: a customer leaves without paying.
   const unpaid = ok(await ctx.call('POST', '/api/ops/tabs/open', { who: ctx.W2, body: { table: '9' } }), 'tab b');
@@ -201,9 +203,9 @@ test('5, 11, 12: an unpaid tab, free drinks by approval, Today’s sales, the gu
   ok(await ctx.call('POST', '/api/ops/tabs/round-action', { who: ctx.W2, body: { roundId: rb.id, action: 'delivered' } }), 'delivered b');
 
   const sales = ok(await ctx.call('GET', '/api/ops/sales', { who: ctx.M1 }), 'sales');
-  assert.deepEqual([sales.totals.salesPesewas, sales.totals.paidPesewas, sales.totals.cashPesewas, sales.totals.owedPesewas, sales.totals.freeDrinksPesewas], [10500, 8000, 8000, 2500, 3000]);
+  assert.deepEqual([sales.totals.salesPesewas, sales.totals.paidPesewas, sales.totals.cashPesewas, sales.totals.owedPesewas, sales.totals.freeDrinksPesewas, sales.totals.discountsPesewas], [10500, 8000, 8000, 2500, 0, 3000]);
   assert.deepEqual(sales.byWaiter.map(w => [w.name, w.salesPesewas, w.unpaidPesewas]), [['Efua Waiter', 8000, 0], ['Kojo Waiter', 2500, 2500]]);
-  assert.equal(sales.byProduct.find(p => p.name === 'Tequila shot').qty, 1, 'the free shot isn’t a sale');
+  assert.equal(sales.byProduct.find(p => p.name === 'Tequila shot').qty, 2, 'every drink is a sale');
   assert.equal((await ctx.call('GET', '/api/ops/sales', { who: ctx.W1 })).status, 403, 'waiters don’t see the whole night');
 
   // The close: four steps, and it says what's missing.
@@ -241,10 +243,9 @@ test('5, 11, 12: an unpaid tab, free drinks by approval, Today’s sales, the gu
   const again = ok(await ctx.call('GET', '/api/ops/eod', { who: ctx.F1 }), 'eod v2').report;
   assert.equal(again.report.sales.totals.salesPesewas, 10500 + 2500, 'the updated report has the new drink');
   assert.equal(again.versions.length, 2);
-  // The debt can still be paid later, or written off with approval.
-  const wo = ok(await ctx.call('POST', '/api/ops/approvals/request', { who: ctx.W2, body: { kind: 'write_off', tabId: unpaid.id, reason: 'left without paying' } }), 'write-off request');
-  ok(await ctx.call('POST', '/api/ops/approvals/decide', { who: ctx.F1, body: { id: wo.id, approve: true } }), 'write off');
-  assert.equal(ctx.store.get('tabs', unpaid.id).fields.status, 'written_off');
+  // The debt stays owed (no write-offs at Memories): it can only be paid.
+  assert.equal((await ctx.call('POST', '/api/ops/approvals/request', { who: ctx.W2, body: { kind: 'write_off', tabId: unpaid.id, reason: 'left without paying' } })).status, 403, 'no write-offs');
+  assert.equal(ctx.store.get('tabs', unpaid.id).fields.status, 'owed');
 });
 
 test('existing QR self-ordering still works, and its handover takes the drinks out of the bar’s stock', async () => {
@@ -343,7 +344,7 @@ test('the waiter’s tab: order → the bar → “I got them”; close it: cash
   assert.equal(a.totalPesewas, 5000);
   assert.equal(ctx.store.sms.filter(x => x.to === '0245557070').length, 0, 'no text while they’re still drinking');
   // Closing before the drinks are collected: refused, so the bill is final.
-  assert.match((await ctx.call('POST', '/api/ops/tabs/checkout', { who: ctx.W1, body: { tabId: a.tabId, method: 'cash' } })).data.error, /isn’t collected yet/);
+  assert.match((await ctx.call('POST', '/api/ops/tabs/checkout', { who: ctx.W1, body: { tabId: a.tabId, method: 'cash' } })).data.error, /still at the bar/);
   await barMakes(ctx, a.roundId);
   ok(await ctx.call('POST', '/api/ops/tabs/round-action', { who: ctx.W1, body: { roundId: a.roundId, action: 'delivered' } }), 'I got them');
   // More drinks on the same tab later.

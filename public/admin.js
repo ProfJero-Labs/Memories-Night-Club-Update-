@@ -340,7 +340,7 @@ async function activationQr(m) {
 }
 
 async function attendance() {
-  panel.innerHTML = `<h1>Attendance</h1><p class="muted" style="margin-top:-6px">Every staff and member check-in at the gate. A night runs until 04:00.</p>
+  panel.innerHTML = `<h1>Attendance</h1><p class="muted" style="margin-top:-6px">Every staff and member check-in at the gate, by night (a night lasts until the Manager closes it).</p>
     <div class="toolbar"><select id="aDays"><option value="7">Last 7 days</option><option value="30" selected>Last 30 days</option><option value="90">Last 90 days</option></select><button class="sbtn" id="aCsv">Download CSV</button></div><div id="aBody"><div class="loading">Loading…</div></div>`;
   let d;
   const load = async () => {

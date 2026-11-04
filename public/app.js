@@ -1,6 +1,7 @@
 // Shared code for the public pages. No framework, no Firebase: everything goes through the Worker.
 import './lib/report.js'; // quiet browser-error reporting to the Worker (see docs/MONITORING.md)
 import './lib/install.js'; // the Memories app: install sheet + service worker on every page
+import { routeFor } from './lib/charge-rules.js';
 const CFG = window.MEMORIES_CONFIG || {};
 export const params = new URLSearchParams(location.search);
 export const $ = (s, el = document) => el.querySelector(s);
@@ -47,7 +48,7 @@ export const MSG = {
   server: 'SOMETHING WENT WRONG ON OUR SIDE. TRY AGAIN IN A MOMENT.',
   busy: 'TOO MANY TRIES. GIVE IT A MINUTE.',
 };
-export class ApiError extends Error { constructor(message, status, code = '') { super(message); this.status = status; this.code = code; } }
+export class ApiError extends Error { constructor(message, status, code = '', data = null) { super(message); this.status = status; this.code = code; this.data = data; } }
 export async function api(path, { method = 'GET', body, token, headers: extra, retries = method === 'GET' ? 1 : 0, timeout = 15000 } = {}) {
   for (let attempt = 0; ; attempt++) {
     const ctl = new AbortController(); const t = setTimeout(() => ctl.abort(), timeout);
@@ -59,7 +60,7 @@ export async function api(path, { method = 'GET', body, token, headers: extra, r
       if (r.ok && d.success !== false) return d;
       if (r.status === 429) throw new ApiError(MSG.busy, 429);
       if (r.status >= 500 && attempt < retries) continue;
-      throw new ApiError(r.status >= 500 ? MSG.server : (d.error || MSG.server), r.status, d.code || '');
+      throw new ApiError(r.status >= 500 ? MSG.server : (d.error || MSG.server), r.status, d.code || '', d);
     } catch (e) {
       if (e instanceof ApiError) throw e;
       if (attempt < retries) { await new Promise(res => setTimeout(res, 600)); continue; }
@@ -74,12 +75,25 @@ export const getSettings = () => (settingsP ||= api('/api/settings').then(d => d
 // The service charge the customer pays on top of anything paid online or by MoMo: a percentage of
 // the bill, once per bill, capped (5%, at most GHS 100, unless management changed it). The Worker
 // works it out and charges it; this only shows it before paying, so the total is no surprise.
-let SC = { enabled: true, percent: 5, capPesewas: 10000 };
-export const loadFee = () => getSettings().then(s => { if (s?.serviceCharge) SC = s.serviceCharge; return SC; });
-export const feePct = () => Number(SC.percent);
-export const feeOn = pesewas => { if (!SC.enabled) return 0; const raw = Math.round(Math.max(0, Number(pesewas) || 0) * Number(SC.percent || 0) / 100); return Number(SC.capPesewas) >= 0 ? Math.min(raw, Number(SC.capPesewas)) : raw; };
+// With the new payment rules on (lib/charge-rules.js, the same rules the Worker charges by): the
+// customer's share of the 5% charge, and whether card / MoMo is offered at all for the bill.
+let SC = { enabled: true, percent: 5, capPesewas: 10000 }, PR = null;
+export const loadFee = () => getSettings().then(s => { if (s?.serviceCharge) SC = s.serviceCharge; PR = s?.payRules?.enabled ? s.payRules : null; return SC; });
+export const feePct = () => Number(PR ? PR.percent : SC.percent);
+// whole: the whole bill, when paying part of it (it decides the route).
+export const feeOn = (pesewas, whole) => {
+  if (PR) { const r = routeFor(pesewas, PR, { bandBillPesewas: whole }); return r.paystack ? r.paystack.customerSharePesewas : 0; }
+  if (!SC.enabled) return 0; const raw = Math.round(Math.max(0, Number(pesewas) || 0) * Number(SC.percent || 0) / 100); return Number(SC.capPesewas) >= 0 ? Math.min(raw, Number(SC.capPesewas)) : raw;
+};
+// Card / MoMo through Paystack offered for this bill? (No, above the limit when the rules are on.)
+export const paystackOk = (pesewas, whole) => !PR || !!routeFor(pesewas, PR, { bandBillPesewas: whole }).paystack;
+export const paystackLimit = () => (PR ? Number(PR.paystackUpToPesewas) : null);
+// The new rules are on: staff no longer record "MoMo to the club's number" (big bills use the wallet).
+export const momoDirectOff = () => !!PR;
+// MoMo to the partner's wallet is offered: a bill above the Paystack limit, or Paystack down tonight.
+export const walletOk = (pesewas, whole) => !!PR && (!paystackOk(pesewas, whole) || !!PR.paystackDownTonight);
 // "Service charge (5%, capped at GHS 100)": the label wherever the charge is shown.
-export const feeLabel = () => `Service charge (${feePct()}%${Number(SC.capPesewas) >= 0 ? `, capped at ${money(SC.capPesewas)}` : ''})`;
+export const feeLabel = () => (PR ? 'Card / MoMo charge' : `Service charge (${feePct()}%${Number(SC.capPesewas) >= 0 ? `, capped at ${money(SC.capPesewas)}` : ''})`);
 const digits = s => String(s || '').replace(/\D/g, '');
 export const waLink = n => { const d = digits(n); return d ? `https://wa.me/${d.startsWith('0') ? '233' + d.slice(1) : d}` : ''; };
 const handle = h => String(h || '').trim().replace(/^@/, '').replace(/^https?:\/\/[^/]+\//, '').replace(/\/$/, '');

@@ -14,13 +14,27 @@ export function momoProvider(phone) {
   if (['026', '056', '027', '057'].includes(p)) return 'atl';
   return null;
 }
-// Sends the prompt. true when it's on their phone; false when it couldn't be sent (unknown network,
-// or Paystack wants a voucher/OTP instead): then the customer pays with the link they're texted.
-export async function momoPrompt(env, { phone, amountPesewas, reference, email, metadata }) {
+// Sends the prompt. { sent: true } when it's on their phone. { otp: true } when Paystack first texts
+// the customer a code (it does this for numbers it doesn't know yet): staff type the code in
+// (submitMomoCode) and then the prompt comes. { sent: false } when it couldn't be sent (unknown
+// network, or it failed): then the customer pays with the link they're texted.
+export async function momoPrompt(env, { phone, amountPesewas, reference, email, metadata, split }) {
   const provider = momoProvider(phone);
-  if (!provider) return false;
+  if (!provider) return { sent: false };
   try {
-    const c = await paystackPost(env, '/charge', { email, amount: amountPesewas, currency: 'GHS', reference, mobile_money: { phone, provider }, metadata });
-    return !(c?.status === 'send_otp' || c?.status === 'failed');
-  } catch { return false; }
+    const c = await paystackPost(env, '/charge', { email, amount: amountPesewas, currency: 'GHS', reference, mobile_money: { phone, provider }, ...(split || {}), metadata });
+    if (c?.status === 'send_otp') return { otp: true };
+    return { sent: c?.status !== 'failed' };
+  } catch { return { sent: false }; }
+}
+// The code Paystack texted the customer, passed on. Paystack then sends the MoMo prompt.
+export async function submitMomoCode(env, reference, otp) {
+  const code = String(otp || '').replace(/\D/g, '');
+  if (code.length < 4 || code.length > 8) return { error: 'Type the code from the customer’s text (numbers only).' };
+  try {
+    const c = await paystackPost(env, '/charge/submit_otp', { otp: code, reference });
+    if (c?.status === 'failed') return { error: 'Paystack didn’t accept that code. Check it with the customer and try again.' };
+    if (c?.status === 'send_otp') return { error: 'That code didn’t work. Ask the customer for the newest code in their messages.' };
+    return { accepted: true, status: c?.status || '' };
+  } catch (e) { return { error: e.message && /otp|code/i.test(e.message) ? 'Paystack didn’t accept that code. Check it with the customer and try again.' : 'Couldn’t reach Paystack. Try again.' }; }
 }

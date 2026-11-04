@@ -13,7 +13,7 @@
 import { getDoc, queryWhere, queryRecent, listDocs } from '../lib/firestore.js';
 import { normalizePhone, maskPhone, nightKey } from '../lib/util.js';
 import { requireRole, CUSTOMER_CARE } from '../lib/auth.js';
-import { FORBIDDEN, bizDate, dateOr } from './common.js';
+import { FORBIDDEN, bizDate, dateOr, paidNight } from './common.js';
 import { billOf } from './tabs.js';
 
 const sum = (arr, f) => arr.reduce((n, x) => n + Number(f(x) || 0), 0);
@@ -34,7 +34,7 @@ async function night(env, date) {
   const rounds = roundsRaw.map(r => ({ id: r.id, ...r.fields }));
   const tabs = tabsRaw.map(t => ({ id: t.id, ...t.fields }));
   for (const t of tabs) { t.rounds = rounds.filter(r => r.tabId === t.id); t.bill = billOf(t, t.rounds); }
-  const qr = qrRaw.map(o => ({ id: o.id, ...o.fields })).filter(o => ['paid', 'delivered', 'refund_due', 'refunded'].includes(o.status) && o.paidAt && nightKey(o.paidAt) === date);
+  const qr = qrRaw.map(o => ({ id: o.id, ...o.fields })).filter(o => ['paid', 'delivered', 'refund_due', 'refunded'].includes(o.status) && paidNight(o) === date);
   return { tabs, qr, name, stationName, tipBy };
 }
 
@@ -46,7 +46,7 @@ function paymentsOf({ tabs, qr, name, stationName, tipBy = new Map() }) {
       momoRef: p.momoRef || p.reference || '', wholeBill: !t.quick, lines: t.bill.lines.map(l => ({ qty: l.qty, name: l.name, amountPesewas: l.amountPesewas })), billTotalPesewas: t.bill.totalPesewas, billLeftPesewas: t.bill.balancePesewas, ...(tipBy.get(p.id) || {}) });
   }
   for (const o of qr) {
-    out.push({ id: o.id, at: o.paidAt, amountPesewas: o.totalPesewas, method: 'qr', methodLabel: METHOD.qr, takenByName: 'Customer, by QR', servedByName: o.deliveredBy ? name[o.deliveredBy] || 'The bar' : o.status === 'paid' ? 'Not collected yet' : '',
+    out.push({ id: o.id, at: o.paidAt, amountPesewas: o.totalPesewas, method: o.paidVia === 'wallet' ? 'momo' : 'qr', methodLabel: o.paidVia === 'wallet' ? 'MoMo to the wallet (confirmed)' : METHOD.qr, takenByName: 'Customer, by QR', servedByName: o.deliveredBy ? name[o.deliveredBy] || 'The bar' : o.status === 'paid' ? 'Not collected yet' : '',
       where: o.spot ? `Table ${o.spot}` : 'QR at the bar', tab: `Code ${o.pickupCode || ''}`, bar: o.stationName || '', customerName: '', customerPhone: o.phone || '', momoRef: o.reference || '', wholeBill: false,
       lines: (o.lines || []).map(l => ({ qty: l.qty, name: l.name, amountPesewas: l.qty * l.unitPesewas })), refund: ['refund_due', 'refunded'].includes(o.status) ? o.status : '', ...(tipBy.get(o.id) || {}) });
   }
@@ -77,13 +77,13 @@ export async function guestNight(env, orderId) {
   if (!/^[0-9a-f]{32}$/.test(String(orderId || ''))) return null;
   const o = await getDoc(env, 'counter_orders', orderId);
   if (!o || !o.fields.phone) return null;
-  const phone = o.fields.phone, date = nightKey(o.fields.paidAt || o.fields.createdAt);
+  const phone = o.fields.phone, date = o.fields.businessDate || nightKey(o.fields.paidAt || o.fields.createdAt);
   if (date !== bizDate()) return { date, totalPesewas: 0, items: [], phoneHint: maskPhone(phone), over: true };
   // Their tables and quick sales tonight: the phone on the table, or the MoMo number that paid it.
   const [orders, tonight] = await Promise.all([queryWhere(env, 'counter_orders', [{ field: 'phone', value: phone }]), queryWhere(env, 'tabs', [{ field: 'businessDate', value: date }])]);
   const tabs = tonight.filter(t => t.fields.customerPhone === phone || (t.fields.payments || []).some(p => p.momoFrom === phone));
   const items = [];
-  for (const x of orders.map(d => d.fields).filter(f => ['paid', 'delivered'].includes(f.status) && f.paidAt && nightKey(f.paidAt) === date)) {
+  for (const x of orders.map(d => d.fields).filter(f => ['paid', 'delivered'].includes(f.status) && paidNight(f) === date)) {
     items.push({ at: x.paidAt, where: x.stationName || 'Bar', how: 'QR order', lines: x.lines.map(l => ({ qty: l.qty, name: l.name })), totalPesewas: x.totalPesewas });
   }
   for (const t of tabs) {

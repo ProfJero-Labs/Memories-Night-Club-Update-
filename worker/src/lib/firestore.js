@@ -107,6 +107,24 @@ export async function queryWhere(env, col, filters, { limit = 1000, transaction 
   return (d || []).filter(x => x.document).map(x => ({ id: x.document.name.split('/').pop(), fields: parseFields(x.document.fields) }));
 }
 
+// Every matching document, read 1000 at a time (queryWhere stops at its limit, in no set order, so a
+// collection that keeps growing, like stock moves, would quietly lose records from its totals).
+export async function queryAll(env, col, filters, { page = 1000, max = 200000 } = {}) {
+  const fieldFilters = filters.map(f => ({ fieldFilter: { field: { fieldPath: f.field }, op: 'EQUAL', value: firestoreValue(f.value) } }));
+  const where = fieldFilters.length === 1 ? fieldFilters[0] : { compositeFilter: { op: 'AND', filters: fieldFilters } };
+  const out = [];
+  let after = null;
+  while (out.length < max) {
+    const structuredQuery = { from: [{ collectionId: col }], where, orderBy: [{ field: { fieldPath: '__name__' }, direction: 'ASCENDING' }], limit: page,
+      ...(after ? { startAt: { values: [{ referenceValue: after }], before: false } } : {}) };
+    const d = (await call(env, `${basePath(env)}:runQuery`, { method: 'POST', body: JSON.stringify({ structuredQuery }) }) || []).filter(x => x.document);
+    for (const x of d) out.push({ id: x.document.name.split('/').pop(), fields: parseFields(x.document.fields) });
+    if (d.length < page) break;
+    after = d.at(-1).document.name;
+  }
+  return out;
+}
+
 // Newest first: documents whose `field` is at or after `since`, ordered by it, descending.
 // (A single-field range plus its own orderBy needs no composite index.)
 export async function queryRecent(env, col, field, since, limit = 50) {

@@ -17,7 +17,7 @@
 import { setDoc, getDoc, queryRecent, listDocs, queryWhere } from '../lib/firestore.js';
 import { now, id, clean, nightKey } from '../lib/util.js';
 import { requireRole, uidOf, REPORTS } from '../lib/auth.js';
-import { FORBIDDEN, bizDate, isDate, audit, int, ghs } from './common.js';
+import { FORBIDDEN, bizDate, isDate, audit, int, ghs, paidNight } from './common.js';
 import { billOf } from './tabs.js';
 import { ledgerSince } from './ledger.js';
 import { tipTotals } from './tips.js';
@@ -107,7 +107,7 @@ export async function moneyReport(env, user, q = {}) {
   const rounds = roundsRaw.map(r => ({ id: r.id, ...r.fields })).filter(r => r.status !== 'cancelled');
   const tabs = tabsRaw.map(t => ({ id: t.id, ...t.fields })).filter(t => inRange(t.businessDate));
   for (const t of tabs) t.bill = billOf(t, rounds.filter(r => r.tabId === t.id));
-  const qr = qrRaw.map(o => ({ id: o.id, ...o.fields })).filter(o => ['paid', 'delivered'].includes(o.status) && o.paidAt && inRange(nightKey(o.paidAt)));
+  const qr = qrRaw.map(o => ({ id: o.id, ...o.fields })).filter(o => ['paid', 'delivered'].includes(o.status) && o.paidAt && inRange(paidNight(o)));
   const orders = ordersRaw.map(o => ({ id: o.id, ...o.fields })).filter(o => o.status === 'confirmed' && o.kind === 'table' && Number(o.amountPesewas) > 0 && inRange(nightKey(o.createdAt)));
   const buys = buysRaw.map(d => ({ id: d.id, ...d.fields })).filter(d => d.status === 'confirmed' && inRange(d.businessDate || nightKey(d.recordedAt)));
   const expenses = expRaw.map(e => ({ id: e.id, ...e.fields })).filter(e => inRange(e.date));
@@ -115,7 +115,7 @@ export async function moneyReport(env, user, q = {}) {
 
   // Drinks: money received (cash, MoMo, phone payments) and what was sold.
   const pays = tabs.flatMap(t => (t.payments || []).map(p => ({ ...p, date: t.businessDate })));
-  const night = (k, x) => (k === 'qr' ? nightKey(x.paidAt) : x.date);
+  const night = (k, x) => (k === 'qr' ? paidNight(x) : x.date);
   const drinksPaid = sum(pays, x => x.amountPesewas) + sum(qr, o => o.totalPesewas);
   const soldLines = [
     ...tabs.flatMap(t => rounds.filter(r => r.tabId === t.id).flatMap(r => r.lines.map(l => ({ ...l, n: Math.max(0, l.qty - (l.returnedQty || 0) - (l.brokenQty || 0) - (l.compQty || 0)) })))),
@@ -133,7 +133,10 @@ export async function moneyReport(env, user, q = {}) {
 
   const buyCost = d => Number(d.totalCostPesewas ?? (d.unitCostPesewas != null ? d.unitCostPesewas * (d.confirmedQty ?? d.qty) : 0));
   const bought = sum(buys, buyCost), spent = sum(live, e => e.amountPesewas);
-  const moneyIn = drinksPaid + sum(tables, share), moneyOut = bought + spent;
+  // New payment rules: the venue's share of the card / MoMo charge (and Paystack's fee on refunds)
+  // comes off the venue's takings, so revenue = bill − the venue's share.
+  const venueCharges = sum(led.filter(r => r.route), r => r.clubBorneCostPesewas);
+  const moneyIn = drinksPaid + sum(tables, share), moneyOut = bought + spent + venueCharges;
 
   // Night by night.
   const days = new Map();
@@ -163,6 +166,7 @@ export async function moneyReport(env, user, q = {}) {
     ],
     moneyOut: [
       { key: 'drinks_bought', label: 'Drinks bought', amountPesewas: bought },
+      ...(venueCharges ? [{ key: 'pay_charges', label: 'Card / MoMo charges (the venue’s share)', amountPesewas: venueCharges }] : []),
       ...[...byCat.entries()].map(([k, v]) => ({ key: k, label: EXPENSE_CATEGORIES[k] || k, amountPesewas: v })).sort((a, b) => b.amountPesewas - a.amountPesewas),
     ],
     drinks: { soldPesewas: drinksSold, costPesewas: drinksCost, profitPesewas: drinksSold - drinksCost, paidPesewas: drinksPaid, unpaidPesewas: sum(tabs.filter(t => t.status !== 'written_off'), t => t.bill.balancePesewas), rows: drinkRows.slice(0, 40), missingCost: noCost },
@@ -171,7 +175,7 @@ export async function moneyReport(env, user, q = {}) {
     byNight: [...days.values()].filter(d => d.inPesewas || d.outPesewas).map(d => ({ ...d, profitPesewas: d.inPesewas - d.outPesewas })).sort((a, b) => b.date.localeCompare(a.date)),
     serviceFees: { totalPesewas: sum(ledLive, r => r.serviceChargePesewas), payments: ledLive.filter(r => r.serviceChargePesewas > 0).length, note: 'Paid by customers on top of online and MoMo payments. Kept apart from the drinks and tables money above, and not counted as profit.' },
     paymentCosts: { processingFeesPesewas: sum(led.filter(r => r.feeStatus === 'actual'), r => r.processingFeePesewas), feesPending: led.filter(r => r.feeStatus !== 'actual').length,
-      commissionPesewas: sum(led.filter(r => ['payable', 'paid'].includes(r.commission?.status)), r => r.commission.amountPesewas), serviceChargesPesewas: sum(ledLive, r => r.serviceChargePesewas),
+      commissionPesewas: requireRole(user, ['superAdmin', 'director']) ? sum(led.filter(r => ['payable', 'paid'].includes(r.commission?.status)), r => r.commission.amountPesewas) : null, serviceChargesPesewas: sum(ledLive, r => r.serviceChargePesewas),
       clubBornePesewas: sum(led, r => r.clubBorneCostPesewas), payments: led.length,
       note: 'Paystack’s fees and the developer commission, against the service charge customers paid. What the charge doesn’t cover, the club bears. Shown apart: not in money out above.' },
     tips: { ...tipsIn, note: 'Tips are the staff’s money: not in money in or profit. MoMo and card tips came into the club’s account; finance pays them out.' },

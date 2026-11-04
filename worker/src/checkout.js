@@ -77,7 +77,8 @@ export async function initiateTicket(env, b) {
   const c = await ticketContext(env, b); if (c.error) return c;
   const reference = paymentRef(), claim = claimSecret();
   const shares = sharesFor(env, c.ev.fields, c.totalPesewas);
-  const fee = await serviceFee(env, c.totalPesewas, c.settings), charge = c.totalPesewas + fee.feePesewas;
+  const fee = await serviceFee(env, c.totalPesewas, c.settings, { mainExtraPesewas: shares.evolveitSharePesewas }), charge = c.totalPesewas + fee.feePesewas;
+  if (fee.blocked) return { error: `Orders above ${money(fee.limitPesewas)} can’t be paid online. Buy them in smaller orders, or at the gate.` };
   await setDoc(env, 'pending_checkouts', reference, {
     ...fee, chargePesewas: charge,
     reference, claimHash: await sha256Hex(claim), kind: 'ticket', eventId: c.ev.id, eventName: c.ev.fields.name || '', ticketTypeId: c.tt.id, ticketTypeName: c.tt.fields.name || 'Ticket',
@@ -85,7 +86,7 @@ export async function initiateTicket(env, b) {
     buyerEmail: c.buyerEmail, identityLine: c.identityLine, status: 'pending', createdAt: now(), shares, promo: c.promo,
   });
   try {
-    const payload = { email: payEmail(env, c.buyerEmail, c.buyerPhone), amount: charge, currency: 'GHS', reference, callback_url: returnUrl(env), metadata: { kind: 'ticket', eventId: c.ev.id, ticketTypeId: c.tt.id, quantity: c.qty, promo: c.promo?.name || '', serviceFee: fee.feePesewas } };
+    const payload = { email: payEmail(env, c.buyerEmail, c.buyerPhone), amount: charge, currency: 'GHS', reference, callback_url: returnUrl(env), ...(fee.split || {}), metadata: { kind: 'ticket', eventId: c.ev.id, ticketTypeId: c.tt.id, quantity: c.qty, promo: c.promo?.name || '', serviceFee: fee.feePesewas } };
     const p = await paystack(env, '/transaction/initialize', { method: 'POST', body: JSON.stringify(payload) });
     return { reference, authorizationUrl: p.authorization_url, claim, amountPesewas: c.totalPesewas, feePesewas: fee.feePesewas, chargePesewas: charge };
   } catch (e) {
@@ -216,14 +217,15 @@ export async function initiateTable(env, b) {
   if (!(amount > 0)) return { error: 'This table isn’t available any more.' };
   const reference = paymentRef();
   const shares = sharesFor(env, ev.fields, amount);
-  const fee = await serviceFee(env, amount), charge = amount + fee.feePesewas;
+  const fee = await serviceFee(env, amount, undefined, { mainExtraPesewas: shares.evolveitSharePesewas }), charge = amount + fee.feePesewas;
+  if (fee.blocked) return { error: `Tables above ${money(fee.limitPesewas)} can’t be paid online. Call the club to reserve it, and pay on the night.` };
   await setDoc(env, 'pending_checkouts', reference, {
     ...fee, chargePesewas: charge,
     reference, kind: 'table', eventId: b.eventId, eventName: ev.fields.name || '', packageId: b.packageId, packageName: pkg.fields.name || '',
     packagePricePesewas: Number(pkg.fields.pricePesewas || 0), bottles: bottleItems, amountPesewas: amount, buyerName: name, buyerPhone: phone,
     buyerEmail: clean(b.email, 120), status: 'pending', createdAt: now(), shares,
   });
-  const payload = { email: payEmail(env, b.email, phone), amount: charge, currency: 'GHS', reference, callback_url: returnUrl(env), metadata: { kind: 'table', eventId: b.eventId, packageId: b.packageId, serviceFee: fee.feePesewas } };
+  const payload = { email: payEmail(env, b.email, phone), amount: charge, currency: 'GHS', reference, callback_url: returnUrl(env), ...(fee.split || {}), metadata: { kind: 'table', eventId: b.eventId, packageId: b.packageId, serviceFee: fee.feePesewas } };
   const p = await paystack(env, '/transaction/initialize', { method: 'POST', body: JSON.stringify(payload) });
   return { reference, authorizationUrl: p.authorization_url, amountPesewas: amount, feePesewas: fee.feePesewas, chargePesewas: charge };
 }
@@ -318,14 +320,15 @@ export async function startInstallmentTopup(env, planId, amountPesewas, email) {
     evolveitSharePct: planShares.evolveitSharePct,
     organizerSharePct: planShares.organizerSharePct,
   }, Number(env.EVOLVEIT_SHARE_PCT));
-  const fee = await serviceFee(env, amountPesewas), charge = amountPesewas + fee.feePesewas;
+  const fee = await serviceFee(env, amountPesewas, undefined, { mainExtraPesewas: topupShares.evolveitSharePesewas }), charge = amountPesewas + fee.feePesewas;
+  if (fee.blocked) return { error: `A payment above ${money(fee.limitPesewas)} can’t be made online. Pay a smaller amount now.` };
   await setDoc(env, 'pending_checkouts', reference, {
     ...fee, chargePesewas: charge,
     reference, kind: 'installment_topup', planId, amountPesewas, status: 'pending', createdAt: now(),
     shares: { ...topupShares, planShares },
   });
   try {
-    const payload = { email, amount: charge, currency: 'GHS', reference, callback_url: returnUrl(env), metadata: { kind: 'installment_topup', planId, serviceFee: fee.feePesewas } };
+    const payload = { email, amount: charge, currency: 'GHS', reference, callback_url: returnUrl(env), ...(fee.split || {}), metadata: { kind: 'installment_topup', planId, serviceFee: fee.feePesewas } };
     const p = await paystack(env, '/transaction/initialize', { method: 'POST', body: JSON.stringify(payload) });
     return { reference, authorizationUrl: p.authorization_url, planId, amountPesewas, feePesewas: fee.feePesewas, chargePesewas: charge };
   } catch (e) {

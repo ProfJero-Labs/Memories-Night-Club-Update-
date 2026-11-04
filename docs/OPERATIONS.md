@@ -134,11 +134,16 @@ Every step is one tap, and the waiter is never stuck on one table.
      back to the bar and the menu opens for the new drink) or **Just return it**. It comes off the
      bill when the bar taps *Got them back*. **Broken**: off the bill, in the waiter's report.
    On **My tables** every open tab shows **Add drinks** and **Close tab** right on it.
-5. **Close tab** asks one question: **Cash or MoMo?** (Every order must be collected first, so
-   the bill is final.)
+5. **Close tab** asks one question: **how is the customer paying?** Drinks the bar has handed over
+   count as delivered: no need to tap *I got them* first. Only an order the bar still has stops the
+   close; the panel shows it (and **Cancel this order** if the bar hasn't started it). A tab with
+   nothing on it can be closed too.
+   - **MoMo to the club's number** → type (or paste) the transaction ID from the MoMo text:
+     recorded and closed at once. No code from Paystack and no service charge: the quickest way
+     when it's busy.
    - **Cash** → **Got GHS … cash · close**: it goes in the waiter's cash for the night, the tab
      closes, and the receipt is texted if there's a number.
-   - **MoMo** → a MoMo prompt goes to the customer's phone and the invoice (every drink, the total
+   - **MoMo prompt** → a MoMo prompt goes to the customer's phone and the invoice (every drink, the total
      and a pay link) is texted to them. They approve the prompt, or pay from the link, or scan the
      QR on the waiter's screen. The tab closes by itself once Paystack confirms the payment; the
      waiter can go back to My tables meanwhile.
@@ -304,9 +309,119 @@ never in sales, money in or profit.
   everything paid tonight from their phone. The menu has a search box that forgives spelling
   mistakes ("henikin" finds Heineken; "coke" finds Coca-Cola).
 
+## Cash: recorded the moment it's paid
+
+- **Waiters:** on a table, **Customer paid (cash or MoMo)** is right under Add drinks / Close tab.
+  Record the cash when the customer hands it over: the tab can stay open for more drinks.
+- **Tonight** (Manager and directors) shows **Cash with staff**: each person's cash recorded,
+  whether it's been handed in, and any tabs they still have open. Tap a name for their sales.
+- **Tabs left open** (directors and finance, after a night): each unpaid tab has a tick, **Customer
+  paid [waiter] in cash**. Ticked: the cash is recorded under that waiter for that night (it shows
+  in what they owe if they didn't hand it in). Not ticked: written off.
+
+## QR menu: pay cash (whoever serves takes it)
+
+- The customer picks **Pay cash** instead of MoMo or card, types their phone number and gets a
+  code at once (also by text). No service charge, no tip on this screen.
+- **Whoever serves them takes the cash**, after checking the code on their phone:
+  - **A waitress** (at a table): the order shows at the top of **My tables** under *QR orders paying
+    cash*. Tap **Cash received**: it's in her cash for the night, and the order goes to the bar
+    under her name; she collects it and takes it to the table.
+  - **The bar** (at the counter): it's at the top of App orders, marked **PAY CASH FIRST**. Tap
+    **Cash received**, then hand over the drinks.
+- Above GHS 2,000 the QR menu offers only **Pay cash** or **MoMo to the wallet** (the club confirms
+  the MoMo arrived, then the bar hands it over with the code).
+- **They didn't pay** drops it. An unpaid cash order lapses by itself after 30 minutes, and a phone
+  can only have one unpaid cash order at a time.
+
+## Big bills: MoMo to the wallet (with the new payment rules on)
+
+- A bill above GHS 2,000 can't be paid by card or a MoMo prompt. On **Close tab** the waiter picks
+  **Cash** or **MoMo to the wallet**. The screen shows what to send (the bill + GHS 100), the wallet
+  (059 598 6313, Samuel Forson / Memories Night Club) and a reference code; it's texted to the
+  customer too. **Never accept a screenshot.**
+- The Manager (or a director, or finance) sees it on **Tonight → MoMo to confirm**. Look in the
+  wallet itself; when it's there, tap **Arrived**, type the amount and the transaction ID. The tab
+  closes by itself and the waiter's screen says so. Too little: it says how much is short (ask for
+  the rest, or accept it short with a reason). Too much: it says how much change to give back.
+  **Not yet** cancels it if the customer pays another way.
+- **Paystack is down tonight** (directors: More): any bill can then use MoMo to the wallet, at the
+  usual card/MoMo price. It ends when the night closes; **Paystack works again** turns it off.
+- "MoMo to the club's number" is no longer used: cash, Paystack, or the wallet.
+- Customers can do it themselves too: a big bill's **bill link** and the **QR menu** offer only cash
+  or **MoMo to the wallet**; they appear on *MoMo to confirm* the same way.
+- **Due to EvolveIT** (directors only, More): the GHS 100 charges collected in the wallet, day by
+  day, with anything waiting over 10 days in red. The partner pays EvolveIT; a director can tick a
+  payment off (amount and transaction ID). Nobody else sees what EvolveIT earns.
+
+## A tab closes itself when it's paid
+
+- As soon as a tab is **fully paid**, however it was paid, it **closes by itself**: cash ("Customer
+  paid"), MoMo to the wallet (confirmed by the MoMo phone or by hand), card or MoMo by Paystack (the
+  waiter's prompt or the customer's own bill link). If drinks are still being made at the bar, it
+  closes the moment the bar hands them over. Drinks already handed over count as delivered.
+- Tapping **Close tab** on a tab that already closed itself is fine: it just says it's closed.
+- The customer wants more after paying: open a **new tab** for them.
+
+## The MoMo phone, and what runs by itself
+
+- **The MoMo phone** (the business phone with the wallet SIM) confirms MoMo-to-the-wallet payments by
+  itself: when the money arrives, the bill closes and the waiter's screen says so. Nobody types
+  anything. If it can't be sure (two bills for the same amount, the first text, a balance that
+  doesn't add up), the text appears on **MoMo to confirm**: tap **Arrived** → **This one**. Pair it
+  and test it from **More → MoMo phone**; setup is in `android/momo-phone/README.md`.
+- **The Manager or the Human manager** confirms by hand only when the phone can't (both see *MoMo to
+  confirm*). Every hand confirm is reported the next morning.
+- **Runs by itself, every 10 minutes:**
+  - MoMo waiting 20 minutes: the Manager and the Human manager get a text; an hour: the directors.
+  - The MoMo phone silent for 30 minutes while a payment waits: the Manager and the Human manager.
+  - A night still open past 5AM with no sales for 3 hours closes itself; the report goes out.
+  - **10AM:** every finance officer and director gets the night's report by text (sales, cash, MoMo,
+    card, anyone short or not handed in, bills owed, stock missing, discounts, hand confirms).
+  - **Midday:** a night finance hasn't signed off yet → the directors are told.
+- **Approvals:** discounts, the Manager only. No free drinks and no write-offs. "To approve"
+  (salaries, bills, purchases…): finance up to GHS 2,000 (never what finance recorded or checked),
+  above that a director.
+
+## Paystack's code (OTP)
+
+- Paystack sometimes texts a customer a code before the MoMo prompt (new numbers). **Staff never
+  type it.** On a waiter's MoMo prompt, the customer gets a text with their bill link: the page asks
+  for the code, they type it, then approve the MoMo prompt. The waiter can carry on serving.
+- At the gate, the customer pays on Paystack's own page from the texted link and types the code
+  there.
+- Every payment text and page tells customers: "Paystack may text you a code first: check your
+  messages." When it's busy, **MoMo to the club's number** needs no code at all.
+
+## Every sale, one by one (directors, the Manager, finance)
+
+- Tap any figure on **Tonight** or **Money** (Received, Still owed, Cash, MoMo, Paid on phone, Money
+  in, a drink in *By drink*, a person in *Cash with staff*) to see the sales behind it. Or More →
+  **Every sale**.
+- Pick **Tonight / This week / This month**, how it was paid (Cash, MoMo to the club, Paid on their
+  phone, QR orders, Not fully paid), one staff member, or one drink. Tap a sale: what was bought,
+  who served, who took the money and how, the customer. **Download** gives a spreadsheet.
+- Ticket sales are not here (they're the events side).
+
+## Finding a drink, and what the stock is worth
+
+- **Find a drink**: every drink list (waiters' new tab and *Add drinks*, quick sales, the bar's
+  *Sell*) has a search box at the top. Type part of the name; small spelling mistakes are fine
+  ("henny", "tekila", "guiness"). Drinks already picked stay listed while you search for the next.
+- **Stock value** (directors and the Manager: More; finance: Stock): what's in the bars now at the
+  cost price finance set, and at selling prices, by bar and by drink, with a spreadsheet download.
+  There's no storeroom: everything finance records buying goes into a bar. It warns about drinks
+  with **no cost price** (they count as GHS 0 until finance adds one) and drinks **below zero**
+  (handed out but never recorded coming in).
+
 ## Who closes the night
 
-- **The Manager closes the night.** Not the directors (they can look: *How closing is going*).
+- **There's no fixed closing time.** A night stays open (however late) until the **Manager or a
+  director** taps **Close the night**: the night ends abruptly, staff go home early, whenever.
+  Everything recorded while it's open belongs to it. After the close, the next thing recorded
+  starts the next night (named by that day's date); *Tonight* then shows **Last night** with its
+  figures one tap away. A night still open the next afternoon shows a reminder; it never closes
+  by itself.
 - If the Manager can't be there: Close the night → **I can't close tonight**, with the reason. The
   Human manager and the Event manager are texted, and a notice goes to the managers. The first to tap
   **I'll close tonight** is responsible for closing that night, and only they (or the Manager) can.

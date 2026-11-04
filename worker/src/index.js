@@ -19,7 +19,10 @@ import * as bar from './bar.js';
 import * as promos from './promos.js';
 import * as staffauth from './staffauth.js';
 import { opsRoute } from './ops/router.js';
-import { publicBill, startBillPayment } from './ops/tabs.js';
+import { loadNight, bizDate } from './ops/common.js';
+import { runAutopilot } from './ops/autopilot.js';
+import * as momoPhone from './ops/momophone.js';
+import { publicBill, startBillPayment, billCode, startBillWallet } from './ops/tabs.js';
 import { guestNight } from './ops/payments.js';
 import { leaveReview } from './ops/reviews.js';
 import { reconcilePayments, health } from './reconcile.js';
@@ -53,7 +56,7 @@ async function route(req, env, ctx) {
   // ── Public ──
   if (m === 'GET' && p === '/api/events') return ok(req, env, { events: await publicEvents(env) });
   if (m === 'GET' && p.startsWith('/api/events/')) { const d = await eventBundle(env, last(p)); return d ? ok(req, env, d) : fail(req, env, 'Event not found.', 404); }
-  if (m === 'GET' && p === '/api/settings') { const s = await getSettings(env); delete s.closedDates; delete s.updatedAt; const { serviceCharge } = await commercialConfig(env, s); delete s.serviceFeePercent; return ok(req, env, { settings: { ...s, serviceCharge } }); }
+  if (m === 'GET' && p === '/api/settings') { const s = await getSettings(env); delete s.closedDates; delete s.updatedAt; const { serviceCharge, routes } = await commercialConfig(env, s); delete s.serviceFeePercent; const { paystackSubaccount, paystackDown, ...payRules } = routes || {}; payRules.paystackDownTonight = !!(paystackDown?.date && paystackDown.date === bizDate()); return ok(req, env, { settings: { ...s, serviceCharge, payRules } }); }
   if (m === 'GET' && p === '/api/calendar') return ok(req, env, await calendar(env, Math.min(26, Math.max(1, Number(u.searchParams.get('weeks')) || 10))));
   // A promo code typed in: a strict limit per phone/IP, so codes can't be found by guessing.
   const codeThrottled = async b => !!b?.promoCode && await throttled(req, env, 'promo-code', 'strict');
@@ -148,12 +151,26 @@ async function route(req, env, ctx) {
   if (m === 'GET' && p === '/api/health') return health(req, env);
   if (m === 'POST' && p === '/api/client-error') { if (await throttled(req, env, 'client-error', 'strict')) return tooMany(req, env); return reply(req, env, await clientError(req, env, allowedOrigin)); }
 
+  // ── The MoMo phone (the business phone with the wallet SIM): pairing, then signed calls only ──
+  if (m === 'POST' && p.startsWith('/api/momo-phone/')) {
+    if (p === '/api/momo-phone/pair') { if (await throttled(req, env, 'momo-pair', 'strict')) return tooMany(req, env); return reply(req, env, await momoPhone.pairPhone(env, await body(req))); }
+    const raw = await req.text();
+    const device = await momoPhone.verifyPhone(env, req, raw);
+    if (!device) return fail(req, env, 'Not a paired phone, or the signature is wrong.', 401);
+    let b = {}; try { b = JSON.parse(raw || '{}'); } catch { return fail(req, env, 'Bad message.', 400); }
+    if (p === '/api/momo-phone/ping') return reply(req, env, await momoPhone.phonePing(env, device));
+    if (p === '/api/momo-phone/texts') return reply(req, env, await momoPhone.phoneTexts(env, device, b));
+    return fail(req, env, 'Not found.', 404);
+  }
+
   // ── A customer's bill (from their waiter): the link is the key; it can only read and pay ──
   if (p.startsWith('/api/guest/bill/')) {
     if (await throttled(req, env, 'bill', 'standard')) return tooMany(req, env);
     const parts = p.split('/'), token = parts[4];
     if (m === 'GET' && parts.length === 5) return reply(req, env, await publicBill(env, token));
     if (m === 'POST' && parts[5] === 'pay') return reply(req, env, await startBillPayment(env, token, await body(req)));
+    if (m === 'POST' && parts[5] === 'wallet') return reply(req, env, await startBillWallet(env, token, await body(req)));
+    if (m === 'POST' && parts[5] === 'code') { if (await throttled(req, env, 'bill-code', 'strict', token)) return tooMany(req, env); return reply(req, env, await billCode(env, token, await body(req))); }
   }
 
   // ── Staff sign-in with phone + PIN (public; strict limits per address and per phone) ──
@@ -327,6 +344,8 @@ const handler = {
   async fetch(req, env, ctx) {
     if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers: cors(req, env) });
     try {
+      // The night that's open now (the club closes when it closes): read once for this request.
+      if (new URL(req.url).pathname.startsWith('/api/')) await loadNight(env);
       const res = await route(req, env, ctx);
       // Probing looks like a run of refusals from one address; a guest having a bad night doesn't.
       const ip = req.headers.get('CF-Connecting-IP') || 'unknown', path = new URL(req.url).pathname;
@@ -343,9 +362,13 @@ const handler = {
     }
   },
   async scheduled(event, env, ctx) {
+    await loadNight(env);
     // Two crons (wrangler.toml): every 10 minutes the payment reconciliation, daily the forfeit sweep.
     if (event.cron === '*/10 * * * *') {
       ctx.waitUntil(reconcilePayments(env, event.scheduledTime));
+      // The autopilot: MoMo waiting alerts, a forgotten night closing itself, the 10AM report and
+      // the midday sign-off reminder (ops/autopilot.js). Nothing depends on one person.
+      ctx.waitUntil(runAutopilot(env, event.scheduledTime).catch(e => { logError('autopilot failed', e); return reportError(env, 'cron.autopilot', e); }));
       // One-time: put back the 14 Nov ticket deleted by mistake (src/fixes/nov14-ticket.js).
       ctx.waitUntil(restoreNov14Ticket(env).catch(e => { logError('restoreNov14Ticket failed', e); return reportError(env, 'cron.restoreNov14Ticket', e); }));
     }

@@ -10,7 +10,7 @@ import { getDoc, setDoc, queryWhere, listDocs } from '../lib/firestore.js';
 import { now, id, clean, nightKey, normalizePhone } from '../lib/util.js';
 import { requireRole, uidOf, REPORTS } from '../lib/auth.js';
 import { sendEmail, sendSms, siteUrl } from '../lib/notify.js';
-import { FORBIDDEN, bizDate, dateOr, audit, nightState, ghs } from './common.js';
+import { FORBIDDEN, bizDate, dateOr, audit, nightState, ghs, paidNight, loadNight } from './common.js';
 import { billOf } from './tabs.js';
 import { cashFigures } from './cash.js';
 import { stockSheet } from './stock.js';
@@ -34,7 +34,7 @@ async function nightData(env, date) {
   // QR self-orders paid tonight.
   const qr = (await queryWhere(env, 'counter_orders', [{ field: 'status', value: 'paid' }])).concat(await queryWhere(env, 'counter_orders', [{ field: 'status', value: 'delivered' }]))
     .concat(await queryWhere(env, 'counter_orders', [{ field: 'status', value: 'refund_due' }])).concat(await queryWhere(env, 'counter_orders', [{ field: 'status', value: 'refunded' }]))
-    .map(o => ({ id: o.id, ...o.fields })).filter(o => o.paidAt && nightKey(o.paidAt) === date);
+    .map(o => ({ id: o.id, ...o.fields })).filter(o => paidNight(o) === date);
   const tips = (await tipsOn(env, date)).filter(x => x.status !== 'cancelled');
   return { tips, tabs: T, rounds: R, cash: cash.map(c => ({ id: c.id, ...c.fields })), counts: counts.map(c => ({ id: c.id, ...c.fields })), approvals: approvals.map(a => ({ id: a.id, ...a.fields })), reports: reports.map(r => ({ id: r.id, ...r.fields })), stations: stations.map(s => ({ id: s.id, name: s.fields.name })), qr };
 }
@@ -144,7 +144,13 @@ export async function submitFrontOffice(env, b, user) {
 export async function todaySales(env, user, { date } = {}) {
   if (!requireRole(user, REPORTS)) return FORBIDDEN;
   const d = dateOr(date), data = await nightData(env, d);
-  return { date: d, night: await nightState(env, d), ...salesFrom(data) };
+  // The open night, when it started, and the night closed before it (so last night's figures are
+  // one tap away after the close).
+  const cfg = (await getDoc(env, 'config', 'night'))?.fields || {};
+  const prevDate = cfg.date === d && cfg.after ? cfg.after : null, prev = prevDate ? await getDoc(env, 'eod_reports', prevDate) : null;
+  return { date: d, isOpenNight: d === bizDate(), startedAt: cfg.date === d ? cfg.startedAt || null : null,
+    previous: prev ? { date: prevDate, salesPesewas: prev.fields.report?.sales?.totals?.salesPesewas || 0, closedByName: prev.fields.closedByName || '' } : null,
+    night: await nightState(env, d), ...salesFrom(data) };
 }
 function salesFrom(data) {
   const tabPays = data.tabs.flatMap(t => (t.payments || []).map(p => ({ ...p, tabNumber: t.number })));
@@ -168,11 +174,13 @@ function salesFrom(data) {
   const cancelled = data.rounds.filter(r => r.status === 'cancelled');
   const cashRefunds = data.cash.flatMap(c => (c.movements || []).filter(m => m.kind === 'refund'));
   // Money confirmed by Paystack: tab payments and QR self-orders (refunds are listed on their own).
-  const digital = sum(tabPays.filter(p => p.method === 'digital'), p => p.amountPesewas) + qrValue;
+  // QR orders paid by MoMo to the partner's wallet (big orders) are MoMo, not Paystack.
+  const qrWallet = sum(data.qr.filter(o => o.paidVia === 'wallet'), o => o.totalPesewas);
+  const digital = sum(tabPays.filter(p => p.method === 'digital'), p => p.amountPesewas) + qrValue - qrWallet;
   const cash = sum(tabPays.filter(p => p.method === 'cash'), p => p.amountPesewas);
   // MoMo sent straight to the club's number, recorded by staff with its transaction ID: finance
   // checks these against the MoMo statement (listed in the report).
-  const momo = sum(tabPays.filter(p => p.method === 'momo'), p => p.amountPesewas);
+  const momo = sum(tabPays.filter(p => p.method === 'momo'), p => p.amountPesewas) + qrWallet;
   const sales = sum(data.tabs, t => t.bill.totalPesewas) + qrValue;
   return {
     totals: {
@@ -192,18 +200,34 @@ function salesFrom(data) {
     // bill and tip), so the MoMo statement = MoMo sales + MoMo tips.
     tips: { ...tipTotals(data.tips || []), people: [...(data.tips || []).reduce((m, x) => m.set(x.toUid, { name: x.toName, amountPesewas: (m.get(x.toUid)?.amountPesewas || 0) + Number(x.amountPesewas || 0) }), new Map()).values()].sort((a, b) => b.amountPesewas - a.amountPesewas),
       momo: (data.tips || []).filter(x => x.method === 'momo').map(x => ({ tabNumber: x.tabNumber || '', amountPesewas: x.amountPesewas, momoRef: x.momoRef, toName: x.toName, byName: x.byName || '', at: x.at })) },
+    // Cash with each person tonight (waiters and the bar): recorded, handed in or not, and their tabs
+    // still open, so the Manager sees at a glance who holds what.
+    cashByPerson: cashByPerson(data),
     unpaid: data.tabs.filter(t => t.bill.balancePesewas > 0 && t.status !== 'written_off').map(t => ({ id: t.id, number: t.number, table: t.table, waiterName: t.waiterName, balancePesewas: t.bill.balancePesewas })),
   };
 }
 
+function cashByPerson(data) {
+  const people = new Map();
+  const get = (uid, name) => people.get(uid) || people.set(uid, { uid, name: name || 'Staff', cashPesewas: 0, momoPesewas: 0, openTabs: 0, openPesewas: 0, handedIn: null }).get(uid);
+  for (const t of data.tabs) {
+    for (const p of t.payments || []) if (p.by && p.method !== 'digital') { const x = get(p.by, p.byName); if (p.method === 'cash') x.cashPesewas += Number(p.amountPesewas || 0); else x.momoPesewas += Number(p.amountPesewas || 0); }
+    if (t.status === 'open' && t.waiterUid) { const x = get(t.waiterUid, t.waiterName); x.openTabs += 1; x.openPesewas += t.bill.balancePesewas; }
+  }
+  for (const c of data.cash) { const x = people.get(c.uid); if (x) x.handedIn = c.receivedAt ? 'received' : c.status !== 'open' ? 'counted' : 'with them'; }
+  return [...people.values()].sort((a, b) => b.cashPesewas - a.cashPesewas || b.openTabs - a.openTabs);
+}
+
 // ── The close: what's done, what isn't ──
 // ── Who closes the night ──
-// The Manager closes it. Not the directors. If the Manager can't be there, they hand it over (with a
-// note); the Human manager or the Event manager accepts, and closing that night is then theirs.
+// The Manager closes it, whenever the night ends (there's no fixed closing time), and so can a
+// director (e.g. the night ends early, or the Manager has gone). If the Manager can't be there, they
+// can also hand it over (with a note); the Human manager or the Event manager accepts, and closing
+// that night is then theirs.
 //   shifts/{date}.handover { byName, at, note, acceptedBy, acceptedByName, acceptedAt }
 const STAND_INS = ['hrManager', 'eventManager'];
 export function canCloseNight(user, state) {
-  if (requireRole(user, ['superAdmin'])) return true;
+  if (requireRole(user, ['superAdmin', 'director'])) return true;
   if (user.role === 'manager') return true;
   return !!state?.handover?.acceptedBy && state.handover.acceptedBy === uidOf(user);
 }
@@ -267,7 +291,9 @@ export async function closingStatus(env, user, { date } = {}) {
   const closer = { handover: h ? { byName: h.byName, at: h.at, note: h.note, acceptedByName: h.acceptedByName || '', acceptedAt: h.acceptedAt || '' } : null,
     canClose: canCloseNight(user, night), canHandOver: (user.role === 'manager' || requireRole(user, ['superAdmin'])) && !h && night.status !== 'closed',
     canAccept: !!h && !h.acceptedBy && requireRole(user, STAND_INS) && night.status !== 'closed' };
-  return { date: d, night, closer, steps, waiters, bars, cash, frontOffice: front ? { name: front.name, at: front.submittedAt, note: front.explanation, figures: front.figures } : null, pendingApprovals: data.approvals.filter(a => a.businessDate === d).length };
+  const cfg = (await getDoc(env, 'config', 'night'))?.fields || {};
+  const open = { date: bizDate(), startedAt: cfg.date === bizDate() ? cfg.startedAt || null : null };
+  return { date: d, open, night, closer, steps, waiters, bars, cash, frontOffice: front ? { name: front.name, at: front.submittedAt, note: front.explanation, figures: front.figures } : null, pendingApprovals: data.approvals.filter(a => a.businessDate === d).length };
 }
 
 // The manager closes the night: the end-of-day report is prepared, saved and sent to finance.
@@ -275,7 +301,7 @@ export async function closeNight(env, b, user) {
   if (!requireRole(user, [...BOSS, ...STAND_INS])) return FORBIDDEN;
   const d = dateOr(b?.date);
   const state = await nightState(env, d);
-  if (!canCloseNight(user, state)) return { error: requireRole(user, ['director']) ? 'The Manager closes the night, not the directors.' : 'Only the Manager closes the night, or whoever accepted it when the Manager handed it over.', status: 403 };
+  if (!canCloseNight(user, state)) return { error: 'Only the Manager or a director closes the night, or whoever accepted it when the Manager handed it over.', status: 403 };
   // Any time, and again later: each close saves a new version of the report (nothing is locked).
   const status = await closingStatus(env, user, { date: d });
   // Never blocked: what isn't done yet is listed in the report (and can be closed again later).
@@ -307,6 +333,8 @@ export async function closeNight(env, b, user) {
     closedBy: uidOf(user), closedByName: user.name || '', closedAt: now(), managerApprovedAt: now(), managerApprovedByName: user.name || '' });
   await setDoc(env, 'shifts', d, { ...state, status: 'closed', closedBy: uidOf(user), closedByName: user.name || '', closedAt: now(), closedWithMissing: missing.map(m => m.key) });
   await audit(env, user, 'NIGHT_CLOSED', { date: d, sent, missing: missing.map(m => m.key) });
+  // Closed: from now on, what's recorded starts the next night.
+  await loadNight(env, { fresh: true });
   return { closed: true, sent, texted, sentTo: sent ? to : '', note: sent ? `Report emailed to ${to}.` : (to ? 'The email didn’t send. The report is saved: finance can open it in the system.' : 'No finance email is set. The report is saved: finance can open it in the system.') };
 }
 

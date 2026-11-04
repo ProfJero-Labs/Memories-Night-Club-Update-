@@ -23,6 +23,10 @@ import * as commercial from './commercial.js';
 import * as fin from './finance-night.js';
 import * as trial from './trial-reset.js';
 import * as tabClear from './tab-clear.js';
+import * as salesList from './sales-list.js';
+import * as wallet from './wallet.js';
+import * as evolveit from './evolveit.js';
+import * as momoPhone from './momophone.js';
 
 export async function opsRoute(m, p, u, b, env, user) {
   const q = k => u.searchParams.get(k) || undefined;
@@ -32,6 +36,7 @@ export async function opsRoute(m, p, u, b, env, user) {
       case '/api/ops/stock': return stock.stockSheet(env, { stationId: q('stationId'), date: q('date') }, user);
       case '/api/ops/changes': return stock.changeLog(env, user);
       case '/api/ops/stock/to-explain': return stock.countsToExplain(env, user);
+      case '/api/ops/stock/value': return stock.stockValue(env, user);
       case '/api/ops/stock/deliveries': return stock.listDeliveries(env, user, { stationId: q('stationId') });
       case '/api/ops/tabs': return tabs.myTabs(env, user, { all: q('all') === '1' });
       case '/api/ops/tabs/find': return tabs.findTabs(env, user, q('q'));
@@ -47,6 +52,11 @@ export async function opsRoute(m, p, u, b, env, user) {
       case '/api/ops/my-report': return closing.myReport(env, user, { date: q('date') });
       case '/api/ops/front-report': return closing.frontOfficeReport(env, user, { date: q('date') });
       case '/api/ops/sales': return closing.todaySales(env, user, { date: q('date') });
+      case '/api/ops/wallet': return wallet.walletList(env, user);
+      case '/api/ops/evolveit': return evolveit.evolveitDue(env, user);
+      case '/api/ops/momo-phone': return momoPhone.phoneStatus(env, user);
+      case '/api/ops/wallet/one': return wallet.walletOne(env, user, q('id'));
+      case '/api/ops/sales/list': return salesList.salesList(env, user, { period: q('period'), from: q('from'), to: q('to'), method: q('method'), person: q('person'), drink: q('drink') });
       case '/api/ops/closing': return closing.closingStatus(env, user, { date: q('date') });
       case '/api/ops/eod': return closing.eodReport(env, user, { date: q('date') });
       case '/api/ops/eod/list': return closing.listEod(env, user);
@@ -97,6 +107,14 @@ export async function opsRoute(m, p, u, b, env, user) {
     case '/api/ops/stock/fix': return stock.fixDelivery(env, b, user);
     case '/api/ops/stock/set-level': return stock.setStockLevel(env, b, user);
     case '/api/ops/quick-sale': return tabs.quickSale(env, b, user);
+    case '/api/ops/wallet/confirm': return wallet.confirmWallet(env, b, user, { closeIfPaid: tabs.closeIfPaid });
+    case '/api/ops/wallet/cancel': return wallet.cancelWallet(env, b, user);
+    case '/api/ops/paystack-down': return wallet.setPaystackDown(env, b, user);
+    case '/api/ops/evolveit/paid': return evolveit.recordEvolveitPayment(env, b, user);
+    case '/api/ops/momo-phone/code': return momoPhone.pairCode(env, user);
+    case '/api/ops/momo-phone/unpair': return momoPhone.unpairPhone(env, b, user);
+    case '/api/ops/momo-phone/test': return momoPhone.testText(env, b, user);
+    case '/api/ops/momo-phone/confirm': return momoPhone.confirmFromText(env, b, user, { closeIfPaid: tabs.closeIfPaid });
     case '/api/ops/stock/transfer': return stock.recordTransfer(env, b, user);
     case '/api/ops/stock/waste': return stock.recordWaste(env, b, user);
     case '/api/ops/stock/count': return stock.submitCount(env, b, user);
@@ -106,7 +124,7 @@ export async function opsRoute(m, p, u, b, env, user) {
     case '/api/ops/tabs/order': return tabs.takeOrder(env, b, user);
     case '/api/ops/tabs/checkout': return tabs.checkoutTab(env, b, user);
     case '/api/ops/tabs/round-action': return tabs.waiterRound(env, b, user);
-    case '/api/ops/tabs/cash': return tabs.recordCash(env, b, user);
+    case '/api/ops/tabs/cash': return tabs.cashierCash(env, b, user);
     case '/api/ops/tabs/pay': return tabs.recordPayment(env, b, user);
     case '/api/ops/tabs/close': return tabs.closeTab(env, b, user);
     case '/api/ops/tabs/text-bill': return tabs.textBill(env, b, user);

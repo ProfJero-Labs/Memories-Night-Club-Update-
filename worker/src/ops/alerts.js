@@ -7,7 +7,7 @@
 import { queryWhere } from '../lib/firestore.js';
 import { nightKey } from '../lib/util.js';
 import { sendSms } from '../lib/notify.js';
-import { bizDate, ghs } from './common.js';
+import { bizDate, ghs, paidNight } from './common.js';
 
 const first = n => String(n || '').trim().split(/\s+/)[0];
 
@@ -19,7 +19,7 @@ async function tonightDigital(env, date) {
     queryWhere(env, 'counter_orders', [{ field: 'status', value: 'delivered' }]),
   ]);
   const fromTabs = tabs.flatMap(t => t.fields.payments || []).filter(p => p.method === 'momo' || p.method === 'digital').reduce((n, p) => n + Number(p.amountPesewas || 0), 0);
-  const fromQr = [...paid, ...delivered].filter(o => o.fields.paidAt && nightKey(o.fields.paidAt) === date).reduce((n, o) => n + Number(o.fields.totalPesewas || 0), 0);
+  const fromQr = [...paid, ...delivered].filter(o => paidNight(o.fields) === date).reduce((n, o) => n + Number(o.fields.totalPesewas || 0), 0);
   return fromTabs + fromQr;
 }
 

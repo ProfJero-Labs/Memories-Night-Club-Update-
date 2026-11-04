@@ -4,7 +4,7 @@
 // payment → show it at the bar. Paying cash? Order at the bar as usual.
 // A search box finds a drink even with small spelling mistakes (drinkMatch). "My night" shows
 // everything paid tonight from the customer's phone (asked with the id of an order they paid).
-import { api, esc, money, normalizePhone, $, $$, loadFee, feeLabel, feeOn } from '../app.js';
+import { api, esc, money, normalizePhone, $, $$, loadFee, feeLabel, feeOn, paystackOk, paystackLimit, walletOk } from '../app.js';
 import { drinkMatch, drinkMatchAny } from '../lib/shared.js';
 
 const app = $('#app');
@@ -26,7 +26,9 @@ let clientId = store.get('mem-bar-draft') || uuid(), timer = null, query = '';
 const tipPick = { tip: 0, other: '', to: '' };
 const TIPS = [0, 1000, 2000, 5000];
 const ghsIn = v => { const n = Math.round(Number(String(v).replace(/[^0-9.]/g, '')) * 100); return Number.isFinite(n) ? n : 0; };
-const tipNow = () => (tipPick.tip === 'other' ? ghsIn(tipPick.other) : tipPick.tip);
+// How the guest pays: MoMo or card now (Paystack), or cash at the bar (no tip here, no service charge).
+const payPick = { cash: false, wallet: false };
+const tipNow = () => (payPick.cash || payPick.wallet ? 0 : tipPick.tip === 'other' ? ghsIn(tipPick.other) : tipPick.tip);
 // The last order this phone paid tonight: the key to "My night".
 const lastPaid = () => { const x = store.get('mem-bar-paid'); return x?.at > Date.now() - 14 * 3600e3 ? x.id : null; };
 async function myNight() {
@@ -57,6 +59,22 @@ function showOrder(orderId) {
     $('#label').textContent = o.stationName || 'Bar order';
     const lines = `<div class="summary">${o.lines.map(l => `<div class="r"><span>${l.qty} × ${esc(l.name)}</span></div>`).join('')}<div class="r t"><span>Paid</span><span>${money(o.totalPesewas)}</span></div></div>`;
     if (o.status === 'pending_payment') { app.innerHTML = `${msg('Approve the MoMo prompt on your phone. We’re waiting for it to confirm…')}<p class="foot-small">Don’t close this page. Your pickup code shows here the moment it’s paid.</p>`; timer = setTimeout(poll, 4000); return; }
+    if (o.status === 'wallet_due') {
+      app.innerHTML = `<p class="kicker red" style="text-align:center">Send ${money(o.wallet?.duePesewas || o.totalPesewas)} by MoMo</p>
+        <div class="summary"><div class="r"><span>To</span><span><b>${esc(o.wallet?.number || '')}</b></span></div><div class="r"><span>Name</span><span>${esc(o.wallet?.name || '')}</span></div><div class="r t"><span>Reference</span><span>${esc(o.pickupCode)}</span></div></div>
+        <div class="summary">${o.lines.map(l => `<div class="r"><span>${l.qty} × ${esc(l.name)}</span></div>`).join('')}<div class="r"><span>Drinks</span><span>${money(o.totalPesewas)}</span></div>${o.wallet ? `<div class="r"><span>Charge</span><span>${money(o.wallet.chargePesewas)}</span></div>` : ''}</div>
+        <p class="foot-small">Once the club sees your MoMo arrive, this page shows your pickup code. We’ve also texted you the details. Nothing is made before that.</p>`;
+      timer = setTimeout(poll, 6000); return;
+    }
+    if (o.status === 'cash_due') {
+      app.innerHTML = `<p class="kicker red" style="text-align:center">Show this code to your waiter or at the bar, and pay cash</p><div class="pickup" aria-label="Your code">${esc(o.pickupCode)}</div>
+        <div class="summary">${o.lines.map(l => `<div class="r"><span>${l.qty} × ${esc(l.name)}</span></div>`).join('')}<div class="r t"><span>Pay cash</span><span>${money(o.totalPesewas)}</span></div></div>
+        <p class="foot-small">Nothing is made until you pay. The order lapses after 30 minutes. We’ve also texted you the code.</p>`;
+      navigator.wakeLock?.request('screen').catch(() => {});
+      timer = setTimeout(poll, 6000); return;
+    }
+    if (o.status === 'cash_paid') { store.set('mem-bar-order', null); store.set('mem-bar-paid', { id: orderId, at: Date.now() }); app.innerHTML = `${msg('Paid in cash. Enjoy!', 'ok')}<div class="row-actions"><a class="btn red" href="${esc(again())}&view=menu">Order more</a></div>`; return; }
+    if (o.status === 'cash_lapsed') { store.set('mem-bar-order', null); app.innerHTML = `${msg('This cash order lapsed: it wasn’t paid within 30 minutes. Nothing was taken.')}<a class="btn red" href="${esc(again())}">Order again</a>`; return; }
     if (['paid', 'delivered'].includes(o.status)) store.set('mem-bar-paid', { id: orderId, at: Date.now() });
     if (o.status === 'paid') {
       app.innerHTML = `<p class="kicker red" style="text-align:center">Show this at the bar</p><div class="pickup" aria-label="Pickup code">${esc(o.pickupCode)}</div>${lines}
@@ -96,7 +114,7 @@ async function start() {
   const total = () => Object.entries(cart).reduce((a, [id, q]) => a + q * price(id), 0);
   const count = () => Object.values(cart).reduce((a, q) => a + q, 0);
   const drinks = n => `${n} drink${n === 1 ? '' : 's'}`;
-  const grand = () => total() + (total() ? tipNow() + feeOn(total()) : 0);
+  const grand = () => total() + (total() ? tipNow() + (payPick.cash ? 0 : feeOn(total())) : 0);
   // A drink not in the basket shows one "+ Add"; once added, the − n + stepper.
   const control = i => (cart[i.id]
     ? `<div class="stepper"><button type="button" data-m="${esc(i.id)}" aria-label="One fewer ${esc(i.name)}">−</button><span aria-live="polite" aria-label="${cart[i.id]} in your order">${cart[i.id]}</span><button type="button" data-p="${esc(i.id)}" aria-label="One more ${esc(i.name)}">+</button></div>`
@@ -157,8 +175,12 @@ async function start() {
 
   const orderItems = () => `<div class="op-items">${Object.keys(cart).map(id => r.items.find(i => i.id === id)).filter(Boolean).map(i => `<div class="drink"><div class="grow">${esc(i.name)}<small>${money(i.pricePesewas)} each</small></div>${control(i)}<span class="line-t">${money(cart[i.id] * i.pricePesewas)}</span></div>`).join('')}
     <button type="button" class="more" id="addMore">+ Add more drinks</button></div>`;
-  const totals = () => `<div class="r"><span>${drinks(count())}</span><span>${money(total())}</span></div>${tipNow() ? `<div class="r"><span>Tip</span><span>${money(tipNow())}</span></div>` : ''}${feeOn(total()) ? `<div class="r"><span>${feeLabel()}</span><span>${money(feeOn(total()))}</span></div>` : ''}<div class="r t"><span>Total</span><span>${money(grand())}</span></div>`;
-  const payLabel = () => { const b = $('#pay'); if (!b.disabled) b.textContent = `Pay ${money(grand())}`; };
+  const totals = () => `<div class="r"><span>${drinks(count())}</span><span>${money(total())}</span></div>${tipNow() ? `<div class="r"><span>Tip</span><span>${money(tipNow())}</span></div>` : ''}${feeOn(total()) && !payPick.cash ? `<div class="r"><span>${feeLabel()}</span><span>${money(feeOn(total()))}</span></div>` : ''}<div class="r t"><span>Total</span><span>${money(grand())}</span></div>`;
+  const payLabel = () => {
+    const b = $('#pay'); if (!b.disabled) b.textContent = payPick.cash ? `Order · pay ${money(grand())} cash` : `Pay ${money(grand())}`;
+    if (!b.disabled && payPick.wallet) b.textContent = 'Order · pay by MoMo to the wallet';
+    $('#payNote') && ($('#payNote').textContent = payPick.wallet ? 'You get the wallet number and a code now. Send the MoMo; the club confirms it arrived, then you collect at the bar.' : payPick.cash ? 'You get a code now. Show it to your waiter, or at the bar, and pay cash. Nothing is made until you pay.' : 'MoMo or card, secured by Paystack. Paystack may text you a code first: check your messages.');
+  };
   const refreshOrder = () => { $('#orderItems').innerHTML = orderItems(); $('#orderTotals').innerHTML = totals(); payLabel(); bindItems(); };
   const bindItems = () => {
     $$('#orderItems [data-p],#orderItems [data-m]').forEach(b => b.onclick = () => {
@@ -171,13 +193,19 @@ async function start() {
   const fieldErr = (sel, text) => { const f = $(sel).closest('.field'); f.classList.add('bad'); f.querySelector('.err').textContent = text; $(sel).focus(); f.scrollIntoView({ block: 'center', behavior: 'smooth' }); };
   const clearErr = sel => { const f = $(sel)?.closest('.field'); if (f) { f.classList.remove('bad'); f.querySelector('.err').textContent = ''; } };
   function drawOrder() {
+    if (!paystackOk(total()) && !payPick.wallet) payPick.cash = true;
+    if (paystackOk(total())) payPick.wallet = false;
     $('#orderBody').innerHTML = `<div id="orderItems">${orderItems()}</div>
       <div class="totals" id="orderTotals" aria-live="polite">${totals()}</div>
-      <div class="field"><label for="ph">MoMo number</label><input id="ph" type="tel" inputmode="tel" autocomplete="tel" placeholder="024 123 4567" value="${esc(phoneNow.v)}"><span class="err" role="alert"></span><span class="hint">Your pickup code also comes here by text. Paying cash? Just order at the bar.</span></div>
-      ${tipPart()}
+      ${paystackOk(total()) ? '' : `<p class="hint" style="margin:0">Orders above ${money(paystackLimit())} are paid in cash (to your waiter or at the bar), or by MoMo to the club’s wallet.</p>`}
+      <div class="field"><span class="label" id="payL">How will you pay?</span>
+        <div class="tipseg" role="radiogroup" aria-labelledby="payL">${paystackOk(total()) ? `<button type="button" data-pw="momo" role="radio" aria-pressed="${!payPick.cash && !payPick.wallet}" aria-checked="${!payPick.cash && !payPick.wallet}">MoMo or card</button>` : ''}<button type="button" data-pw="cash" role="radio" aria-pressed="${payPick.cash}" aria-checked="${payPick.cash}">Pay cash</button>${walletOk(total()) && !paystackOk(total()) ? `<button type="button" data-pw="wallet" role="radio" aria-pressed="${payPick.wallet}" aria-checked="${payPick.wallet}">MoMo to the wallet</button>` : ''}</div></div>
+      <div class="field"><label for="ph">${payPick.cash || payPick.wallet ? 'Your phone number' : 'MoMo number'}</label><input id="ph" type="tel" inputmode="tel" autocomplete="tel" placeholder="024 123 4567" value="${esc(phoneNow.v)}"><span class="err" role="alert"></span><span class="hint">${payPick.cash ? 'Your code is texted here too.' : 'Your pickup code also comes here by text.'}</span></div>
+      ${payPick.cash || payPick.wallet ? '' : tipPart()}
       <div id="err"></div>`;
     $('#pay').disabled = false; payLabel(); bindItems();
     $('#ph').oninput = e => { phoneNow.v = e.target.value; clearErr('#ph'); };
+    $$('[data-pw]').forEach(x => x.onclick = () => { payPick.cash = x.dataset.pw === 'cash'; payPick.wallet = x.dataset.pw === 'wallet'; newDraft(); drawOrder(); });
     // A different tip is a different payment: a new order id, so the old payment isn't reused.
     const tipChanged = () => { newDraft(); $('#orderTotals').innerHTML = totals(); payLabel(); };
     $$('[data-tip]').forEach(x => x.onclick = () => {
@@ -194,7 +222,16 @@ async function start() {
   $('#pay').onclick = async () => {
     const btn = $('#pay'); $('#err').innerHTML = '';
     const phone = $('#ph').value;
-    if (!normalizePhone(phone)) return fieldErr('#ph', 'Enter your MoMo number, e.g. 024 123 4567.');
+    if (!normalizePhone(phone)) return fieldErr('#ph', payPick.cash ? 'Enter your phone number, e.g. 024 123 4567.' : 'Enter your MoMo number, e.g. 024 123 4567.');
+    if (payPick.cash || payPick.wallet) {
+      btn.disabled = true; btn.textContent = 'Sending your order…';
+      try {
+        const o = await api('/api/guest/counter/checkout', { method: 'POST', body: { station, spot, payWith: payPick.wallet ? 'wallet' : 'cash', items: Object.entries(cart).map(([itemId, qty]) => ({ itemId, qty })), phone, clientId } });
+        store.set('mem-bar-momo', phone); store.set('mem-bar-order', o.orderId); store.set('mem-bar-cart', null); store.set('mem-bar-draft', null);
+        location.href = `${again()}&view=order`;
+      } catch (e) { $('#err').innerHTML = msg(e.message, 'bad'); btn.disabled = false; payLabel(); }
+      return;
+    }
     const t = tipNow();
     if (tipPick.tip === 'other' && t < 100) return fieldErr('#tipAmt', 'Enter the tip (at least GHS 1), or pick No tip.');
     if (t && !tipPick.to) return fieldErr('#tipTo', 'Pick who the tip is for.');
