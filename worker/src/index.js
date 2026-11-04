@@ -359,7 +359,10 @@ const handler = {
       logError('request failed', `${req.method} ${path}`, e);
       // Sentry gets every unexpected error; a payment-path failure also texts the team (throttled).
       await later(ctx, reportError(env, `${req.method} ${routeGroup(path)}`, e, { critical: isCritical(path) }));
-      const why = STAFF_PATH.test(path) ? ` (${String(e?.message || e).replace(/\s+/g, ' ').slice(0, 160)})` : '';
+      // Say why (short, no secrets in these messages), so a live problem can be found at once.
+      // Staff see the reason; a guest sees only a short code (never the cause or anyone's details),
+      // enough to tell what's wrong: 429 the database's limit, 401/403 its key, 5xx its outage.
+      const why = STAFF_PATH.test(path) ? ` (${String(e?.message || e).replace(/\s+/g, ' ').replace(/(sk|pk)_(live|test)_\w+/g, '…').slice(0, 160)})` : ` (code ${Number(e?.status) || 500})`;
       return fail(req, env, `Something went wrong on our side${why}. Try again.`, 500);
     }
   },
