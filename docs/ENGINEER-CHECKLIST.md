@@ -57,7 +57,7 @@ Open **Memories MoMo**:
 ## 5. Pair it (needs step 1 done)
 
 1. On the laptop (or any phone), sign in to the staff site as the **Manager** (the Human manager or the
-   admin also can; directors can't: no technical switches for them) → **More → MoMo phone → Pair a phone**. A **6-digit code** appears (works
+   admin also can; directors can't: no technical switches for them) → **More → MoMo phone → Pair a phone** (the admin: **Control room → Setup → MoMo phone → Pair a phone**). A **6-digit code** appears (works
    once, for 15 minutes).
 2. On the business phone, in the app: type the code → **Pair with the code**. It says "Paired".
 3. Tap **Send a test** → "It works: the system heard this phone."

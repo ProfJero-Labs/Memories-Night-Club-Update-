@@ -359,7 +359,8 @@ const handler = {
       logError('request failed', `${req.method} ${path}`, e);
       // Sentry gets every unexpected error; a payment-path failure also texts the team (throttled).
       await later(ctx, reportError(env, `${req.method} ${routeGroup(path)}`, e, { critical: isCritical(path) }));
-      return fail(req, env, 'Something went wrong on our side. Try again.', 500);
+      const why = STAFF_PATH.test(path) ? ` (${String(e?.message || e).replace(/\s+/g, ' ').slice(0, 160)})` : '';
+      return fail(req, env, `Something went wrong on our side${why}. Try again.`, 500);
     }
   },
   async scheduled(event, env, ctx) {

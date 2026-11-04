@@ -24,10 +24,10 @@ const TABS = [
   ['today', 'Today’s sales', REPORTS], ['closing', 'Close the night', [...BOSS, 'eventManager']], ['approvals', 'Approvals', [...REPORTS, 'eventManager']], ['eod', 'End-of-day reports', MONEY],
   ['products', 'Drinks & prices', REPORTS], ['stock', 'Stock', REPORTS],
   ['overview', 'Tickets & nights', TICKET_MONEY], ['nights', 'Nights', CMS], ['payments', 'Payments', TICKET_MONEY], ['bookings', 'Orders', TICKET_MONEY], ['requests', 'Event requests', CMS],
-  ['system', 'System', ADMIN], ['members', 'Members', MEMBERS], ['attendance', 'Attendance', MEMBERS], ['bits', 'Pay in bits', MONEY], ['refunds', 'Refunds', MONEY], ['counter', 'Bar orders', ADMIN], ['bar', 'Table bottles', CMS], ['settings', 'Site settings', ADMIN], ['staff', can(['eventManager']) ? 'Organisers' : 'Staff', ['superAdmin', 'eventManager']],
+  ['system', 'System', ADMIN], ['members', 'Members', MEMBERS], ['attendance', 'Attendance', MEMBERS], ['bits', 'Pay in bits', MONEY], ['refunds', 'Refunds', MONEY], ['counter', 'Bar orders', ADMIN], ['bar', 'Table bottles', CMS], ['settings', 'Site settings', ADMIN], ['momophone', 'MoMo phone', ADMIN], ['payrules', 'Payment settings', ADMIN], ['staff', can(['eventManager']) ? 'Organisers' : 'Staff', ['superAdmin', 'eventManager']],
 ].filter(t => can(t[2]));
 // Five places, not ten: related tabs sit together behind one button, with their own row underneath.
-const GROUPS = [['tonight', can(CMS) ? 'Tonight' : 'Tickets', ['today', 'overview', 'closing', 'approvals', 'system']], ['nights', 'Nights', ['nights', 'requests']], ['money', 'Money', ['eod', 'payments', 'bookings', 'bits', 'refunds']], ['people', 'People', ['staff', 'members', 'attendance']], ['setup', 'Setup', ['products', 'stock', 'counter', 'bar', 'settings']]]
+const GROUPS = [['tonight', can(CMS) ? 'Tonight' : 'Tickets', ['today', 'overview', 'closing', 'approvals', 'system']], ['nights', 'Nights', ['nights', 'requests']], ['money', 'Money', ['eod', 'payments', 'bookings', 'bits', 'refunds']], ['people', 'People', ['staff', 'members', 'attendance']], ['setup', 'Setup', ['products', 'stock', 'counter', 'bar', 'settings', 'momophone', 'payrules']]]
   .map(([k, l, tabs]) => [k, l, tabs.filter(t => TABS.some(x => x[0] === t))]).filter(([, , tabs]) => tabs.length);
 const groupOf = tab => GROUPS.find(g => g[2].includes(tab)) || GROUPS[0];
 const panel = $('#panel');
@@ -109,7 +109,7 @@ function show(tab, arg, notice) {
   panel.innerHTML = '<div class="loading">Loading…</div>';
   // Renders run one after another, so a slow tab that was left (e.g. Overview still loading when
   // a link opens Members) can't finish last and paint over the tab that was asked for.
-  const run = () => ({ today, closing, approvals, eod, products, stock, overview, system, members, attendance, counter, nights, night, payments, bookings, requests, bits, refunds, bar, settings, staff })[tab](arg, notice).catch(fail);
+  const run = () => ({ today, closing, approvals, eod, products, stock, overview, system, members, attendance, counter, nights, night, payments, bookings, requests, bits, refunds, bar, settings, staff, momophone, payrules })[tab](arg, notice).catch(fail);
   rendering = rendering.then(run, run);
 }
 let rendering = Promise.resolve();
@@ -118,6 +118,9 @@ let rendering = Promise.resolve();
 const today = () => OV.salesView(panel);
 const closing = () => OV.closingView(panel, undefined, { canClose: true }); // the server says who may close (the Manager, or whoever accepted the handover)
 const approvals = () => OV.approvalsView(panel);
+// The admin's technical setup: pair the MoMo phone (the code shows here), and the payment settings.
+const momophone = () => OV.momoPhoneView(panel);
+const payrules = () => OV.chargesView(panel);
 const eod = arg => (arg ? OV.eodView(panel, arg, { canSignOff: can(['superAdmin', 'director']) }) : OV.eodListView(panel, { canSignOff: can(['superAdmin', 'director']) }));
 // A day's report opens at its own address (eod/<date>), so ← Back and the phone's back both return
 // to the list. (The shared views open it in place; this catches the tap before they do.)
