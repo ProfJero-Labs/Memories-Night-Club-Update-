@@ -354,6 +354,26 @@ never in sales, money in or profit.
   day, with anything waiting over 10 days in red. The partner pays EvolveIT; a director can tick a
   payment off (amount and transaction ID). Nobody else sees what EvolveIT earns.
 
+## The MoMo phone, and what runs by itself
+
+- **The MoMo phone** (the business phone with the wallet SIM) confirms MoMo-to-the-wallet payments by
+  itself: when the money arrives, the bill closes and the waiter's screen says so. Nobody types
+  anything. If it can't be sure (two bills for the same amount, the first text, a balance that
+  doesn't add up), the text appears on **MoMo to confirm**: tap **Arrived** → **This one**. Pair it
+  and test it from **More → MoMo phone**; setup is in `android/momo-phone/README.md`.
+- **The Manager or the Human manager** confirms by hand only when the phone can't (both see *MoMo to
+  confirm*). Every hand confirm is reported the next morning.
+- **Runs by itself, every 10 minutes:**
+  - MoMo waiting 20 minutes: the Manager and the Human manager get a text; an hour: the directors.
+  - The MoMo phone silent for 30 minutes while a payment waits: the Manager and the Human manager.
+  - A night still open past 5AM with no sales for 3 hours closes itself; the report goes out.
+  - **10AM:** every finance officer and director gets the night's report by text (sales, cash, MoMo,
+    card, anyone short or not handed in, bills owed, stock missing, discounts, hand confirms).
+  - **Midday:** a night finance hasn't signed off yet → the directors are told.
+- **Approvals:** discounts, the Manager only. No free drinks and no write-offs. "To approve"
+  (salaries, bills, purchases…): finance up to GHS 2,000 (never what finance recorded or checked),
+  above that a director.
+
 ## Paystack's code (OTP)
 
 - Paystack sometimes texts a customer a code before the MoMo prompt (new numbers). **Staff never

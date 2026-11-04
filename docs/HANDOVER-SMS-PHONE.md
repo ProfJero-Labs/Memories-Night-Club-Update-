@@ -1,4 +1,11 @@
-# Handover: where the payment work stands, and the SMS phone (next build)
+# Handover: where the payment work stands, and the SMS phone
+
+> **Update 4 Nov 2026: built.** The automations (autopilot, finance approvals, Manager-only
+> discounts, no free drinks / write-offs, the Human manager confirming MoMo), the MoMo phone's
+> system side (`worker/src/ops/momophone.js`) and the Android app (`android/momo-phone`, built by
+> GitHub Actions) are on this branch. What's left: install the app on the business phone, paste real
+> MoMo texts into **More → MoMo phone → Test a text** to check the reader, then switch the payment
+> rules on.
 
 Written 2 November 2026 at the end of a working session, so the next session (and the engineer)
 can pick up exactly here. Branch: `claude/gracious-carson-pfyozr`. Nothing on this branch is live
