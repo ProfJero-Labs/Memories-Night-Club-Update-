@@ -82,3 +82,14 @@ export function normalizePlanCode(raw) {
 }
 // A 6-digit code for SMS confirmation, from the CSPRNG (never Math.random).
 export const sixDigits = () => String(crypto.getRandomValues(new Uint32Array(1))[0] % 1000000).padStart(6, '0');
+
+// A table booking in a few words, for the staff screens: paid online, or reserved (pays at the
+// club) with its arrival time and how long it's held.
+import { formatAccra as accraFmt } from '../../../public/lib/shared.js';
+export function tableHoldLine(f, at = Date.now()) {
+  if (!f?.reservation) return Number(f?.amountPesewas) > 0 ? 'Paid online' : '';
+  const t = d => accraFmt(d, { hour: 'numeric', minute: '2-digit', hour12: true }).toUpperCase();
+  if (f.arrivedAt) return 'Reserved: pays at the club';
+  if (f.released || Date.parse(f.holdUntil) < at) return `Hold ended ${t(f.holdUntil)}: the table can go to someone else`;
+  return `Reserved: pays at the club · arriving ${t(f.arriveAt)}, held until ${t(f.holdUntil)}`;
+}

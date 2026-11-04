@@ -46,7 +46,12 @@ async function readCommercial(env, siteSettings) {
     const legacy = Number((siteSettings || await getSettings(env))?.serviceFeePercent);
     if (Number.isFinite(legacy) && legacy >= 0 && legacy <= MAX_RATE_PERCENT) serviceCharge = { ...serviceCharge, percent: legacy, enabled: legacy > 0 };
   }
-  return { serviceCharge, routes: { ...DEFAULT_ROUTES, ...(doc?.routes || {}) }, commission: { ...DEFAULT_COMMISSION, ...(doc?.commission || {}) }, processing: { estimatePercent: null, ...(doc?.processing || {}) }, updatedAt: doc?.updatedAt || '', updatedByName: doc?.updatedByName || '' };
+  // The payment rules are on by default (owner's decision). Until the admin saves them, anything
+  // stored earlier (from when they were off by default) can't switch them off or blank the code.
+  const stored = doc?.routes || {};
+  const routes = { ...DEFAULT_ROUTES, ...stored };
+  if (stored.adminSet !== true) { routes.enabled = DEFAULT_ROUTES.enabled; if (!routes.paystackSubaccount) routes.paystackSubaccount = DEFAULT_ROUTES.paystackSubaccount; }
+  return { serviceCharge, routes, commission: { ...DEFAULT_COMMISSION, ...(doc?.commission || {}) }, processing: { estimatePercent: null, ...(doc?.processing || {}) }, updatedAt: doc?.updatedAt || '', updatedByName: doc?.updatedByName || '' };
 }
 
 // customerCharge = min(eligibleSubtotal × rate, cap), once per bill, never negative; 0 when off.

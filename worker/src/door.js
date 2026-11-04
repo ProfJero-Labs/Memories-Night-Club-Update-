@@ -1,8 +1,9 @@
 // Door check-in: the QR carries only a verify URL with the ticket token; the scanner sends the
 // token here and the ticket is marked used inside a transaction, so a second scan always fails.
-import { getDoc, batchGet, commitTx, updateWrite, parseFields, withTransaction, queryWhere } from './lib/firestore.js';
+import { getDoc, batchGet, commitTx, updateWrite, parseFields, withTransaction, queryWhere, foundFields } from './lib/firestore.js';
 import { now, id, firstName, tableCode } from './lib/util.js';
 import { requireRole, uidOf } from './lib/auth.js';
+import { releaseHolds } from './gate.js';
 
 export const tokenFrom = raw => {
   const s = String(raw || '').trim();
@@ -107,15 +108,24 @@ export async function doorSummary(env, user, eventId) {
 export async function seatTable(env, user, eventId, code) {
   const ev = await doorNight(env, user, eventId); if (!ev) return { valid: false, code: 'forbidden', message: 'NOT YOUR NIGHT' };
   const want = String(code || '').toUpperCase();
+  await releaseHolds(env, ev.id);
   const hit = (await queryWhere(env, 'orders', [{ field: 'eventId', value: ev.id }, { field: 'kind', value: 'table' }])).find(o => tableCode(o.id) === want && o.fields.status === 'confirmed');
   if (!hit) return { valid: false, code: 'invalid', message: 'TABLE NOT FOUND' };
   return withTransaction(env, async tx => {
-    const f = (await batchGet(env, [`orders/${hit.id}`], tx)).find(x => x.found)?.found;
-    const o = parseFields(f.fields);
-    const summary = { firstName: firstName(o.buyerName), eventName: o.eventName, type: o.packageName || 'Table', displayCode: tableCode(hit.id), table: true };
+    const got = await batchGet(env, [`orders/${hit.id}`, `table_packages/${hit.fields.packageId}`], tx);
+    const o = foundFields(got, `/orders/${hit.id}`).fields, pkg = foundFields(got, `/table_packages/${hit.fields.packageId}`)?.fields || null;
+    const summary = { firstName: firstName(o.buyerName), eventName: o.eventName, type: o.packageName || 'Table', displayCode: tableCode(hit.id), table: true, ...(o.reservation ? { note: 'Reserved: they pay at the club' } : {}) };
     if (o.arrivedAt) return { valid: false, code: 'table_used', message: 'TABLE ALREADY SEATED', ticket: { ...summary, checkedInAt: o.arrivedAt } };
-    const when = now();
-    await commitTx(env, [updateWrite(env, 'orders', hit.id, { ...o, arrivedAt: when, arrivedBy: uidOf(user) })], tx);
+    const when = now(), writes = [];
+    // Came after their hold ended: seated only if a table of that kind is still free.
+    if (o.released) {
+      if (pkg && typeof pkg.remaining === 'number') {
+        if (pkg.remaining < 1) return { valid: false, code: 'hold_ended', message: 'HOLD ENDED: NO TABLE FREE', ticket: { ...summary, note: 'Their hold ended and the tables have gone. Offer another table, or a ticket.' } };
+        writes.push(updateWrite(env, 'table_packages', hit.fields.packageId, { ...pkg, remaining: pkg.remaining - 1 }));
+      }
+    }
+    writes.unshift(updateWrite(env, 'orders', hit.id, { ...o, released: false, arrivedAt: when, arrivedBy: uidOf(user) }));
+    await commitTx(env, writes, tx);
     return { valid: true, code: 'seated', message: 'TABLE SEATED', ticket: summary };
   });
 }

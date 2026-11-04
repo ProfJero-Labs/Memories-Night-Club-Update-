@@ -57,7 +57,8 @@ test('rounding: whole pesewas, and the two shares always add up to the charge', 
 });
 
 test('settings: every number can change; nonsense is refused; off by default', () => {
-  assert.equal(DEFAULT_ROUTES.enabled, false);
+  assert.equal(DEFAULT_ROUTES.enabled, true, 'on by default: the owner’s rules');
+  assert.equal(DEFAULT_ROUTES.paystackSubaccount, 'ACCT_89qd3ub03w61erk');
   const n = cleanRoutes({ percent: 4, paystackUpToPesewas: 300000, bigFlatPesewas: 15000, enabled: true, paystackSubaccount: 'ACCT_test123456' });
   assert.deepEqual([n.percent, n.paystackUpToPesewas, n.bigFlatPesewas, n.enabled], [4, 300000, 15000, true]);
   assert.equal(routeFor(250000, n).band, 'middle', 'a raised limit moves GHS 2,500 onto Paystack');
@@ -68,7 +69,7 @@ test('settings: every number can change; nonsense is refused; off by default', (
 
 import { createMockEnv, idToken } from './mock-firestore.js';
 import worker from '../src/index.js';
-test('the rules are settings: a director changes them, finance can look, nobody else; changes are logged', async () => {
+test('the rules are settings: only the admin changes them; directors and finance can look; changes are logged', async () => {
   const { store, env } = createMockEnv();
   let ip = 0;
   const call = async (method, path, role, body) => {
@@ -83,8 +84,11 @@ test('the rules are settings: a director changes them, finance can look, nobody 
   assert.equal(ex.paystack.customerPaysPesewas, 153750);
   assert.equal((await call('POST', '/api/ops/commercial', 'finance', { routes: { percent: 4 } })).status, 403);
   assert.equal((await call('POST', '/api/ops/commercial', 'manager', { routes: { percent: 4 } })).status, 403);
-  assert.match((await call('POST', '/api/ops/commercial', 'director', { routes: { percent: 99 } })).data.error, /percentage/);
-  const saved = await call('POST', '/api/ops/commercial', 'director', { routes: { bigFlatPesewas: 12000 } });
+  assert.equal((await call('POST', '/api/ops/commercial', 'director', { routes: { percent: 4 } })).status, 403, 'a director can look, not change');
+  const dl = await call('GET', '/api/ops/commercial', 'director');
+  assert.deepEqual([dl.status, dl.data.canEdit], [200, false]);
+  assert.match((await call('POST', '/api/ops/commercial', 'superAdmin', { routes: { percent: 99 } })).data.error, /percentage/);
+  const saved = await call('POST', '/api/ops/commercial', 'superAdmin', { routes: { bigFlatPesewas: 12000 } });
   assert.equal(saved.data.routes.bigFlatPesewas, 12000);
   assert.equal(saved.data.routeExamples.find(x => x.billPesewas === 2000000).momo.customerPaysPesewas, 2012000);
   assert.ok(store.list('change_log').some(d => d.fields.refId === 'routes'), 'the change is logged');
@@ -99,13 +103,14 @@ function setupLive({ on = true } = {}) {
   store.seed('menu_items', 'magnum', { name: 'Magnum', category: 'Bottles', pricePesewas: 100000, costPesewas: 50000, available: true, tracked: true });
   store.seed('menu_items', 'royal', { name: 'Royal set', category: 'Bottles', pricePesewas: 150000, costPesewas: 70000, available: true, tracked: true });
   for (const p of ['beer', 'magnum', 'royal']) store.seed('stock_moves', `in-${p}`, { productId: p, stationId: 'main', qty: 50, kind: 'received', businessDate: '2000-01-01' });
-  store.seed('settings', 'commercial', { serviceCharge: { enabled: true, percent: 5, capPesewas: 10000 }, routes: { ...DEFAULT_ROUTES, enabled: on, paystackSubaccount: 'ACCT_89qd3ub03w61erk' } });
+  store.seed('settings', 'commercial', { serviceCharge: { enabled: true, percent: 5, capPesewas: 10000 }, routes: { ...DEFAULT_ROUTES, enabled: on, paystackSubaccount: 'ACCT_89qd3ub03w61erk', adminSet: true } });
+  store.seed('users', 'sa', { name: 'Sys Admin', role: 'superAdmin', phone: '0240003333' });
   store.seed('users', 'm1', { name: 'Akos Manager', role: 'manager', phone: '0240001111' });
   store.seed('users', 'd1', { name: 'Nana Director', role: 'director', phone: '0240002222' });
   let ip = 0;
   const call = async (method, path, { body, who } = {}) => {
     const headers = { 'Content-Type': 'application/json', 'CF-Connecting-IP': `10.56.${Math.floor(++ip / 250)}.${ip % 250}` };
-    if (who) headers.Authorization = `Bearer ${await idToken({ role: who }, { uid: who === 'manager' ? 'm1' : 'd1' })}`;
+    if (who) headers.Authorization = `Bearer ${await idToken({ role: who }, { uid: { manager: 'm1', superAdmin: 'sa' }[who] || 'd1' })}`;
     const r = await worker.fetch(new Request(`https://api.test${path}`, { method, headers, body: body ? JSON.stringify(body) : undefined }), env);
     return { status: r.status, data: JSON.parse((await r.text()) || '{}') };
   };
@@ -215,14 +220,15 @@ test('a GHS 3,000 bill: MoMo to the wallet; it waits until a manager confirms; a
   assert.equal(sales.totals.momoPesewas, 300000);
 });
 
-test('the wallet is only for big bills, unless a director says Paystack is down tonight (then the normal Paystack price)', async () => {
+test('the wallet is only for big bills, unless the admin says Paystack is down tonight (then the normal Paystack price)', async () => {
   const ctx = setupLive();
   const t = (await ctx.call('POST', '/api/ops/tabs/open', { who: 'manager', body: { table: '2' } })).data;
   const r = (await ctx.call('POST', '/api/ops/tabs/round', { who: 'manager', body: { tabId: t.id, lines: [{ productId: 'magnum', qty: 1 }] } })).data;
   ctx.store.seed('rounds', r.roundId || r.id, { ...ctx.store.get('rounds', r.roundId || r.id).fields, status: 'handed' });
   assert.match((await ctx.call('POST', '/api/ops/tabs/checkout', { who: 'manager', body: { tabId: t.id, method: 'wallet' } })).data.error, /for bills above GHS 2,000/);
-  assert.equal((await ctx.call('POST', '/api/ops/paystack-down', { who: 'manager', body: { on: true } })).status, 403, 'a director only');
-  assert.ok((await ctx.call('POST', '/api/ops/paystack-down', { who: 'director', body: { on: true } })).data.paystackDown);
+  assert.equal((await ctx.call('POST', '/api/ops/paystack-down', { who: 'manager', body: { on: true } })).status, 403, 'the admin only');
+  assert.equal((await ctx.call('POST', '/api/ops/paystack-down', { who: 'director', body: { on: true } })).status, 403, 'not a director: a technical switch');
+  assert.ok((await ctx.call('POST', '/api/ops/paystack-down', { who: 'superAdmin', body: { on: true } })).data.paystackDown);
   const s = (await ctx.call('POST', '/api/ops/tabs/checkout', { who: 'manager', body: { tabId: t.id, method: 'wallet' } })).data;
   assert.deepEqual([s.wallet.reason, s.wallet.duePesewas, s.wallet.chargePesewas], ['paystack_down', 102500, 2500], 'GHS 1,000 bill: the customer’s usual 25');
 });
@@ -296,4 +302,15 @@ test('a QR customer paying cash at a table: the waitress takes it; it’s in her
   assert.equal(mine.cashCollectedPesewas, 100000, 'in her cash for tonight');
   const round = ctx.store.list('rounds').map(d => d.fields).find(x => x.waiterUid === 'w5');
   assert.equal(round.status, 'waiting', 'the bar makes it as her order');
+});
+
+test('on by default: with nothing saved, or settings saved back when they were off, the owner’s rules apply until the admin changes them', async () => {
+  for (const stored of [null, { routes: { enabled: false, paystackSubaccount: '' } }, { routes: { paystackDown: null } }]) {
+    const { store, env } = createMockEnv();
+    store.seed('settings', 'commercial', stored || {});
+    const { commercialConfig, clearCommercialCache } = await import('../src/lib/fee.js');
+    clearCommercialCache();
+    const c = await commercialConfig(env);
+    assert.deepEqual([c.routes.enabled, c.routes.paystackSubaccount], [true, 'ACCT_89qd3ub03w61erk'], JSON.stringify(stored));
+  }
 });

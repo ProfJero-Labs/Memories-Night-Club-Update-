@@ -8,7 +8,7 @@ the app: `android/momo-phone/README.md`.
 - A laptop with **git** and **Node.js 22**, and access to the **Cloudflare account** that owns the
   Worker `memories-paystack-verify` (and to this GitHub repository).
 - The **business phone** (Android 16, wallet SIM **0595986313**), charged.
-- A **Manager login** for the staff site (phone number + PIN), and a **director login** for step 6.
+- A **Manager login** for the staff site (phone number + PIN), and the **admin login** for step 7.
 - **Another phone with MoMo** and a few cedis, to send test payments.
 
 ## 1. Put the new server (Worker) live: about 10 minutes
@@ -56,8 +56,8 @@ Open **Memories MoMo**:
 
 ## 5. Pair it (needs step 1 done)
 
-1. On the laptop (or any phone), sign in to the staff site as the **Manager** (the Human manager or a
-   director also can) → **More → MoMo phone → Pair a phone**. A **6-digit code** appears (works
+1. On the laptop (or any phone), sign in to the staff site as the **Manager** (the Human manager or the
+   admin also can; directors can't: no technical switches for them) → **More → MoMo phone → Pair a phone**. A **6-digit code** appears (works
    once, for 15 minutes).
 2. On the business phone, in the app: type the code → **Pair with the code**. It says "Paired".
 3. Tap **Send a test** → "It works: the system heard this phone."
@@ -77,38 +77,38 @@ name it shows to `DEFAULT_SENDERS` in the same file and deploy again.
 
 ## 7. Test each way of paying (a quiet moment, small amounts)
 
-A **director** signs in → **More → Service charge & commission → New payment rules**: check the
-partner's subaccount is `ACCT_89qd3ub03w61erk` and the wallet is `0595986313`, tick **Use the new
-payment rules** → **Save**.
+The payment rules are **on by default** (subaccount `ACCT_89qd3ub03w61erk`, wallet `0595986313`).
+Only the **admin** login can change them: **More → Admin only (technical) → Payment settings**.
+Directors see them in plain words under **More → How customers pay**, with nothing to switch.
 
 1. **Cash:** a waiter opens a tab, orders one drink, the bar hands it over, **Close tab → Cash**.
    The tab closes.
 2. **Paystack:** another one-drink tab → **More → Show QR to pay** → pay on the test phone. The tab
    closes by itself. In the **Paystack dashboard**, the payment shows the split to the partner's
    subaccount.
-3. **MoMo to the wallet** (normally only above GHS 2,000; to test small): director → **More →
-   Paystack is down tonight**. A one-drink tab → **Close tab → MoMo to the wallet** → send exactly
+3. **MoMo to the wallet** (normally only above GHS 2,000; to test small): admin → **More → Admin
+   only → Paystack is down tonight**. A one-drink tab → **Close tab → MoMo to the wallet** → send exactly
    the amount shown from the test phone to 0595986313.
    - The **first** payment text can't be checked against an earlier balance, so it appears on
      Tonight under **MoMo to confirm**: tap **Arrived → This one**. The tab closes.
    - Do it **once more**: this time it confirms **by itself** within a minute (the waiter's screen
      says "Tab closed").
-   - Then director → **Paystack works again**.
+   - Then the admin → **Paystack works again** (on Tonight).
 
 ## 8. Leave it running
 
 - Phone at the club, **plugged in**, data or Wi-Fi on. A small notification shows the app is
   listening. It restarts by itself after a reboot.
 - If the phone is replaced: **MoMo phone → Unpair** the old one, then pair the new one (step 5).
-- The payment rules can stay on, or a director can untick them until the staff are shown the new
-  screens (**MoMo to confirm**, **QR orders paying cash**).
+- Show the staff the new screens (**MoMo to confirm**, **QR orders paying cash**) and the door the
+  reserved tables (**Reserved: pays at the club**, **Hold ended**).
 
 ## If something goes wrong
 
 | What you see | What to do |
 |---|---|
 | "Couldn't load" on new screens | The Worker isn't deployed: step 1. |
-| Bills over GHS 2,000 still offer Paystack | The new rules are **off** until a director ticks **Use the new payment rules** (step 7), and the Worker must be deployed first (step 1). Then close and reopen the staff page so the phone loads the new version. |
+| Bills over GHS 2,000 still offer Paystack, or table bookings still ask for money | The Worker isn't deployed yet (step 1). After deploying, close and reopen the page so the phone loads the new version. |
 | App: "Not paired any more, or the phone's clock is wrong" | Date & time → automatic; or pair again (step 5). |
 | App: "No connection" | Data / Wi-Fi on; the app retries by itself. |
 | MoMo phone page: offline | Open the app, tap **Send a test**; check battery is Unrestricted. |

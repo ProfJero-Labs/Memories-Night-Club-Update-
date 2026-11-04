@@ -6,7 +6,7 @@ import { getDoc, setDoc, queryWhere, listDocs } from '../lib/firestore.js';
 import { now, id, clean, nightKey, firstName } from '../lib/util.js';
 import { requireRole, uidOf } from '../lib/auth.js';
 import { FORBIDDEN, bizDate, dateOr, who, audit } from './common.js';
-import { tableCode } from '../lib/util.js';
+import { tableCode, tableHoldLine } from '../lib/util.js';
 
 const FRONT = ['superAdmin', 'director', 'manager', 'hrManager', 'eventManager', 'doorStaff', 'security'];
 export const INCIDENT_KINDS = { fight: 'Fight or threat', refused: 'Refused entry', id: 'ID / age problem', fake_ticket: 'Fake or used ticket', lost: 'Lost or found item', medical: 'Medical', customer: 'Customer complaint', booking: 'Booking or payment problem', other: 'Other' };
@@ -25,6 +25,7 @@ async function bookingRows(env, e) {
     out.push({ orderId: o.id, code: tableCode(o.id), eventId: e.id, eventName: e.fields.name, night: nightKey(e.fields.date), name: o.fields.buyerName, firstName: firstName(o.fields.buyerName), phoneLast4: String(o.fields.buyerPhone || '').slice(-4),
       packageName: o.fields.packageName, capacity: caps.get(pid) || 0, bottles: (o.fields.bottles || []).map(b => ({ name: b.name, quantity: b.quantity })),
       bookedAt: o.fields.createdAt || null, channel: o.fields.channel || 'online',
+      reservation: !!o.fields.reservation, arriveAt: o.fields.arriveAt || null, holdUntil: o.fields.holdUntil || null, released: !!o.fields.released, holdLine: tableHoldLine(o.fields),
       arrived: !!o.fields.arrivedAt, arrivedAt: o.fields.arrivedAt || null, guestsArrived: Number(o.fields.guestsArrived || 0), tableNumber: o.fields.tableNumber || '', bottlesServed: o.fields.bottlesServed === true });
   }
   return out;

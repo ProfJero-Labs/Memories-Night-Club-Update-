@@ -292,16 +292,21 @@ test('pay-the-rest lookup of a paid order shows no ticket link; "text me the lin
   assert.deepEqual(page.errors, []);
 });
 
-test('tables: night → table → bottles → pay; the booking shows up for staff', async () => {
+test('tables: night → table → arrival time → reserved, nothing to pay; the booking shows up for staff', async () => {
   const page = await phone();
   await page.goto(`${base}/tables.html?event=dev-piano`, { waitUntil: 'networkidle' });
   await page.getByRole('radio', { name: /birthday table/i }).click(); await page.click('[data-next]');
-  await page.click('[data-inc="dev-b2"]'); await page.click('[data-next]');
-  await page.fill('#name', 'Efua Mensah'); await page.fill('#phone', '0551234567'); await page.click('#pay');
-  await page.waitForURL(/dev\/paystack/); await page.getByRole('button', { name: 'Pay' }).click();
-  await page.getByText(/your table is set/i).waitFor({ timeout: 20000 });
+  await page.getByText('To pay now', { exact: true }).waitFor();
+  await page.fill('#name', 'Efua Mensah'); await page.fill('#phone', '0551234567');
+  await page.click('#go'); await page.locator('#err').getByText(/time you’ll arrive/).waitFor();
+  await page.selectOption('#arrive', { index: 2 });
+  await page.getByText(/we hold your table until/i).waitFor();
+  await page.click('#go');
+  await page.getByText(/your table is reserved/i).waitFor({ timeout: 20000 });
   const o = docs('orders').find(x => x.kind === 'table' && x.buyerName === 'Efua Mensah');
-  assert.equal(o.amountPesewas, 450000 + 180000);
+  assert.deepEqual([o.reservation, o.amountPesewas, o.status], [true, 0, 'confirmed']);
+  assert.ok(o.holdUntil > o.arriveAt);
+  assert.deepEqual(page.errors, []);
 });
 
 test('Book an event: Corporate opens the short form with Corporate chosen; admin accepts; the calendar shows the date held', async () => {

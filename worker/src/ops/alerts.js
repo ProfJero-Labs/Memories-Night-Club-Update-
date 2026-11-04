@@ -48,8 +48,8 @@ export async function bookingAlert(env, o) {
     const people = (await Promise.all(['eventManager', 'manager'].map(role => queryWhere(env, 'users', [{ field: 'role', value: role }])))).flat()
       .filter(d => !d.fields.removed && d.fields.phone && d.fields.bookingAlerts !== false);
     if (!people.length) return 0;
-    const text = [`MEMORIES: table booked`, `${o.packageName} · ${o.eventName}${o.nightLabel ? ` (${o.nightLabel})` : ''}`, `${o.buyerName} · ${o.buyerPhone}`,
-      `Paid ${ghs(o.amountPesewas)} · code ${o.code}`, ...(o.bottles?.length ? [`Bottles: ${o.bottles.map(b => `${b.quantity} x ${b.name}`).join(', ')}`] : [])].join('\n');
+    const text = [o.reservation ? 'MEMORIES: table reserved' : `MEMORIES: table booked`, `${o.packageName} · ${o.eventName}${o.nightLabel ? ` (${o.nightLabel})` : ''}`, `${o.buyerName} · ${o.buyerPhone}`,
+      o.reservation ? `Reserved, not paid: arriving ${o.arriveLabel}, held until ${o.holdLabel} · code ${o.code}` : `Paid ${ghs(o.amountPesewas)} · code ${o.code}`, ...(o.bottles?.length ? [`Bottles: ${o.bottles.map(b => `${b.quantity} x ${b.name}`).join(', ')}`] : [])].join('\n');
     let sent = 0;
     const seen = new Set();
     for (const m of people) { if (seen.has(m.fields.phone)) continue; seen.add(m.fields.phone); if (await sendSms(env, m.fields.phone, text)) sent += 1; }

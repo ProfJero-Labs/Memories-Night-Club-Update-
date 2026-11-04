@@ -154,11 +154,22 @@ Every step is one tap, and the waiter is never stuck on one table.
   table by table, and what's still unpaid.
 - Customers who prefer the QR at the bar still order that way; both use the same menu and stock.
 
-## Table bookings reach the team
+## Table bookings: reserved online, paid at the club
+
+Customers **reserve** a table online with no payment (owner's rule, November 2026): the night, the
+table, their name and phone, and **the time they'll arrive** (every half hour, from the start of the
+night for six hours). The table is held until **one hour after** that time; they're texted the door
+code and the time it's held until. Nothing else happens to a no-show: the table is simply free
+again (the door and the gate can give it to someone else). If they come later and a table of that
+kind is still free, the door seats them; if not, the door says "Hold ended: no table free".
+One table per phone number per night. They pay for the table and the drinks at the club, like any
+table, so a reserved table's commission comes from what its bill actually pays (see Commissions).
+Tables already **paid online** before this are honoured as before. (Paying online for a table can
+only come back by the engineer setting `TABLE_PAYMENTS=on` on the Worker.)
 
 A table booked online shows straight away on the waiter's **Bookings**, the front office's
 **Tables** and the manager's **Tables** screens: tonight's, and **Coming up** for the next 30
-nights (who, which table, the door code, bottles paid). The event managers and managers are also
+nights (who, which table, the door code, "Reserved: pays at the club · arriving 11:30 PM, held until 12:30 AM" or "Paid online"). The event managers and managers are also
 texted who booked it (name, phone, table, night, bottles, door code). Anyone who doesn't want
 these texts: set `bookingAlerts: false` on their staff record.
 
@@ -219,8 +230,8 @@ any paid booking it finds and texts the people on the alert list if it can't.
   discount; never on the tip, never on itself.
 - The customer sees "Service charge (5%, capped at GHS 100)" and the total before paying; texts say
   "incl. GHS X service charge". Paystack must confirm exactly that total or nothing is issued.
-- A director or the admin turns it on or off and sets the rate and the cap: **More → Service charge
-  & commission**. Finance can look. Each payment keeps the rule it was charged under, so a change
+- Only the admin turns it on or off and sets the rate and the cap: **More → Admin only → Payment
+  settings**. Directors and finance can look. Each payment keeps the rule it was charged under, so a change
   never alters past payments or receipts.
 - The service charge is kept **apart** from product sales and is not shown as profit. See
   [PAYMENTS-FINANCE.md](PAYMENTS-FINANCE.md) for Paystack's fees, the developer commission and the
@@ -252,8 +263,9 @@ any paid booking it finds and texts the people on the alert list if it can't.
 
 ## Commissions (10% on tables over GHS 3,000)
 
-- A **deal** is a table that sells for more than GHS 3,000: a table booked online (what the customer
-  paid), or a table in the club (what's been paid on its bill). The person who brought it earns
+- A **deal** is a table that sells for more than GHS 3,000: a table paid online before reservations
+  (what the customer paid), or a table in the club, reserved or not (what's been paid on its bill: the
+  table's actual spend). The person who brought it earns
   **10% of the whole amount**. (The rate and the line are `COMMISSION_RATE_PCT` and
   `COMMISSION_OVER_PESEWAS` in `worker/src/ops/commission.js`.)
 - **Who brought it**: the waiter can say when opening the table (*Did someone bring this table?*);
@@ -345,7 +357,7 @@ never in sales, money in or profit.
   closes by itself and the waiter's screen says so. Too little: it says how much is short (ask for
   the rest, or accept it short with a reason). Too much: it says how much change to give back.
   **Not yet** cancels it if the customer pays another way.
-- **Paystack is down tonight** (directors: More): any bill can then use MoMo to the wallet, at the
+- **Paystack is down tonight** (the admin only: More → Admin only): any bill can then use MoMo to the wallet, at the
   usual card/MoMo price. It ends when the night closes; **Paystack works again** turns it off.
 - "MoMo to the club's number" is no longer used: cash, Paystack, or the wallet.
 - Customers can do it themselves too: a big bill's **bill link** and the **QR menu** offer only cash

@@ -11,6 +11,7 @@
 //   Nothing found = not in the system.
 import { paystackPost, momoProvider } from './lib/momo.js';
 import { getDoc, setDoc, queryWhere, batchGet, commitTx, updateWrite, foundFields, withTransaction } from './lib/firestore.js';
+import { tableHoldLine } from './lib/util.js';
 import { now, id, clean, normalizePhone, maskPhone, firstName, ticketToken, displayCode, tableCode, paymentRef, nightKey, money, sixDigits, sha256Hex } from './lib/util.js';
 import { requireRole, uidOf } from './lib/auth.js';
 import { sendSms, siteUrl } from './lib/notify.js';
@@ -44,8 +45,21 @@ async function gateNight(env, user, eventId, roles) {
 }
 
 // Holds that ran out go back on sale (checked whenever the gate looks at the tables).
-async function releaseHolds(env, eventId) {
-  const held = (await queryWhere(env, 'orders', [{ field: 'eventId', value: eventId }, { field: 'kind', value: 'table' }])).filter(o => o.fields.status === 'held' && new Date(o.fields.heldUntil).getTime() < Date.now());
+// Gate holds that ran out, and online reservations an hour past their arrival time with nobody
+// here yet: the table is free again (the reservation stays on the list, marked "hold ended"; if
+// they come later and a table is still free, they're seated).
+export async function releaseHolds(env, eventId) {
+  const all = await queryWhere(env, 'orders', [{ field: 'eventId', value: eventId }, { field: 'kind', value: 'table' }]);
+  for (const o of all.filter(x => x.fields.reservation && x.fields.status === 'confirmed' && !x.fields.arrivedAt && !x.fields.released && Date.parse(x.fields.holdUntil) < Date.now())) {
+    await withTransaction(env, async tx => {
+      const got = await batchGet(env, [`orders/${o.id}`, `table_packages/${o.fields.packageId}`], tx);
+      const f = foundFields(got, `/orders/${o.id}`), pkg = foundFields(got, `/table_packages/${o.fields.packageId}`);
+      if (!f || f.fields.arrivedAt || f.fields.released) return;
+      await commitTx(env, [updateWrite(env, 'orders', o.id, { ...f.fields, released: true, releasedAt: now() }),
+        ...(pkg && typeof pkg.fields.remaining === 'number' ? [updateWrite(env, 'table_packages', o.fields.packageId, { ...pkg.fields, remaining: pkg.fields.remaining + 1 })] : [])], tx);
+    });
+  }
+  const held = all.filter(o => o.fields.status === 'held' && new Date(o.fields.heldUntil).getTime() < Date.now());
   for (const o of held) {
     await withTransaction(env, async tx => {
       const got = await batchGet(env, [`orders/${o.id}`, `table_packages/${o.fields.packageId}`], tx);
@@ -80,7 +94,7 @@ export async function gateNightView(env, user, eventId) {
       const of = tables.filter(o => o.packageId === p.id);
       return { packageId: p.id, name: p.fields.name || 'Table', pricePesewas: Number(p.fields.pricePesewas || 0), capacity: Number(p.fields.capacity || 0),
         free: typeof p.fields.remaining === 'number' ? p.fields.remaining : null,
-        booked: of.filter(o => o.status === 'confirmed').map(o => ({ code: tableCode(o.id), name: firstName(o.buyerName), phoneHint: maskPhone(o.buyerPhone), arrived: !!o.arrivedAt, tableNumber: o.tableNumber || '', gate: o.channel === 'gate' })),
+        booked: of.filter(o => o.status === 'confirmed').map(o => ({ code: tableCode(o.id), name: firstName(o.buyerName), phoneHint: maskPhone(o.buyerPhone), arrived: !!o.arrivedAt, tableNumber: o.tableNumber || '', gate: o.channel === 'gate', reservation: !!o.reservation, released: !!o.released, holdLine: tableHoldLine(o) })),
         held: of.filter(o => o.status === 'held').map(o => ({ id: o.id, name: o.buyerName, phoneHint: maskPhone(o.buyerPhone), until: o.heldUntil, byName: o.heldByName || '' })) };
     }),
     // The night's gate sales (everyone) and this person's own.
@@ -281,7 +295,7 @@ export async function gateCheck(env, user, { eventId, phone, code } = {}) {
   }
   for (const o of orders.filter(x => x.fields.kind === 'table')) {
     const f = o.fields;
-    lines.push({ kind: 'table', ok: true, title: `Table: ${f.packageName || 'Table'}${f.tableNumber ? ` · no. ${f.tableNumber}` : ''}`, sub: `${f.channel === 'gate' ? `Paid ${money(f.amountPesewas)} ${f.paidWith === 'cash' ? 'cash' : 'MoMo'} at the gate` : `Booked online ${money(f.amountPesewas)}`} · ${f.arrivedAt ? `arrived ${hhmm(f.arrivedAt)}` : 'not arrived yet'}`, code: tableCode(o.id) });
+    lines.push({ kind: 'table', ok: true, title: `Table: ${f.packageName || 'Table'}${f.tableNumber ? ` · no. ${f.tableNumber}` : ''}`, sub: `${f.channel === 'gate' ? `Paid ${money(f.amountPesewas)} ${f.paidWith === 'cash' ? 'cash' : 'MoMo'} at the gate` : f.reservation ? tableHoldLine(f) : `Booked online ${money(f.amountPesewas)}`} · ${f.arrivedAt ? `arrived ${hhmm(f.arrivedAt)}` : 'not arrived yet'}`, code: tableCode(o.id) });
   }
   for (const o of guestOf) {
     const f = o.fields, g = f.guests.find(x => x.phone === ph);

@@ -7,7 +7,7 @@
 // On confirmation the bill gets the payment (its part, not the charge) and the charge becomes a
 // row owed to EvolveIT (evolveit_charges, status unsettled; settled weekly, step 4).
 //
-// "Paystack is down" (a director, for tonight only): any bill can use the wallet, at the customer's
+// "Paystack is down" (the admin, for tonight only): any bill can use the wallet, at the customer's
 // normal Paystack price; that charge is owed to EvolveIT the same way.
 //
 //   wallet_payments/{id}  tabId, tabNumber, table, waiterUid/Name, businessDate, billPesewas (the part
@@ -31,7 +31,7 @@ const CODE = '23456789ABCDEFGHJKMNPQRSTUVWXYZ';
 const code = () => Array.from(crypto.getRandomValues(new Uint8Array(4)), b => CODE[b % CODE.length]).join('');
 const sum = (xs, f) => xs.reduce((n, x) => n + Number(f(x) || 0), 0);
 
-// Paystack is down tonight (a director turned it on for this night).
+// Paystack is down tonight (the admin turned it on for this night).
 export const paystackDownTonight = routes => routes?.paystackDown?.date && routes.paystackDown.date === bizDate();
 // Staff may not record "MoMo to the club's number" while the new rules are on (it skipped the rules
 // and couldn't be checked). Returns an error, or null when it's allowed.
@@ -45,7 +45,7 @@ export async function momoDirectBlocked(env) {
 export async function walletQuote(env, balancePesewas, wholePesewas) {
   const { routes } = await commercialConfig(env);
   if (!routes?.enabled) return { error: 'MoMo to the wallet is part of the new payment rules, which aren’t switched on.' };
-  if (!routes.bigWalletNumber) return { error: 'The wallet number isn’t set yet (directors: Service charge & commission).' };
+  if (!routes.bigWalletNumber) return { error: 'The wallet number isn’t set yet (the admin sets it: Service charge & commission).' };
   const r = routeFor(balancePesewas, routes, { bandBillPesewas: wholePesewas });
   const down = paystackDownTonight(routes);
   if (r.momo) return { reason: 'big', billPesewas: balancePesewas, chargePesewas: r.momo.chargePesewas, duePesewas: r.momo.customerPaysPesewas, wallet: { number: routes.bigWalletNumber, name: routes.bigWalletName || '' }, rule: r.rule };
@@ -189,12 +189,12 @@ export async function cancelWallet(env, b, user) {
   return { cancelled: true };
 }
 
-// "Paystack is down" for tonight: a director. { on }
+// "Paystack is down" for tonight: the admin only (a technical switch). { on }
 export async function setPaystackDown(env, b, user) {
-  if (!requireRole(user, ['superAdmin', 'director'])) return { error: 'A director turns this on.', status: 403 };
+  if (!requireRole(user, ['superAdmin'])) return { error: 'Only the admin turns this on.', status: 403 };
   const doc = (await getDoc(env, 'settings', 'commercial'))?.fields || {};
   const routes = { ...(doc.routes || {}), paystackDown: b?.on === true ? { date: bizDate(), byName: user.name || '', at: now() } : null };
-  if (b?.on === true && !routes.enabled) return { error: 'Switch the new payment rules on first.' };
+  if (b?.on === true && !(await (await import('../lib/fee.js')).commercialConfig(env)).routes.enabled) return { error: 'Switch the new payment rules on first.' };
   await setDoc(env, 'settings', 'commercial', { ...doc, routes });
   const { clearCommercialCache } = await import('../lib/fee.js'); clearCommercialCache();
   await audit(env, user, b?.on === true ? 'PAYSTACK_DOWN_ON' : 'PAYSTACK_DOWN_OFF', { date: bizDate() });

@@ -29,7 +29,9 @@ import { FORBIDDEN, audit, ghs } from './common.js';
 import { commercialConfig } from '../lib/fee.js';
 import { confirmWallet, CONFIRMERS } from './wallet.js';
 
-export const PHONE_KEEPERS = ['superAdmin', 'director', 'manager', 'hrManager'];
+// Pairing and testing the phone: the admin, or the Manager / Human manager at the club. Directors
+// only see it (no technical switches for them).
+export const PHONE_KEEPERS = ['superAdmin', 'manager', 'hrManager'];
 export const DEFAULT_SENDERS = ['MobileMoney', 'MTN MoMo', 'MTNMoMo', 'MoMo'];
 const SYSTEM = { uid: 'momo-phone', name: 'MoMo phone', role: 'manager' };
 const OFFLINE_MS = 10 * 60e3;
@@ -84,7 +86,7 @@ export async function pairPhone(env, b) {
   return { deviceId, secret };
 }
 export async function phoneStatus(env, user) {
-  if (!requireRole(user, [...PHONE_KEEPERS, 'finance'])) return FORBIDDEN;
+  if (!requireRole(user, [...PHONE_KEEPERS, 'director', 'finance'])) return FORBIDDEN;
   const devices = (await listDocs(env, 'momo_devices')).filter(d => d.fields.active).map(d => ({ id: d.id, name: d.fields.name, pairedAt: d.fields.pairedAt, pairedByName: d.fields.pairedByName, lastSeenAt: d.fields.lastSeenAt, online: Date.now() - new Date(d.fields.lastSeenAt).getTime() < OFFLINE_MS }));
   const messages = (await queryRecent(env, 'momo_messages', 'storedAt', new Date(Date.now() - 2 * 864e5), 100)).map(d => ({ id: d.id, ...pick(d.fields) }));
   return { devices, anyOnline: devices.some(d => d.online), messages, canManage: !!requireRole(user, PHONE_KEEPERS) };

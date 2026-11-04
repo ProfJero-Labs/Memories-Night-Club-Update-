@@ -74,6 +74,9 @@ export class MockFirestore {
     this.emails = []; // { to, subject } — every sendBrevo() call the code under test made
     // No service fee unless a test turns it on (test/fee.test.js does), so amounts elsewhere stay simple.
     this.seed('settings', 'site', { serviceFeePercent: 0 });
+    // The payment rules are on by default in the club; most tests predate them and check the old
+    // charge, so here they start as the admin switched them off. Tests about the rules turn them on.
+    this.seed('settings', 'commercial', { routes: { enabled: false, adminSet: true } });
   }
 
   key(col, id) { return `${col}/${id}`; }

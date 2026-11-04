@@ -34,12 +34,12 @@ until the Worker is deployed (`npm run worker:deploy`) and the branch is merged.
      EvolveIT's account keeps the 5% (plus its 10% ticket/table share) and bears Paystack's fee.
    - Refunds: customer gets everything back; Paystack keeps its fee; the venue bears it.
    - Every number is a director setting; each payment keeps a copy of its rule.
-   - **Switched OFF** until a director turns it on (More → Service charge & commission → New payment
-     rules). Turning it on needs the subaccount code (already known, above).
+   - **On by default** since 4 Nov 2026 (subaccount built in). Only the admin changes payment settings
+     (More → Admin only → Payment settings); directors see them in plain words.
 4. **MoMo to the wallet** (`worker/src/ops/wallet.js`): waiter / bill link / QR menu start it; the
    bill waits; a manager confirms on Tonight → "MoMo to confirm" (amount + MoMo transaction ID, once
    ever; short refused unless accepted with a reason). Confirmed GHS 100s go to `evolveit_charges`.
-   "Paystack is down tonight" switch for directors. "MoMo to the club's number" removed for staff
+   "Paystack is down tonight" switch for the admin. "MoMo to the club's number" removed for staff
    when the rules are on.
 5. **Due to EvolveIT** (`worker/src/ops/evolveit.js`): directors only. Day by day, over 10 days in
    red; a director may tick off what the partner paid (oldest first, mismatch flagged). EvolveIT
@@ -49,7 +49,7 @@ until the Worker is deployed (`npm run worker:deploy`) and the branch is merged.
 
 Owner decisions also recorded: one venue; tickets stay online; table bookings will become
 reservations with no payment (arrival time; held one hour; no action on no-shows; paid bookings
-honoured; big-table commission based on what the table actually spends) — **not built yet**.
+honoured; big-table commission based on what the table actually spends) — **built 4 Nov 2026**.
 Daily MoMo statement upload: **dropped** (too hard to get the statement).
 
 ## Before switching the rules on

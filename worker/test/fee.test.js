@@ -17,8 +17,9 @@ const GHS = n => Math.round(n * 100);
 let ip = 0;
 function setup({ charge = { enabled: true, percent: 5, capPesewas: GHS(100) }, commission } = {}) {
   const { store, env } = createMockEnv();
+  env.TABLE_PAYMENTS = 'on'; // these tests use a paid table booking (from before reservations)
   env.PUBLIC_SITE_URL = 'https://memories.test';
-  store.seed('settings', 'commercial', { serviceCharge: charge, ...(commission ? { commission: { ...DEFAULT_COMMISSION, ...commission } } : {}) });
+  store.seed('settings', 'commercial', { serviceCharge: charge, routes: { enabled: false, adminSet: true }, ...(commission ? { commission: { ...DEFAULT_COMMISSION, ...commission } } : {}) });
   store.seed('events', 'night1', { name: 'Afrobeats Friday', date: FUTURE, visibility: 'public', active: true });
   store.seed('ticket_types', 'std', { eventId: 'night1', name: 'Standard', pricePesewas: GHS(150), admits: 1, remaining: 200, active: true });
   store.seed('table_packages', 'vip', { eventId: 'night1', name: 'VIP table', pricePesewas: GHS(3000), remaining: 5, active: true });
@@ -141,20 +142,20 @@ test('settings changes never rewrite past payments; new payments use the new rul
   paid(store, s.reference, GHS(315), { fees: GHS(6) });
   ok(await call('POST', '/api/checkout/verify', { body: { reference: s.reference } }), 'verify');
   const before = JSON.stringify(ledger(store)[0]);
-  ok(await call('POST', '/api/ops/commercial', { who: 'd1', body: { serviceCharge: { percent: 10, capPesewas: GHS(20) }, commission: { percent: 5 } } }), 'change');
+  ok(await call('POST', '/api/ops/commercial', { who: 'sa', body: { serviceCharge: { percent: 10, capPesewas: GHS(20) }, commission: { percent: 5 } } }), 'change');
   assert.equal(JSON.stringify(ledger(store)[0]), before, 'the past payment is unchanged');
   assert.deepEqual([store.get('pending_checkouts', s.reference).fields.feePercent], [5]);
   const t = ok(await call('POST', '/api/checkout/initiate', { body: buyer }), 'after');
   assert.equal(t.feePesewas, GHS(20), '10% of GHS 300 = GHS 30, capped at GHS 20');
 });
 
-test('only a director or the admin changes the commercial settings; bad values are refused; every change is logged', async () => {
+test('only the admin changes the commercial settings; bad values are refused; every change is logged', async () => {
   const { store, call } = setup();
-  for (const who of ['c1', 'w1', 'm1', 'f1', 'door']) assert.equal((await call('POST', '/api/ops/commercial', { who, body: { serviceCharge: { percent: 1 } } })).status, 403, `${who} can’t`);
+  for (const who of ['c1', 'w1', 'm1', 'f1', 'door', 'd1']) assert.equal((await call('POST', '/api/ops/commercial', { who, body: { serviceCharge: { percent: 1 } } })).status, 403, `${who} can’t`);
   assert.equal((await call('GET', '/api/ops/commercial', { who: 'c1' })).status, 403, 'a cashier can’t even look');
   assert.equal(ok(await call('GET', '/api/ops/commercial', { who: 'f1' }), 'finance looks').canEdit, false);
   for (const bad of [{ serviceCharge: { percent: -1 } }, { serviceCharge: { percent: 50 } }, { serviceCharge: { capPesewas: -100 } }, { commission: { percent: -2 } }, { commission: { type: 'weird' } }, { commission: { enabled: true, percent: 0 } }, { commission: { settlement: 'split' } }])
-    assert.equal((await call('POST', '/api/ops/commercial', { who: 'd1', body: bad })).status, 400, JSON.stringify(bad));
+    assert.equal((await call('POST', '/api/ops/commercial', { who: 'sa', body: bad })).status, 400, JSON.stringify(bad));
   const r = ok(await call('POST', '/api/ops/commercial', { who: 'sa', body: { serviceCharge: { enabled: false } } }), 'admin turns it off');
   assert.equal(r.serviceCharge.enabled, false);
   assert.equal(ok(await call('POST', '/api/checkout/initiate', { body: buyer }), 'off').feePesewas, 0, 'off: no charge');

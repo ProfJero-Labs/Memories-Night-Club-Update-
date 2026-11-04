@@ -137,6 +137,7 @@ test('a night with no lines configured sells tickets with no line (never placeho
 
 test('tables: the charge is the package plus bottles, from Firestore — never the browser', async () => {
   const { store, env } = createMockEnv();
+  env.TABLE_PAYMENTS = 'on'; // paid table bookings (only if the engineer turns them back on)
   seedNight(store);
   store.seed('table_packages', 'pkg1', { eventId: 'night1', name: 'Floor Table', pricePesewas: 350000, active: true, remaining: 3 });
   store.seed('bottles', 'b1', { eventId: 'all', name: 'House bottle', pricePesewas: 60000, active: true });
