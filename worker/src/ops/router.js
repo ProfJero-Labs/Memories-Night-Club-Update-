@@ -53,6 +53,7 @@ export async function opsRoute(m, p, u, b, env, user) {
       case '/api/ops/front-report': return closing.frontOfficeReport(env, user, { date: q('date') });
       case '/api/ops/sales': return closing.todaySales(env, user, { date: q('date') });
       case '/api/ops/wallet': return wallet.walletList(env, user);
+      case '/api/ops/alerts': return (await import('./autopilot.js')).appAlerts(env, user);
       case '/api/ops/evolveit': return evolveit.evolveitDue(env, user);
       case '/api/ops/momo-phone': return momoPhone.phoneStatus(env, user);
       case '/api/ops/wallet/one': return wallet.walletOne(env, user, q('id'));
