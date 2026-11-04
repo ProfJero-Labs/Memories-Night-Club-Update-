@@ -36,8 +36,9 @@ export async function openCash(env, b, user) {
 }
 
 export async function myCash(env, user, { date } = {}) {
-  if (!(await canTakeCash(env, user))) return FORBIDDEN;
+  // Anyone holding cash of their own tonight (e.g. the gate's ticket sales) sees it and hands it in.
   const sid = `${dateOr(date)}__${uidOf(user)}`, s = await getDoc(env, 'cash_sessions', sid);
+  if (!s && !(await canTakeCash(env, user))) return FORBIDDEN;
   return { session: s ? view(s.id, s.fields) : null };
 }
 
@@ -59,9 +60,8 @@ export async function cashMovement(env, b, user) {
 }
 
 export async function closeCash(env, b, user) {
-  if (!(await canTakeCash(env, user))) return FORBIDDEN;
   const sid = `${dateOr(b?.date)}__${uidOf(user)}`, s = await getDoc(env, 'cash_sessions', sid);
-  if (!s) return { error: 'You have no cash shift for that night.' };
+  if (!s) return (await canTakeCash(env, user)) ? { error: 'You have no cash shift for that night.' } : FORBIDDEN;
   if (s.fields.status !== 'open') return { error: 'Your cash count is already in.' };
   const counted = int(b?.countedPesewas);
   if (!(counted >= 0)) return { error: 'Enter the cash you are holding now.' };
