@@ -21,6 +21,7 @@ import * as staffauth from './staffauth.js';
 import { opsRoute } from './ops/router.js';
 import { loadNight, bizDate } from './ops/common.js';
 import { runAutopilot } from './ops/autopilot.js';
+import * as momoPhone from './ops/momophone.js';
 import { publicBill, startBillPayment, billCode, startBillWallet } from './ops/tabs.js';
 import { guestNight } from './ops/payments.js';
 import { leaveReview } from './ops/reviews.js';
@@ -149,6 +150,18 @@ async function route(req, env, ctx) {
   if (m === 'POST' && p === '/api/members/pass-status') { if (await throttled(req, env, 'pass-status', 'standard')) return tooMany(req, env); return ok(req, env, await members.passStatus(env, (await body(req)).qr)); }
   if (m === 'GET' && p === '/api/health') return health(req, env);
   if (m === 'POST' && p === '/api/client-error') { if (await throttled(req, env, 'client-error', 'strict')) return tooMany(req, env); return reply(req, env, await clientError(req, env, allowedOrigin)); }
+
+  // ── The MoMo phone (the business phone with the wallet SIM): pairing, then signed calls only ──
+  if (m === 'POST' && p.startsWith('/api/momo-phone/')) {
+    if (p === '/api/momo-phone/pair') { if (await throttled(req, env, 'momo-pair', 'strict')) return tooMany(req, env); return reply(req, env, await momoPhone.pairPhone(env, await body(req))); }
+    const raw = await req.text();
+    const device = await momoPhone.verifyPhone(env, req, raw);
+    if (!device) return fail(req, env, 'Not a paired phone, or the signature is wrong.', 401);
+    let b = {}; try { b = JSON.parse(raw || '{}'); } catch { return fail(req, env, 'Bad message.', 400); }
+    if (p === '/api/momo-phone/ping') return reply(req, env, await momoPhone.phonePing(env, device));
+    if (p === '/api/momo-phone/texts') return reply(req, env, await momoPhone.phoneTexts(env, device, b));
+    return fail(req, env, 'Not found.', 404);
+  }
 
   // ── A customer's bill (from their waiter): the link is the key; it can only read and pay ──
   if (p.startsWith('/api/guest/bill/')) {

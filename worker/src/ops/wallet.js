@@ -16,7 +16,7 @@
 //                         confirmed | cancelled; on confirm: receivedPesewas, momoRef, short, by/at
 //   evolveit_charges/{id} businessDate, source 'wallet', walletPaymentId, tabId, amountPesewas,
 //                         status unsettled | settled, createdAt
-import { getDoc, setDoc, queryWhere, queryRecent, withTransaction, batchGet, foundFields, updateWrite, commitTx } from '../lib/firestore.js';
+import { getDoc, setDoc, listDocs, queryWhere, queryRecent, withTransaction, batchGet, foundFields, updateWrite, commitTx } from '../lib/firestore.js';
 import { now, id, clean, normalizePhone, maskPhone } from '../lib/util.js';
 import { requireRole, uidOf } from '../lib/auth.js';
 import { sendSms } from '../lib/notify.js';
@@ -98,7 +98,13 @@ export async function walletList(env, user) {
   if (!requireRole(user, [...CONFIRMERS, 'waitStaff', 'eventManager'])) return FORBIDDEN;
   const recent = (await queryRecent(env, 'wallet_payments', 'createdAt', new Date(Date.now() - 2 * 864e5), 500)).map(d => view(d.id, d.fields));
   const { routes } = await commercialConfig(env);
-  return { waiting: recent.filter(w => w.status === 'waiting'), confirmed: recent.filter(w => w.status === 'confirmed').slice(0, 20), canConfirm: !!requireRole(user, CONFIRMERS),
+  // The MoMo phone: online or not, and the payment texts it couldn't use on its own (to pick from).
+  const devices = (await listDocs(env, 'momo_devices')).filter(d => d.fields.active);
+  const phone = devices.length ? { online: devices.some(d => Date.now() - new Date(d.fields.lastSeenAt).getTime() < 10 * 60e3), lastSeenAt: devices.map(d => d.fields.lastSeenAt).sort().at(-1) } : null;
+  const texts = (await queryRecent(env, 'momo_messages', 'storedAt', new Date(Date.now() - 864e5), 200)).map(d => ({ id: d.id, ...d.fields }))
+    .filter(m => ['waiting', 'ambiguous', 'check_balance'].includes(m.status) && m.read?.amountPesewas)
+    .map(m => ({ id: m.id, amountPesewas: m.read.amountPesewas, txId: m.read.txId, payerName: m.read.payerName || '', payerPhone: m.read.payerPhone || '', reference: m.read.reference || '', status: m.status, why: m.why || '', receivedAt: m.receivedAt }));
+  return { phone, texts, waiting: recent.filter(w => w.status === 'waiting'), confirmed: recent.filter(w => w.status === 'confirmed').slice(0, 20), canConfirm: !!requireRole(user, CONFIRMERS),
     paystackDown: paystackDownTonight(routes) ? routes.paystackDown : null, wallet: { number: routes?.bigWalletNumber || '', name: routes?.bigWalletName || '' } };
 }
 export async function walletOne(env, user, wid) {
@@ -108,7 +114,7 @@ export async function walletOne(env, user, wid) {
 }
 
 // A manager saw the money in the wallet. { id, receivedPesewas, momoRef, acceptShort, note }
-export async function confirmWallet(env, b, user, { closeIfPaid }) {
+export async function confirmWallet(env, b, user, { closeIfPaid, via = 'hand', messageId = '' }) {
   if (!requireRole(user, CONFIRMERS)) return { error: 'The Manager or the Human manager confirms MoMo to the wallet (they check the wallet itself).', status: 403 };
   const ref = String(b?.momoRef || '').toUpperCase().replace(/[^A-Z0-9.]/g, '').slice(0, 40);
   if (ref.length < 6) return { error: 'Type the MoMo transaction ID from the wallet’s message (at least 6 letters or numbers).' };
@@ -134,7 +140,7 @@ export async function confirmWallet(env, b, user, { closeIfPaid }) {
       if (!o || o.fields.status !== 'wallet_due') return { error: 'That QR order isn’t waiting any more.' };
       const charge = Math.min(w.chargePesewas, received), at = now(), chargeId = id();
       const writes = [
-        updateWrite(env, 'wallet_payments', wid, { ...w, status: 'confirmed', receivedPesewas: received, momoRef: ref, short, shortNote: note, confirmedBy: uidOf(user), confirmedByName: user.name || '', confirmedAt: at, evolveitChargeId: charge ? chargeId : '' }),
+        updateWrite(env, 'wallet_payments', wid, { ...w, status: 'confirmed', receivedPesewas: received, momoRef: ref, short, shortNote: note, confirmedBy: uidOf(user), confirmedByName: user.name || '', confirmedAt: at, confirmedVia: via, ...(messageId ? { messageId } : {}), evolveitChargeId: charge ? chargeId : '' }),
         // Paid: the bar now hands it over against the code, like any paid QR order.
         updateWrite(env, 'counter_orders', w.orderId, { ...o.fields, status: 'paid', paidVia: 'wallet', momoRef: ref, paidAt: at, businessDate: w.businessDate, walletPaymentId: wid }),
         updateWrite(env, 'audit_logs', id(), { action: 'WALLET_PAYMENT_CONFIRMED', actorUid: uidOf(user), actorName: user.name || '', walletPaymentId: wid, orderId: w.orderId, receivedPesewas: received, momoRef: ref, short, timestamp: at }),
@@ -151,7 +157,7 @@ export async function confirmWallet(env, b, user, { closeIfPaid }) {
     const at = now(), payId = id(), chargeId = id();
     const pay = { id: payId, method: 'momo', viaWallet: true, walletPaymentId: wid, amountPesewas: billPart, at, businessDate: w.businessDate, by: uidOf(user), byName: user.name || '', momoRef: ref, chargePesewas: charge };
     const writes = [
-      updateWrite(env, 'wallet_payments', wid, { ...w, status: 'confirmed', receivedPesewas: received, momoRef: ref, short, shortNote: note, confirmedBy: uidOf(user), confirmedByName: user.name || '', confirmedAt: at, paymentId: payId, evolveitChargeId: charge ? chargeId : '' }),
+      updateWrite(env, 'wallet_payments', wid, { ...w, status: 'confirmed', receivedPesewas: received, momoRef: ref, short, shortNote: note, confirmedBy: uidOf(user), confirmedByName: user.name || '', confirmedAt: at, confirmedVia: via, ...(messageId ? { messageId } : {}), paymentId: payId, evolveitChargeId: charge ? chargeId : '' }),
       updateWrite(env, 'tabs', w.tabId, { ...t.fields, payments: [...(t.fields.payments || []), ...(billPart ? [pay] : [])], walletWait: '' }),
       updateWrite(env, 'audit_logs', id(), { action: 'WALLET_PAYMENT_CONFIRMED', actorUid: uidOf(user), actorName: user.name || '', walletPaymentId: wid, tabId: w.tabId, receivedPesewas: received, momoRef: ref, short, timestamp: at }),
     ];

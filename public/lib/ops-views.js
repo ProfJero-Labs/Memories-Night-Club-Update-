@@ -389,14 +389,22 @@ export async function evolveitView(el) {
 
 // A manager saw the money in the wallet: what arrived and its transaction ID. A short amount is
 // refused unless the manager accepts it with a reason.
-export function walletSheet(w, done = () => {}) {
+export function walletSheet(w, done = () => {}, texts = []) {
+  // The MoMo phone's texts for this amount (it couldn't be sure on its own): one tap, nothing to type.
+  const fits = texts.filter(x => x.amountPesewas === w.duePesewas); // exact only: a short payment needs a reason (typed below)
   const { box, close } = sheet(`<h2>MoMo arrived? ${money(w.duePesewas)}</h2>
+    ${fits.length ? `<p class="group-h">From the MoMo phone</p><div class="lines-list">${fits.map((x, i) => `<div class="ln"><span><b>${money(x.amountPesewas)}</b> · ID ${esc(x.txId)}<br><small class="muted">${esc(x.payerName || x.payerPhone || '')}${x.reference ? ` · ref ${esc(x.reference)}` : ''} · ${when(x.receivedAt)}${x.status === 'check_balance' ? ` · <b>${esc(x.why || 'Check the wallet first.')}</b>` : ''}</small></span><span><button class="mid okc" data-usetext="${i}">This one</button></span></div>`).join('')}</div><p class="muted" style="margin:0">Or type it from the wallet:</p>` : ''}
     <p class="muted" style="margin:0">${esc(w.table && w.table !== 'Walk-in' ? `Table ${w.table}` : `Tab ${w.tabNumber}`)} · reference ${esc(w.code)} · ${esc(w.waiterName)}. Look in the wallet itself.</p>
     <div id="wsPaste"></div>
     ${moneyField('wsAmt', 'Amount that arrived (GHS)', String(w.duePesewas / 100))}
     <div class="sfield"><label for="wsRef">MoMo transaction ID</label><input id="wsRef" maxlength="40" autocomplete="off" autocapitalize="characters" placeholder="From the wallet’s message"></div>
     <div id="wsShort" hidden><div class="sfield"><label for="wsWhy">Accept it short? Why</label><input id="wsWhy" maxlength="200" placeholder="e.g. regular customer, paying the rest tomorrow"></div></div>
     <div id="wsMsg"></div><button class="big okc" id="wsGo">Confirm: it arrived</button><button class="big ghost" data-close>Cancel</button>`, { label: 'MoMo arrived' });
+  $$('[data-usetext]', box).forEach(b => b.onclick = async () => {
+    const x = fits[Number(b.dataset.usetext)];
+    try { const r = await busy(b, () => sapi('/api/ops/momo-phone/confirm', { method: 'POST', body: { messageId: x.id, walletPaymentId: w.id } }), 'Confirming…'); close(); done(`Confirmed from the MoMo phone’s text.${r.tabClosed ? ' The tab is closed.' : ''}`); }
+    catch (e) { say($('#wsMsg', box), e.message, 'bad'); }
+  });
   $('#wsPaste', box).append(pasteMomoButton(m => { if (m.ref) $('#wsRef', box).value = m.ref; if (m.amountPesewas) $('#wsAmt', box).value = String(m.amountPesewas / 100); }));
   let acceptShort = false;
   $('#wsGo', box).onclick = async () => {
@@ -414,20 +422,49 @@ export function walletSheet(w, done = () => {}) {
 // "MoMo to confirm": MoMo to the wallet waiting for the Manager or the Human manager. wl: from
 // /api/ops/wallet. done(message, kind) after a confirm or a cancel.
 export function walletWaitingHtml(wl) {
-  if (!wl?.waiting?.length) return '';
+  const phone = wl?.phone && !wl.phone.online ? `<div class="say warn"><b>The MoMo phone is offline</b>Last seen ${when(wl.phone.lastSeenAt)}. Until it’s back, confirm MoMo here by hand (check the wallet itself). Check it’s on, charged and has data.</div>` : '';
+  if (!wl?.waiting?.length) return phone;
   const where = w => (w.table && w.table !== 'Walk-in' ? (String(w.table).startsWith('QR') ? w.table : `Table ${w.table}`) : `Tab ${w.tabNumber}`);
-  return `<section class="pos-need"><h2>MoMo to confirm <span class="count">${wl.waiting.length}</span></h2>
-      <p class="muted" style="margin:0">Check the wallet (${esc(wl.wallet.number)}) itself, never a screenshot.</p>
+  return `${phone}<section class="pos-need"><h2>MoMo to confirm <span class="count">${wl.waiting.length}</span></h2>
+      <p class="muted" style="margin:0">${wl.phone?.online ? 'The MoMo phone confirms these by itself when the money arrives. Only step in if it can’t.' : `Check the wallet (${esc(wl.wallet.number)}) itself, never a screenshot.`}</p>
       ${wl.waiting.map((w, i) => `<div class="need"><div><b>${money(w.duePesewas)} · ${esc(where(w))}</b><span>Reference ${esc(w.code)} · ${esc(w.waiterName)} · ${when(w.createdAt)}</span><small>Bill ${money(w.billPesewas)} + ${money(w.chargePesewas)} charge${w.reason === 'paystack_down' ? ' (Paystack down)' : ''}</small></div>
         <div class="need-btns"><button class="mid okc" data-wok="${i}">Arrived</button><button class="mid" data-wno="${i}">Not yet</button></div></div>`).join('')}</section>`;
 }
 export function bindWalletWaiting(el, wl, done) {
-  $$('[data-wok]', el).forEach(b => b.onclick = () => walletSheet(wl.waiting[Number(b.dataset.wok)], done));
+  $$('[data-wok]', el).forEach(b => b.onclick = () => walletSheet(wl.waiting[Number(b.dataset.wok)], done, wl.texts || []));
   $$('[data-wno]', el).forEach(b => b.onclick = async () => {
     const w = wl.waiting[Number(b.dataset.wno)];
     const why = await ask({ title: 'This MoMo hasn’t arrived?', label: 'Cancel it only if they won’t pay this way. Why?', quick: ['Didn’t arrive', 'Paying cash instead', 'Customer left'], send: 'Cancel it', danger: true });
     if (!why) return;
     try { await sapi('/api/ops/wallet/cancel', { method: 'POST', body: { id: w.id, reason: why } }); done('Cancelled. The payment is taken another way.'); } catch (e) { done(e.message, 'bad'); }
+  });
+}
+
+
+// ── The MoMo phone (Manager, Human manager, directors) ──
+export async function momoPhoneView(el) {
+  el.innerHTML = '<div class="loading">Loading…</div>';
+  const d = await sapi('/api/ops/momo-phone');
+  const label = { confirmed: 'Confirmed a bill', waiting: 'No bill waiting for it', ambiguous: 'Several bills: a person picks', check_balance: 'Balance didn’t add up: check', used_id: 'ID already used', bad_sender: 'Not from MTN: ignored', not_payment: 'Not a payment (balance noted)', unreadable: 'Couldn’t read it' };
+  el.innerHTML = `<div class="vstack" style="display:grid;gap:14px"><h1>MoMo phone</h1>
+    <p class="lead">The business phone with the wallet SIM sends its MoMo texts here, and payments confirm themselves.</p>
+    ${d.devices.length ? d.devices.map(x => `<div class="say ${x.online ? 'good' : 'warn'}"><b>${esc(x.name)}: ${x.online ? 'online' : 'offline'}</b>Last seen ${esc(dayName(String(x.lastSeenAt).slice(0, 10)))} ${when(x.lastSeenAt)} · paired by ${esc(x.pairedByName || '')}${d.canManage ? `<br><button class="sbtn" data-unpair="${esc(x.id)}" style="margin-top:6px">Unpair</button>` : ''}</div>`).join('') : '<div class="say warn"><b>No phone paired yet</b>Pair the business phone below.</div>'}
+    ${d.canManage ? '<button class="big" id="mpPair">Pair a phone</button>' : ''}<div id="mpMsg"></div>
+    <h2>Texts it sent (last 2 days)</h2>
+    <div class="lines-list">${d.messages.map(m => lineRow(`<b>${m.read?.amountPesewas ? money(m.read.amountPesewas) : '—'}</b> · ${esc(label[m.status] || m.status)}`, when(m.receivedAt), `${esc(String(m.body).slice(0, 140))}${m.why ? `<br>${esc(m.why)}` : ''}`)).join('') || '<div class="ln"><span class="muted">Nothing yet.</span></div>'}</div>
+    ${d.canManage ? `<h2>Test a text</h2><p class="muted" style="margin:0">Paste a MoMo text exactly as it arrived. It shows how it’s read. Nothing is saved.</p>
+      <div class="sfield"><textarea id="mpT" rows="4" style="width:100%"></textarea></div><button class="mid" id="mpTest">Read it</button><div id="mpOut"></div>` : ''}</div>`;
+  $('#mpPair', el) && ($('#mpPair', el).onclick = async () => {
+    try {
+      const r = await sapi('/api/ops/momo-phone/code', { method: 'POST', body: {} });
+      sheet(`<h2>Pair the MoMo phone</h2><p style="margin:0">On the business phone, open the Memories MoMo app and type this code:</p><div class="pickup" style="font-size:44px;letter-spacing:6px">${esc(r.code)}</div><p class="muted" style="margin:0">It works once, for ${r.minutes} minutes.</p><button class="big ghost" data-close>Done</button>`, { label: 'Pair' });
+    } catch (e) { say($('#mpMsg', el), e.message, 'bad'); }
+  });
+  $$('[data-unpair]', el).forEach(b => b.onclick = async () => { if (!confirm('Unpair this phone? It stops confirming payments.')) return; try { await sapi('/api/ops/momo-phone/unpair', { method: 'POST', body: { id: b.dataset.unpair } }); momoPhoneView(el); } catch (e) { say($('#mpMsg', el), e.message, 'bad'); } });
+  $('#mpTest', el) && ($('#mpTest', el).onclick = async () => {
+    try { const r = await sapi('/api/ops/momo-phone/test', { method: 'POST', body: { body: $('#mpT', el).value } }); const x = r.read || {};
+      $('#mpOut', el).innerHTML = `<div class="say ${x.amountPesewas ? 'good' : 'warn'}"><b>${esc(r.says)}</b>Amount ${x.amountPesewas ? money(x.amountPesewas) : '—'} · ID ${esc(x.txId || '—')} · balance ${x.balancePesewas != null ? money(x.balancePesewas) : '—'} · from ${esc(x.payerName || x.payerPhone || '—')}${x.reference ? ` · ref ${esc(x.reference)}` : ''}</div>`; }
+    catch (e) { say($('#mpOut', el), e.message, 'bad'); }
   });
 }
 

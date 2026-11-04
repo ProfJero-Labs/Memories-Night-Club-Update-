@@ -8,7 +8,7 @@
 import { $, $$, esc } from '../app.js';
 import { requireStaff, staffHeader, sapi } from '../staff.js';
 import { bottomNav, sheet, st, every, money, when, backBar, bindBackBar, say } from '../lib/ops-ui.js';
-import { approvalsView, paymentsView, feedbackInboxView, closingView, walletWaitingHtml, bindWalletWaiting } from '../lib/ops-views.js';
+import { approvalsView, paymentsView, feedbackInboxView, closingView, walletWaitingHtml, bindWalletWaiting, momoPhoneView } from '../lib/ops-views.js';
 import { staffView } from '../lib/staff-view.js';
 import * as people from '../lib/people-views.js';
 
@@ -34,6 +34,7 @@ async function route() {
     if (key === 'payments') { app.innerHTML = `${back('Floor', 'floor')}<div id="pv"></div>`; bindBack(); return await paymentsView($('#pv')); }
     if (key === 'feedback') { app.innerHTML = `${back()}<div id="fv"></div>`; bindBack(); return await feedbackInboxView($('#fv')); }
     if (key === 'perf') { app.innerHTML = `${back()}<div id="pfv"></div>`; bindBack(); return await people.perfView($('#pfv'), arg); }
+    if (key === 'momophone') { app.innerHTML = `${back()}<div id="mpv"></div>`; bindBack(); return await momoPhoneView($('#mpv')); }
     if (key === 'close') { app.innerHTML = `${back()}<div id="clv"></div>`; bindBack(); return await closingView($('#clv'), undefined, { canClose: true }); }
     stop = every(10000, alive => floor(alive).catch(e => alive() && fail(e)));
   } catch (e) { fail(e); }
@@ -56,7 +57,7 @@ async function floor(alive = () => true) {
 
 function more() {
   const groups = [
-    ['Tonight', [['close', 'Close the night', 'When the Manager hands it over to you'], ['payments', 'Payments tonight', 'Every payment, with details']]],
+    ['Tonight', [['momophone', 'MoMo phone', 'Pair it, see its texts'], ['close', 'Close the night', 'When the Manager hands it over to you'], ['payments', 'Payments tonight', 'Every payment, with details']]],
     ['People', [['feedback', 'Staff feedback', 'Complaints and ideas from the staff'], ['perf', 'Performance reviews', 'Each person, every month'], ['@admin.html#members', 'Members and passes', 'Members at the gate'], ['@admin.html#attendance', 'Attendance', 'Who came in, by night']]],
     ['Messages', [['@me.html#notices', 'Notices and messages', 'Post to everyone or a team'], ['@me.html', 'My page', 'My own pay and messages']]],
   ];

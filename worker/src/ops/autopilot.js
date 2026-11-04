@@ -15,6 +15,7 @@ import { now, accraDayKey } from '../lib/util.js';
 import { sendSms, siteUrl } from '../lib/notify.js';
 import { bizDate, nightState, ghs, audit, loadNight } from './common.js';
 import { closeNight } from './closing.js';
+import { phoneOfflineAlert } from './momophone.js';
 
 const MIN = 60e3, HOUR = 60 * MIN;
 const SYSTEM = { uid: 'autopilot', name: 'Automatic', role: 'superAdmin' };
@@ -126,7 +127,7 @@ export async function morningAndMidday(env, at = Date.now()) {
 
 export async function runAutopilot(env, at = Date.now()) {
   const res = {};
-  for (const [k, fn] of [['wallet', walletAlerts], ['close', autoClose], ['report', morningAndMidday]]) {
+  for (const [k, fn] of [['wallet', walletAlerts], ['phone', e => phoneOfflineAlert(e, textAll)], ['close', autoClose], ['report', morningAndMidday]]) {
     try { res[k] = await fn(env, at); } catch (e) { res[k] = { error: String(e?.message || e) }; }
   }
   return res;
