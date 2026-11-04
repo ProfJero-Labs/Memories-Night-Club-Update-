@@ -27,9 +27,9 @@
 <link rel="stylesheet" href="styles.css">
 <style>
   .tbar { position: sticky; bottom: 0; z-index: 30; background: var(--ink); border-top: 1px solid var(--line-2); padding: 12px 0 calc(12px + env(safe-area-inset-bottom)); display: flex; align-items: center; gap: 14px; margin-top: 10px; }
-  .tbar .sum { font: 400 28px/1 var(--display); white-space: nowrap; }
+  .tbar .sum { font: 400 24px/1.05 var(--display); min-width: 0; overflow-wrap: anywhere; }
   .tbar .sum small { display: block; font: 600 11px var(--sans); letter-spacing: .14em; color: var(--muted); margin-top: 4px; text-transform: uppercase; }
-  .tbar .btn { flex: 1; }
+  .tbar .btn { flex: 1 0 auto; }
   .receipt { background: var(--t-paper); color: var(--t-ink); padding: 22px 20px; display: grid; gap: 8px; position: relative; }
   .receipt .r { display: flex; justify-content: space-between; gap: 12px; }
   .receipt .t { border-top: 2px dashed rgba(36,29,20,.4); padding-top: 12px; margin-top: 6px; font: 400 34px/1 var(--display); }
