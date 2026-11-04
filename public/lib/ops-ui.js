@@ -189,7 +189,7 @@ export function upcomingBookings(list = []) {
     const rows = list.filter(t => t.night === n);
     return `<div class="group-h">${esc(dayName(n))} · ${esc(rows[0].eventName)} · ${rows.length} table${rows.length > 1 ? 's' : ''}</div>
       <div class="rows">${rows.map(t => `<div class="row-btn plain"><span class="t">${esc(t.name)} · ${esc(t.packageName)}</span>
-        <span class="s">${esc(t.code)} · phone …${esc(t.phoneLast4)}${t.capacity ? ` · up to ${t.capacity}` : ''}${t.bottles.length ? ` · ${t.bottles.map(b => `${b.quantity} × ${esc(b.name)}`).join(', ')}` : ''}${t.bookedAt ? ` · booked ${esc(new Date(t.bookedAt).toLocaleDateString('en-GB', { timeZone: 'Africa/Accra', day: 'numeric', month: 'short' }))}` : ''}</span></div>`).join('')}</div>`;
+        <span class="s">${t.holdLine ? `${esc(t.holdLine)} · ` : ''}${esc(t.code)} · phone …${esc(t.phoneLast4)}${t.capacity ? ` · up to ${t.capacity}` : ''}${t.bottles.length ? ` · ${t.bottles.map(b => `${b.quantity} × ${esc(b.name)}`).join(', ')}` : ''}${t.bookedAt ? ` · booked ${esc(new Date(t.bookedAt).toLocaleDateString('en-GB', { timeZone: 'Africa/Accra', day: 'numeric', month: 'short' }))}` : ''}</span></div>`).join('')}</div>`;
   }).join('');
 }
 

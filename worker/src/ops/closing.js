@@ -194,7 +194,7 @@ function salesFrom(data) {
     },
     byStation: [...byStation.values()].filter(s => s.orders), byWaiter: [...byWaiter.values()].sort((a, b) => b.salesPesewas - a.salesPesewas),
     byProduct: [...byProduct.values()].sort((a, b) => b.valuePesewas - a.valuePesewas),
-    byMethod: [{ method: 'MoMo / card (Paystack, confirmed)', amountPesewas: digital }, { method: 'MoMo to the club’s number (recorded, check the statement)', amountPesewas: momo }, { method: 'Cash (recorded)', amountPesewas: cash }],
+    byMethod: [{ method: 'Paystack', amountPesewas: digital }, { method: 'MoMo', amountPesewas: momo }, { method: 'Cash (recorded)', amountPesewas: cash }],
     momoPayments: tabPays.filter(p => p.method === 'momo').map(p => ({ tabNumber: p.tabNumber, amountPesewas: p.amountPesewas, momoRef: p.momoRef, momoFrom: p.momoFrom || '', byName: p.byName || '', at: p.at })),
     // Tips: the staff's money, not sales. MoMo tips share the payment's transaction ID (one MoMo for
     // bill and tip), so the MoMo statement = MoMo sales + MoMo tips.
@@ -321,7 +321,7 @@ export async function closeNight(env, b, user) {
   };
   const fc = (await getDoc(env, 'config', 'finance'))?.fields || {};
   const to = fc.email || env.FINANCE_EMAIL || '';
-  const lines = [`Memories: end of day ${d}`, `Sales ${ghs(sales.totals.salesPesewas)} · Paid ${ghs(sales.totals.paidPesewas)} (MoMo/card ${ghs(sales.totals.digitalPesewas)}, MoMo to the club ${ghs(sales.totals.momoPesewas || 0)}, cash ${ghs(sales.totals.cashPesewas)}) · Still owed ${ghs(sales.totals.owedPesewas)}`,
+  const lines = [`Memories: end of day ${d}`, `Sales ${ghs(sales.totals.salesPesewas)} · Paid ${ghs(sales.totals.paidPesewas)} (Paystack ${ghs(sales.totals.digitalPesewas)}, MoMo ${ghs(sales.totals.momoPesewas || 0)}, cash ${ghs(sales.totals.cashPesewas)}) · Still owed ${ghs(sales.totals.owedPesewas)}`,
     ...(sales.tips?.totalPesewas ? [`Tips for staff (not club money) ${ghs(sales.tips.totalPesewas)}: MoMo/card ${ghs(sales.tips.momoPesewas + sales.tips.digitalPesewas)}, cash ${ghs(sales.tips.cashPesewas)}`] : []),
     `Cash differences: ${report.exceptions.cashDifferences.length} · Stock differences: ${report.exceptions.stockDifferences.length} · Missing reports: ${report.exceptions.missingReports.length || 'none'}`,
     `Prepared by ${user.name || 'the manager'}. Open the full report: ${siteUrl(env, `/finance.html#report/${d}`)}`];

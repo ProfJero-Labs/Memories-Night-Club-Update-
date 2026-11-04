@@ -17,7 +17,7 @@
 // Shared by the Worker (which charges) and the pages (which show the total before paying).
 
 export const DEFAULT_ROUTES = {
-  enabled: false,                 // off until the owner switches the new rules on
+  enabled: true,                  // on: the owner's rules (November 2026); only the admin changes them
   percent: 5,                     // the charge, % of the bill
   customerOnlyUpToPesewas: 30000, // GHS 300: up to and including this, the customer pays it all
   paystackUpToPesewas: 200000,    // GHS 2,000: up to and including this, Paystack is offered
@@ -25,7 +25,7 @@ export const DEFAULT_ROUTES = {
   customerMinPesewas: 1500,       // above GHS 300, the customer still pays at least GHS 15
   bigFlatPesewas: 10000,          // above GHS 2,000: the flat charge on MoMo to the wallet
   paystackFeePercent: 1.95,       // only for estimates shown before paying; the real fee is Paystack's
-  paystackSubaccount: '',         // the partner's Paystack subaccount (ACCT_…): his share goes straight to him
+  paystackSubaccount: 'ACCT_89qd3ub03w61erk', // the partner's Paystack subaccount: his share goes straight to him
   bigWalletNumber: '0595986313',  // the partner's MoMo merchant wallet, for bills above the Paystack limit
   bigWalletName: 'Samuel Forson / Memories Night Club', // the name customers see when they send to it
 };

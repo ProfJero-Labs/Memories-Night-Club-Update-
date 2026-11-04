@@ -113,6 +113,7 @@ test('checkout/initiate: a browser-supplied callback URL is ignored; Paystack ge
 
 test('checkout, tables and pay-in-bits all use the Worker’s return page; no PUBLIC_SITE_URL means no payments', async () => {
   const { store, env } = createMockEnv();
+  env.TABLE_PAYMENTS = 'on';
   store.seed('events', 'event1', { name: 'Test Night', visibility: 'public', active: true, date: '2099-01-01T00:00:00.000Z' });
   store.seed('ticket_types', 'tt5', { eventId: 'event1', name: 'Standard', pricePesewas: 5000, admits: 1, remaining: 10, active: true });
   store.seed('table_packages', 'pk1', { eventId: 'event1', name: 'Booth', pricePesewas: 200000, capacity: 6, remaining: 2, active: true });

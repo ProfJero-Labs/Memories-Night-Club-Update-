@@ -1069,13 +1069,31 @@ export async function findOrderView(el, q = '') {
 // ── Service charge and developer commission (directors and the admin change them; finance and the
 // Manager look), with a pricing simulation that never saves anything ──
 const pct = n => `${Number(n || 0)}%`;
+// What directors and finance see: the rules in plain words and a few example bills. Nothing to
+// switch: only the admin changes payment settings.
+function chargesSummary(el, c) {
+  const rt = c.routes;
+  const ex = (c.routeExamples || []).filter(x => [5000, 60000, 200000, 250000].includes(x.billPesewas));
+  el.innerHTML = `<div class="vstack" style="display:grid;gap:14px"><h1>How customers pay</h1>
+    ${rt.enabled ? `<div class="lines-list">
+      ${lineRow('<b>Cash</b>', 'Any amount', 'No charge')}
+      ${lineRow(`<b>Card or MoMo (Paystack), bills up to ${money(rt.customerOnlyUpToPesewas)}</b>`, `${esc(rt.percent)}%`, 'The customer pays the charge')}
+      ${lineRow(`<b>Paystack, ${money(rt.customerOnlyUpToPesewas + 1)} to ${money(rt.paystackUpToPesewas)}</b>`, `${esc(rt.percent)}%`, `Shared: the customer pays half, at least ${money(rt.customerMinPesewas)}`)}
+      ${lineRow(`<b>Bills above ${money(rt.paystackUpToPesewas)}</b>`, 'Cash or MoMo', `MoMo to ${esc(rt.bigWalletNumber)} (${esc(rt.bigWalletName)}), plus ${money(rt.bigFlatPesewas)} the customer pays`)}</div>
+    <p class="group-h">Examples</p>
+    <div class="lines-list">${ex.map(x => { const p = x.paystack || x.momo; return lineRow(`<b>Bill ${money(x.billPesewas)}</b> · cash or ${x.paystack ? 'Paystack' : 'MoMo to the wallet'}`, `pays ${money(p.customerPaysPesewas)}`, `The club records ${money(p.venueRecordsPesewas)}`); }).join('')}</div>`
+    : '<div class="say warn"><b>The payment rules are off</b>The admin has switched them off.</div>'}
+    <p class="muted" style="margin:0">The partner’s share of each Paystack payment goes straight to his account. To change any of this, ask the admin.</p></div>`;
+}
+
 export async function chargesView(el) {
   el.innerHTML = '<div class="loading">Loading…</div>';
   const c = await sapi('/api/ops/commercial');
   const sc = c.serviceCharge, cm = c.commission, rt = c.routes, ro = c.canEdit ? '' : 'disabled';
   const tick = (name, map, on) => Object.entries(map).map(([k, l]) => `<label class="tick"><input type="checkbox" name="${name}" value="${esc(k)}" ${on.includes(k) ? 'checked' : ''} ${ro}> ${esc(l)}</label>`).join('');
-  el.innerHTML = `<div class="vstack" style="display:grid;gap:14px"><h1>Service charge &amp; commission</h1>
-    <p class="lead">${c.updatedByName ? `Last changed by ${esc(c.updatedByName)} ${when(c.updatedAt)}.` : 'Not changed yet: the defaults are in force.'}${c.canEdit ? '' : ' Only a director or the admin can change these.'}</p>
+  if (!c.canEdit) return chargesSummary(el, c);
+  el.innerHTML = `<div class="vstack" style="display:grid;gap:14px"><h1>Payment settings</h1>
+    <p class="lead">${c.updatedByName ? `Last changed by ${esc(c.updatedByName)} ${when(c.updatedAt)}.` : 'Not changed yet: the owner’s rules are in force.'} Only the admin sees and changes these.</p>
     <h3 class="group-h">New payment rules</h3>
     <div class="say ${rt.enabled ? 'good' : 'warn'}"><b>${rt.enabled ? 'On: every card and MoMo payment uses these rules' : 'Off: payments still use the service charge below'}</b>${rt.enabled ? 'The partner’s share of each Paystack payment goes straight to his subaccount. Bills above the Paystack limit are paid in cash or by MoMo to the wallet (a manager confirms each).' : 'Enter the partner’s Paystack subaccount, check the examples, then switch them on.'}</div>
     <label class="tick"><input type="checkbox" id="rtOn" ${rt.enabled ? 'checked' : ''} ${ro}> Use the new payment rules</label>

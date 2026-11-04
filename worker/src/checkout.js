@@ -193,8 +193,72 @@ export async function fulfillTicket(env, reference) {
   return result;
 }
 
-// ── Tables: package + bottles, paid in full ──
-export async function initiateTable(env, b) {
+// ── Tables: reserved online, no payment (owner's rule, November 2026) ──
+// The customer picks the night, the table and the time they'll arrive. The table is held until an
+// hour after that time; after that it may go to someone else (nothing else happens: no fine, no
+// ban). They pay for everything at the club, like any table. Bookings already paid online are
+// honoured as before (fulfillTable).
+export const HOLD_MINUTES = 60;
+const ARRIVE_WINDOW_HOURS = 6; // from the night's start time
+const accraTime = d => formatAccra(d, { hour: 'numeric', minute: '2-digit', hour12: true }).toUpperCase();
+// "23:30" on a night that starts at 22:00 → that night; "01:00" → the early hours after it.
+export function arrivalFor(eventDate, hhmm) {
+  const m = /^([01]?\d|2[0-3]):([0-5]\d)$/.exec(String(hhmm || '').trim()); if (!m) return null;
+  const start = new Date(eventDate).getTime(); if (!Number.isFinite(start)) return null;
+  const day = new Date(start); day.setUTCHours(Number(m[1]), Number(m[2]), 0, 0); // Ghana is on UTC all year
+  let at = day.getTime();
+  while (at < start - 2 * 3600e3) at += 864e5;
+  return at >= start && at <= start + ARRIVE_WINDOW_HOURS * 3600e3 ? new Date(at).toISOString() : null;
+}
+export async function reserveTable(env, b) {
+  const name = clean(b?.name, 80), phone = normalizePhone(b?.phone);
+  if (!b?.eventId || !b?.packageId) return { error: 'Pick a table.' };
+  if (!name || name.length < 2) return { error: 'Add a name for the booking.' };
+  if (!phone) return { error: 'That phone number doesn’t look right. Use a Ghana number, e.g. 024 123 4567.' };
+  if (b.email && !validEmail(b.email)) return { error: 'That email doesn’t look right.' };
+  const [ev, pkg] = await Promise.all([getDoc(env, 'events', b.eventId), getDoc(env, 'table_packages', b.packageId)]);
+  if (!ev || !pkg || ev.fields.active === false || ev.fields.visibility !== 'public' || pkg.fields.eventId !== b.eventId || pkg.fields.active !== true) return { error: 'This table isn’t available any more.' };
+  if (isOver(ev.fields)) return { error: 'This night has already happened.' };
+  const arriveAt = arrivalFor(ev.fields.date, b.arriveTime);
+  if (!arriveAt) { const s = new Date(ev.fields.date); return { error: `Pick the time you’ll arrive, between ${accraTime(s)} and ${accraTime(new Date(s.getTime() + ARRIVE_WINDOW_HOURS * 3600e3))}.` }; }
+  const holdUntil = new Date(Date.parse(arriveAt) + HOLD_MINUTES * 60e3).toISOString();
+  // One table per phone number per night, so nobody holds every table with one phone.
+  const mine = (await queryWhere(env, 'orders', [{ field: 'eventId', value: b.eventId }, { field: 'kind', value: 'table' }]))
+    .find(o => o.fields.buyerPhone === phone && o.fields.status === 'confirmed' && !o.fields.released);
+  if (mine) return { error: `This number already has a table for this night (${tableCode(mine.id)}). Call the club to change it.` };
+  const orderId = id();
+  const result = await withTransaction(env, async tx => {
+    const got = await batchGet(env, [`table_packages/${b.packageId}`], tx);
+    const p = foundFields(got, `/table_packages/${b.packageId}`);
+    if (!p || p.fields.active !== true) return { error: 'This table isn’t available any more.' };
+    if (typeof p.fields.remaining === 'number' && p.fields.remaining < 1) return { error: 'That table is fully booked.' };
+    const writes = [updateWrite(env, 'orders', orderId, {
+      orderId, kind: 'table', reservation: true, channel: 'online', eventId: b.eventId, eventName: ev.fields.name || '', packageId: b.packageId, packageName: p.fields.name || 'Table',
+      packagePricePesewas: Number(p.fields.pricePesewas || 0), bottles: [], amountPesewas: 0, buyerName: name, buyerPhone: phone, buyerEmail: clean(b.email, 120),
+      status: 'confirmed', arriveAt, holdUntil, createdAt: now(),
+      shares: {}, evolveitSharePesewas: 0, memoriesSharePesewas: 0, organizerSharePesewas: 0, organizerId: null,
+    })];
+    if (typeof p.fields.remaining === 'number') writes.push(updateWrite(env, 'table_packages', b.packageId, { ...p.fields, remaining: p.fields.remaining - 1 }));
+    await commitTx(env, writes, tx);
+    return { reserved: true, orderId, packageName: p.fields.name || 'Table' };
+  });
+  if (result.error) return result;
+  const code = tableCode(orderId), by = accraTime(arriveAt), until = accraTime(holdUntil);
+  const night = formatAccra(ev.fields.date, { weekday: 'short', day: 'numeric', month: 'short' });
+  await sendSms(env, phone, `MEMORIES\nTable reserved: ${result.packageName}, ${ev.fields.name || 'Memories'} (${night}).\nArriving ${by}: we hold it until ${until}. After that it may go to someone else.\nNothing to pay now: you pay at the club.\nAt the door: ${code}, or give your name.`);
+  await bookingAlert(env, { packageName: result.packageName, eventName: ev.fields.name || '', nightLabel: night, buyerName: name, buyerPhone: phone, code, reservation: true, arriveLabel: by, holdLabel: until });
+  await sendEmail(env, clean(b.email, 120), 'Your Memories table is reserved', [`${result.packageName} · ${ev.fields.name || ''} (${night})`, `Arriving ${by}: we hold it until ${until}. After that it may go to someone else.`, 'Nothing to pay now: you pay at the club.', `At the door, show ${code} or give your name.`]);
+  return { reserved: true, code, packageName: result.packageName, arriveAt, holdUntil, arriveLabel: by, holdLabel: until };
+}
+
+// Paid online: no longer offered (tables are reserved instead). A page still open from before is
+// asked to refresh. Paying online can only come back by the engineer setting TABLE_PAYMENTS=on.
+export async function initiateTable() {
+  return { error: 'Tables are now reserved with no payment. Refresh this page to reserve yours.', status: 410 };
+}
+
+// Paid table bookings (before reservations): package + bottles, paid in full.
+export async function initiatePaidTable(env, b) {
   const name = clean(b?.name, 80) || 'Guest', phone = normalizePhone(b?.phone);
   if (!b?.eventId || !b?.packageId) return { error: 'Pick a table.' };
   if (!phone) return { error: 'That phone number doesn’t look right. Use a Ghana number, e.g. 024 123 4567.' };

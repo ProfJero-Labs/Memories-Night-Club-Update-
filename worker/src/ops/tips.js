@@ -25,7 +25,7 @@ const MIN_TIP = 100, MAX_TIP = 1000000; // GHS 1 to GHS 10,000 (a slip of the fi
 const PAYERS = ['finance', 'superAdmin'];                    // pay tips out
 const OWED_VIEW = [...PAYERS, 'director', 'manager'];        // see what's owed
 export const TIP_STATUS = { cash: 'Cash: they kept it', owed: 'Owed: finance pays it out', paid: 'Paid out', cancelled: 'Cancelled (refunded)' };
-const METHOD = { cash: 'Cash', momo: 'MoMo to the club’s number', digital: 'MoMo / card on their phone' };
+const METHOD = { cash: 'Cash', momo: 'MoMo', digital: 'Paystack' };
 const sum = (xs, f) => xs.reduce((n, x) => n + Number(f(x) || 0), 0);
 const tippable = d => !d.fields.removed && STAFF_ROLES.includes(d.fields.role) && !NOT_TIPPED.includes(d.fields.role) && d.fields.admin !== true;
 const first = n => String(n || '').trim().split(/\s+/)[0] || 'Staff';

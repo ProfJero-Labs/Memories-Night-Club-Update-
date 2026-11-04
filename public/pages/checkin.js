@@ -63,7 +63,7 @@ let phoneCount = 0, busy = false;
 const RESULT = {
   ok: ['ok', 'Entry confirmed'], used: ['no', 'Already checked in'], invalid: ['no', 'Ticket not valid'], cancelled: ['no', 'Ticket cancelled'],
   wrong_night: ['warn', 'Wrong night'], forbidden: ['no', 'Not your night'], no_event: ['warn', 'Choose the night'],
-  seated: ['ok', 'Table seated'], table_used: ['no', 'Table already seated'],
+  seated: ['ok', 'Table seated'], table_used: ['no', 'Table already seated'], hold_ended: ['warn', 'Hold ended: no table free'],
 };
 function show(r) {
   const [cls, title] = RESULT[r.code] || ['no', r.message || 'Not valid'];
@@ -73,6 +73,7 @@ function show(r) {
     <h1 class="display">${esc(title)}</h1>
     ${t.firstName ? `<p style="margin:0;font-size:24px"><strong>${esc(t.firstName)}</strong>${!r.valid && t.admits > 1 ? ` · admits ${t.admits}` : ''}</p>` : ''}
     ${t.eventName ? `<p class="foot-small" style="margin:0">${esc(t.eventName)} · ${esc(t.type || '')} · ${esc(t.displayCode || '')}${t.comp ? ' · comp' : ''}</p>` : ''}
+    ${t.note ? `<p style="margin:0"><b>${esc(t.note)}</b></p>` : ''}
     ${(r.code === 'used' || r.code === 'table_used') && t.checkedInAt ? `<p class="foot-small" style="margin:0">First scanned ${esc(new Date(t.checkedInAt).toLocaleTimeString('en-GB', { timeZone: 'Africa/Accra', hour: '2-digit', minute: '2-digit' }))}</p>` : ''}
     ${r.checkinId ? '<button type="button" class="sbtn undo" id="undo">Undo · admitted by mistake</button>' : ''}</div>`;
   // Tapped Admit by mistake: undo it while the card is up (the server allows 2 minutes).

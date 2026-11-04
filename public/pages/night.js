@@ -23,6 +23,9 @@ import { staffView } from '../lib/staff-view.js';
 
 const user = await requireStaff(['manager', 'director', 'superAdmin']);
 const director = user.role !== 'manager';
+// Technical settings (payment rules, Paystack down, the MoMo phone) are the admin's only, so a busy
+// director can't switch one by mistake (owner's rule).
+const admin = user.role === 'superAdmin';
 staffHeader(user, 'Tonight');
 const app = $('#app');
 const navItems = director ? [['tonight', 'Tonight'], ['money', 'Money'], ['approve', 'To approve'], ['more', 'More']] : [['tonight', 'Tonight'], ['tables', 'Tables'], ['customers', 'Customers'], ['more', 'More']];
@@ -108,10 +111,10 @@ async function tonight(alive = () => location.hash.slice(1).split('/')[0] in { '
     <p class="kicker">Night of ${esc(dayName(s.date))}${s.startedAt ? ` · started ${esc(when(s.startedAt))}` : ''}${closed ? ' · closed' : ' · open'}</p>
     ${stale ? `<div class="say warn"><b>This night is still open</b>It started ${esc(dayName(s.date))}. If it has ended, close it so the next night starts fresh.</div>` : ''}
     ${top}
-    <div style="display:flex;flex-wrap:wrap;gap:6px"><button type="button" class="mid" data-sl="cash" style="min-height:40px;padding:0 12px">Cash ${money(x.cashPesewas)} ›</button><button type="button" class="mid" data-sl="momo" style="min-height:40px;padding:0 12px">MoMo ${money((x.momoPesewas || 0))} ›</button><button type="button" class="mid" data-sl="phone" style="min-height:40px;padding:0 12px">Paid on phone ${money(x.digitalPesewas)} ›</button></div>
+    <div style="display:flex;flex-wrap:wrap;gap:6px"><button type="button" class="mid" data-sl="cash" style="min-height:40px;padding:0 12px">Cash ${money(x.cashPesewas)} ›</button><button type="button" class="mid" data-sl="phone" style="min-height:40px;padding:0 12px">Paystack ${money(x.digitalPesewas)} ›</button><button type="button" class="mid" data-sl="momo" style="min-height:40px;padding:0 12px">MoMo ${money((x.momoPesewas || 0))} ›</button></div>
     <div id="msg"></div>
     ${walletWaitingHtml(wl)}
-    ${wl?.paystackDown ? `<div class="say warn"><b>Paystack is down tonight</b>Any bill can be paid by MoMo to the wallet (a manager confirms each one). Turned on by ${esc(wl.paystackDown.byName || 'a director')}.${director ? '<br><button class="mid" id="psUp" style="margin-top:8px">Paystack works again</button>' : ''}</div>` : ''}
+    ${wl?.paystackDown ? `<div class="say warn"><b>Paystack is down tonight</b>Any bill can be paid by MoMo to the wallet (a manager confirms each one). Turned on by ${esc(wl.paystackDown.byName || 'the admin')}.${admin ? '<br><button class="mid" id="psUp" style="margin-top:8px">Paystack works again</button>' : ''}</div>` : ''}
     ${director && toPay ? `<button class="big red" data-goto="approve">${toPay} payment${toPay > 1 ? 's' : ''} to approve</button>` : ''}
     ${toExplain.length ? `<section class="pos-need"><h2>Stock to explain <span class="count">${toExplain.length}</span></h2>
       ${toExplain.map((c, i) => `<div class="need"><div><b>${esc(c.stationName)}: the bar found a different number</b><span>${c.differences.map(d => `${esc(d.name)} ${Math.abs(d.difference)} ${d.difference < 0 ? 'fewer' : 'more'}`).join(' · ')}</span><small>${esc(c.byName)} counted when the bar opened · ${esc(c.date)}</small></div>
@@ -168,7 +171,7 @@ async function tables(alive = () => true) {
     <div class="pos-tables">${open.map(tableRow).join('') || '<p class="muted">No open tables.</p>'}</div>
     ${done.length ? `<details class="fold"><summary>Finished tonight (${done.length})</summary><div class="pos-tables">${done.map(tableRow).join('')}</div></details>` : ''}
     <h2>Booked tables</h2>
-    ${booked.tables.length ? `<div class="group-h">Tonight · ${booked.tables.length} booked, ${booked.tables.filter(t => t.arrived).length} here</div><div class="rows">${booked.tables.map(t => `<div class="row-btn plain"><span class="t">${esc(t.name)} · ${esc(t.packageName)}</span><span class="s">${esc(t.code)} · phone …${esc(t.phoneLast4)} · ${t.arrived ? `arrived${t.tableNumber ? `, table ${esc(t.tableNumber)}` : ''}` : 'not here yet'}</span></div>`).join('')}</div>` : '<p class="muted" style="margin:0">No tables booked for tonight.</p>'}
+    ${booked.tables.length ? `<div class="group-h">Tonight · ${booked.tables.length} booked, ${booked.tables.filter(t => t.arrived).length} here</div><div class="rows">${booked.tables.map(t => `<div class="row-btn plain"><span class="t">${esc(t.name)} · ${esc(t.packageName)}</span><span class="s">${t.holdLine ? `${esc(t.holdLine)} · ` : ''}${esc(t.code)} · phone …${esc(t.phoneLast4)} · ${t.arrived ? `arrived${t.tableNumber ? `, table ${esc(t.tableNumber)}` : ''}` : 'not here yet'}</span></div>`).join('')}</div>` : '<p class="muted" style="margin:0">No tables booked for tonight.</p>'}
     <details class="fold" ${booked.upcoming.length ? 'open' : ''}><summary>Coming nights (${booked.upcoming.length})</summary>${upcomingBookings(booked.upcoming)}</details>`;
   bindRows();
   bindBack();
@@ -193,10 +196,11 @@ async function tableSheet(id) {
 function more() {
   // Grouped, so each thing is quick to find (no scrolling through one long list).
   const groups = director ? [
-    ['Money', [['accounts', 'Night accounts', 'What the drinks should bring; who isn’t aligned'], ['salaries', 'Salaries and loans', 'What staff are paid'], ['budget', 'Bills and budget', 'What’s due this month'], ['commissions', 'Commissions', '10% on tables over GHS 3,000'], ['reports', 'End-of-day reports', 'Each night, signed off'], ['saleslist', 'Every sale', 'One by one: what, who, how paid'], ['sales', 'Tonight in detail', 'By waiter, by bar, by drink'], ['stockvalue', 'Stock value', 'What’s in the bars, at cost'], ['finance', 'Night’s finances', 'Sales, Paystack fees, settlement, every payment'], ['charges', 'Service charge & commission', 'The customer charge, the developer commission, a simulation'], ['evolveit', 'Due to EvolveIT', 'Charges on big bills paid to the wallet']]],
-    ['Tabs', [['opentabs', 'Tabs left open', 'Clear tabs still open after a night'], ['momophone', 'MoMo phone', 'The phone that confirms MoMo by itself'], ['@paystackdown', 'Paystack is down tonight', 'Let any bill be paid by MoMo to the wallet']]],
+    ['Money', [['accounts', 'Night accounts', 'What the drinks should bring; who isn’t aligned'], ['salaries', 'Salaries and loans', 'What staff are paid'], ['budget', 'Bills and budget', 'What’s due this month'], ['commissions', 'Commissions', '10% on tables over GHS 3,000'], ['reports', 'End-of-day reports', 'Each night, signed off'], ['saleslist', 'Every sale', 'One by one: what, who, how paid'], ['sales', 'Tonight in detail', 'By waiter, by bar, by drink'], ['stockvalue', 'Stock value', 'What’s in the bars, at cost'], ['finance', 'Night’s finances', 'Sales, Paystack fees, settlement, every payment'], ['charges', 'How customers pay', 'Cash, Paystack, big bills: what each costs'], ['evolveit', 'Due to EvolveIT', 'Charges on big bills paid to the wallet']]],
+    ['Tabs', [['opentabs', 'Tabs left open', 'Clear tabs still open after a night']]],
     ['People', [['staff', 'Staff', 'Add people, send PINs'], ['feedback', 'Staff feedback', 'Complaints and ideas'], ['perf', 'Performance reviews', 'Each staff member, every month'], ['@admin.html#members', 'Members', 'Members and passes']]],
-    ['Floor', [['tables', 'Tables', 'Open tables and what they owe'], ['reviews', 'Customer reviews', 'What customers say'], ...(user.role === 'superAdmin' ? [['@admin.html', 'Control room', 'Site, nights, settings']] : [])]],
+    ['Floor', [['tables', 'Tables', 'Open tables and what they owe'], ['reviews', 'Customer reviews', 'What customers say']]],
+    ...(admin ? [['Admin only (technical)', [['charges', 'Payment settings', 'The payment rules, service charge, commission'], ['momophone', 'MoMo phone', 'Pair it, see its texts'], ['@paystackdown', 'Paystack is down tonight', 'Let any bill be paid by MoMo to the wallet'], ['@admin.html', 'Control room', 'Site, nights, settings']]]] : []),
   ] : [
     ['Tonight', [['accounts', 'Night accounts', 'What the drinks should bring; who isn’t aligned'], ['tickets', 'Tickets tonight', 'Sold online and at the gate'], ['find', 'Find an order', 'A table booking or tickets'], ['payments', 'Payments tonight', 'Every payment, with details'], ['cash', 'Cash from the staff', 'Receive each person’s counted cash'], ['momophone', 'MoMo phone', 'Pair it, see its texts'], ['approvals', 'Approvals', 'Everything asked tonight'], ['saleslist', 'Every sale', 'One by one: what, who, how paid'], ['sales', 'Tonight in detail', 'By waiter, by bar, by drink']]],
     ['Stock and money', [['expenses', 'Expenses', 'What was spent; add one'], ['purchases', 'Buying drinks', 'Ask; finance and a director approve'], ['stock', 'Stock', 'New stock, counts, differences'], ['stockvalue', 'Stock value', 'What’s in the bars, at cost'], ['money', 'Money', 'In, out, profit'], ['prices', 'Drinks & prices', 'Set by finance'], ['commissions', 'Commissions', 'Who brought the big tables']]],

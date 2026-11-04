@@ -2,8 +2,10 @@
 
 ## The payment rules (owner's decision, November 2026)
 
-Switched on by a director (More → Service charge & commission → New payment rules), once the
-partner's Paystack subaccount code is entered. When on, they replace the service charge and the
+**On by default** (owner's decision, 4 Nov 2026), with the partner's Paystack subaccount
+`ACCT_89qd3ub03w61erk` built in. Only the **admin** (system admin login) can change them: night.html
+→ More → *Admin only (technical)* → **Payment settings**. Directors and finance see them in plain
+words (**How customers pay**), with nothing to switch. They replace the service charge and the
 developer commission below for every purchase: drinks, QR orders, tickets, gate sales, pay-in-bits.
 
 | Bill (whole bill, after discounts, never tips) | How it can be paid | The 5% charge |
@@ -26,7 +28,7 @@ developer commission below for every purchase: drinks, QR orders, tickets, gate 
   confirms on Tonight → *MoMo to confirm* with the amount that arrived and the MoMo transaction ID
   (once ever). Short amounts are refused unless accepted with a reason; extra is shown as change.
   Each confirmed GHS 100 becomes a row in `evolveit_charges` (unsettled until the weekly settlement).
-- **Paystack is down tonight** (a director, More): any bill can use the wallet at the customer's
+- **Paystack is down tonight** (the admin only, More → Admin only): any bill can use the wallet at the customer's
   usual Paystack price; that charge is owed to EvolveIT the same way. It ends with the night.
 - With the rules on, staff can no longer record "MoMo to the club's number".
 - Every number (5%, 300, 2,000, 50/50, GHS 15, GHS 100) is a setting; each payment keeps a copy of

@@ -1,5 +1,6 @@
 // Commercial settings: the customer's service charge (on/off, rate, cap) and the developer
-// commission (lib/fee.js has the rules). A director or the admin changes them; finance can look. Checked here, on the Worker: the screen only shows the form.
+// commission (lib/fee.js has the rules). Only the admin changes them (technical settings: owner's
+// rule, so a director can't switch one by mistake); directors and finance can look. Checked here, on the Worker: the screen only shows the form.
 // Every save keeps the old and new values (change_log, audit_logs). Payments keep a copy of the
 // rules they were charged under, so a change never rewrites a past payment.
 import { setDoc } from '../lib/firestore.js';
@@ -9,10 +10,10 @@ import { FORBIDDEN, audit, logChange, int } from './common.js';
 import { routeFor, cleanRoutes, DEFAULT_ROUTES } from '../lib/routes.js';
 import { commercialConfig, clearCommercialCache, MAX_RATE_PERCENT, COMMISSION_KINDS, COMMISSION_CHANNELS, COMMISSION_BASES, DEFAULT_SERVICE_CHARGE } from '../lib/fee.js';
 
-export const COMMERCIAL_EDITORS = ['superAdmin', 'director'];
+export const COMMERCIAL_EDITORS = ['superAdmin'];
 // What EvolveIT earns is for the directors' eyes only (owner's rule).
 const hideEvolveit = x => ({ ...x, ...(x.paystack ? { paystack: { ...x.paystack, evolveitEstimatePesewas: null, paystackFeeEstimatePesewas: null } } : {}), ...(x.momo ? { momo: { ...x.momo, evolveitPesewas: null } } : {}) });
-export const COMMERCIAL_VIEWERS = [...COMMERCIAL_EDITORS, 'finance'];
+export const COMMERCIAL_VIEWERS = [...COMMERCIAL_EDITORS, 'director', 'finance'];
 
 export async function getCommercial(env, user) {
   if (!requireRole(user, COMMERCIAL_VIEWERS)) return FORBIDDEN;
@@ -22,7 +23,7 @@ export async function getCommercial(env, user) {
     settlementModes: { payable: 'Recorded as payable to the developers (paid out separately)' },
     // The new payment rules, with what they mean for a few bills (so directors can check before
     // switching them on).
-    routeExamples: [5000, 20000, 30000, 30100, 60000, 150000, 200000, 250000, 2000000].map(b => routeFor(b, cfg.routes)).map(x => (requireRole(user, COMMERCIAL_EDITORS) ? x : hideEvolveit(x))) };
+    routeExamples: [5000, 20000, 30000, 30100, 60000, 150000, 200000, 250000, 2000000].map(b => routeFor(b, cfg.routes)).map(x => (requireRole(user, ['superAdmin', 'director']) ? x : hideEvolveit(x))) };
 }
 
 const rate = v => { const n = Number(v); return Number.isFinite(n) && n >= 0 && n <= MAX_RATE_PERCENT ? Math.round(n * 100) / 100 : NaN; };
@@ -31,10 +32,10 @@ const pesewas = v => { const n = int(v); return n >= 0 && n <= 10_000_000 ? n : 
 // { serviceCharge: { enabled, percent, capPesewas }, commission: {...}, processing: { estimatePercent } }
 // Any part left out is kept as it is.
 export async function saveCommercial(env, b, user) {
-  if (!requireRole(user, COMMERCIAL_EDITORS)) return { error: 'Only a director or the admin can change the service charge or the commission.', status: 403 };
+  if (!requireRole(user, COMMERCIAL_EDITORS)) return { error: 'Only the admin changes the payment settings.', status: 403 };
   const cur = await commercialConfig(env);
   const next = { serviceCharge: { ...DEFAULT_SERVICE_CHARGE, ...cur.serviceCharge }, routes: { ...DEFAULT_ROUTES, ...cur.routes }, commission: { ...cur.commission }, processing: { ...cur.processing } };
-  if (b?.routes) { const r = cleanRoutes(b.routes, next.routes); if (r.error) return r; next.routes = r; }
+  if (b?.routes) { const r = cleanRoutes(b.routes, next.routes); if (r.error) return r; next.routes = { ...r, adminSet: true }; }
   if (b?.serviceCharge) {
     const s = b.serviceCharge;
     if (s.enabled !== undefined) next.serviceCharge.enabled = s.enabled === true;

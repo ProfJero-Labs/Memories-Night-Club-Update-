@@ -11,8 +11,9 @@ import { periodOf } from './money.js';
 
 const DAY = 864e5;
 const sum = (xs, f) => xs.reduce((n, x) => n + Number(f(x) || 0), 0);
-export const SALE_METHODS = { cash: 'Cash', momo: 'MoMo to the club’s number', digital: 'MoMo / card on their phone', qr: 'QR order (MoMo / card)' };
-const FILTERS = { cash: 'Cash', momo: 'MoMo to the club', phone: 'Paid on their phone', qr: 'QR orders', unpaid: 'Not fully paid' };
+export const SALE_METHODS = { cash: 'Cash', momo: 'MoMo', digital: 'Paystack', qr: 'Paystack' };
+const FILTERS = { cash: 'Cash', phone: 'Paystack', momo: 'MoMo', unpaid: 'Not fully paid' };
+const KEYS = m => (m === 'phone' ? ['digital', 'qr'] : [m]);
 const where = t => (t.quick ? (t.soldAtBar ? 'At the bar' : 'Quick sale') : !t.table || t.table === 'Walk-in' ? 'No table' : `Table ${String(t.table).replace(/^table\s*/i, '')}`);
 const STATUS = { paid: 'Paid', overpaid: 'Paid', part_paid: 'Part paid', unpaid: 'Not paid', written_off: 'Written off', empty: 'Nothing on it' };
 
@@ -34,7 +35,7 @@ export async function salesList(env, user, q = {}) {
     const bill = billOf(t, rounds.filter(r => r.tabId === t.id));
     if (!bill.totalPesewas && !(t.payments || []).length) continue;
     const pays = (t.payments || []).map(x => ({ method: x.method, methodLabel: SALE_METHODS[x.method] || x.method, amountPesewas: Number(x.amountPesewas || 0), at: x.at,
-      takenByName: x.method === 'digital' ? 'Customer, on their phone' : x.byName || '', takenBy: x.by || '', ref: x.momoRef || x.reference || '', late: !!x.recordedLateBy }));
+      takenByName: x.method === 'digital' ? 'Customer, by Paystack' : x.byName || '', takenBy: x.by || '', ref: x.momoRef || x.reference || '', late: !!x.recordedLateBy }));
     all.push({ id: t.id, kind: 'bill', date: t.businessDate, at: t.createdAt, where: where(t), label: `Tab ${t.number}`, bar: barName[t.stationId] || t.stationName || '',
       servedByName: t.waiterName || '', servedBy: t.waiterUid || '', customerName: t.debt?.name || t.customerName || '', customerPhone: t.customerPhone || '',
       lines: bill.lines.map(l => ({ qty: l.qty, name: l.name, amountPesewas: l.amountPesewas })), discountPesewas: bill.discountPesewas,
@@ -50,7 +51,7 @@ export async function salesList(env, user, q = {}) {
       servedByName: o.status === 'paid' ? 'Not collected yet' : 'The bar', servedBy: o.deliveredBy || '', customerName: '', customerPhone: o.phone || '',
       lines: (o.lines || []).map(l => ({ qty: l.qty, name: l.name, amountPesewas: l.qty * l.unitPesewas })), discountPesewas: 0,
       totalPesewas: o.totalPesewas, paidPesewas: o.totalPesewas, leftPesewas: 0, status: refund ? o.status : 'paid', statusLabel: refund ? (o.status === 'refunded' ? 'Refunded' : 'Refund owed') : 'Paid',
-      payments: [o.paidVia === 'wallet' ? { method: 'momo', methodLabel: 'MoMo to the wallet (confirmed)', amountPesewas: o.totalPesewas, at: o.paidAt, takenByName: 'Confirmed by a manager', takenBy: '', ref: o.momoRef || '' } : { method: 'qr', methodLabel: SALE_METHODS.qr, amountPesewas: o.totalPesewas, at: o.paidAt, takenByName: 'Customer, by QR', takenBy: '', ref: o.reference || '' }], methods: [o.paidVia === 'wallet' ? 'momo' : 'qr'] });
+      payments: [o.paidVia === 'wallet' ? { method: 'momo', methodLabel: 'MoMo', amountPesewas: o.totalPesewas, at: o.paidAt, takenByName: 'Confirmed by a manager', takenBy: '', ref: o.momoRef || '' } : { method: 'qr', methodLabel: SALE_METHODS.qr, amountPesewas: o.totalPesewas, at: o.paidAt, takenByName: 'Customer, by Paystack', takenBy: '', ref: o.reference || '' }], methods: [o.paidVia === 'wallet' ? 'momo' : 'qr'] });
   }
 
   // Who can be picked: everyone who served or took a payment in the period.
@@ -62,15 +63,15 @@ export async function salesList(env, user, q = {}) {
   const method = FILTERS[q.method] ? q.method : '', person = String(q.person || ''), drink = String(q.drink || '');
   let list = all;
   if (method === 'unpaid') list = list.filter(s => s.leftPesewas > 0);
-  else if (method) { const m = method === 'phone' ? 'digital' : method; list = list.filter(s => s.methods.includes(m)); }
+  else if (method) { const ms = KEYS(method); list = list.filter(s => s.methods.some(m => ms.includes(m))); }
   if (person) list = list.filter(s => s.servedBy === person || s.payments.some(x => x.takenBy === person));
   if (drink) list = list.filter(s => s.lines.some(l => l.name === drink));
   list.sort((a, b) => String(b.at).localeCompare(String(a.at)));
   // For one drink: how many of it were in these sales, and their value.
   const drinkTotals = drink ? { name: drink, qty: sum(list, s => sum(s.lines.filter(l => l.name === drink), l => l.qty)), amountPesewas: sum(list, s => sum(s.lines.filter(l => l.name === drink), l => l.amountPesewas)) } : null;
   // Money taken by the method picked (a bill can be paid partly in cash and partly by MoMo).
-  const methodKey = method === 'phone' ? 'digital' : method;
-  const takenPesewas = methodKey && methodKey !== 'unpaid' ? sum(list, s => sum(s.payments.filter(x => x.method === methodKey && (!person || x.takenBy === person || s.servedBy === person)), x => x.amountPesewas)) : sum(list, s => s.paidPesewas);
+  const methodKeys = method && method !== 'unpaid' ? KEYS(method) : null;
+  const takenPesewas = methodKeys ? sum(list, s => sum(s.payments.filter(x => methodKeys.includes(x.method) && (!person || x.takenBy === person || s.servedBy === person)), x => x.amountPesewas)) : sum(list, s => s.paidPesewas);
   return {
     period: p, filters: { method, person, drink }, methodOptions: FILTERS,
     people: [...people.entries()].map(([uid, name]) => ({ uid, name })).sort((a, b) => a.name.localeCompare(b.name)), drinks,

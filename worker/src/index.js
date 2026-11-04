@@ -6,7 +6,7 @@ import { verifyStaff, requireRole, ADMIN, MONEY, DOOR } from './lib/auth.js';
 import { smsRequest } from './lib/notify.js';
 import { commercialConfig } from './lib/fee.js';
 import { getSettings, publicEvents, eventBundle, calendar, createPrivateRequest, publicTicket } from './public.js';
-import { initiateTicket, initiateTable, startInstallment, topupInstallment, lookupInstallments, textOrderCodes, textTicketLinks, resendTicketLink, startPhoneLookup, verifyPhoneLookup, NEUTRAL_PHONE_CODE, NEUTRAL_CODES, NEUTRAL_LINK, NEUTRAL_TICKETS, fulfill, checkoutStatus, forfeitStalePlans } from './checkout.js';
+import { initiateTicket, initiateTable, initiatePaidTable, reserveTable, startInstallment, topupInstallment, lookupInstallments, textOrderCodes, textTicketLinks, resendTicketLink, startPhoneLookup, verifyPhoneLookup, NEUTRAL_PHONE_CODE, NEUTRAL_CODES, NEUTRAL_LINK, NEUTRAL_TICKETS, fulfill, checkoutStatus, forfeitStalePlans } from './checkout.js';
 import { normalizePhone, normalizePlanCode } from './lib/util.js';
 import { upsertRaffle, drawRaffle } from './raffle.js';
 import { checkin, verifyTicket, doorSummary, doorSearch, seatTable, undoCheckin } from './door.js';
@@ -62,7 +62,8 @@ async function route(req, env, ctx) {
   const codeThrottled = async b => !!b?.promoCode && await throttled(req, env, 'promo-code', 'strict');
   if (m === 'POST' && p === '/api/checkout/quote') { const b = await body(req); if (await throttled(req, env, 'quote', 'standard') || await codeThrottled(b)) return tooMany(req, env); return reply(req, env, await promos.quote(env, { ...b, code: b.promoCode })); }
   if (m === 'POST' && p === '/api/checkout/initiate') { const b = await body(req); if (await throttled(req, env, 'checkout', 'standard') || await codeThrottled(b)) return tooMany(req, env); return reply(req, env, await initiateTicket(env, b)); }
-  if (m === 'POST' && p === '/api/table-checkout/initiate') { if (await throttled(req, env, 'checkout', 'standard')) return tooMany(req, env); return reply(req, env, await initiateTable(env, await body(req))); }
+  if (m === 'POST' && p === '/api/table-reserve') { if (await throttled(req, env, 'checkout', 'standard')) return tooMany(req, env); return reply(req, env, await reserveTable(env, await body(req))); }
+  if (m === 'POST' && p === '/api/table-checkout/initiate') { if (await throttled(req, env, 'checkout', 'standard')) return tooMany(req, env); return reply(req, env, await (env.TABLE_PAYMENTS === 'on' ? initiatePaidTable : initiateTable)(env, await body(req))); }
   if (m === 'POST' && p === '/api/installments/start') { const b = await body(req); if (await throttled(req, env, 'checkout', 'standard') || await codeThrottled(b)) return tooMany(req, env); return reply(req, env, await startInstallment(env, b)); }
   if (m === 'POST' && p === '/api/installments/topup') { if (await throttled(req, env, 'checkout', 'standard')) return tooMany(req, env); return reply(req, env, await topupInstallment(env, await body(req))); }
   if (m === 'GET' && p === '/api/installments/lookup') {

@@ -62,6 +62,7 @@ async function tables() {
   el.innerHTML = `<h1 style="font:400 30px/1 var(--display);text-transform:uppercase;margin:0">Tables tonight</h1><div id="tStock" style="display:grid;gap:10px"></div><div class="group-h">Booked tonight</div><p class="lead">${arrived} of ${list.length} arrived. Seat a table from the Entrance screen (scan or search its code), then set its number here.</p><div id="tMsg"></div>
     <div class="cards">${list.map(t => `<div class="tcard ${t.arrived ? 'done' : 'warn'}" style="cursor:default"><span class="row"><span class="t">${esc(t.name)}</span>${t.arrived ? st('delivered', `Arrived ${when(t.arrivedAt)}`) : st('waiting', 'Not here yet')}</span>
       <span class="sub">${esc(t.code)} · ${esc(t.packageName)}${t.capacity ? ` · up to ${t.capacity} people` : ''} · phone …${esc(t.phoneLast4)}</span>
+      ${t.holdLine ? `<span class="sub"><b>${esc(t.holdLine)}</b></span>` : ''}
       ${t.bottles.length ? `<span class="sub">Bottles paid: ${t.bottles.map(b => `${b.quantity} × ${esc(b.name)}`).join(', ')}${t.bottlesServed ? ' (served)' : ''}</span>` : ''}
       <span class="row"><span>${t.tableNumber ? `Table <b>${esc(t.tableNumber)}</b>` : 'No table number yet'}${t.guestsArrived ? ` · ${t.guestsArrived} people in` : ''}</span><button class="mid" data-set="${esc(t.orderId)}">Set table / people</button></span></div>`).join('') || '<div class="empty-box"><b>No table bookings tonight</b></div>'}</div>
     <h2>Coming up</h2>${upcomingBookings(upcoming)}`;
