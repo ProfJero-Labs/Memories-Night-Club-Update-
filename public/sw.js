@@ -4,9 +4,9 @@
 //      the browser's error.
 // API calls and everything else go straight to the network, untouched. Paths are relative to
 // wherever the site is served from. Bump VERSION when any file in SHELL changes.
-const VERSION = 'memories-app-v6';
+const VERSION = 'memories-app-v7';
 const at = p => new URL(p, self.registration.scope).pathname;
-const SHELL = ['member.html', 'offline.html', 'pages/member.js', 'app.js', 'lib/shared.js', 'lib/charge-rules.js', 'lib/report.js', 'lib/install.js', 'ticket-art.js',
+const SHELL = ['member.html', 'offline.html', 'pages/member.js', 'app.js', 'lib/shared.js', 'lib/charge-rules.js', 'lib/ghqr.js', 'lib/report.js', 'lib/install.js', 'ticket-art.js',
   'vendor/qrcode.min.js', 'styles.css', 'config.js', 'manifest.webmanifest', 'assets/logo-sm.webp', 'assets/icon-192.png'].map(at);
 const PASS = [at('member'), at('member.html')];
 
