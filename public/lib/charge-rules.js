@@ -28,6 +28,7 @@ export const DEFAULT_ROUTES = {
   paystackSubaccount: 'ACCT_89qd3ub03w61erk', // the partner's Paystack subaccount: his share goes straight to him
   bigWalletNumber: '0595986313',  // the partner's MoMo merchant wallet, for bills above the Paystack limit
   bigWalletName: 'Samuel Forson / Memories Night Club', // the name customers see when they send to it
+  bigWalletQr: '00020101021132790018GH.NET.GHIPSS.GHQR01163346159950641821020601000003030010416E20761029T1547075204581453039365802GH5919MEMORIES NIGHT CLUB6010Cape Coast610800000001622203083346159907063346156304CD28', // the club's GhQR (MTN MoMo scan-to-pay) code: each bill's QR is made from it, with the amount added
 };
 
 const int = v => Math.max(0, Math.round(Number(v) || 0));

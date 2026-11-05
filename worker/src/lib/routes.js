@@ -2,6 +2,7 @@
 // paying is the total charged), plus the settings check, the Worker's only.
 import { DEFAULT_ROUTES } from '../../../public/lib/charge-rules.js';
 import { normalizePhone } from './util.js';
+import { ghqrValid } from '../../../public/lib/ghqr.js';
 export { DEFAULT_ROUTES, routeFor } from '../../../public/lib/charge-rules.js';
 
 // Checks a settings change; returns the cleaned settings, or { error }.
@@ -35,6 +36,11 @@ export function cleanRoutes(input, current = DEFAULT_ROUTES) {
     n.bigWalletNumber = num;
   }
   if (b.bigWalletName !== undefined) n.bigWalletName = String(b.bigWalletName || '').replace(/[<>]/g, '').trim().slice(0, 60);
+  if (b.bigWalletQr !== undefined) {
+    const q = String(b.bigWalletQr || '').trim();
+    if (q && !ghqrValid(q)) return { error: 'That isn’t a whole GhQR code. Scan the club’s MoMo QR with any QR reader app and paste all of the text it shows.' };
+    n.bigWalletQr = q;
+  }
   if (b.enabled !== undefined) n.enabled = b.enabled === true;
   if (n.enabled && !n.paystackSubaccount) return { error: 'Enter the partner’s Paystack subaccount code before switching the new rules on: without it his share wouldn’t reach him.' };
   if (n.customerOnlyUpToPesewas > n.paystackUpToPesewas) return { error: 'The “customer pays it all” limit (GHS 300) must be at or below the Paystack limit (GHS 2,000).' };
