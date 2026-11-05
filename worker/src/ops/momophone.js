@@ -101,6 +101,40 @@ export async function unpairPhone(env, b, user) {
   return { unpaired: true };
 }
 
+// ── The transaction ID a customer gives (on their invoice page) or a waiter types ──
+// It is never a confirmation on its own: it only tells the phone which bill a MoMo text belongs to.
+// The payment is confirmed when MTN's own text with that ID arrives and everything checks out.
+const normTx = s => String(s || '').toUpperCase().replace(/[^A-Z0-9.]/g, '').slice(0, 40);
+const phonesAgree = (read, w) => !read.payerPhone || !w.customerPhone || read.payerPhone === w.customerPhone;
+export async function claimTxId(env, wid, raw, byName = '') {
+  const txid = normTx(raw);
+  if (txid.length < 6) return { error: 'Type the MoMo transaction ID from your payment message (at least 6 letters or numbers).' };
+  const wd = await getDoc(env, 'wallet_payments', String(wid || ''));
+  if (!wd) return { error: 'Payment not found.', status: 404 };
+  const w = wd.fields;
+  if (w.status === 'confirmed') return { claimed: true, confirmed: true };
+  if (w.status !== 'waiting') return { error: 'This payment was cancelled. Ask for a new invoice.' };
+  if ((await queryWhere(env, 'wallet_payments', [{ field: 'momoRef', value: txid }], { limit: 1 }))[0]) return { error: 'That transaction ID was already used on another bill. Check it in your payment message.' };
+  const other = (await queryWhere(env, 'wallet_payments', [{ field: 'claimedTxId', value: txid }], { limit: 3 })).find(x => x.id !== wd.id);
+  if (other) return { error: 'That transaction ID is already given for another bill. Check it in your payment message.' };
+  await setDoc(env, 'wallet_payments', wd.id, { ...w, claimedTxId: txid, claimedByName: byName || 'Customer', claimedAt: now() });
+  // MTN's text may already be here: use it now (same checks as when it arrives).
+  const m = (await queryWhere(env, 'momo_messages', [{ field: 'txId', value: txid }], { limit: 1 }))[0];
+  if (m && ['waiting', 'ambiguous'].includes(m.fields.status) && m.fields.balanceOk === true && m.fields.read?.amountPesewas === w.duePesewas && phonesAgree(m.fields.read, w)) {
+    const res = await confirmWallet(env, { id: wd.id, receivedPesewas: m.fields.read.amountPesewas, momoRef: txid }, SYSTEM, { closeIfPaid: (await import('./tabs.js')).closeIfPaid, via: 'sms', messageId: m.id });
+    if (!res.error) {
+      await setDoc(env, 'momo_messages', m.id, { ...m.fields, status: 'confirmed', walletPaymentId: wd.id, tabNumber: w.tabNumber || '', why: 'Matched by the transaction ID given for this bill.' });
+      return { claimed: true, confirmed: true };
+    }
+  }
+  return { claimed: true, confirmed: false };
+}
+// A waiter or bartender types the ID for the customer (the customer can do it on their own page).
+export async function claimStaff(env, b, user) {
+  if (!requireRole(user, [...PHONE_KEEPERS, 'director', 'waitStaff', 'barStaff', 'barManager', 'eventManager'])) return FORBIDDEN;
+  return claimTxId(env, String(b?.id || ''), b?.txId, user.name || 'Staff');
+}
+
 // ── The phone calls in (signed) ──
 // Headers: x-momo-device, x-momo-time (ms), x-momo-sign = HMAC(secret, `${time}.${rawBody}`).
 export async function verifyPhone(env, req, raw) {
@@ -152,9 +186,12 @@ async function handleText(env, deviceId, dev, m) {
   // Waiting payments for this exact amount.
   const waiting = (await queryWhere(env, 'wallet_payments', [{ field: 'status', value: 'waiting' }], { limit: 500 })).map(d => ({ id: d.id, ...d.fields }))
     .filter(w => w.duePesewas === read.amountPesewas && Date.now() - new Date(w.createdAt).getTime() < 864e5);
-  let match = waiting.length === 1 ? waiting[0] : null;
-  if (waiting.length > 1) match = waiting.find(w => read.reference && w.code === read.reference) || (read.payerPhone ? (waiting.filter(w => w.customerPhone === read.payerPhone).length === 1 ? waiting.find(w => w.customerPhone === read.payerPhone) : null) : null);
-  if (!match) return { dev, status: await save(waiting.length > 1 ? 'ambiguous' : 'waiting', { read, why: waiting.length > 1 ? `${waiting.length} payments wait for ${ghs(read.amountPesewas)}: a person picks.` : `No payment waits for ${ghs(read.amountPesewas)} right now.` }) };
+  // The transaction ID the customer (or the waiter) gave settles which bill this is, unless the phone
+  // number it came from is clearly someone else's.
+  const claimed = waiting.find(w => w.claimedTxId && w.claimedTxId === normTx(read.txId) && phonesAgree(read, w));
+  let match = claimed || (waiting.length === 1 ? waiting[0] : null);
+  if (!claimed && waiting.length > 1) match = waiting.find(w => read.reference && w.code === read.reference) || (read.payerPhone ? (waiting.filter(w => w.customerPhone === read.payerPhone).length === 1 ? waiting.find(w => w.customerPhone === read.payerPhone) : null) : null);
+  if (!match) return { dev, status: await save(waiting.length > 1 ? 'ambiguous' : 'waiting', { read, balanceOk, why: waiting.length > 1 ? `${waiting.length} payments wait for ${ghs(read.amountPesewas)}: a person picks.` : `No payment waits for ${ghs(read.amountPesewas)} right now.` }) };
   if (!balanceOk) return { dev, status: await save('check_balance', { read, walletPaymentId: match.id, tabNumber: match.tabNumber || '', why: prev == null ? 'First text from this phone: the balance can’t be checked yet. Check the wallet, then confirm.' : `The balance doesn’t add up (${ghs(prev)} + ${ghs(read.amountPesewas)} ≠ ${ghs(read.balancePesewas)}). Check the wallet itself.` }) };
   // Everything checks out: confirmed, exactly as if a manager had.
   const res = await confirmWallet(env, { id: match.id, receivedPesewas: read.amountPesewas, momoRef: read.txId }, SYSTEM, { closeIfPaid: (await import('./tabs.js')).closeIfPaid, via: 'sms', messageId: key });

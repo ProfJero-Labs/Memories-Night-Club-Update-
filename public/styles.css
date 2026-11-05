@@ -659,3 +659,7 @@ h1, h2, h3 { margin: 0; }
 .pin-show { min-height: 52px; min-width: 64px; border: 1px solid var(--line-2); border-radius: 10px; background: var(--ink-2); color: var(--paper); font: 600 15px var(--sans); cursor: pointer; }
 .pin-show[aria-pressed="true"] { background: var(--paper); color: var(--ink); }
 .signin .link { min-height: 44px; display: inline-flex; align-items: center; }
+
+/* The MoMo invoice: three numbered steps */
+.pay-steps { margin: 0; padding-left: 22px; display: grid; gap: 12px; }
+.pay-steps li { line-height: 1.35; }

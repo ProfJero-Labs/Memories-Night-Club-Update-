@@ -22,7 +22,7 @@ import { opsRoute } from './ops/router.js';
 import { loadNight, bizDate } from './ops/common.js';
 import { runAutopilot } from './ops/autopilot.js';
 import * as momoPhone from './ops/momophone.js';
-import { publicBill, startBillPayment, billCode, startBillWallet } from './ops/tabs.js';
+import { publicBill, startBillPayment, billCode, startBillWallet, claimBillTx } from './ops/tabs.js';
 import { guestNight } from './ops/payments.js';
 import { leaveReview } from './ops/reviews.js';
 import { reconcilePayments, health } from './reconcile.js';
@@ -171,6 +171,7 @@ async function route(req, env, ctx) {
     if (m === 'GET' && parts.length === 5) return reply(req, env, await publicBill(env, token));
     if (m === 'POST' && parts[5] === 'pay') return reply(req, env, await startBillPayment(env, token, await body(req)));
     if (m === 'POST' && parts[5] === 'wallet') return reply(req, env, await startBillWallet(env, token, await body(req)));
+    if (m === 'POST' && parts[5] === 'claim') { if (await throttled(req, env, 'bill-code', 'strict', token)) return tooMany(req, env); return reply(req, env, await claimBillTx(env, token, await body(req))); }
     if (m === 'POST' && parts[5] === 'code') { if (await throttled(req, env, 'bill-code', 'strict', token)) return tooMany(req, env); return reply(req, env, await billCode(env, token, await body(req))); }
   }
 

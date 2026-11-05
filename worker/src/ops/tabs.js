@@ -26,11 +26,13 @@ import { addMoves, stockError } from './stock.js';
 import { prepareTip, tipFields, textTip, phoneOf, guestTipPeople } from './tips.js';
 import { paymentAlert } from './alerts.js';
 import { momoPrompt, submitMomoCode } from '../lib/momo.js';
-import { startWallet, momoDirectBlocked, billWallet } from './wallet.js';
-import { serviceFee } from '../lib/fee.js';
+import { startWallet, momoDirectBlocked, billWallet, walletInvoiceSms } from './wallet.js';
+import { serviceFee, commercialConfig } from '../lib/fee.js';
 
 export const BOSS = ['superAdmin', 'director', 'manager'];
-export const WAITERS = [...BOSS, 'waitStaff', 'eventManager'];             // the Event manager serves tables too
+export const WAITERS = [...BOSS, 'waitStaff', 'eventManager'];
+// Whoever may start a tab and send its invoice: the waiters, and the bartenders for a customer at their bar.
+export const TAB_OPENERS = [...WAITERS, 'barStaff', 'barManager'];             // the Event manager serves tables too
 export const BAR_HANDS = [...BOSS, 'barManager', 'barStaff'];
 export const CASH_TAKERS = [...BOSS, 'cashier'];
 const MAX_LINES = 20, MAX_QTY = 30;
@@ -85,7 +87,7 @@ const tabView = (t, rounds, { full = true } = {}) => {
   };
 };
 export const ROUND_LABEL = { waiting: 'Sent to bar', preparing: 'Bar is making it', ready: 'Ready at the bar', taken: 'You took it: the bar must confirm', handed: 'Bar gave it to you: tap “I got them”', received: 'With you', delivered: 'Delivered', cancelled: 'Cancelled' };
-const roundView = r => ({ id: r.id, tabId: r.tabId, tabNumber: r.tabNumber, table: r.table || '', quick: !!r.quick, status: r.status, statusLabel: ROUND_LABEL[r.status], waiterUid: r.waiterUid, waiterName: r.waiterName, stationId: r.stationId,
+const roundView = r => ({ id: r.id, payFirst: !!r.payFirst, tabId: r.tabId, tabNumber: r.tabNumber, table: r.table || '', quick: !!r.quick, status: r.status, statusLabel: ROUND_LABEL[r.status], waiterUid: r.waiterUid, waiterName: r.waiterName, stationId: r.stationId,
   lines: r.lines.map(l => ({ lineId: l.lineId, productId: l.productId, name: l.name, qty: l.qty, unitPesewas: l.unitPesewas, returnedQty: l.returnedQty || 0, brokenQty: l.brokenQty || 0, compQty: l.compQty || 0, returnPending: l.returnPending || 0 })),
   note: r.note || '', createdAt: r.createdAt, handedAt: r.handedAt || '', handedByName: r.handedByName || '', takenAt: r.takenAt || '', takenByName: r.takenByName || '', takenConfirmed: !!r.takenConfirmedAt, cancelReason: r.cancelReason || '' });
 
@@ -93,7 +95,7 @@ const mineOrBoss = (user, t) => requireRole(user, BOSS) || t.waiterUid === uidOf
 
 // ── Waiter ──
 export async function openTab(env, b, user) {
-  if (!requireRole(user, WAITERS)) return FORBIDDEN;
+  if (!requireRole(user, TAB_OPENERS)) return FORBIDDEN;
   const date = bizDate(); const closed = await closedError(env, date); if (closed) return closed;
   const stations = (await listDocs(env, 'bar_stations')).sort((a, b) => a.fields.name.localeCompare(b.fields.name));
   const st = stations.find(s => s.id === b?.stationId) || stations[0];
@@ -141,7 +143,7 @@ export async function getTab(env, user, tabId) {
 }
 
 export async function addRound(env, b, user) {
-  if (!requireRole(user, WAITERS)) return FORBIDDEN;
+  if (!requireRole(user, TAB_OPENERS)) return FORBIDDEN;
   const t = await getDoc(env, 'tabs', String(b?.tabId || ''));
   if (!t) return { error: 'Tab not found.', status: 404 };
   if (!mineOrBoss(user, t.fields)) return { error: 'This is another waiter’s tab.', status: 403 };
@@ -161,8 +163,23 @@ export async function addRound(env, b, user) {
   }
   const short = await stockError(env, t.fields.stationId, lines); if (short) return { error: short };
   const rid = id();
-  await setDoc(env, 'rounds', rid, { tabId: t.id, tabNumber: t.fields.number, businessDate: bizDate(), stationId: t.fields.stationId, waiterUid: t.fields.waiterUid, waiterName: t.fields.waiterName, table: t.fields.table, lines, status: 'waiting', note: clean(b.note, 120), createdAt: now(), sentBy: uidOf(user) });
+  await setDoc(env, 'rounds', rid, { tabId: t.id, tabNumber: t.fields.number, ...(b?.payFirst === true ? { payFirst: true } : {}), businessDate: bizDate(), stationId: t.fields.stationId, waiterUid: t.fields.waiterUid, waiterName: t.fields.waiterName, table: t.fields.table, lines, status: 'waiting', note: clean(b.note, 120), createdAt: now(), sentBy: uidOf(user) });
   return { id: rid, totalPesewas: lines.reduce((n, l) => n + l.qty * l.unitPesewas, 0) };
+}
+
+// The invoice by text. A bill above the Paystack limit starts its MoMo-to-the-wallet payment now, and
+// the text is one line with the link (the page shows the bill, the number to pay to and the steps).
+async function sendInvoiceLink(env, t, user) {
+  const phone = t.fields.customerPhone;
+  const bill = billOf(t.fields, await roundsOf(env, t.id));
+  const { routes } = await commercialConfig(env);
+  if (routes?.enabled && bill.balancePesewas >= 100 && bill.totalPesewas > routes.paystackUpToPesewas) {
+    const w = await startWallet(env, t, bill, user, { phone });
+    if (w.error) return { sent: false, error: w.error };
+    if (w.again && phone) await sendSms(env, phone, walletInvoiceSms(env, t.fields, w.duePesewas)); // asked again: the text goes again
+    return { sent: !!phone, phoneHint: phone ? maskPhone(phone) : '', wallet: true };
+  }
+  return { sent: await sendSms(env, phone, invoiceText(env, t.fields, bill)), phoneHint: maskPhone(phone) };
 }
 
 // The waiter's one step: take the order → it goes to the bar (the invoice is texted when the tab
@@ -170,7 +187,7 @@ export async function addRound(env, b, user) {
 // with tabId the drinks go on that table and the updated invoice is texted again.
 //   { tabId? | table, stationId, customerPhone, customerName }, lines
 export async function takeOrder(env, b, user) {
-  if (!requireRole(user, WAITERS)) return FORBIDDEN;
+  if (!requireRole(user, TAB_OPENERS)) return FORBIDDEN;
   let tabId = String(b?.tabId || ''), opened = false;
   if (!tabId) {
     const table = clean(b?.table, 30);
@@ -191,10 +208,9 @@ export async function takeOrder(env, b, user) {
   const t = await getDoc(env, 'tabs', tabId);
   let invoice = { sent: false, phoneHint: '' };
   if (b?.sendInvoice === true && t?.fields?.customerPhone) {
-    const bill = billOf(t.fields, await roundsOf(env, t.id));
-    invoice = { sent: await sendSms(env, t.fields.customerPhone, invoiceText(env, t.fields, bill)), phoneHint: maskPhone(t.fields.customerPhone) };
+    invoice = await sendInvoiceLink(env, t, user);
   }
-  return { tabId, roundId: r.id, number: t?.fields?.number, totalPesewas: r.totalPesewas, invoice };
+  return { tabId, roundId: r.id, number: t?.fields?.number, totalPesewas: r.totalPesewas, invoice, billUrl: t?.fields?.billToken ? siteUrl(env, `/bill.html?t=${t.fields.billToken}`) : '' };
 }
 
 // Waiter steps on a round: cancel (before the bar starts), got them, delivered, broken, send back.
@@ -318,6 +334,16 @@ const issueMoves = (rid, f) => f.lines.map(l => ({ productId: l.productId, produ
 export async function barRound(env, b, user) {
   if (!requireRole(user, BAR_HANDS)) return FORBIDDEN;
   const rid = String(b?.roundId || ''), action = b?.action;
+  // A customer at the bar who pays by phone first (an invoice sent from the bar): drinks go over
+  // once it shows Paid.
+  if (action === 'hand') {
+    const r0 = (await getDoc(env, 'rounds', rid))?.fields;
+    if (r0?.payFirst) {
+      const t0 = await getDoc(env, 'tabs', r0.tabId);
+      const bill0 = t0 ? billOf(t0.fields, await roundsOf(env, t0.id)) : null;
+      if (bill0 && !(bill0.paidPesewas > 0 && bill0.balancePesewas <= 0)) return { error: 'This customer pays by phone first. Hand the drinks over once it shows Paid.', code: 'pay_first' };
+    }
+  }
   let moves = null;
   const res = await withTransaction(env, async tx => {
     const r = foundFields(await batchGet(env, [`rounds/${rid}`], tx), `/rounds/${rid}`);
@@ -683,16 +709,15 @@ export function invoiceText(env, tab, bill) {
 }
 
 export async function textBill(env, b, user) {
-  if (!requireRole(user, [...WAITERS, 'cashier'])) return FORBIDDEN;
+  if (!requireRole(user, [...TAB_OPENERS, 'cashier'])) return FORBIDDEN;
   const t = await getDoc(env, 'tabs', String(b?.tabId || ''));
   if (!t) return { error: 'Tab not found.', status: 404 };
   const phone = normalizePhone(b.phone || t.fields.customerPhone);
   if (!phone) return { error: 'Enter the customer’s phone number.' };
   const bill = billOf(t.fields, await roundsOf(env, t.id));
   if (!bill.totalPesewas) return { error: 'Add drinks first: the invoice is empty.' };
-  const sent = await sendSms(env, phone, invoiceText(env, t.fields, bill));
   if (phone !== t.fields.customerPhone) await setDoc(env, 'tabs', t.id, { ...t.fields, customerPhone: phone });
-  return { sent, phoneHint: maskPhone(phone) };
+  return sendInvoiceLink(env, { ...t, fields: { ...t.fields, customerPhone: phone } }, user);
 }
 
 // ── The customer's bill link (no sign-in; the link is the key, and it can only read and pay) ──
@@ -714,7 +739,7 @@ export async function publicBill(env, token) {
   const codeNeeded = !!(waitingCode && waitingCode.status === 'pending' && waitingCode.otpAsked && !waitingCode.otpSubmittedAt);
   // MoMo to the wallet in progress (a big bill): what to send, until a manager confirms it.
   const ww = t.fields.walletWait ? (await getDoc(env, 'wallet_payments', t.fields.walletWait))?.fields : null;
-  const walletWait = ww && ww.status === 'waiting' ? { duePesewas: ww.duePesewas, billPesewas: ww.billPesewas, chargePesewas: ww.chargePesewas, code: ww.code, number: ww.wallet.number, name: ww.wallet.name } : null;
+  const walletWait = ww && ww.status === 'waiting' ? { duePesewas: ww.duePesewas, billPesewas: ww.billPesewas, chargePesewas: ww.chargePesewas, code: ww.code, number: ww.wallet.number, name: ww.wallet.name, claimedTxId: ww.claimedTxId || '' } : null;
   return { codeNeeded, walletWait, open: t.fields.status === 'open', menuUrl, bill: { label: `Tab ${t.fields.number}`, table: t.fields.table, waiterFirstName: t.fields.waiterNickname || String(t.fields.waiterName || '').split(/\s+/)[0], date: t.fields.businessDate, lines: bill.lines, grossPesewas: bill.grossPesewas, discountPesewas: bill.discountPesewas, totalPesewas: bill.totalPesewas, paidPesewas: bill.paidPesewas, balancePesewas: bill.balancePesewas, status: bill.status, statusLabel: PAY_LABEL[bill.status],
     payments: (t.fields.payments || []).map(p => ({ method: p.method === 'cash' ? 'Cash' : 'MoMo', amountPesewas: p.amountPesewas, at: p.at })), paying: !!(t.fields.pending && Date.now() - new Date(t.fields.pending.at).getTime() < 30 * 60e3) },
     // A tip with the payment: for their waiter by default, or anyone on the team.
@@ -730,6 +755,15 @@ export async function startBillWallet(env, token, b) {
   const phone = b?.phone ? normalizePhone(b.phone) : '';
   const w = await billWallet(env, t, bill, { phone });
   return w.error ? w : { wallet: { duePesewas: w.duePesewas, billPesewas: w.billPesewas, chargePesewas: w.chargePesewas, code: w.code, number: w.wallet.number, name: w.wallet.name } };
+}
+
+// The customer gives the MoMo transaction ID from their payment message, on their invoice page. It
+// only helps the MoMo phone match the payment to this bill; nothing is confirmed by it.
+export async function claimBillTx(env, token, b) {
+  const t = await tabByToken(env, token); if (!t) return PUBLIC;
+  if (!t.fields.walletWait) return { error: 'There’s no MoMo payment waiting on this bill.' };
+  const { claimTxId } = await import('./momophone.js');
+  return claimTxId(env, t.fields.walletWait, b?.txId, 'Customer');
 }
 
 // The customer types the code Paystack texted them, on their bill page. Paystack then sends the
