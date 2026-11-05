@@ -36,7 +36,7 @@ async function route() {
     if (key === 'perf') { app.innerHTML = `${back()}<div id="pfv"></div>`; bindBack(); return await people.perfView($('#pfv'), arg); }
     if (key === 'momophone') { app.innerHTML = `${back()}<div id="mpv"></div>`; bindBack(); return await momoPhoneView($('#mpv')); }
     if (key === 'close') { app.innerHTML = `${back()}<div id="clv"></div>`; bindBack(); return await closingView($('#clv'), undefined, { canClose: true }); }
-    stop = every(10000, alive => floor(alive).catch(e => alive() && fail(e)));
+    stop = every(30000, alive => floor(alive).catch(e => alive() && fail(e)));
   } catch (e) { fail(e); }
 }
 addEventListener('hashchange', route);

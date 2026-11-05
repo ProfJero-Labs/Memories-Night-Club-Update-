@@ -37,9 +37,9 @@ function go(k) {
   view = k; nav.setActive(k);
   for (const [key, el] of Object.entries(views)) el.hidden = key !== k;
   if (stop) { stop(); stop = null; }
-  if (k === 'orders') stop = every(5000, rounds);
+  if (k === 'orders') stop = every(10000, rounds);
   if (k === 'sell') sellView();
-  if (k === 'waiters') stop = every(15000, waitersView);
+  if (k === 'waiters') stop = every(30000, waitersView);
   if (k === 'stock') stockView();
   if (k === 'shift') shiftView();
   if (k === 'accounts') accounts();

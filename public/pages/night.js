@@ -44,7 +44,7 @@ async function route() {
   nav.setActive(navItems.some(([k2]) => k2 === key) ? key : key === 'report' ? 'reports' : 'more');
   scrollTo(0, 0);
   try {
-    if (key === 'tables') { stop = every(10000, alive => tables(alive).catch(e => alive() && fail(e))); return; }
+    if (key === 'tables') { stop = every(30000, alive => tables(alive).catch(e => alive() && fail(e))); return; }
     if (key === 'staff') { app.innerHTML = `${back()}<div id="sv"></div>`; bindBack(); return await staffView($('#sv'), user); }
     if (key === 'reports') { app.innerHTML = `${back()}<div id="rv"></div>`; bindBack(); return await eodListView($('#rv'), { canSignOff: director }); }
     if (key === 'report' && arg) { app.innerHTML = '<div id="rv"></div>'; return await eodView($('#rv'), arg, { canSignOff: director }); }
@@ -77,7 +77,7 @@ async function route() {
     if (key === 'opentabs') { app.innerHTML = `${back()}<div id="otv"></div>`; bindBack(); return await tabClearView($('#otv')); }
     if (key === 'charges') { app.innerHTML = `${back()}<div id="chv"></div>`; bindBack(); return await chargesView($('#chv')); }
     if (key === 'money') { app.innerHTML = `${director ? '' : back()}<div id="mv"></div>`; bindBack(); return await moneyView($('#mv')); }
-    stop = every(10000, alive => tonight(alive).catch(e => alive() && fail(e)));
+    stop = every(30000, alive => tonight(alive).catch(e => alive() && fail(e)));
   } catch (e) { fail(e); }
 }
 addEventListener('hashchange', route);

@@ -41,10 +41,10 @@ function go(k, again = false) {
   if (!again) scrollTo(0, 0);
   const el = views[k], fail = e => { el.innerHTML = `${subs.includes(k) ? backBar() : ''}<div class="say bad">${esc(e.status === 0 ? 'No connection. Pull down to try again.' : e.message)}</div>`; bindBackBar(el); };
   const back = () => { if (subs.includes(k)) { el.insertAdjacentHTML('afterbegin', backBar('', home)); bindBackBar(el); } };
-  if (k === 'sell') stop = every(20000, () => sellView(el, sapi, { onSold: refresh }).catch(fail));
+  if (k === 'sell') stop = every(30000, () => sellView(el, sapi, { onSold: refresh }).catch(fail));
   if (k === 'check' && !again) checkView(el, sapi);
   if (k === 'counts') stop = every(30000, () => countsView(el, sapi).then(back).catch(fail));
-  if (k === 'tables') stop = every(15000, tables);
+  if (k === 'tables') stop = every(30000, tables);
   if (k === 'issues') issues().then(back).catch(fail);
   if (k === 'report') report().then(back).catch(fail);
   if (k === 'find' && !again) findOrderView(el).then(back).catch(fail);
