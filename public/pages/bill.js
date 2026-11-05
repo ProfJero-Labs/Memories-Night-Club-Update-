@@ -4,6 +4,14 @@
 // the server before it shows as paid.
 import { api, esc, money, params, $, loadFee, feeLabel, feeOn as feeFor, paystackOk, paystackLimit, bigFlat, walletOk } from '../app.js';
 
+// A button that copies a value (the number or the amount) so it can be pasted into MoMo.
+const copyBtn = (label, value) => `<button type="button" class="mid" data-copy="${esc(value)}">${esc(label)}</button>`;
+function bindCopy(root) {
+  root.querySelectorAll('[data-copy]').forEach(b => b.onclick = async () => {
+    try { await navigator.clipboard.writeText(b.dataset.copy); const t = b.textContent; b.textContent = 'Copied ✓'; setTimeout(() => { b.textContent = t; }, 1500); } catch { prompt('Copy this:', b.dataset.copy); }
+  });
+}
+
 const root = $('#root');
 const token = params.get('t') || '';
 const ref = params.get('reference') || params.get('trxref');
@@ -41,7 +49,8 @@ async function load(note = '') {
       <div class="ln due"><span>${paid ? 'Paid in full' : 'To pay'}</span><span>${money(b.balancePesewas + (paid ? 0 : chargeNow))}</span></div></div>
     <p style="margin:0"><span class="st ${esc(b.status)}">${esc(b.statusLabel)}</span></p>
     ${walletWait ? `<div class="pay-box" id="walletBox"><h2 style="margin:0">Send ${money(walletWait.duePesewas)} by MoMo</h2>
-      <p style="margin:0">To <b style="font-size:22px">${esc(walletWait.number)}</b><br>${esc(walletWait.name)}<br>Reference: <b>${esc(walletWait.code)}</b></p>
+      <p style="margin:0">To <b style="font-size:26px">${esc(walletWait.number)}</b><br>${esc(walletWait.name)}<br>Reference: <b>${esc(walletWait.code)}</b></p>
+      <div class="btn-row">${copyBtn('Copy number', walletWait.number)}${copyBtn('Copy amount', String(walletWait.duePesewas / 100))}</div>
       <p class="fine" style="margin:0">This page updates once the club sees the money arrive; your waiter is told.</p></div>`
     : tooBig || (due && walletOk(b.balancePesewas, b.totalPesewas)) ? `<div class="pay-box"><h2 style="margin:0">${tooBig ? 'How to pay' : 'Card payments are down tonight'}</h2>
       <p style="margin:0">${tooBig ? `Bills above ${money(paystackLimit())}: pay <b>${money(b.balancePesewas)} in cash</b> to your waiter, or <b>${money(b.balancePesewas + bigFlat())} by MoMo</b> to the club’s wallet.` : 'Pay in cash to your waiter, or by MoMo to the club’s wallet.'}</p>
@@ -54,6 +63,7 @@ async function load(note = '') {
       ${open ? `<p class="fine" style="margin:0">${menuUrl ? 'Or call' : 'Want more? Call'} ${b.waiterFirstName ? esc(b.waiterFirstName) : 'your waiter'}: new drinks show on this page to pay.</p>` : ''}
       <button class="big ghost" id="save" type="button">Save receipt</button>
       <p class="foot-small" style="text-align:center;margin:10px 0 0">How was your night? <a href="review.html?s=bill&back=${encodeURIComponent(`bill.html?t=${token}`)}">Rate us</a> (optional)</p>` : ''}`;
+  bindCopy(root);
   $('#save') && ($('#save').onclick = () => print());
   $('#walletGo') && ($('#walletGo').onclick = async () => {
     const btn = $('#walletGo'); btn.disabled = true; btn.textContent = 'One moment…';

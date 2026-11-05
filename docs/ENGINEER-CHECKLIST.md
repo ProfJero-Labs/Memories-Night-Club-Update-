@@ -94,6 +94,15 @@ Directors see them in plain words under **More → How customers pay**, with not
    - Do it **once more**: this time it confirms **by itself** within a minute (the waiter's screen
      says "Tab closed").
    - Then the admin → **Paystack works again** (on Tonight).
+   - **Scan to pay (do this once, with a real phone, before relying on it).** On the waiter's MoMo
+     screen there is now a QR: it is the club's own MoMo GhQR (ID 33461599, Terminal 334615) with the
+     bill's amount added. Scan it with the **MTN MoMo app** (and once with a bank app): the amount
+     should already be filled in, the merchant should read MEMORIES NIGHT CLUB, and only the PIN is
+     left. If the app ignores the amount or refuses the code, tell us exactly what it says: the
+     number, the Copy buttons and the short text still work, and the QR can be switched off by
+     blanking **Control room → Setup → Payment settings → The club's MoMo QR code**. Then check that
+     the MoMo phone reads the payment text that MTN sends for a merchant (QR) payment: paste it into
+     **MoMo phone → Test a text**; if it isn't read, send us the text so the reader can be fixed.
 
 ## 8. Leave it running
 

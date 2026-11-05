@@ -1,4 +1,5 @@
 // Shared code for the public pages. No framework, no Firebase: everything goes through the Worker.
+import { ghqrFor } from './lib/ghqr.js';
 import './lib/report.js'; // quiet browser-error reporting to the Worker (see docs/MONITORING.md)
 import './lib/install.js'; // the Memories app: install sheet + service worker on every page
 import { routeFor } from './lib/charge-rules.js';
@@ -89,6 +90,8 @@ export const feeOn = (pesewas, whole) => {
 // Card / MoMo through Paystack offered for this bill? (No, above the limit when the rules are on.)
 export const paystackOk = (pesewas, whole) => !PR || !!routeFor(pesewas, PR, { bandBillPesewas: whole }).paystack;
 export const paystackLimit = () => (PR ? Number(PR.paystackUpToPesewas) : null);
+// The club's MoMo QR with this amount filled in (scan with a MoMo or bank app), or '' if not set.
+export const walletQr = pesewas => (PR?.bigWalletQr ? ghqrFor(PR.bigWalletQr, pesewas) : '');
 // The flat charge on a big bill paid by MoMo to the wallet (GHS 100).
 export const bigFlat = () => (PR ? Number(PR.bigFlatPesewas || 0) : 0);
 // The new rules are on: staff no longer record "MoMo to the club's number" (big bills use the wallet).

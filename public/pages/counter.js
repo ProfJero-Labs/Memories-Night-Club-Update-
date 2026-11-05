@@ -5,6 +5,14 @@
 // A search box finds a drink even with small spelling mistakes (drinkMatch). "My night" shows
 // everything paid tonight from the customer's phone (asked with the id of an order they paid).
 import { api, esc, money, normalizePhone, $, $$, loadFee, feeLabel, feeOn, paystackOk, paystackLimit, walletOk } from '../app.js';
+
+// A button that copies a value (the number or the amount) so it can be pasted into MoMo.
+const copyBtn = (label, value) => `<button type="button" class="mid" data-copy="${esc(value)}">${esc(label)}</button>`;
+function bindCopy(root) {
+  root.querySelectorAll('[data-copy]').forEach(b => b.onclick = async () => {
+    try { await navigator.clipboard.writeText(b.dataset.copy); const t = b.textContent; b.textContent = 'Copied ✓'; setTimeout(() => { b.textContent = t; }, 1500); } catch { prompt('Copy this:', b.dataset.copy); }
+  });
+}
 import { drinkMatch, drinkMatchAny } from '../lib/shared.js';
 
 const app = $('#app');
@@ -61,9 +69,11 @@ function showOrder(orderId) {
     if (o.status === 'pending_payment') { app.innerHTML = `${msg('Approve the MoMo prompt on your phone. We’re waiting for it to confirm…')}<p class="foot-small">Don’t close this page. Your pickup code shows here the moment it’s paid.</p>`; timer = setTimeout(poll, 4000); return; }
     if (o.status === 'wallet_due') {
       app.innerHTML = `<p class="kicker red" style="text-align:center">Send ${money(o.wallet?.duePesewas || o.totalPesewas)} by MoMo</p>
-        <div class="summary"><div class="r"><span>To</span><span><b>${esc(o.wallet?.number || '')}</b></span></div><div class="r"><span>Name</span><span>${esc(o.wallet?.name || '')}</span></div><div class="r t"><span>Reference</span><span>${esc(o.pickupCode)}</span></div></div>
+        <div class="btn-row">${copyBtn('Copy number', o.wallet?.number || '')}${copyBtn('Copy amount', String((o.wallet?.duePesewas || o.totalPesewas) / 100))}</div>
+        <div class="summary"><div class="r"><span>To</span><span><b style="font-size:20px">${esc(o.wallet?.number || '')}</b></span></div><div class="r"><span>Name</span><span>${esc(o.wallet?.name || '')}</span></div><div class="r t"><span>Reference</span><span>${esc(o.pickupCode)}</span></div></div>
         <div class="summary">${o.lines.map(l => `<div class="r"><span>${l.qty} × ${esc(l.name)}</span></div>`).join('')}<div class="r t"><span>To pay</span><span>${money(o.wallet?.duePesewas || o.totalPesewas)}</span></div></div>
         <p class="foot-small">Once the club sees your MoMo arrive, this page shows your pickup code. We’ve also texted you the details. Nothing is made before that.</p>`;
+      bindCopy(app);
       timer = setTimeout(poll, 6000); return;
     }
     if (o.status === 'cash_due') {

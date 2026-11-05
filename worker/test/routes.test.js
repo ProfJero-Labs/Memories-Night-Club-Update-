@@ -197,7 +197,7 @@ test('a GHS 3,000 bill: MoMo to the wallet; it waits until a manager confirms; a
   const s = (await ctx.call('POST', '/api/ops/tabs/checkout', { who: 'manager', body: { tabId: t.id, method: 'wallet', phone: '0244445555' } })).data;
   assert.equal(s.method, 'wallet');
   assert.deepEqual([s.wallet.duePesewas, s.wallet.chargePesewas, s.wallet.wallet.number, s.wallet.wallet.name], [310000, 10000, '0595986313', 'Samuel Forson / Memories Night Club']);
-  assert.match(ctx.store.sms.at(-1).message, /send GHS 3,100 by MoMo to 0595986313 \(Samuel Forson \/ Memories Night Club\)[\s\S]*Reference: [A-Z0-9]{4}/);
+  assert.match(ctx.store.sms.at(-1).message, /^MEMORIES: send GHS 3,100 by MoMo to 0595986313\. Ref [A-Z0-9]{4}\.$/); // one short line
   assert.equal(ctx.store.get('tabs', t.id).fields.status, 'open', 'not closed on a promise');
   const list = (await ctx.call('GET', '/api/ops/wallet', { who: 'manager' })).data;
   assert.equal(list.waiting.length, 1);
