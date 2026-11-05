@@ -23,7 +23,7 @@ async function bills() {
     $$('[data-id]').forEach(b => b.onclick = () => openBill(b.dataset.id));
   };
   $('#q').oninput = () => { clearTimeout(t); t = setTimeout(() => load().catch(e => say($('#msg'), e.message, 'bad')), 300); };
-  stop = every(10000, load);
+  stop = every(30000, load);
 }
 
 async function openBill(id) {

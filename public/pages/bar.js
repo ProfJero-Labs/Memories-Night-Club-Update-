@@ -69,7 +69,7 @@ async function load() {
     drawStatus(); if (setBox) drawSettings();
     draw();
   } catch (e) { $('#state').innerHTML = `<span class="lamp off">${esc(e.status === 0 ? 'No connection' : e.message)}</span>`; }
-  timer = setTimeout(load, 5000);
+  timer = setTimeout(load, document.visibilityState === 'visible' ? 10000 : 60000);
 }
 
 // ── Settings (behind ⚙): which bar, pause app orders, table QR codes, sound ──

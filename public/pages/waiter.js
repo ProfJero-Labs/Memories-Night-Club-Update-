@@ -50,7 +50,7 @@ async function tabsList() {
   $('#quick').onclick = () => { location.hash = 'quick'; };
   $('#tipOnly').onclick = () => tipSheet(sapi, user.uid, m => say($('#msg'), m));
   const flash = sessionStorage.getItem('waiter-flash'); if (flash) { sessionStorage.removeItem('waiter-flash'); say($('#msg'), flash); }
-  stop = every(6000, async alive => {
+  stop = every(15000, async alive => {
     const [{ tabs }, q] = await Promise.all([sapi('/api/ops/tabs'), canCash ? sapi('/api/bar/queue').catch(() => null) : null]);
     if (!alive()) return;
     // QR customers paying cash: whoever serves them takes it (code on their phone).
@@ -130,7 +130,7 @@ async function tabView(id) {
     $('#ask') && ($('#ask').onclick = () => askManager(t));
     $$('[data-act]').forEach(btn => btn.onclick = () => roundAct(btn.dataset.r, btn.dataset.act, t));
   };
-  stop = every(5000, alive => { if (document.querySelector('.sheet-back')) return; return draw(alive).catch(e => alive() && fail(e)); });
+  stop = every(10000, alive => { if (document.querySelector('.sheet-back')) return; return draw(alive).catch(e => alive() && fail(e)); });
 }
 
 // Close tab: cash or MoMo. Cash → take it, closed, receipt texted. MoMo → a prompt on their phone and
@@ -460,7 +460,7 @@ async function quickSale(stationId) {
 // ── Bookings tonight ──
 async function bookings() {
   app.innerHTML = '<h1>Bookings tonight</h1><p class="lead">Tables reserved online (they pay at the club, like any table), and bottles paid for earlier. Tick when served.</p><div id="msg"></div><div class="cards" id="list"><div class="loading">Loading…</div></div><h2>Coming up</h2><div id="soon"></div>';
-  stop = every(15000, async alive => {
+  stop = every(30000, async alive => {
     const { tables, upcoming } = await sapi('/api/ops/tables');
     if (!alive()) return;
     $('#list').innerHTML = tables.map(t => `<div class="tcard ${t.bottlesServed ? 'done' : t.arrived ? 'warn' : ''}" style="cursor:default">
