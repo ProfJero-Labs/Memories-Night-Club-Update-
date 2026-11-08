@@ -14,7 +14,7 @@ import * as admin from './admin.js';
 import { restoreNov14Ticket } from './fixes/nov14-ticket.js';
 import * as members from './members.js';
 import * as gate from './gate.js';
-import { getDoc } from './lib/firestore.js';
+import { getDoc, readCache } from './lib/firestore.js';
 import * as bar from './bar.js';
 import * as promos from './promos.js';
 import * as staffauth from './staffauth.js';
@@ -200,7 +200,10 @@ async function route(req, env, ctx) {
     return ok(req, env, { status: r.status, error: r.error, tabStatus: t?.fields?.status || '' });
   }
   if (p.startsWith('/api/ops/')) {
-    const r = await opsRoute(m, p, new URL(req.url), m === 'POST' ? await body(req) : {}, env, user);
+    // The list screens every phone keeps refreshing read through a short shared cache (lib/firestore.js);
+    // the page sends x-fresh right after its own change so the person who acted sees it at once.
+    const run = () => opsRoute(m, p, new URL(req.url), {}, env, user);
+    const r = m === 'GET' && CACHED_SCREENS.has(p) && env.READ_CACHE !== 'off' ? await readCache({ fresh: req.headers.get('x-fresh') === '1', ttl: SCREEN_TTL[p] }, run) : await opsRoute(m, p, new URL(req.url), m === 'POST' ? await body(req) : {}, env, user);
     if (r !== undefined) return reply(req, env, r);
     return fail(req, env, 'Not found.', 404);
   }
@@ -341,6 +344,12 @@ async function route(req, env, ctx) {
   return fail(req, env, 'Not found.', 404);
 }
 
+// Read-only list screens that phones keep refreshing (see readCache in lib/firestore.js).
+const CACHED_SCREENS = new Set(['/api/ops/sales', '/api/ops/sales/list', '/api/ops/approvals', '/api/ops/tabs', '/api/ops/stock/to-explain', '/api/ops/wallet', '/api/ops/money', '/api/ops/to-approve', '/api/ops/alerts', '/api/ops/bar/rounds', '/api/ops/bar/waiters', '/api/ops/products', '/api/ops/tables', '/api/ops/accounts']);
+// How long each list screen's reads are shared: short where people wait for something to appear
+// (the bar's queue, the tabs, a MoMo payment), longer for the figures nobody watches second by second.
+// Set READ_CACHE=off on the Worker to turn all of this off.
+const SCREEN_TTL = { '/api/ops/bar/rounds': 6e3, '/api/ops/tabs': 8e3, '/api/ops/wallet': 8e3, '/api/ops/bar/waiters': 15e3, '/api/ops/products': 15e3, '/api/ops/tables': 20e3, '/api/ops/sales': 20e3, '/api/ops/sales/list': 20e3, '/api/ops/approvals': 20e3, '/api/ops/stock/to-explain': 30e3, '/api/ops/money': 30e3, '/api/ops/to-approve': 30e3, '/api/ops/alerts': 30e3, '/api/ops/accounts': 30e3 };
 const STAFF_PATH = /^\/api\/(admin|ops|checkin|door|members\/door|bar)(\/|$)|^\/api\/(send-sms|balance)$/;
 const handler = {
   async fetch(req, env, ctx) {

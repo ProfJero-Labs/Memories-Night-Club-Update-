@@ -75,12 +75,44 @@ async function call(env, url, options = {}) {
 }
 const fs = (env, path, options) => call(env, basePath(env) + path, options);
 
+// ── A short read cache, for the read-only list screens only ──
+// Every phone keeps refreshing the same lists (tonight's tabs and orders, the bar queue...), and each
+// refresh used to read every record again, so a few open phones used up the database's free daily
+// reads. A request for one of those screens runs inside `readCache(...)`: the reads it makes share
+// their answers for a few seconds, across phones and across the screens of one page. Everything else
+// (payments, stock checks, every write) runs outside it and always reads fresh. A write in this
+// isolate clears that collection's saved answers at once; a write made elsewhere shows within the
+// few seconds, or immediately for the person who just acted (their page sends x-fresh).
+import { AsyncLocalStorage } from 'node:async_hooks';
+import { envKey, onResetCaches } from './envkey.js';
+const readScope = new AsyncLocalStorage();
+const RC_TTL = 10000, RC_MAX = 500;
+const saved = new Map(); // project → Map(`${col}|${query}` → { at, value })
+onResetCaches(() => saved.clear());
+export const readCache = ({ fresh = false, ttl = RC_TTL } = {}, fn) => readScope.run({ fresh, ttl }, fn);
+const rcMap = env => { const key = envKey(env); let m = saved.get(key); if (!m) saved.set(key, m = new Map()); return m; };
+const rcClear = (env, col) => { const m = saved.get(envKey(env)); if (!m) return; for (const k of [...m.keys()]) if (k.startsWith(col + '|')) m.delete(k); };
+const colOfName = name => String(name || '').split('/documents/')[1]?.split('/')[0] || '';
+async function cached(env, col, query, load) {
+  const sc = readScope.getStore();
+  if (!sc) return load();
+  const m = rcMap(env), k = `${col}|${query}`, hit = m.get(k);
+  if (hit && !sc.fresh && Date.now() - hit.at < sc.ttl) return structuredClone(hit.value);
+  const value = await load();
+  if (m.size >= RC_MAX) m.delete(m.keys().next().value);
+  m.set(k, { at: Date.now(), value });
+  return structuredClone(value);
+}
+
 export async function getDoc(env, col, docId) {
   if (!docId) return null;
-  try { const d = await fs(env, `/${col}/${encodeURIComponent(docId)}`); return d.name ? { id: docId, fields: parseFields(d.fields) } : null; }
-  catch (e) { if (e.status === 404 || String(e.message).includes('NOT_FOUND')) return null; throw e; }
+  return cached(env, col, `doc:${docId}`, async () => {
+    try { const d = await fs(env, `/${col}/${encodeURIComponent(docId)}`); return d.name ? { id: docId, fields: parseFields(d.fields) } : null; }
+    catch (e) { if (e.status === 404 || String(e.message).includes('NOT_FOUND')) return null; throw e; }
+  });
 }
-export async function listDocs(env, col) {
+export async function listDocs(env, col) { return cached(env, col, 'list', () => listDocsNow(env, col)); }
+async function listDocsNow(env, col) {
   let docs = [], pageToken;
   do {
     const qs = new URLSearchParams({ pageSize: '300' });
@@ -91,14 +123,18 @@ export async function listDocs(env, col) {
   } while (pageToken);
   return docs;
 }
-export async function setDoc(env, col, docId, data) { await fs(env, `/${col}/${encodeURIComponent(docId)}`, { method: 'PATCH', body: JSON.stringify({ fields: docFields(data) }) }); }
+export async function setDoc(env, col, docId, data) { await fs(env, `/${col}/${encodeURIComponent(docId)}`, { method: 'PATCH', body: JSON.stringify({ fields: docFields(data) }) }); rcClear(env, col); }
 // A createDoc refused because the document is there already (Firestore answers 409 ALREADY_EXISTS).
 export const alreadyExists = e => e?.status === 409 || /ALREADY_EXISTS|already exists/i.test(String(e?.message));
-export async function createDoc(env, col, docId, data) { return fs(env, `/${col}?documentId=${encodeURIComponent(docId)}`, { method: 'POST', body: JSON.stringify({ fields: docFields(data) }) }); }
-export async function deleteDoc(env, col, docId) { await fs(env, `/${col}/${encodeURIComponent(docId)}`, { method: 'DELETE' }); }
+export async function createDoc(env, col, docId, data) { const r = await fs(env, `/${col}?documentId=${encodeURIComponent(docId)}`, { method: 'POST', body: JSON.stringify({ fields: docFields(data) }) }); rcClear(env, col); return r; }
+export async function deleteDoc(env, col, docId) { await fs(env, `/${col}/${encodeURIComponent(docId)}`, { method: 'DELETE' }); rcClear(env, col); }
 
 // Equality-only structured query (AND of filters), optionally inside a transaction.
 export async function queryWhere(env, col, filters, { limit = 1000, transaction } = {}) {
+  if (transaction) return queryWhereNow(env, col, filters, { limit, transaction });
+  return cached(env, col, `where:${JSON.stringify([filters, limit])}`, () => queryWhereNow(env, col, filters, { limit }));
+}
+async function queryWhereNow(env, col, filters, { limit = 1000, transaction } = {}) {
   const fieldFilters = filters.map(f => ({ fieldFilter: { field: { fieldPath: f.field }, op: 'EQUAL', value: firestoreValue(f.value) } }));
   const where = fieldFilters.length === 1 ? fieldFilters[0] : { compositeFilter: { op: 'AND', filters: fieldFilters } };
   const body = { structuredQuery: { from: [{ collectionId: col }], where, limit } };
@@ -128,6 +164,9 @@ export async function queryAll(env, col, filters, { page = 1000, max = 200000 } 
 // Newest first: documents whose `field` is at or after `since`, ordered by it, descending.
 // (A single-field range plus its own orderBy needs no composite index.)
 export async function queryRecent(env, col, field, since, limit = 50) {
+  return cached(env, col, `recent:${field}:${Math.floor(new Date(since).getTime() / 300000)}:${limit}`, () => queryRecentNow(env, col, field, since, limit));
+}
+async function queryRecentNow(env, col, field, since, limit = 50) {
   const body = { structuredQuery: {
     from: [{ collectionId: col }],
     where: { fieldFilter: { field: { fieldPath: field }, op: 'GREATER_THAN_OR_EQUAL', value: firestoreValue(since) } },
@@ -144,7 +183,9 @@ export async function batchGet(env, paths, transaction) {
   return call(env, `${basePath(env)}:batchGet`, { method: 'POST', body: JSON.stringify({ documents, transaction }) });
 }
 export async function commitTx(env, writes, transaction) {
-  return call(env, `${basePath(env)}:commit`, { method: 'POST', body: JSON.stringify({ writes, transaction }) });
+  const r = await call(env, `${basePath(env)}:commit`, { method: 'POST', body: JSON.stringify({ writes, transaction }) });
+  for (const w of writes || []) rcClear(env, colOfName(w.update?.name || w.delete || w.transform?.document));
+  return r;
 }
 export const updateWrite = (env, col, docId, data) => ({ update: { name: docName(env, col, docId), fields: docFields(data) } });
 export const deleteWrite = (env, col, docId) => ({ delete: docName(env, col, docId) });

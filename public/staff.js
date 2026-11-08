@@ -25,7 +25,16 @@ export function requireStaff(allowed) {
   });
 }
 
-export const sapi = async (path, opts = {}) => api(path, { ...opts, token: await idToken() });
+// After the person's own change, their next reads ask for fresh data (the server otherwise shares
+// answers for a few seconds across phones), so they see what they just did at once.
+let freshUntil = 0;
+export const sapi = async (path, opts = {}) => {
+  const post = opts.method && opts.method !== 'GET';
+  const headers = !post && Date.now() < freshUntil ? { ...(opts.headers || {}), 'X-Fresh': '1' } : opts.headers;
+  const r = await api(path, { ...opts, ...(headers ? { headers } : {}), token: await idToken() });
+  if (post) freshUntil = Date.now() + 6000;
+  return r;
+};
 
 export function staffHeader(user, title) {
   const h = document.createElement('header');

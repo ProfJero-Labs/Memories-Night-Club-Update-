@@ -4,6 +4,7 @@
 // open belongs to it. Once it's closed, the next thing recorded starts a new night, named by that
 // day's date.
 //   config/night  { date, startedAt, after }: the night that's open now (see loadNight)
+import { envKey, onResetCaches } from '../lib/envkey.js';
 import { getDoc, setDoc } from '../lib/firestore.js';
 import { now, id, nightKey, accraDayKey } from '../lib/util.js';
 import { uidOf } from '../lib/auth.js';
@@ -15,9 +16,10 @@ export const isDate = s => /^\d{4}-\d{2}-\d{2}$/.test(String(s || ''));
 // can stay a plain call everywhere. Before the first stored night (or if it can't be read), the old
 // rule names it: a moment before 4AM belongs to the evening before.
 const NIGHT_TTL = 30e3;
-let current = null; // { date, at, env }
+let current = null; // { date, at, key }
+onResetCaches(() => { current = null; });
 export async function loadNight(env, { fresh = false } = {}) {
-  if (!fresh && current && current.env === env && Date.now() - current.at < NIGHT_TTL / 3) return current.date;
+  if (!fresh && current && current.key === envKey(env) && Date.now() - current.at < NIGHT_TTL / 3) return current.date;
   let date;
   try {
     const cfg = (await getDoc(env, 'config', 'night'))?.fields;
@@ -31,7 +33,7 @@ export async function loadNight(env, { fresh = false } = {}) {
       if (next > date) { await setDoc(env, 'config', 'night', { date: next, startedAt: now(), after: date }); date = next; }
     }
   } catch { date = current?.date || nightKey(new Date()); }
-  current = { date, at: Date.now(), env };
+  current = { date, at: Date.now(), key: envKey(env) };
   return date;
 }
 // The night a payment belongs to: the night that was open when it was paid (stored on it), or for
