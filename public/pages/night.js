@@ -12,7 +12,7 @@
 // was paid) and Top customers.
 // "Needs you" on Tonight: approvals, and stock differences the bar found when it opened (the
 // manager explains them). The manager adds expenses from Tonight; the director sees Money.
-import { $, $$, esc } from '../app.js';
+import { $, $$, esc, tableBillLines } from '../app.js';
 import { requireStaff, staffHeader, sapi } from '../staff.js';
 import { bottomNav, sheet, say, st, every, money, when, ask, backBar, bindBackBar, upcomingBookings, dayName } from '../lib/ops-ui.js';
 import { accraDayKey, loadFee, momoDirectOff } from '../app.js';
@@ -198,7 +198,7 @@ async function tableSheet(id) {
   sheet(`<h2>${esc(t.table === 'Walk-in' ? 'Walk-in' : `Table ${t.table}`)} · ${esc(t.label)}</h2>
     <p class="muted" style="margin:0">${esc(t.waiterName)}${t.customerName ? ` · ${esc(t.customerName)}` : ''} · opened ${when(t.createdAt)}</p>
     <div class="lines-list">${b.lines.map(l => `<div class="ln"><span>${l.qty} × ${esc(l.name)}</span><span>${money(l.amountPesewas)}</span></div>`).join('') || '<div class="ln"><span class="muted">No drinks yet</span></div>'}
-      ${b.discountPesewas ? `<div class="ln"><span>Discount</span><span>−${money(b.discountPesewas)}</span></div>` : ''}
+      ${b.discountPesewas ? `<div class="ln"><span>Discount</span><span>−${money(b.discountPesewas)}</span></div>` : ''}${tableBillLines(b)}
       <div class="ln total"><span>Total</span><span>${money(b.totalPesewas)}</span></div>
       ${t.payments.map(p => `<div class="ln"><span>${esc(p.label)}${p.momoRef ? ` <small>(${esc(p.momoRef)})</small>` : ''} · ${when(p.at)}</span><span>${money(p.amountPesewas)}</span></div>`).join('')}
       <div class="ln total"><span>Still to pay</span><span>${money(b.balancePesewas)}</span></div></div>

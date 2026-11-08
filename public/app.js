@@ -12,6 +12,9 @@ export const CREDIT = 'Platform designed & built by EvolveIT';
 import { esc } from './lib/shared.js';
 export { esc, normalizePhone, pes, formatAccra, accraDayKey, nightKey, BITS_ACK_TEXT, promoDiscount, promoText, pickPromo } from './lib/shared.js';
 export const money = p => `GHS ${(Number(p || 0) / 100).toLocaleString('en-GH', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
+// A bill linked to a table booking: the table's price is its minimum spend. Shows what's added when
+// the drinks are under it, and the table's payment (gate or online) taken off as credit.
+export const tableBillLines = (b, cls = 'ln') => `${b?.minimumTopUpPesewas ? `<div class="${cls}"><span>Unspent minimum spend <small>(table minimum ${money(b.minSpendPesewas)})</small></span><span>+${money(b.minimumTopUpPesewas)}</span></div>` : ''}${b?.prepaidPesewas ? `<div class="${cls}"><span>Table ${b.prepaidHow ? b.prepaidHow.toLowerCase() : 'paid'} <small>(counts towards the drinks)</small></span><span>−${money(b.prepaidPesewas)}</span></div>` : ''}`;
 
 // ── Dates: Ghana is UTC+0, so every date is formatted in UTC ──
 const D = (d, o) => new Date(d).toLocaleDateString('en-GB', { timeZone: 'UTC', ...o }).toUpperCase();

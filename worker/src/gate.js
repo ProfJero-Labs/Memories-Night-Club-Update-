@@ -230,7 +230,7 @@ export async function issueGateSale(env, P, { paidWith, reference, sessionId = n
   const how = paidWith === 'cash' ? 'cash' : 'MoMo';
   const text = P.kind === 'ticket'
     ? `MEMORIES\nWelcome to ${P.eventName}! Paid ${money(P.amountPesewas)} (${how}) at the gate.\nYour ticket: ${siteUrl(env, `/ticket.html?token=${res.ticketIds[0]}`)}\nSecurity may check your number.`
-    : `MEMORIES\nTable confirmed: ${P.packageName}, ${P.eventName}. Paid ${money(P.amountPesewas)} (${how}) at the gate. Code: ${tableCode(res.orderId)}.`;
+    : `MEMORIES\nTable confirmed: ${P.packageName}, ${P.eventName}. Paid ${money(P.amountPesewas)} (${how}) at the gate: it's your minimum spend and counts towards your drinks. Code: ${tableCode(res.orderId)}.`;
   await sendSms(env, P.buyerPhone, text).catch(() => false);
   return { status: 'issued', orderId: res.orderId, ticketIds: res.ticketIds, amountPesewas: P.amountPesewas, kind: P.kind, phoneHint: maskPhone(P.buyerPhone), people: P.kind === 'ticket' ? P.quantity * (P.admits || 1) : 0 };
 }

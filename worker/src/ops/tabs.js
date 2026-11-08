@@ -5,7 +5,8 @@
 //                customerPhone, waiterUid, waiterName, status open|closed|written_off, billToken
 //                (the customer's bill link), payments[{id, method cash|momo|digital, amountPesewas, at,
 //                byName, sessionId?}], discounts[{amountPesewas, reason, approvedByName}], pending
-//                (a Paystack payment in progress)
+//                (a Paystack payment in progress), booking (the table booking it's linked to, see
+//                bookingTerms: its minimum spend and what was already paid for it)
 //   rounds/{id}  one order sent to the bar: tabId, tabNumber, stationId, waiterUid, table, lines
 //                [{lineId, productId, name, unitPesewas, qty, returnedQty, brokenQty, compQty,
 //                returnPending}], status waiting → preparing → ready → handed → received →
@@ -18,7 +19,7 @@
 // order and the waiter confirms they got the drinks; from the bar it's served and closed at once.
 import { sendSplitSafe } from '../lib/split-safe.js';
 import { getDoc, setDoc, queryWhere, batchGet, commitTx, updateWrite, foundFields, withTransaction, listDocs, deleteDoc } from '../lib/firestore.js';
-import { now, id, clean, normalizePhone, maskPhone, paymentRef, validEmail } from '../lib/util.js';
+import { now, id, clean, normalizePhone, maskPhone, paymentRef, validEmail, nightKey, tableCode } from '../lib/util.js';
 import { requireRole, uidOf } from '../lib/auth.js';
 import { sendSms, siteUrl } from '../lib/notify.js';
 import { FORBIDDEN, bizDate, who, audit, closedError, ghs, int } from './common.js';
@@ -39,6 +40,21 @@ const MAX_LINES = 20, MAX_QTY = 30;
 
 // ── The bill ──
 const billable = l => Math.max(0, Number(l.qty) - Number(l.returnedQty || 0) - Number(l.brokenQty || 0) - Number(l.compQty || 0));
+// A table's price is its minimum spend. A bill linked to a table booking (tab.booking):
+//   - the drinks count towards the minimum; if they're under it, the rest is added as
+//     "unspent minimum spend" (the bill is never below the minimum);
+//   - what was already paid for the table (at the gate, or online) comes off the bill as credit, so
+//     the table price and the drinks are never both charged.
+// The credit isn't a payment on this bill: that money is counted with the gate or online sale.
+export function bookingTerms(o) {
+  const amount = Number(o.amountPesewas || 0);
+  const how = o.channel === 'gate' ? 'Paid at the gate' : amount > 0 ? 'Paid online' : '';
+  if (o.channel === 'gate') return { minSpendPesewas: amount, prepaidPesewas: amount, how };
+  // Paid online: the bottles bought with it were served from the booking, not this bill; what's
+  // left of the minimum is credit. (Bookings from before the minimum-spend rule: nothing left.)
+  if (amount > 0) { const left = o.minSpendPesewas !== undefined ? Math.max(0, amount - Number(o.drinksPesewas || 0)) : 0; return { minSpendPesewas: left, prepaidPesewas: left, how }; }
+  return { minSpendPesewas: Number(o.minSpendPesewas ?? o.packagePricePesewas ?? 0), prepaidPesewas: 0, how };
+}
 export function billOf(tab, rounds) {
   const live = rounds.filter(r => r.status !== 'cancelled');
   const map = new Map();
@@ -50,11 +66,16 @@ export function billOf(tab, rounds) {
   const lines = [...map.values()].map(l => ({ ...l, amountPesewas: l.qty * l.unitPesewas }));
   const gross = lines.reduce((n, l) => n + l.amountPesewas, 0);
   const discount = (tab.discounts || []).reduce((n, d) => n + Number(d.amountPesewas || 0), 0);
-  const total = Math.max(0, gross - discount);
+  const bk = tab.booking || null, min = Number(bk?.minSpendPesewas || 0);
+  const topUp = bk ? Math.max(0, min - gross) : 0;
+  const charge = Math.max(0, gross + topUp - discount);
+  const prepaid = Math.min(Number(bk?.prepaidPesewas || 0), charge);
+  const total = charge - prepaid;
   const paid = (tab.payments || []).reduce((n, p) => n + Number(p.amountPesewas || 0), 0);
   const balance = total - paid;
-  const status = tab.status === 'written_off' ? 'written_off' : !total && !paid ? 'empty' : balance <= 0 ? (balance < 0 ? 'overpaid' : 'paid') : paid > 0 ? 'part_paid' : 'unpaid';
-  return { lines, grossPesewas: gross, discountPesewas: discount, totalPesewas: total, paidPesewas: paid, balancePesewas: Math.max(0, balance), overpaidPesewas: Math.max(0, -balance), status };
+  const status = tab.status === 'written_off' ? 'written_off' : !gross && !topUp && !paid ? 'empty' : balance <= 0 ? (balance < 0 ? 'overpaid' : 'paid') : paid > 0 ? 'part_paid' : 'unpaid';
+  return { lines, grossPesewas: gross, discountPesewas: discount, minSpendPesewas: min, minimumTopUpPesewas: topUp, prepaidPesewas: prepaid, prepaidHow: bk?.how || '', bookingCode: bk?.code || '',
+    totalPesewas: total, paidPesewas: paid, balancePesewas: Math.max(0, balance), overpaidPesewas: Math.max(0, -balance), status };
 }
 export const PAY_LABEL = { empty: 'Nothing ordered yet', unpaid: 'Waiting for payment', part_paid: 'Part paid', paid: 'Paid', overpaid: 'Overpaid', written_off: 'Written off (unpaid)' };
 
@@ -80,6 +101,7 @@ const tabView = (t, rounds, { full = true } = {}) => {
   return {
     id: t.id, number: t.number, label: `Tab ${t.number}`, quick: !!t.quick, businessDate: t.businessDate, table: t.table || '', customerName: t.customerName || '', customerPhoneHint: t.customerPhone ? maskPhone(t.customerPhone) : '',
     waiterUid: t.waiterUid, waiterName: t.waiterName, stationId: t.stationId, stationName: t.stationName, status: t.status, payStatus: bill.status, payLabel: PAY_LABEL[bill.status],
+    booking: t.booking ? { code: t.booking.code, packageName: t.booking.packageName, minSpendPesewas: t.booking.minSpendPesewas, prepaidPesewas: t.booking.prepaidPesewas, how: t.booking.how } : null,
     bill, payments: (t.payments || []).map(p => ({ method: p.method, label: p.viaWallet ? METHOD_LABEL.wallet : METHOD_LABEL[p.method] || p.method, amountPesewas: p.amountPesewas, at: p.at, byName: p.byName || '', momoRef: p.momoRef || '' })),
     openRounds: rounds.filter(r => !['delivered', 'cancelled'].includes(r.status)).length, walletWait: t.walletWait || '',
     ...(full ? { rounds: rounds.sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt))).map(roundView), billUrl: null } : {}),
@@ -109,6 +131,8 @@ export async function openTab(env, b, user) {
   if (b?.broughtByPhone && !dealPhone) return { error: 'The phone of the person who brought the table doesn’t look right, or leave it blank.' };
   const broughtBy = dealName ? { name: dealName, phone: dealPhone, setBy: uidOf(user), setByName: user.name || '', at: now() } : null;
   const tabId = id();
+  const bookingId = String(b?.bookingId || '');
+  if (bookingId) { const bad = bookingError(await getDoc(env, 'orders', bookingId), date); if (bad) return bad; }
   const number = await withTransaction(env, async tx => {
     const key = `tabs_${date}`, got = foundFields(await batchGet(env, [`counters/${key}`], tx), `/counters/${key}`);
     const n = Number(got?.fields?.n || 0) + 1;
@@ -120,7 +144,41 @@ export async function openTab(env, b, user) {
     return n;
   });
   await audit(env, user, 'TAB_OPENED', { tabId, number, table: walkIn ? 'Walk-in' : table });
+  if (bookingId) { const l = await linkBooking(env, { tabId, orderId: bookingId }, user); if (l.error) return { id: tabId, number, label: `Tab ${number}`, bookingError: l.error }; }
   return { id: tabId, number, label: `Tab ${number}` };
+}
+
+// A table booking can be linked to one bill, on the night it was seated.
+function bookingError(o, date) {
+  if (!o || o.fields.kind !== 'table' || o.fields.status !== 'confirmed') return { error: 'That table booking wasn’t found.' };
+  if (!o.fields.arrivedAt || nightKey(o.fields.arrivedAt) !== date) return { error: 'That table hasn’t been seated tonight. The door or the gate seats it first.' };
+  return null;
+}
+// Links a table booking to a bill: the bill then counts the table's minimum spend and any credit
+// already paid for it. { tabId, orderId }
+export async function linkBooking(env, b, user) {
+  if (!requireRole(user, TAB_OPENERS)) return FORBIDDEN;
+  const tabId = String(b?.tabId || ''), orderId = String(b?.orderId || '');
+  const date = bizDate();
+  const res = await withTransaction(env, async tx => {
+    const got = await batchGet(env, [`tabs/${tabId}`, `orders/${orderId}`], tx);
+    const t = foundFields(got, `/tabs/${tabId}`), o = foundFields(got, `/orders/${orderId}`);
+    if (!t) return { error: 'Tab not found.', status: 404 };
+    if (!mineOrBoss(user, t.fields) && !requireRole(user, [...BOSS, 'barManager'])) return FORBIDDEN;
+    if (t.fields.status !== 'open' || t.fields.quick) return { error: 'Only an open table’s bill can be linked.' };
+    if (t.fields.booking) return t.fields.booking.orderId === orderId ? { already: true } : { error: `This bill is already linked to ${t.fields.booking.code}.` };
+    const bad = bookingError(o, date); if (bad) return bad;
+    if (o.fields.tabId && o.fields.tabId !== tabId) return { error: `That booking is already on Tab ${o.fields.tabNumber || ''}.`.replace(' .', '.') };
+    const booking = { orderId, code: tableCode(orderId), packageName: o.fields.packageName || 'Table', ...bookingTerms(o.fields), linkedByName: user.name || '', at: now() };
+    await commitTx(env, [
+      updateWrite(env, 'tabs', tabId, { ...t.fields, booking, broughtBy: t.fields.broughtBy || o.fields.broughtBy || null, customerName: t.fields.customerName || o.fields.buyerName || '', customerPhone: t.fields.customerPhone || o.fields.buyerPhone || '' }),
+      updateWrite(env, 'orders', orderId, { ...o.fields, tabId, tabNumber: t.fields.number }),
+    ], tx);
+    return { booking };
+  });
+  if (res.error || res.already) return res;
+  await audit(env, user, 'TAB_BOOKING_LINKED', { tabId, orderId, minSpendPesewas: res.booking.minSpendPesewas, prepaidPesewas: res.booking.prepaidPesewas });
+  return { linked: true, booking: res.booking };
 }
 
 export async function myTabs(env, user, { all = false } = {}) {
@@ -188,12 +246,12 @@ async function sendInvoiceLink(env, t, user) {
 //   { tabId? | table, stationId, customerPhone, customerName }, lines
 export async function takeOrder(env, b, user) {
   if (!requireRole(user, TAB_OPENERS)) return FORBIDDEN;
-  let tabId = String(b?.tabId || ''), opened = false;
+  let tabId = String(b?.tabId || ''), opened = false, linkError = '';
   if (!tabId) {
     const table = clean(b?.table, 30);
     const o = await openTab(env, { ...b, table, walkIn: !table }, user);
     if (o.error) return o;
-    tabId = o.id; opened = true;
+    tabId = o.id; opened = true; linkError = o.bookingError || '';
   } else if (b?.customerPhone) {
     const t = await getDoc(env, 'tabs', tabId), phone = normalizePhone(b.customerPhone);
     if (!phone) return { error: 'That phone number doesn’t look right. Use a Ghana number, or leave it blank.' };
@@ -210,7 +268,7 @@ export async function takeOrder(env, b, user) {
   if (b?.sendInvoice === true && t?.fields?.customerPhone) {
     invoice = await sendInvoiceLink(env, t, user);
   }
-  return { tabId, roundId: r.id, number: t?.fields?.number, totalPesewas: r.totalPesewas, invoice, billUrl: t?.fields?.billToken ? siteUrl(env, `/bill.html?t=${t.fields.billToken}`) : '' };
+  return { tabId, roundId: r.id, number: t?.fields?.number, totalPesewas: r.totalPesewas, invoice, ...(linkError ? { bookingError: linkError } : {}), billUrl: t?.fields?.billToken ? siteUrl(env, `/bill.html?t=${t.fields.billToken}`) : '' };
 }
 
 // Waiter steps on a round: cancel (before the bar starts), got them, delivered, broken, send back.
@@ -702,7 +760,9 @@ export function invoiceText(env, tab, bill) {
   const how = (tab.payments || []).map(p => `${p.method === 'cash' ? 'Cash' : 'MoMo'} ${ghs(p.amountPesewas)}${p.method === 'digital' ? ' (confirmed by Paystack)' : p.byName ? ` (taken by ${p.byNick || String(p.byName).split(/\s+/)[0]})` : ''}`);
   const due = bill.balancePesewas > 0;
   return [due ? 'MEMORIES INVOICE' : 'MEMORIES RECEIPT', `Tab ${tab.number} · ${where}`, ...items,
+    ...(bill.minimumTopUpPesewas ? [`Unspent minimum spend +${ghs(bill.minimumTopUpPesewas)}`] : []),
     ...(bill.discountPesewas ? [`Discount -${ghs(bill.discountPesewas)}`] : []),
+    ...(bill.prepaidPesewas ? [`Table ${bill.prepaidHow ? bill.prepaidHow.toLowerCase() : 'paid'} -${ghs(bill.prepaidPesewas)}`] : []),
     `Total ${ghs(bill.totalPesewas)}`, ...(how.length ? [`Paid: ${how.join(', ')}`] : []),
     due ? `TO PAY ${ghs(bill.balancePesewas)}` : 'Paid in full. Thank you!',
     ...(due ? [`Pay with MoMo or card: ${siteUrl(env, `/bill.html?t=${tab.billToken}`)}`, 'Paystack may text you a code first: check your messages.'] : ['Not right? Tell your waiter or the manager.'])].join('\n');
@@ -740,7 +800,7 @@ export async function publicBill(env, token) {
   // MoMo to the wallet in progress (a big bill): what to send, until a manager confirms it.
   const ww = t.fields.walletWait ? (await getDoc(env, 'wallet_payments', t.fields.walletWait))?.fields : null;
   const walletWait = ww && ww.status === 'waiting' ? { duePesewas: ww.duePesewas, billPesewas: ww.billPesewas, chargePesewas: ww.chargePesewas, code: ww.code, number: ww.wallet.number, name: ww.wallet.name, claimedTxId: ww.claimedTxId || '' } : null;
-  return { codeNeeded, walletWait, open: t.fields.status === 'open', menuUrl, bill: { label: `Tab ${t.fields.number}`, table: t.fields.table, waiterFirstName: t.fields.waiterNickname || String(t.fields.waiterName || '').split(/\s+/)[0], date: t.fields.businessDate, lines: bill.lines, grossPesewas: bill.grossPesewas, discountPesewas: bill.discountPesewas, totalPesewas: bill.totalPesewas, paidPesewas: bill.paidPesewas, balancePesewas: bill.balancePesewas, status: bill.status, statusLabel: PAY_LABEL[bill.status],
+  return { codeNeeded, walletWait, open: t.fields.status === 'open', menuUrl, bill: { label: `Tab ${t.fields.number}`, table: t.fields.table, waiterFirstName: t.fields.waiterNickname || String(t.fields.waiterName || '').split(/\s+/)[0], date: t.fields.businessDate, lines: bill.lines, grossPesewas: bill.grossPesewas, discountPesewas: bill.discountPesewas, minimumTopUpPesewas: bill.minimumTopUpPesewas, minSpendPesewas: bill.minSpendPesewas, prepaidPesewas: bill.prepaidPesewas, prepaidHow: bill.prepaidHow, totalPesewas: bill.totalPesewas, paidPesewas: bill.paidPesewas, balancePesewas: bill.balancePesewas, status: bill.status, statusLabel: PAY_LABEL[bill.status],
     payments: (t.fields.payments || []).map(p => ({ method: p.method === 'cash' ? 'Cash' : 'MoMo', amountPesewas: p.amountPesewas, at: p.at })), paying: !!(t.fields.pending && Date.now() - new Date(t.fields.pending.at).getTime() < 30 * 60e3) },
     // A tip with the payment: for their waiter by default, or anyone on the team.
     tip: { people: (await guestTipPeople(env)).people, defaultId: t.fields.waiterUid || '' } };

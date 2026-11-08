@@ -2,7 +2,7 @@
 // what's left, and one big Pay now (MoMo or card on Paystack). The link can only show and pay this
 // bill; prices come from the Worker. Back from Paystack (?reference=), the payment is confirmed on
 // the server before it shows as paid.
-import { api, esc, money, params, $, loadFee, feeLabel, feeOn as feeFor, paystackOk, paystackLimit, bigFlat, walletOk } from '../app.js';
+import { api, esc, money, tableBillLines, params, $, loadFee, feeLabel, feeOn as feeFor, paystackOk, paystackLimit, bigFlat, walletOk } from '../app.js';
 
 // A button that copies a value (the number or the amount) so it can be pasted into MoMo.
 const copyBtn = (label, value) => `<button type="button" class="mid" data-copy="${esc(value)}">${esc(label)}</button>`;
@@ -43,7 +43,7 @@ async function load(note = '') {
       <div class="field"><label for="otp">Code from Paystack</label><input id="otp" inputmode="numeric" autocomplete="one-time-code" maxlength="8" placeholder="e.g. 123456" style="font-size:26px;letter-spacing:4px"></div>
       <button class="big" id="otpGo" type="button">Send code</button></div>` : ''}
     <div class="rcpt">${b.lines.map(l => `<div class="ln"><span>${l.qty} × ${esc(l.name)}<small>${money(l.unitPesewas)} each</small></span><span>${money(l.amountPesewas)}</span></div>`).join('') || '<div class="ln"><span class="muted">Nothing on this bill yet.</span></div>'}
-      ${b.discountPesewas ? `<div class="ln sub"><span>Discount</span><span>−${money(b.discountPesewas)}</span></div>` : ''}
+      ${b.discountPesewas ? `<div class="ln sub"><span>Discount</span><span>−${money(b.discountPesewas)}</span></div>` : ''}${tableBillLines(b, 'ln sub')}
       <div class="ln total"><span>Total</span><span>${money(b.totalPesewas)}</span></div>
       ${b.payments.map(p => `<div class="ln sub"><span>Paid · ${esc(p.method)}<small>${esc(when(p.at))}</small></span><span>−${money(p.amountPesewas)}</span></div>`).join('')}
       <div class="ln due"><span>${paid ? 'Paid in full' : 'To pay'}</span><span>${money(b.balancePesewas + (paid ? 0 : chargeNow))}</span></div></div>

@@ -27,7 +27,7 @@ async function bookingRows(env, e) {
       minSpendPesewas: Number(o.fields.minSpendPesewas ?? o.fields.packagePricePesewas ?? 0), drinksPesewas: Number(o.fields.drinksPesewas || 0), drinkRequest: o.fields.drinkRequest || '',
       bookedAt: o.fields.createdAt || null, channel: o.fields.channel || 'online',
       reservation: !!o.fields.reservation, arriveAt: o.fields.arriveAt || null, holdUntil: o.fields.holdUntil || null, released: !!o.fields.released, holdLine: tableHoldLine(o.fields),
-      arrived: !!o.fields.arrivedAt, arrivedAt: o.fields.arrivedAt || null, guestsArrived: Number(o.fields.guestsArrived || 0), tableNumber: o.fields.tableNumber || '', bottlesServed: o.fields.bottlesServed === true });
+      arrived: !!o.fields.arrivedAt, arrivedAt: o.fields.arrivedAt || null, guestsArrived: Number(o.fields.guestsArrived || 0), tableNumber: o.fields.tableNumber || '', tabNumber: o.fields.tabNumber || null, bottlesServed: o.fields.bottlesServed === true });
   }
   return out;
 }

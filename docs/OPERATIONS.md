@@ -167,6 +167,15 @@ customer can pick drinks from the bar menu (they count towards the minimum, with
 type a drink they want that isn't on the menu. Their bill at the club is the higher of the two: the
 minimum or the drinks. Staff see the minimum, the drinks picked, what's left to spend and the request
 on **Bookings** / **Tables** / **Find an order**, and in the booking text.
+**At the club, link the table's bill to its booking.** When a waiter opens a table, the booked
+tables seated tonight show as buttons: tapping one links the bill to that booking (or later: the
+tab's **More → It's a booked table**). Then:
+- **Paid at the gate** (or online): that payment is credit on the bill. Drinks up to it are already
+  paid; only what goes over it is owed. The table price and the drinks are never both charged.
+- **Reserved, not paid**: the bill is at least the minimum spend. If the drinks come to less, the
+  rest shows as *Unspent minimum spend*.
+The night's money counts the table's payment once (under tables) and only the rest of the bill under
+drinks. A table's commission is its payment plus what its bill paid, as one deal.
 One table per phone number per night. They pay for the drinks at the club, like any
 table, so a reserved table's commission comes from what its bill actually pays (see Commissions).
 Tables already **paid online** before this are honoured as before. (Paying online for a table can
