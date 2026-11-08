@@ -174,12 +174,58 @@ export class MockFirestore {
       return jsonResponse({ status: false, message: 'not mocked' }, 400);
     }
 
+    if (u.hostname.endsWith('.supabase.test')) return this.handleSupabase(u, body);
+
     if (u.hostname === 'firestore.googleapis.com') {
       return this.handleFirestore(u, method, body);
     }
 
     throw new Error(`Unhandled fetch in mock: ${method} ${url}`);
   };
+
+  // The Supabase side: /rest/v1/rpc/<function>, answered from the same in-memory documents with the
+  // same rules as the SQL functions in supabase/migrations/001_docs_and_functions.sql (versions,
+  // "only if it isn't there" / "only if it is" preconditions, all-or-nothing saves, ISO text dates).
+  handleSupabase(u, body) {
+    const fn = u.pathname.replace(/^\/rest\/v1\/rpc\//, '');
+    const norm = f => JSON.parse(JSON.stringify(f ?? {}));
+    const ver = k => (this.docs.has(k) ? this.versions.get(k) : 0);
+    const row = (col, id) => ({ id, data: norm(this.docs.get(this.key(col, id))), version: this.versions.get(this.key(col, id)) });
+    const contains = (have, want) => (want !== null && typeof want === 'object' && !Array.isArray(want)
+      ? have !== null && typeof have === 'object' && Object.entries(want).every(([k, v]) => contains(have[k], v))
+      : JSON.stringify(have) === JSON.stringify(want));
+    const err = (status, code, message) => jsonResponse({ code, message, details: null, hint: null }, status);
+
+    if (fn === 'm_get') return jsonResponse(this.docs.has(this.key(body.p_col, body.p_id)) ? row(body.p_col, body.p_id) : null);
+    if (fn === 'm_batch_get') return jsonResponse((body.p_keys || []).map(({ col, id }) => (this.docs.has(this.key(col, id)) ? { col, id, found: true, ...row(col, id) } : { col, id, found: false })));
+    if (fn === 'm_query') {
+      const filter = body.p_filter || {};
+      const rows = this.list(body.p_col).filter(({ id, fields }) => contains(norm(fields), filter) && (body.p_after == null || id > body.p_after))
+        .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)).slice(0, Math.max(0, body.p_limit ?? 1000));
+      return jsonResponse(rows.map(r => row(body.p_col, r.id)));
+    }
+    if (fn === 'm_recent') {
+      const f = body.p_field, text = x => { const v = norm(x)[f]; return v === undefined || v === null ? null : String(v); };
+      const rows = this.list(body.p_col).filter(({ fields }) => text(fields) !== null && text(fields) >= body.p_since)
+        .sort((a, b) => (text(a.fields) < text(b.fields) ? 1 : text(a.fields) > text(b.fields) ? -1 : a.id < b.id ? -1 : 1)).slice(0, Math.max(0, body.p_limit ?? 50));
+      return jsonResponse(rows.map(r => row(body.p_col, r.id)));
+    }
+    if (fn === 'm_commit') {
+      if (this.onCommitAttempt) this.onCommitAttempt();
+      for (const r of body.p_reads || []) if (ver(this.key(r.col, r.id)) !== Number(r.version)) return err(409, 'PT409', 'ABORTED: a document changed since it was read');
+      for (const w of body.p_writes || []) {
+        const have = this.docs.has(this.key(w.col, w.id));
+        if (w.op !== 'delete' && w.exists === false && have) return err(409, 'PT409', `ALREADY_EXISTS: document already exists: ${w.col}/${w.id}`);
+        if (w.op !== 'delete' && w.exists === true && !have) return err(404, 'PT404', `NOT_FOUND: ${w.col}/${w.id}`);
+      }
+      for (const w of body.p_writes || []) {
+        if (w.op === 'delete') { const k = this.key(w.col, w.id); this.docs.delete(k); this.versions.delete(k); continue; }
+        this.seed(w.col, w.id, norm(w.data));
+      }
+      return jsonResponse({ ok: true, writes: (body.p_writes || []).length });
+    }
+    return err(404, 'PGRST202', `Could not find the function ${fn}`);
+  }
 
   handleFirestore(u, method, body) {
     const path = u.pathname.replace(/^\/v1\/projects\/[^/]+\/databases\/\(default\)\/documents/, '');
@@ -335,6 +381,8 @@ export function createMockEnv() {
     BREVO_API_KEY: 'mock-brevo-key',
     BREVO_SENDER_EMAIL: 'noreply@memoriesnightclub.gh',
     PUBLIC_SITE_URL: 'https://memoriesnightclub.gh',
+    // `DB_BACKEND=supabase npm test` runs the whole suite on the Supabase data layer.
+    ...(process.env.DB_BACKEND === 'supabase' ? { DB_BACKEND: 'supabase', SUPABASE_URL: 'https://mock.supabase.test', SUPABASE_SERVICE_ROLE_KEY: 'mock-service-key' } : {}),
   };
   return { store, env };
 }

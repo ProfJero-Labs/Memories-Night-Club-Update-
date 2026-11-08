@@ -98,7 +98,7 @@ begin
     elsif w ? 'exists' and (w->>'exists')::boolean = false then
       insert into docs (col, id, data) values (w->>'col', w->>'id', coalesce(w->'data', '{}'::jsonb)) on conflict do nothing;
       get diagnostics n = row_count;
-      if n = 0 then raise sqlstate 'PT409' using message = 'ALREADY_EXISTS: ' || (w->>'col') || '/' || (w->>'id'); end if;
+      if n = 0 then raise sqlstate 'PT409' using message = 'ALREADY_EXISTS: document already exists: ' || (w->>'col') || '/' || (w->>'id'); end if;
     elsif w ? 'exists' and (w->>'exists')::boolean = true then
       update docs set data = coalesce(w->'data', '{}'::jsonb), version = version + 1, updated_at = now() where col = w->>'col' and id = w->>'id';
       get diagnostics n = row_count;

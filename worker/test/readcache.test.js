@@ -17,7 +17,12 @@ function setup(extraEnv = {}) {
   const people = { w1: 'waitStaff', b1: 'barStaff', m1: 'manager' };
   for (const [uid, role] of Object.entries(people)) store.seed('users', uid, { name: uid, role, phone: '0240000000' });
   const orig = globalThis.fetch; let reads = [];
-  globalThis.fetch = async (u, o) => { const url = String(u); if (url.includes('firestore.googleapis.com') && !url.includes(':commit') && !url.includes(':beginTransaction')) reads.push(url.includes(':runQuery') ? `query:${JSON.parse(o.body).structuredQuery.from[0].collectionId}` : `get:${url.split('/documents/')[1]?.split('/')[0] || url.split('/').pop()}`); return orig(u, o); };
+  globalThis.fetch = async (u, o) => {
+    const url = String(u);
+    if (url.includes('firestore.googleapis.com') && !url.includes(':commit') && !url.includes(':beginTransaction')) reads.push(url.includes(':runQuery') ? `query:${JSON.parse(o.body).structuredQuery.from[0].collectionId}` : `get:${url.split('/documents/')[1]?.split('/')[0] || url.split('/').pop()}`);
+    else if (url.includes('.supabase.test/rest/v1/rpc/')) { const fn = url.split('/rpc/')[1], b = JSON.parse(o.body); if (fn === 'm_get') reads.push(`get:${b.p_col}`); else if (fn === 'm_query' || fn === 'm_recent') reads.push(`query:${b.p_col}`); }
+    return orig(u, o);
+  };
   const call = async (method, path, who, { body, headers = {} } = {}) => {
     const h = { 'Content-Type': 'application/json', 'CF-Connecting-IP': `10.99.${Math.floor(++ip / 250)}.${ip % 250}`, ...headers, Authorization: `Bearer ${await idToken({ role: people[who] }, { uid: who })}` };
     const r = await worker.fetch(new Request(`https://api.test${path}`, { method, headers: h, body: body ? JSON.stringify(body) : undefined }), env);

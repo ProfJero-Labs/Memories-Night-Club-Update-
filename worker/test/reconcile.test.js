@@ -145,7 +145,7 @@ test('health: shallow without the key, deep with it, 503 when a dependency is do
   assert.equal((await r.json()).checks.paystack, false);
 });
 
-test('a missing or broken database key says so plainly (it stops every database request)', async () => {
+test('a missing or broken database key says so plainly (it stops every database request)', { skip: process.env.DB_BACKEND === 'supabase' && 'the Firebase key: Supabase has its own check in supabase.test.js' }, async () => {
   const { getDoc } = await import('../src/lib/firestore.js');
   const { env } = setup();
   await assert.rejects(getDoc({ ...env, FIREBASE_SERVICE_ACCOUNT_JSON: '' }, 'settings', 'site'), /FIREBASE_SERVICE_ACCOUNT_JSON is not set/);
