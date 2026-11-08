@@ -123,7 +123,7 @@ test('health: shallow without the key, deep with it, 503 when a dependency is do
   assert.equal(r.status, 200);
   const shallow = await r.json();
   assert.equal(shallow.ok, true); assert.equal(shallow.checks, undefined, 'no deep checks without the key');
-  assert.deepEqual(Object.keys(shallow.configured).sort(), ['email', 'firebase', 'firebaseProject', 'paystack', 'sms']);
+  assert.deepEqual(Object.keys(shallow.configured).sort(), process.env.DB_BACKEND === 'supabase' ? ['email', 'paystack', 'sessionSecret', 'sms', 'supabase'] : ['email', 'firebase', 'firebaseProject', 'paystack', 'sms']);
   assert.ok(Object.values(shallow.configured).every(v => typeof v === 'boolean'));
   const text = JSON.stringify(shallow);
   for (const v of [env.FIREBASE_SERVICE_ACCOUNT_JSON, env.PAYSTACK_SECRET_KEY].filter(Boolean)) assert.ok(!text.includes(v), 'never a secret value');
@@ -132,12 +132,13 @@ test('health: shallow without the key, deep with it, 503 when a dependency is do
   assert.equal((await r.json()).checks, undefined, 'a wrong key gets no deep checks');
 
   // A missing database key shows up from a browser, and makes ok false.
-  const noKey = await (await health(new Request('https://x.test/api/health'), { ...env, FIREBASE_SERVICE_ACCOUNT_JSON: '' })).json();
-  assert.deepEqual([noKey.ok, noKey.configured.firebase], [false, false]);
+  const noKey = await (await health(new Request('https://x.test/api/health'), { ...env, FIREBASE_SERVICE_ACCOUNT_JSON: '', SUPABASE_SERVICE_ROLE_KEY: '' })).json();
+  const dbKey = process.env.DB_BACKEND === 'supabase' ? 'supabase' : 'firebase';
+  assert.deepEqual([noKey.ok, noKey.configured[dbKey]], [false, false]);
 
   r = await get('secret-health-key');
   assert.equal(r.status, 200);
-  assert.deepEqual((await r.json()).checks, { firestore: true, paystack: true });
+  assert.deepEqual((await r.json()).checks, { [process.env.DB_BACKEND === 'supabase' ? 'supabase' : 'firestore']: true, paystack: true });
 
   store.paystackListDown = true;
   r = await get('secret-health-key');

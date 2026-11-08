@@ -1380,3 +1380,27 @@ test('invoice for a bill above GHS 2,000: three steps, the number to copy, and t
   assert.equal(store.get('wallet_payments', 'invwid').fields.status, 'waiting', 'an ID alone confirms nothing');
   assert.deepEqual(c.errors, []);
 });
+
+test('the real browser sign-in file keeps our own session, asks for a fresh one when it is a day old, and signs out', async () => {
+  const page = await phone(390);
+  await page.goto(`${base}/login.html`, { waitUntil: 'domcontentloaded' });
+  const out = await page.evaluate(async () => {
+    localStorage.removeItem('mem-staff-session');
+    const mod = await import('/firebase-real.js');
+    const b64 = o => btoa(JSON.stringify(o)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+    const jwt = p => `${b64({ alg: 'HS256' })}.${b64(p)}.sig`;
+    const now = Math.floor(Date.now() / 1000);
+    const fresh = jwt({ uid: 'u1', role: 'waitStaff', iat: now, exp: now + 3600, iss: 'memories-staff' });
+    const user = await mod.signInWithToken(fresh, true);
+    const same = (await mod.idToken()) === fresh;
+    const seen = []; mod.onUser(u => seen.push(u && u.claims.role)); await new Promise(r => setTimeout(r, 50));
+    // A day old: the page asks the Worker for a fresh one; a refused token means the session is over.
+    localStorage.setItem('mem-staff-session', JSON.stringify({ token: jwt({ uid: 'u1', role: 'waitStaff', iat: now - 2 * 86400, exp: now + 86400 }) }));
+    const afterStale = await mod.idToken();
+    const kept = localStorage.getItem('mem-staff-session');
+    await mod.signInWithToken(fresh, true); await mod.signOutUser();
+    return { role: user.claims.role, uid: user.uid, same, seen, afterStale, kept, afterSignOut: localStorage.getItem('mem-staff-session'), seenLast: seen.at(-1) };
+  });
+  assert.deepEqual([out.role, out.uid, out.same, out.seen[0], out.afterStale, out.kept, out.afterSignOut, out.seenLast], ['waitStaff', 'u1', true, 'waitStaff', null, null, null, null]);
+  assert.deepEqual(page.errors, []);
+});

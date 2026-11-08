@@ -15,6 +15,8 @@
 //   name, phone, email?, role, admin, removed, pinHash, pinSalt, pinSetAt, pinStarter (still the
 //   PIN that was texted), pinFails, lockedUntil, pinLocked, tempPinHash, tempPinSalt,
 //   tempPinExpires, pinSentAt, lastSignInAt, addedBy, updatedAt
+import { hashPin, newSalt } from './lib/pin.js';
+import { ownAuth, signSession } from './lib/session.js';
 import { getDoc, setDoc, queryWhere, listDocs, signServiceJwt, googleAccessToken } from './lib/firestore.js';
 import { now, id, clean, normalizePhone, maskPhone, firstName } from './lib/util.js';
 import { requireRole, STAFF_ROLES, STAFF_ADMIN, HR_ROLES, canAssign, pinLength, uidOf, forgetStaffRecord } from './lib/auth.js';
@@ -32,13 +34,7 @@ const SIGN_IN_FAIL = 'That phone number and PIN don’t match.';
 const audit = (env, user, action, data) => setDoc(env, 'audit_logs', id(), { action, actorUid: uidOf(user) || null, ...data, timestamp: now() });
 
 // ── PINs ──
-async function hashPin(pin, saltHex) {
-  const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(pin), 'PBKDF2', false, ['deriveBits']);
-  const salt = Uint8Array.from(saltHex.match(/../g), h => parseInt(h, 16));
-  const bits = await crypto.subtle.deriveBits({ name: 'PBKDF2', salt, iterations: 100000, hash: 'SHA-256' }, key, 256);
-  return [...new Uint8Array(bits)].map(b => b.toString(16).padStart(2, '0')).join('');
-}
-const newSalt = () => [...crypto.getRandomValues(new Uint8Array(16))].map(b => b.toString(16).padStart(2, '0')).join('');
+// (hashPin and newSalt live in lib/pin.js, shared with the set-pin script.)
 // A PIN people can remember, but not one anyone would guess first.
 export function pinProblem(pin, role) {
   const n = pinLength(role), p = String(pin || '');
@@ -70,6 +66,12 @@ async function customToken(env, uid, role) {
 }
 // Sessions already open on other phones stop when a role changes or someone is removed.
 async function revokeSessions(env, uid) {
+  if (ownAuth(env)) { // our own tokens: anything made before now stops working
+    const rec = await getDoc(env, 'users', uid);
+    if (rec) await setDoc(env, 'users', uid, { ...rec.fields, sessionsFrom: now() });
+    forgetStaffRecord(env, uid);
+    return;
+  }
   try {
     const token = await googleAccessToken(env, 'https://www.googleapis.com/auth/identitytoolkit');
     await fetch(`https://identitytoolkit.googleapis.com/v1/projects/${env.FIREBASE_PROJECT_ID}/accounts:update`, { method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ localId: uid, validSince: String(Math.floor(Date.now() / 1000)) }) });
@@ -104,7 +106,7 @@ export async function signInWithPin(env, { phone, pin }, ip) {
   const pinNow = usedTemp ? { pinHash: f.tempPinHash, pinSalt: f.tempPinSalt, pinSetAt: now(), pinStarter: true, pinLocked: false, tempPinHash: '', tempPinSalt: '', tempPinExpires: '' } : {};
   await setDoc(env, 'users', rec.id, { ...f, ...pinNow, pinFails: 0, lockedUntil: '', lastSignInAt: now() });
   if (usedTemp) await audit(env, { uid: rec.id }, 'STAFF_PIN_SET', { targetUid: rec.id, how: 'texted' });
-  return { token: await customToken(env, rec.id, role), role, name: f.name || '' };
+  return { token: ownAuth(env) ? await signSession(env, rec.id, role) : await customToken(env, rec.id, role), role, name: f.name || '', ...(ownAuth(env) ? { own: true } : {}) };
 }
 
 // "First time, or forgot your PIN?": a new PIN by text to the phone on file, valid 30 minutes. Until

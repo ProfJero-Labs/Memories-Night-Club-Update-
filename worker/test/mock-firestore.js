@@ -21,7 +21,10 @@ async function signingKey() {
   return signing;
 }
 async function testJwks() { return { keys: [(await signingKey()).jwk] }; }
+export const TEST_JWT_SECRET = 'test-app-jwt-secret-0123456789abcdef';
 export async function idToken(claims = {}, { projectId = 'test-project', uid = 'user-' + Math.random().toString(36).slice(2) } = {}) {
+  // Running on Supabase: the Worker's own signed tokens (lib/session.js), not Firebase's.
+  if (process.env.DB_BACKEND === 'supabase') return new SignJWT({ ...claims, uid }).setProtectedHeader({ alg: 'HS256' }).setIssuer('memories-staff').setSubject(uid).setIssuedAt().setExpirationTime('1h').sign(new TextEncoder().encode(projectId === 'test-project' ? TEST_JWT_SECRET : 'a-token-signed-somewhere-else-0123456789'));
   const { privateKey } = await signingKey();
   return new SignJWT({ ...claims, user_id: uid })
     .setProtectedHeader({ alg: 'RS256', kid: 'test-kid' })
@@ -382,7 +385,7 @@ export function createMockEnv() {
     BREVO_SENDER_EMAIL: 'noreply@memoriesnightclub.gh',
     PUBLIC_SITE_URL: 'https://memoriesnightclub.gh',
     // `DB_BACKEND=supabase npm test` runs the whole suite on the Supabase data layer.
-    ...(process.env.DB_BACKEND === 'supabase' ? { DB_BACKEND: 'supabase', SUPABASE_URL: 'https://mock.supabase.test', SUPABASE_SERVICE_ROLE_KEY: 'mock-service-key' } : {}),
+    ...(process.env.DB_BACKEND === 'supabase' ? { DB_BACKEND: 'supabase', SUPABASE_URL: 'https://mock.supabase.test', SUPABASE_SERVICE_ROLE_KEY: 'mock-service-key', APP_JWT_SECRET: TEST_JWT_SECRET } : {}),
   };
   return { store, env };
 }

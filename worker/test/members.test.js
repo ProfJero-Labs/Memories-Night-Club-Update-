@@ -57,7 +57,7 @@ test('activation: the manager’s one-time QR/link puts the pass on the member�
   assert.equal((await call(env, 'POST', '/api/members/activate', { body: { code: 'ABCDEFGHJK' } })).status, 400);
 });
 
-test('every staff account is a member: inviting staff creates the membership; their dashboard opens their pass; removing access suspends it', async () => {
+test('every staff account is a member: inviting staff creates the membership; their dashboard opens their pass; removing access suspends it', { skip: process.env.DB_BACKEND === 'supabase' && 'the email invite is Firebase-only: on Supabase staff are added by phone (staffauth.test.js)' }, async () => {
   const { store, env } = createMockEnv();
   const boss = { role: 'superAdmin', admin: true };
   const inv = await call(env, 'POST', '/api/admin/staff/invite', { claims: boss, body: { email: 'ama@club.test', name: 'Ama Owusu', phone: '0245550002', role: 'doorStaff' } });
@@ -107,7 +107,7 @@ test('at the gate by phone: the code appears in the member’s app (never by SMS
   assert.equal((await call(env, 'POST', '/api/members/pass-status', { body: { qr: await qr(pass) } })).data.gate, null, 'used up');
 });
 
-test('a staff member (e.g. an organiser) sees their gate code on their own dashboard', async () => {
+test('a staff member (e.g. an organiser) sees their gate code on their own dashboard', { skip: process.env.DB_BACKEND === 'supabase' && 'the email invite is Firebase-only: on Supabase staff are added by phone (staffauth.test.js)' }, async () => {
   const { store, env } = createMockEnv();
   const boss = { role: 'superAdmin', admin: true };
   const inv = await call(env, 'POST', '/api/admin/staff/invite', { claims: boss, body: { email: 'org@club.test', name: 'Yaw Org', phone: '0245550003', role: 'organiser' } });
@@ -162,7 +162,7 @@ test('a manager can delete a member: the pass stops, the door says not a member,
   assert.equal((await call(env, 'POST', '/api/admin/members/delete', { claims: MANAGER, body: { id: mid } })).status, 404);
 });
 
-test('new roles: a director runs People like a manager; a waitress works the bar screen; both are members automatically', async () => {
+test('new roles: a director runs People like a manager; a waitress works the bar screen; both are members automatically', { skip: process.env.DB_BACKEND === 'supabase' && 'the email invite is Firebase-only: on Supabase staff are added by phone (staffauth.test.js)' }, async () => {
   const { store, env } = createMockEnv();
   const boss = { role: 'superAdmin', admin: true };
   for (const [email, role, dept] of [['dir@club.test', 'director', 'Directors'], ['wait@club.test', 'waitStaff', 'Floor (waitstaff)']]) {

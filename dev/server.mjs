@@ -95,6 +95,8 @@ http.createServer(async (req, res) => {
     if (u.pathname === '/dev/custom-token' && req.method === 'POST') {
       const { token } = JSON.parse((await readBody(req)).toString() || '{}');
       let p; try { p = JSON.parse(Buffer.from(String(token).split('.')[1], 'base64url').toString()); } catch { return send(res, 400, JSON.stringify({ code: 'auth/invalid-custom-token' }), 'application/json'); }
+      // Our own session token (the Worker runs on Supabase): already usable as it is.
+      if (p.iss === 'memories-staff') return send(res, 200, JSON.stringify({ uid: p.uid, email: null, claims: { role: p.role, admin: p.admin === true }, token }), 'application/json');
       const claims = p.claims || {};
       return send(res, 200, JSON.stringify({ uid: p.uid, email: null, claims, token: await idToken(claims, { projectId: env.FIREBASE_PROJECT_ID, uid: p.uid }) }), 'application/json');
     }
@@ -114,6 +116,7 @@ http.createServer(async (req, res) => {
     if (oldQr) { res.writeHead(301, { Location: `/counter.html?s=${oldQr[1]}` }); return res.end(); }
     if (p === '/config.js') return send(res, 200, `window.MEMORIES_CONFIG={apiBase:'',firebase:{projectId:'${env.FIREBASE_PROJECT_ID}'}};`, 'text/javascript');
     if (p === '/firebase.js') return send(res, 200, await readFile(path.join(root, 'firebase-dev.js')), 'text/javascript');
+    if (p === '/firebase-real.js') return send(res, 200, await readFile(path.join(root, '..', 'public', 'firebase.js')), 'text/javascript'); // for the test of the real file
     const file = path.join(pub, path.normalize(p).replace(/^(\.\.[/\\])+/, ''));
     if (!file.startsWith(pub)) return send(res, 403, 'no');
     const ext = path.extname(file) || '.html';

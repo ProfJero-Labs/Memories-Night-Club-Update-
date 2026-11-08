@@ -82,7 +82,7 @@ for (const [method, path, allowed, body] of MATRIX) {
   });
 }
 
-test('set-role: a manager cannot grant roles; a superAdmin cannot demote themselves; every change is audited', async () => {
+test('set-role: a manager cannot grant roles; a superAdmin cannot demote themselves; every change is audited', { skip: process.env.DB_BACKEND === 'supabase' && 'the email invite is Firebase-only: on Supabase staff are added by phone (staffauth.test.js)' }, async () => {
   const { store, env } = createMockEnv();
   store.authUsers = [{ email: 'boss@x.com', localId: 'boss' }, { email: 'door@x.com', localId: 'door1' }];
   const post = async (token, body) => { const r = await worker.fetch(new Request('https://api.test/api/admin/set-role', { method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: JSON.stringify(body) }), env); return { status: r.status, data: await r.json() }; };

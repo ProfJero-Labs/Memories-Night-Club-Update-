@@ -1,5 +1,7 @@
 // /api/ops/* for signed-in staff (the role checks are inside each function, in the Worker), and
 // the customer's bill link /api/guest/bill/*. Returns a handler result, or undefined if no route.
+import { ownAuth, signSession } from '../lib/session.js';
+import { uidOf } from '../lib/auth.js';
 import * as stock from './stock.js';
 import * as tabs from './tabs.js';
 import * as cash from './cash.js';
@@ -109,6 +111,7 @@ export async function opsRoute(m, p, u, b, env, user) {
     case '/api/ops/stock/set-level': return stock.setStockLevel(env, b, user);
     case '/api/ops/quick-sale': return tabs.quickSale(env, b, user);
     case '/api/ops/wallet/confirm': return wallet.confirmWallet(env, b, user, { closeIfPaid: tabs.closeIfPaid });
+    case '/api/ops/session': return ownAuth(env) ? { token: await signSession(env, uidOf(user), user.role), role: user.role } : { error: 'Not used.', status: 404 };
     case '/api/ops/wallet/claim': return (await import('./momophone.js')).claimStaff(env, b, user);
     case '/api/ops/wallet/cancel': return wallet.cancelWallet(env, b, user);
     case '/api/ops/paystack-down': return wallet.setPaystackDown(env, b, user);

@@ -40,7 +40,8 @@ test('a manager adds a waiter by phone; the text has her PIN; she signs in with 
   const ok = await call(ctx.env, 'POST', '/api/staff-auth/sign-in', { body: { phone: '0245560000', pin } });
   assert.equal(ok.status, 200, ok.data.error);
   const t = decode(ok.data.token);
-  assert.equal(t.uid, r.data.uid); assert.equal(t.claims.role, 'waitStaff'); assert.equal(t.aud, 'https://identitytoolkit.googleapis.com/google.identity.identitytoolkit.v1.IdentityToolkit');
+  if (process.env.DB_BACKEND === 'supabase') { assert.equal(t.uid, r.data.uid); assert.equal(t.role, 'waitStaff'); assert.equal(t.iss, 'memories-staff'); assert.equal(ok.data.own, true); }
+  else { assert.equal(t.uid, r.data.uid); assert.equal(t.claims.role, 'waitStaff'); assert.equal(t.aud, 'https://identitytoolkit.googleapis.com/google.identity.identitytoolkit.v1.IdentityToolkit'); }
   assert.ok(ctx.store.list('members').some(m => m.fields.staffUid === r.data.uid), 'staff are members');
   // Changing it is optional; the texted PIN keeps working until she does.
   const asHer = { claims: { role: 'waitStaff' }, uid: r.data.uid };
