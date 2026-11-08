@@ -182,6 +182,16 @@ export function every(ms, fn) {
 export const moneyField = (id, label, value = '', hint = '') => `<div class="sfield"><label for="${id}">${esc(label)}</label><div class="money-in"><input id="${id}" inputmode="decimal" value="${esc(value)}" autocomplete="off"></div>${hint ? `<span class="hint">${esc(hint)}</span>` : ''}</div>`;
 
 // Table bookings for the coming nights, grouped by night (from /api/ops/tables → upcoming).
+// A booked table's minimum spend (its price), the drinks picked towards it, and any drink the
+// customer asked for that isn't on the menu.
+export function tableSpend(t) {
+  if (!t) return '';
+  const min = Number(t.minSpendPesewas || 0), drinks = Number(t.drinksPesewas || 0);
+  const parts = [];
+  if (min) parts.push(`Minimum spend ${money(min)}${drinks ? ` · drinks picked ${money(drinks)}${drinks < min ? ` · ${money(min - drinks)} left to spend` : ''}` : ''}`);
+  if (t.drinkRequest) parts.push(`Asked for: ${esc(t.drinkRequest)}`);
+  return parts.join('<br>');
+}
 export function upcomingBookings(list = []) {
   if (!list.length) return '<p class="muted" style="margin:0">No tables booked for the coming nights yet.</p>';
   const nights = [...new Set(list.map(t => t.night))];
@@ -189,7 +199,7 @@ export function upcomingBookings(list = []) {
     const rows = list.filter(t => t.night === n);
     return `<div class="group-h">${esc(dayName(n))} · ${esc(rows[0].eventName)} · ${rows.length} table${rows.length > 1 ? 's' : ''}</div>
       <div class="rows">${rows.map(t => `<div class="row-btn plain"><span class="t">${esc(t.name)} · ${esc(t.packageName)}</span>
-        <span class="s">${t.holdLine ? `${esc(t.holdLine)} · ` : ''}${esc(t.code)} · phone …${esc(t.phoneLast4)}${t.capacity ? ` · up to ${t.capacity}` : ''}${t.bottles.length ? ` · ${t.bottles.map(b => `${b.quantity} × ${esc(b.name)}`).join(', ')}` : ''}${t.bookedAt ? ` · booked ${esc(new Date(t.bookedAt).toLocaleDateString('en-GB', { timeZone: 'Africa/Accra', day: 'numeric', month: 'short' }))}` : ''}</span></div>`).join('')}</div>`;
+        <span class="s">${t.holdLine ? `${esc(t.holdLine)} · ` : ''}${esc(t.code)} · phone …${esc(t.phoneLast4)}${t.capacity ? ` · up to ${t.capacity}` : ''}${t.bottles.length ? ` · ${t.bottles.map(b => `${b.quantity} × ${esc(b.name)}`).join(', ')}` : ''}${t.drinkRequest ? ` · asked for: ${esc(t.drinkRequest)}` : ''}${t.bookedAt ? ` · booked ${esc(new Date(t.bookedAt).toLocaleDateString('en-GB', { timeZone: 'Africa/Accra', day: 'numeric', month: 'short' }))}` : ''}</span></div>`).join('')}</div>`;
   }).join('');
 }
 

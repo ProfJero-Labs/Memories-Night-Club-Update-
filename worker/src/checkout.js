@@ -216,6 +216,24 @@ export function arrivalFor(eventDate, hhmm) {
   while (at < start - 2 * 3600e3) at += 864e5;
   return at >= start && at <= start + ARRIVE_WINDOW_HOURS * 3600e3 ? new Date(at).toISOString() : null;
 }
+// A table's price is its minimum spend: the drinks picked count towards it, and the bill is
+// whichever is higher, the drinks or the minimum. Nothing is charged on top of the drinks.
+export const tableBill = (minSpendPesewas, drinksPesewas) => Math.max(Number(minSpendPesewas || 0), Number(drinksPesewas || 0));
+// The bottles picked for a table, priced from the bar menu (never from the browser).
+async function pickBottles(env, eventId, raw) {
+  const chosen = (Array.isArray(raw) ? raw : []).map(x => ({ id: String(x?.id || ''), quantity: Number(x?.quantity || 0) })).filter(x => x.id && Number.isInteger(x.quantity) && x.quantity > 0 && x.quantity <= 50);
+  const items = [];
+  let total = 0;
+  for (const item of chosen) {
+    const btl = await getDoc(env, 'bottles', item.id);
+    if (!btl || (btl.fields.eventId !== eventId && btl.fields.eventId !== 'all') || btl.fields.active !== true) return { error: 'A bottle you picked isn’t available any more.' };
+    if (typeof btl.fields.remaining === 'number' && btl.fields.remaining < item.quantity) return { error: `Not enough ${btl.fields.name || 'of that bottle'} left.` };
+    const unit = Number(btl.fields.pricePesewas || 0);
+    total += unit * item.quantity;
+    items.push({ id: item.id, name: btl.fields.name, quantity: item.quantity, unitPricePesewas: unit });
+  }
+  return { items, total };
+}
 export async function reserveTable(env, b) {
   const name = clean(b?.name, 80), phone = normalizePhone(b?.phone);
   if (!b?.eventId || !b?.packageId) return { error: 'Pick a table.' };
@@ -228,6 +246,8 @@ export async function reserveTable(env, b) {
   const arriveAt = arrivalFor(ev.fields.date, b.arriveTime);
   if (!arriveAt) { const s = new Date(ev.fields.date); return { error: `Pick the time you’ll arrive, between ${accraTime(s)} and ${accraTime(new Date(s.getTime() + ARRIVE_WINDOW_HOURS * 3600e3))}.` }; }
   const holdUntil = new Date(Date.parse(arriveAt) + HOLD_MINUTES * 60e3).toISOString();
+  const drinks = await pickBottles(env, b.eventId, b.bottles); if (drinks.error) return drinks;
+  const drinkRequest = clean(b.drinkRequest, 300);
   // One table per phone number per night, so nobody holds every table with one phone.
   const mine = (await queryWhere(env, 'orders', [{ field: 'eventId', value: b.eventId }, { field: 'kind', value: 'table' }]))
     .find(o => o.fields.buyerPhone === phone && o.fields.status === 'confirmed' && !o.fields.released);
@@ -240,21 +260,26 @@ export async function reserveTable(env, b) {
     if (typeof p.fields.remaining === 'number' && p.fields.remaining < 1) return { error: 'That table is fully booked.' };
     const writes = [updateWrite(env, 'orders', orderId, {
       orderId, kind: 'table', reservation: true, channel: 'online', eventId: b.eventId, eventName: ev.fields.name || '', packageId: b.packageId, packageName: p.fields.name || 'Table',
-      packagePricePesewas: Number(p.fields.pricePesewas || 0), bottles: [], amountPesewas: 0, buyerName: name, buyerPhone: phone, buyerEmail: clean(b.email, 120),
+      packagePricePesewas: Number(p.fields.pricePesewas || 0), minSpendPesewas: Number(p.fields.pricePesewas || 0), bottles: drinks.items, drinksPesewas: drinks.total,
+      billPesewas: tableBill(p.fields.pricePesewas, drinks.total), drinkRequest, amountPesewas: 0, buyerName: name, buyerPhone: phone, buyerEmail: clean(b.email, 120),
       status: 'confirmed', arriveAt, holdUntil, createdAt: now(),
       shares: {}, evolveitSharePesewas: 0, memoriesSharePesewas: 0, organizerSharePesewas: 0, organizerId: null,
     })];
     if (typeof p.fields.remaining === 'number') writes.push(updateWrite(env, 'table_packages', b.packageId, { ...p.fields, remaining: p.fields.remaining - 1 }));
     await commitTx(env, writes, tx);
-    return { reserved: true, orderId, packageName: p.fields.name || 'Table' };
+    return { reserved: true, orderId, packageName: p.fields.name || 'Table', minSpendPesewas: Number(p.fields.pricePesewas || 0) };
   });
   if (result.error) return result;
   const code = tableCode(orderId), by = accraTime(arriveAt), until = accraTime(holdUntil);
   const night = formatAccra(ev.fields.date, { weekday: 'short', day: 'numeric', month: 'short' });
-  await sendSms(env, phone, `MEMORIES\nTable reserved: ${result.packageName}, ${ev.fields.name || 'Memories'} (${night}).\nArriving ${by}: we hold it until ${until}. After that it may go to someone else.\nNothing to pay now: you pay at the club.\nAt the door: ${code}, or give your name.`);
-  await bookingAlert(env, { packageName: result.packageName, eventName: ev.fields.name || '', nightLabel: night, buyerName: name, buyerPhone: phone, code, reservation: true, arriveLabel: by, holdLabel: until });
-  await sendEmail(env, clean(b.email, 120), 'Your Memories table is reserved', [`${result.packageName} · ${ev.fields.name || ''} (${night})`, `Arriving ${by}: we hold it until ${until}. After that it may go to someone else.`, 'Nothing to pay now: you pay at the club.', `At the door, show ${code} or give your name.`]);
-  return { reserved: true, code, packageName: result.packageName, arriveAt, holdUntil, arriveLabel: by, holdLabel: until };
+  const min = result.minSpendPesewas, bill = tableBill(min, drinks.total);
+  const drinksLine = drinks.items.length ? `Drinks: ${drinks.items.map(x => `${x.quantity} x ${x.name}`).join(', ')} (${money(drinks.total)}).` : '';
+  const spendLine = `Minimum spend ${money(min)}: your drinks count towards it.${drinks.total < min ? ` ${money(min - drinks.total)} left to spend on drinks at the club.` : ''}`;
+  await sendSms(env, phone, [`MEMORIES\nTable reserved: ${result.packageName}, ${ev.fields.name || 'Memories'} (${night}).`, `Arriving ${by}: we hold it until ${until}. After that it may go to someone else.`,
+    spendLine, drinksLine, drinkRequest ? `Your request: ${drinkRequest}` : '', `Nothing to pay now: you pay ${money(bill)} or more at the club.`, `At the door: ${code}, or give your name.`].filter(Boolean).join('\n'));
+  await bookingAlert(env, { packageName: result.packageName, eventName: ev.fields.name || '', nightLabel: night, buyerName: name, buyerPhone: phone, code, reservation: true, arriveLabel: by, holdLabel: until, bottles: drinks.items, minSpendPesewas: min, drinksPesewas: drinks.total, drinkRequest });
+  await sendEmail(env, clean(b.email, 120), 'Your Memories table is reserved', [`${result.packageName} · ${ev.fields.name || ''} (${night})`, `Arriving ${by}: we hold it until ${until}. After that it may go to someone else.`, spendLine, drinksLine, drinkRequest ? `Your request: ${drinkRequest}` : '', `Nothing to pay now: you pay ${money(bill)} or more at the club.`, `At the door, show ${code} or give your name.`].filter(Boolean));
+  return { reserved: true, code, packageName: result.packageName, arriveAt, holdUntil, arriveLabel: by, holdLabel: until, minSpendPesewas: min, drinksPesewas: drinks.total, billPesewas: bill, drinkRequest };
 }
 
 // Paid online: no longer offered (tables are reserved instead). A page still open from before is
@@ -274,16 +299,12 @@ export async function initiatePaidTable(env, b) {
   if (!ev || !pkg || ev.fields.active === false || ev.fields.visibility !== 'public' || pkg.fields.eventId !== b.eventId || pkg.fields.active !== true) return { error: 'This table isn’t available any more.' };
   if (isOver(ev.fields)) return { error: 'This night has already happened.' };
   if (typeof pkg.fields.remaining === 'number' && pkg.fields.remaining < 1) return { error: 'That table is fully booked.' };
-  const chosen = (Array.isArray(b.bottles) ? b.bottles : []).map(x => ({ id: String(x.id || ''), quantity: Number(x.quantity || 0) })).filter(x => x.id && Number.isInteger(x.quantity) && x.quantity > 0 && x.quantity <= 50);
-  let amount = Number(pkg.fields.pricePesewas || 0);
-  const bottleItems = [];
-  for (const item of chosen) {
-    const btl = await getDoc(env, 'bottles', item.id);
-    if (!btl || (btl.fields.eventId !== b.eventId && btl.fields.eventId !== 'all') || btl.fields.active !== true) return { error: 'A bottle you picked isn’t available any more.' };
-    if (typeof btl.fields.remaining === 'number' && btl.fields.remaining < item.quantity) return { error: `Not enough ${btl.fields.name || 'of that bottle'} left.` };
-    amount += Number(btl.fields.pricePesewas || 0) * item.quantity;
-    bottleItems.push({ id: item.id, name: btl.fields.name, quantity: item.quantity, unitPricePesewas: Number(btl.fields.pricePesewas || 0) });
-  }
+  // The table's price is its minimum spend: the bottles count towards it; the customer pays the
+  // higher of the two (the rest is theirs to spend on drinks at the club).
+  const drinks = await pickBottles(env, b.eventId, b.bottles); if (drinks.error) return drinks;
+  const bottleItems = drinks.items, minSpend = Number(pkg.fields.pricePesewas || 0);
+  const amount = tableBill(minSpend, drinks.total);
+  const drinkRequest = clean(b.drinkRequest, 300);
   if (!(amount > 0)) return { error: 'This table isn’t available any more.' };
   const reference = paymentRef();
   const shares = sharesFor(env, ev.fields, amount);
@@ -292,7 +313,7 @@ export async function initiatePaidTable(env, b) {
   await setDoc(env, 'pending_checkouts', reference, {
     ...fee, chargePesewas: charge,
     reference, kind: 'table', eventId: b.eventId, eventName: ev.fields.name || '', packageId: b.packageId, packageName: pkg.fields.name || '',
-    packagePricePesewas: Number(pkg.fields.pricePesewas || 0), bottles: bottleItems, amountPesewas: amount, buyerName: name, buyerPhone: phone,
+    packagePricePesewas: minSpend, minSpendPesewas: minSpend, bottles: bottleItems, drinksPesewas: drinks.total, drinkRequest, amountPesewas: amount, buyerName: name, buyerPhone: phone,
     buyerEmail: clean(b.email, 120), status: 'pending', createdAt: now(), shares,
   });
   const payload = { email: payEmail(env, b.email, phone), amount: charge, currency: 'GHS', reference, callback_url: returnUrl(env), ...(fee.split || {}), metadata: { kind: 'table', eventId: b.eventId, packageId: b.packageId, serviceFee: fee.feePesewas } };
@@ -326,6 +347,7 @@ export async function fulfillTable(env, reference) {
       updateWrite(env, 'orders', orderId, {
         orderId, kind: 'table', reference, eventId: P.eventId, eventName: P.eventName, packageId: P.packageId, packageName: P.packageName,
         bottles: P.bottles || [], amountPesewas: P.amountPesewas, buyerName: P.buyerName, buyerPhone: P.buyerPhone, buyerEmail: P.buyerEmail || '',
+        ...(P.minSpendPesewas !== undefined ? { minSpendPesewas: P.minSpendPesewas, drinksPesewas: P.drinksPesewas || 0, billPesewas: P.amountPesewas, drinkRequest: P.drinkRequest || '' } : {}),
         status: 'confirmed', createdAt: now(), shares,
         evolveitSharePesewas: shares.evolveitSharePesewas || 0,
         memoriesSharePesewas: shares.memoriesSharePesewas || 0,

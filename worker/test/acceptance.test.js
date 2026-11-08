@@ -135,7 +135,7 @@ test('a night with no lines configured sells tickets with no line (never placeho
   assert.equal(store.get('pending_checkouts', r.data.reference).fields.identityLine, '');
 });
 
-test('tables: the charge is the package plus bottles, from Firestore — never the browser', async () => {
+test('tables: the table price is a minimum spend; bottles count towards it, priced from Firestore — never the browser', async () => {
   const { store, env } = createMockEnv();
   env.TABLE_PAYMENTS = 'on'; // paid table bookings (only if the engineer turns them back on)
   seedNight(store);
@@ -143,7 +143,12 @@ test('tables: the charge is the package plus bottles, from Firestore — never t
   store.seed('bottles', 'b1', { eventId: 'all', name: 'House bottle', pricePesewas: 60000, active: true });
   const r = await call(env, 'POST', '/api/table-checkout/initiate', { body: { eventId: 'night1', packageId: 'pkg1', name: 'Ama', phone: '0551234567', bottles: [{ id: 'b1', quantity: 2, pricePesewas: 1 }], amountPesewas: 1, callbackUrl: `${ORIGIN}/payment-return.html` } });
   assert.equal(r.status, 200);
-  assert.equal(store.get('pending_checkouts', r.data.reference).fields.amountPesewas, 350000 + 2 * 60000);
+  // GHS 1,200 of bottles is under the GHS 3,500 minimum: they pay the minimum, nothing on top.
+  const pc = store.get('pending_checkouts', r.data.reference).fields;
+  assert.deepEqual([pc.amountPesewas, pc.minSpendPesewas, pc.drinksPesewas], [350000, 350000, 2 * 60000]);
+  // Over the minimum: the bottles are the bill.
+  const r2 = await call(env, 'POST', '/api/table-checkout/initiate', { body: { eventId: 'night1', packageId: 'pkg1', name: 'Kofi', phone: '0551234568', bottles: [{ id: 'b1', quantity: 7 }], callbackUrl: `${ORIGIN}/payment-return.html` } });
+  assert.equal(store.get('pending_checkouts', r2.data.reference).fields.amountPesewas, 7 * 60000);
 });
 
 test('the same Paystack reference verified twice (webhook + page) issues one ticket and sends one SMS', async () => {

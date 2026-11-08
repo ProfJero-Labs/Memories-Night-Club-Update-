@@ -47,6 +47,35 @@ test('reserving a table: no payment, the table is held, the customer is told whe
   assert.ok(store.sms.some(s => s.to.endsWith('240001111') && /table reserved/i.test(s.message) && /not paid/.test(s.message)), 'the Manager is told');
 });
 
+test('the table price is its minimum spend: picked drinks count towards it, and a drink not on the menu can be asked for', async () => {
+  const { store, reserve } = setup();
+  store.seed('bottles', 'hen', { eventId: 'all', name: 'Hennessy VS', pricePesewas: 120000, active: true });
+  store.seed('bottles', 'moet', { eventId: 'fri', name: 'Moët', pricePesewas: 90000, active: true });
+  store.seed('bottles', 'gone', { eventId: 'fri', name: 'Old bottle', pricePesewas: 50000, active: false });
+  const r = await reserve({ bottles: [{ id: 'hen', quantity: 1, pricePesewas: 1 }, { id: 'moet', quantity: 1 }], drinkRequest: '  A bottle of Don Julio 1942  ' });
+  assert.equal(r.status, 200, r.data.error);
+  assert.deepEqual([r.data.minSpendPesewas, r.data.drinksPesewas, r.data.billPesewas], [300000, 210000, 300000], 'under the minimum: the bill is the minimum, not table + drinks');
+  const o = store.list('orders')[0].fields;
+  assert.deepEqual([o.amountPesewas, o.minSpendPesewas, o.drinksPesewas, o.billPesewas, o.drinkRequest], [0, 300000, 210000, 300000, 'A bottle of Don Julio 1942']);
+  assert.deepEqual(o.bottles.map(b => [b.name, b.quantity, b.unitPricePesewas]), [['Hennessy VS', 1, 120000], ['Moët', 1, 90000]], 'prices from the menu, not the browser');
+  const sms = store.sms.find(s => s.to.endsWith('551234567')).message;
+  assert.match(sms, /Minimum spend GHS 3,000/);
+  assert.match(sms, /GHS 900 left to spend/);
+  assert.match(sms, /Don Julio 1942/);
+  assert.ok(store.sms.some(s => s.to.endsWith('240001111') && /Request: A bottle of Don Julio 1942/.test(s.message)), 'the Manager sees the request');
+  // A bottle no longer on the menu is refused.
+  assert.match((await reserve({ phone: '0201112222', bottles: [{ id: 'gone', quantity: 1 }] })).data.error, /isn’t available/);
+});
+
+test('drinks over the minimum: the drinks are the bill', async () => {
+  const { store, reserve } = setup();
+  store.seed('bottles', 'hen', { eventId: 'all', name: 'Hennessy VS', pricePesewas: 120000, active: true });
+  const r = await reserve({ bottles: [{ id: 'hen', quantity: 3 }] });
+  assert.equal(r.status, 200, r.data.error);
+  assert.deepEqual([r.data.minSpendPesewas, r.data.drinksPesewas, r.data.billPesewas], [300000, 360000, 360000]);
+  assert.doesNotMatch(store.sms.find(s => s.to.endsWith('551234567')).message, /left to spend/);
+});
+
 test('refused: no arrival time, a full night, a second table on the same phone; the old pay-online page is asked to refresh', async () => {
   const { store, call, reserve } = setup();
   assert.match((await reserve({ arriveTime: '' })).data.error, /time you’ll arrive/);

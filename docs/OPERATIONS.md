@@ -162,10 +162,16 @@ night for six hours). The table is held until **one hour after** that time; they
 code and the time it's held until. Nothing else happens to a no-show: the table is simply free
 again (the door and the gate can give it to someone else). If they come later and a table of that
 kind is still free, the door seats them; if not, the door says "Hold ended: no table free".
-One table per phone number per night. They pay for the table and the drinks at the club, like any
+**The table's price is its minimum spend**, not a charge on top of the drinks. While reserving, the
+customer can pick drinks from the bar menu (they count towards the minimum, with a running total) and
+type a drink they want that isn't on the menu. Their bill at the club is the higher of the two: the
+minimum or the drinks. Staff see the minimum, the drinks picked, what's left to spend and the request
+on **Bookings** / **Tables** / **Find an order**, and in the booking text.
+One table per phone number per night. They pay for the drinks at the club, like any
 table, so a reserved table's commission comes from what its bill actually pays (see Commissions).
 Tables already **paid online** before this are honoured as before. (Paying online for a table can
-only come back by the engineer setting `TABLE_PAYMENTS=on` on the Worker.)
+only come back by the engineer setting `TABLE_PAYMENTS=on` on the Worker; it charges the same way:
+the minimum spend or the bottles, whichever is higher.)
 
 A table booked online shows straight away on the waiter's **Bookings**, the front office's
 **Tables** and the manager's **Tables** screens: tonight's, and **Coming up** for the next 30

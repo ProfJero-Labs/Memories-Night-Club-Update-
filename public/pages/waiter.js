@@ -11,7 +11,7 @@ import { $, $$, esc, normalizePhone, loadFee, paystackOk, paystackLimit, momoDir
 loadFee().catch(() => {});
 import { requireStaff, staffHeader, sapi } from '../staff.js';
 import { qrSvg } from '../ticket-art.js';
-import { sheet, say, st, every, bottomNav, busy, ghsIn, moneyField, money, when, backBar, bindBackBar, returnTo, pasteMomoButton, upcomingBookings } from '../lib/ops-ui.js';
+import { sheet, say, st, every, bottomNav, busy, ghsIn, moneyField, money, when, backBar, bindBackBar, returnTo, pasteMomoButton, upcomingBookings, tableSpend } from '../lib/ops-ui.js';
 import { drinkPicker, paySheet, handInCash, tipBox, tipSheet, tipSaid } from '../lib/sell.js';
 
 const user = await requireStaff(['waitStaff', 'eventManager', 'superAdmin', 'director', 'manager']);
@@ -468,7 +468,7 @@ async function quickSale(stationId) {
 
 // ── Bookings tonight ──
 async function bookings() {
-  app.innerHTML = '<h1>Bookings tonight</h1><p class="lead">Tables reserved online (they pay at the club, like any table), and bottles paid for earlier. Tick when served.</p><div id="msg"></div><div class="cards" id="list"><div class="loading">Loading…</div></div><h2>Coming up</h2><div id="soon"></div>';
+  app.innerHTML = '<h1>Bookings tonight</h1><p class="lead">Tables reserved online. The table’s price is its minimum spend: the drinks they picked count towards it. Tick when served.</p><div id="msg"></div><div class="cards" id="list"><div class="loading">Loading…</div></div><h2>Coming up</h2><div id="soon"></div>';
   stop = every(30000, async alive => {
     const { tables, upcoming } = await sapi('/api/ops/tables');
     if (!alive()) return;
@@ -477,6 +477,7 @@ async function bookings() {
       <span class="sub">${esc(t.name)} · ${esc(t.packageName)}${t.capacity ? ` · up to ${t.capacity}` : ''}</span>
       ${t.holdLine ? `<span class="sub">${esc(t.holdLine)}</span>` : ''}
       ${t.bottles.length ? `<span>${t.bottles.map(b => `<b>${b.quantity} ×</b> ${esc(b.name)}`).join('<br>')}</span>` : '<span class="sub">No bottles booked.</span>'}
+      ${tableSpend(t) ? `<span class="sub">${tableSpend(t)}</span>` : ''}
       ${t.bottles.length ? `<button class="mid ${t.bottlesServed ? '' : 'okc'}" data-served="${esc(t.orderId)}" data-v="${t.bottlesServed ? '0' : '1'}">${t.bottlesServed ? 'Served ✓ (undo)' : 'Bottles served'}</button>` : ''}</div>`).join('') || '<div class="empty-box"><b>No bookings tonight</b></div>';
     $('#soon').innerHTML = upcomingBookings(upcoming);
     $$('[data-served]').forEach(b => b.onclick = async () => { try { await sapi('/api/ops/tables', { method: 'POST', body: { orderId: b.dataset.served, bottlesServed: b.dataset.v === '1' } }); route(); } catch (e) { say($('#msg'), e.message, 'bad'); } });

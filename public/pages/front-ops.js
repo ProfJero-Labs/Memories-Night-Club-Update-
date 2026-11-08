@@ -6,7 +6,7 @@
 //   Organisers: their own night's Entrance, Check and Counts.
 import { $, $$, esc } from '../app.js';
 import { requireStaff, sapi } from '../staff.js';
-import { sheet, say, st, every, bottomNav, busy, when, ask, backBar, bindBackBar, upcomingBookings, money } from '../lib/ops-ui.js';
+import { sheet, say, st, every, bottomNav, busy, when, ask, backBar, bindBackBar, upcomingBookings, tableSpend, money } from '../lib/ops-ui.js';
 import { sellView, checkView, tableStock, countsView } from '../lib/gate-views.js';
 import { ticketsView, findOrderView } from '../lib/ops-views.js';
 
@@ -63,7 +63,8 @@ async function tables() {
     <div class="cards">${list.map(t => `<div class="tcard ${t.arrived ? 'done' : 'warn'}" style="cursor:default"><span class="row"><span class="t">${esc(t.name)}</span>${t.arrived ? st('delivered', `Arrived ${when(t.arrivedAt)}`) : st('waiting', 'Not here yet')}</span>
       <span class="sub">${esc(t.code)} · ${esc(t.packageName)}${t.capacity ? ` · up to ${t.capacity} people` : ''} · phone …${esc(t.phoneLast4)}</span>
       ${t.holdLine ? `<span class="sub"><b>${esc(t.holdLine)}</b></span>` : ''}
-      ${t.bottles.length ? `<span class="sub">Bottles paid: ${t.bottles.map(b => `${b.quantity} × ${esc(b.name)}`).join(', ')}${t.bottlesServed ? ' (served)' : ''}</span>` : ''}
+      ${t.bottles.length ? `<span class="sub">Bottles${t.reservation ? '' : ' paid'}: ${t.bottles.map(b => `${b.quantity} × ${esc(b.name)}`).join(', ')}${t.bottlesServed ? ' (served)' : ''}</span>` : ''}
+      ${tableSpend(t) ? `<span class="sub">${tableSpend(t)}</span>` : ''}
       <span class="row"><span>${t.tableNumber ? `Table <b>${esc(t.tableNumber)}</b>` : 'No table number yet'}${t.guestsArrived ? ` · ${t.guestsArrived} people in` : ''}</span><button class="mid" data-set="${esc(t.orderId)}">Set table / people</button></span></div>`).join('') || '<div class="empty-box"><b>No table bookings tonight</b></div>'}</div>
     <h2>Coming up</h2>${upcomingBookings(upcoming)}`;
   await tableStock($('#tStock', el), sapi, { onChange: refresh }).catch(() => {});
