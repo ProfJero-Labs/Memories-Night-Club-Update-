@@ -1404,3 +1404,37 @@ test('the real browser sign-in file keeps our own session, asks for a fresh one 
   assert.deepEqual([out.role, out.uid, out.same, out.seen[0], out.afterStale, out.kept, out.afterSignOut, out.seenLast], ['waitStaff', 'u1', true, 'waitStaff', null, null, null, null]);
   assert.deepEqual(page.errors, []);
 });
+
+test('the real browser sign-in file still works for Firebase sign-ins (Firebase’s own code faked): custom token, email, who is signed in, sign out', async () => {
+  const page = await phone(390);
+  await page.route('https://www.gstatic.com/firebasejs/**', route => {
+    const url = route.request().url();
+    const body = url.includes('firebase-app.js')
+      ? `export const getApps = () => (globalThis.__fbApp ? [globalThis.__fbApp] : []); export const initializeApp = cfg => (globalThis.__fbApp = { cfg });`
+      : `let user = null; const ls = [];
+         const mk = (uid, role) => ({ uid, email: null, getIdToken: async () => 'fb-token-' + uid, getIdTokenResult: async () => ({ claims: { role } }) });
+         export const getAuth = () => ({ get currentUser() { return user; } });
+         export const signInWithCustomToken = async () => { user = mk('fu1', 'manager'); ls.forEach(cb => cb(user)); return { user }; };
+         export const signInWithEmailAndPassword = async () => { user = mk('fu2', 'director'); ls.forEach(cb => cb(user)); return { user }; };
+         export const signOut = async () => { user = null; ls.forEach(cb => cb(null)); };
+         export const onAuthStateChanged = (a, cb) => { ls.push(cb); setTimeout(() => cb(user), 0); return () => {}; };
+         export const sendPasswordResetEmail = async () => {};`;
+    return route.fulfill({ contentType: 'text/javascript', body });
+  });
+  await page.goto(`${base}/login.html`, { waitUntil: 'domcontentloaded' });
+  const out = await page.evaluate(async () => {
+    localStorage.removeItem('mem-staff-session');
+    const mod = await import('/firebase-real.js');
+    const seen = []; mod.onUser(u => seen.push(u && u.claims.role)); await new Promise(r => setTimeout(r, 100));
+    const first = seen[0];
+    const viaToken = await mod.signInWithToken('custom-token-from-the-worker', false);
+    const tokenNow = await mod.idToken();
+    const viaEmail = await mod.signIn('boss@example.com', 'secret');
+    await mod.signOutUser();
+    return { first, viaToken: viaToken.claims.role, tokenNow, viaEmail: viaEmail.claims.role, seen, after: await mod.idToken() };
+  });
+  assert.deepEqual([out.first, out.viaToken, out.tokenNow, out.viaEmail, out.after], [null, 'manager', 'fb-token-fu1', 'director', null]);
+  assert.deepEqual(out.seen.filter(x => x !== null && x !== undefined).slice(0, 1), ['manager'], 'the page was told who signed in');
+  assert.equal(out.seen.at(-1), null, 'and told when they signed out');
+  assert.deepEqual(page.errors, []);
+});

@@ -1,5 +1,7 @@
 # Engineer's checklist: go live with the new payments and the MoMo phone
 
+> **Moving the database from Firebase to Supabase** is a separate job: see `docs/SUPABASE-SWITCHOVER.md`.
+
 Do these in order. Each step says how you know it worked. Background: `docs/HANDOVER-SMS-PHONE.md`,
 the app: `android/momo-phone/README.md`.
 
