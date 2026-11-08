@@ -14,6 +14,7 @@
 //
 // amountPesewas stays what the ticket, table or bill costs; chargePesewas is what Paystack is
 // asked for (amount + tip + service charge), and that is what the payment check compares.
+import { envKey, onResetCaches } from './envkey.js';
 import { getDoc } from './firestore.js';
 import { getSettings } from '../public.js';
 import { DEFAULT_ROUTES, routeFor } from './routes.js';
@@ -32,11 +33,12 @@ export const DEFAULT_COMMISSION = { enabled: false, type: 'percent', percent: 0,
 // Read at most every 20 seconds per Worker instance (the payment check runs under a request limit);
 // a save clears it at once on the instance that saved.
 let cached = null;
+onResetCaches(() => { cached = null; });
 export const clearCommercialCache = () => { cached = null; };
 export async function commercialConfig(env, siteSettings) {
-  if (cached && cached.env === env && Date.now() - cached.at < 20e3) return cached.value;
+  if (cached && cached.key === envKey(env) && Date.now() - cached.at < 20e3) return cached.value;
   const value = await readCommercial(env, siteSettings);
-  cached = { env, at: Date.now(), value };
+  cached = { key: envKey(env), at: Date.now(), value };
   return value;
 }
 async function readCommercial(env, siteSettings) {

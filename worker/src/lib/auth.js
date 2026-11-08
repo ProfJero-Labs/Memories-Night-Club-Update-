@@ -1,3 +1,4 @@
+import { envKey, onResetCaches } from './envkey.js';
 import { createRemoteJWKSet, jwtVerify } from 'jose';
 import { getDoc } from './firestore.js';
 
@@ -56,16 +57,16 @@ export const pinLength = role => (['superAdmin', 'director', 'manager', 'hrManag
 
 // The staff record is the authority on the role, so a change or removal applies on the very next
 // request (a sign-in token lasts up to an hour). Records are cached for a few seconds per Worker.
-const recordCache = new WeakMap();
+const recordCache = new Map(); // `${project}|${uid}` → { doc, at }
+onResetCaches(() => recordCache.clear());
 async function staffRecord(env, uid) {
-  let byEnv = recordCache.get(env); if (!byEnv) recordCache.set(env, byEnv = new Map());
-  const hit = byEnv.get(uid);
+  const k = `${envKey(env)}|${uid}`, hit = recordCache.get(k);
   if (hit && Date.now() - hit.at < 10000) return hit.doc;
   const doc = await getDoc(env, 'users', uid).catch(() => null);
-  byEnv.set(uid, { doc, at: Date.now() });
+  recordCache.set(k, { doc, at: Date.now() });
   return doc;
 }
-export const forgetStaffRecord = (env, uid) => recordCache.get(env)?.delete(uid);
+export const forgetStaffRecord = (env, uid) => recordCache.delete(`${envKey(env)}|${uid}`);
 
 let jwks;
 export async function verifyStaff(req, env) {

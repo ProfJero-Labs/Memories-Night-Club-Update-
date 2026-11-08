@@ -88,11 +88,22 @@ addEventListener('hashchange', route);
 let flash = null;
 const flashNote = (text, kind = 'good') => { flash = { text, kind, at: Date.now() }; say($('#msg'), text, kind); };
 const note = flashNote;
-async function tonight(alive = () => location.hash.slice(1).split('/')[0] in { '': 1, tonight: 1 }) {
-  const [s, a, t, ex, m, ta, wl] = await Promise.all([sapi('/api/ops/sales'), sapi('/api/ops/approvals'), sapi('/api/ops/tabs?all=1'), sapi('/api/ops/stock/to-explain').catch(() => ({ counts: [] })),
-    director ? sapi('/api/ops/money?period=today').catch(() => null) : null, director ? sapi('/api/ops/to-approve').catch(() => null) : null, sapi('/api/ops/wallet').catch(() => null)]);
+// The live figures refresh every time; the slower panels (approvals, stock to explain, money,
+// to-approve, alerts) every fifth time, or at once after the person's own action (tonight() with no
+// argument). Fewer reads of the database, same screen.
+let tonightTick = 0, slowPanels = null;
+async function tonight(alive) {
+  const forced = !alive;
+  alive ||= () => location.hash.slice(1).split('/')[0] in { '': 1, tonight: 1 };
+  const [s, t, wl] = await Promise.all([sapi('/api/ops/sales'), sapi('/api/ops/tabs?all=1'), sapi('/api/ops/wallet').catch(() => null)]);
+  if (forced || !slowPanels || tonightTick++ % 5 === 0) {
+    slowPanels = await Promise.all([sapi('/api/ops/approvals'), sapi('/api/ops/stock/to-explain').catch(() => ({ counts: [] })),
+      director ? sapi('/api/ops/money?period=today').catch(() => null) : null, director ? sapi('/api/ops/to-approve').catch(() => null) : null,
+      director ? sapi('/api/ops/alerts').catch(() => null) : null]);
+  }
+  const [a, ex, m, ta, alr] = slowPanels;
   // Directors' alerts (no texts to directors): the latest few, here at the top.
-  const al = director ? ((await sapi('/api/ops/alerts').catch(() => null))?.alerts || []).slice(0, 5) : [];
+  const al = director ? (alr?.alerts || []).slice(0, 5) : [];
   if (!alive()) return;
   const x = s.totals, waiting = a.approvals.filter(p => p.canDecide), toExplain = ex.counts || [];
   const open = t.tabs.filter(tb => tb.status === 'open');

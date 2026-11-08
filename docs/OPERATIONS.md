@@ -558,3 +558,28 @@ pick the drink to keep → **Delete this drink**. Any of it counted at the bars 
   and the browser journeys in `dev/e2e.test.mjs` ("staff sign-in…", "a night at the bar…").
   Dev logins: phones `0200000001`–`0200000012`, PIN `2580` (or `258025` for 6-number roles); see
   `dev/seed.mjs`.
+
+## Database reads and the daily limit (Firebase free plan)
+
+The free Firebase plan allows 50,000 database reads a day; past it, every page fails with "Something
+went wrong on our side (code 429)". The staff screens used to read the whole night again on every
+refresh, so a few open phones used the day's reads in minutes. Now:
+
+- **The list screens share their reads.** Tonight, the tabs lists, the bar queue, the waiters' view,
+  Money, approvals and the like read through a short shared cache (`readCache` in
+  `worker/src/lib/firestore.js`; times per screen in `SCREEN_TTL` in `worker/src/index.js`: 6 to 30
+  seconds). Payments, stock checks and every write never use it, and any change made in the same
+  Worker clears it at once. The person who just did something sees it immediately (the page sends
+  `X-Fresh`); someone else's phone can be up to those few seconds behind.
+- **The open night, the staff record and the payment settings are saved too.** They were meant to be
+  but never were (the error-reporting tool hands the Worker a new `env` object on every request, so
+  caches that checked "same object?" never matched); they now key on the project (`lib/envkey.js`).
+- **Tonight** refreshes its live figures every 30 seconds and its slower panels (approvals, stock to
+  explain, money, to-approve, alerts) every fifth time, or right after the person's own action.
+- **Switch it off:** set the Worker variable `READ_CACHE` to `off` (Cloudflare → the Worker → Settings
+  → Variables). Everything then reads fresh, as before.
+
+A simulated busy stretch (2 managers, a director, 5 waiters, 2 bartenders, 25 tabs) went from about
+69,000 reads per 10 minutes at the original refresh rates to about 8,000. A full busy night still
+needs more than the free allowance: the real fix is moving off Firebase's per-read pricing
+(planned: Supabase) or the pay-as-you-go plan, at about 6 cents per 100,000 reads.

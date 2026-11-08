@@ -9,6 +9,7 @@
 // Cloudflare would use, with its own independent encode/decode of Firestore's {stringValue:...}
 // wire format, so it can't accidentally pass by sharing internals with the code under test.
 
+import { resetCaches } from '../src/lib/envkey.js';
 import { generateKeyPairSync } from 'node:crypto';
 import { SignJWT, exportJWK, generateKeyPair } from 'jose';
 
@@ -322,6 +323,7 @@ function testPrivateKeyPem() {
 // duration of the calling test file. Returns {store, env} — call store.seed(...) to set up
 // fixtures, then call the Worker's exported functions directly against env.
 export function createMockEnv() {
+  resetCaches(); // nothing saved by an earlier test
   const store = new MockFirestore();
   globalThis.fetch = store.fetch;
   const env = {
