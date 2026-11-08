@@ -16,7 +16,7 @@
 //
 // It never refunds, never edits prices, never touches an order that is already issued.
 
-import { googleAccessToken, parseFields, firestoreValue, getDoc, setDoc } from './lib/firestore.js';
+import { getDoc, setDoc, queryRecent } from './lib/firestore.js';
 import { fulfill } from './checkout.js';
 import { refreshPendingFees } from './ops/ledger.js';
 import { alertOnce, reportError } from './lib/monitor.js';
@@ -35,19 +35,9 @@ const REF_PREFIX = 'MEM-';                // references this system creates (see
 
 const ageOf = f => { const t = Date.parse(f.createdAt); return Number.isFinite(t) ? Date.now() - t : 0; };
 
-// Firestore range query on createdAt. A single-field range needs no composite index.
+// Checkouts created since a time (a range query on createdAt, through the data layer).
 async function recentCheckouts(env, sinceMs) {
-  const token = await googleAccessToken(env);
-  const url = `https://firestore.googleapis.com/v1/projects/${env.FIREBASE_PROJECT_ID}/databases/(default)/documents:runQuery`;
-  const body = { structuredQuery: {
-    from: [{ collectionId: 'pending_checkouts' }],
-    where: { fieldFilter: { field: { fieldPath: 'createdAt' }, op: 'GREATER_THAN_OR_EQUAL', value: firestoreValue(new Date(sinceMs)) } },
-    limit: 1000,
-  } };
-  const r = await fetch(url, { method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
-  const d = await r.json().catch(() => null);
-  if (!r.ok || !Array.isArray(d)) throw new Error(`Firestore query failed (${r.status})`);
-  return d.filter(x => x.document).map(x => ({ id: x.document.name.split('/').pop(), fields: parseFields(x.document.fields) }));
+  return queryRecent(env, 'pending_checkouts', 'createdAt', new Date(sinceMs), 1000);
 }
 
 async function paystackSuccesses(env, sinceMs) {

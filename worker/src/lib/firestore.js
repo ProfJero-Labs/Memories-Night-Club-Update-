@@ -6,31 +6,9 @@ const b64url = bytes => btoa(String.fromCharCode(...new Uint8Array(bytes))).repl
 const b64 = s => btoa(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 export const fromB64 = s => { const p = '='.repeat((4 - s.length % 4) % 4); return Uint8Array.from(atob(s.replace(/-/g, '+').replace(/_/g, '/') + p), c => c.charCodeAt(0)); };
 
-export function firestoreValue(v) {
-  if (v === null || v === undefined) return { nullValue: null };
-  if (v instanceof Date) return { timestampValue: v.toISOString() };
-  if (typeof v === 'string') return { stringValue: v };
-  if (typeof v === 'boolean') return { booleanValue: v };
-  if (typeof v === 'number') return Number.isInteger(v) ? { integerValue: String(v) } : { doubleValue: v };
-  if (Array.isArray(v)) return { arrayValue: { values: v.map(firestoreValue) } };
-  if (typeof v === 'object') return { mapValue: { fields: Object.fromEntries(Object.entries(v).map(([k, x]) => [k, firestoreValue(x)])) } };
-  return { stringValue: String(v) };
-}
-export function docFields(obj) { return Object.fromEntries(Object.entries(obj || {}).filter(([, v]) => v !== undefined).map(([k, v]) => [k, firestoreValue(v)])); }
-function parseValue(v) {
-  if (!v) return null;
-  if ('stringValue' in v) return v.stringValue;
-  if ('integerValue' in v) return Number(v.integerValue);
-  if ('doubleValue' in v) return v.doubleValue;
-  if ('booleanValue' in v) return v.booleanValue;
-  if ('timestampValue' in v) return v.timestampValue;
-  if ('nullValue' in v) return null;
-  if ('referenceValue' in v) return v.referenceValue;
-  if ('arrayValue' in v) return (v.arrayValue.values || []).map(parseValue);
-  if ('mapValue' in v) return parseFields(v.mapValue.fields || {});
-  return null;
-}
-export function parseFields(fields = {}) { return Object.fromEntries(Object.entries(fields).map(([k, v]) => [k, parseValue(v)])); }
+// The typed-value codec lives in codec.js (shared with the Supabase side).
+export { firestoreValue, docFields, parseFields } from './codec.js';
+import { docFields, parseFields, firestoreValue } from './codec.js';
 
 // A JWT signed with the service account's key: Google access-token requests, and Firebase custom
 // tokens (staff who signed in with their phone and PIN; see staffauth.js).
@@ -85,6 +63,9 @@ const fs = (env, path, options) => call(env, basePath(env) + path, options);
 // few seconds, or immediately for the person who just acted (their page sends x-fresh).
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { envKey, onResetCaches } from './envkey.js';
+import * as supa from './supabase-db.js';
+// DB_BACKEND=supabase (a Worker variable) moves every read and write to Supabase; anything else is Firebase.
+const isSupabase = env => env.DB_BACKEND === 'supabase';
 const readScope = new AsyncLocalStorage();
 const RC_TTL = 10000, RC_MAX = 500;
 const saved = new Map(); // project → Map(`${col}|${query}` → { at, value })
@@ -107,12 +88,14 @@ async function cached(env, col, query, load) {
 export async function getDoc(env, col, docId) {
   if (!docId) return null;
   return cached(env, col, `doc:${docId}`, async () => {
+    if (isSupabase(env)) return supa.getDoc(env, col, docId);
     try { const d = await fs(env, `/${col}/${encodeURIComponent(docId)}`); return d.name ? { id: docId, fields: parseFields(d.fields) } : null; }
     catch (e) { if (e.status === 404 || String(e.message).includes('NOT_FOUND')) return null; throw e; }
   });
 }
 export async function listDocs(env, col) { return cached(env, col, 'list', () => listDocsNow(env, col)); }
 async function listDocsNow(env, col) {
+  if (isSupabase(env)) return supa.listDocs(env, col);
   let docs = [], pageToken;
   do {
     const qs = new URLSearchParams({ pageSize: '300' });
@@ -123,11 +106,11 @@ async function listDocsNow(env, col) {
   } while (pageToken);
   return docs;
 }
-export async function setDoc(env, col, docId, data) { await fs(env, `/${col}/${encodeURIComponent(docId)}`, { method: 'PATCH', body: JSON.stringify({ fields: docFields(data) }) }); rcClear(env, col); }
+export async function setDoc(env, col, docId, data) { if (isSupabase(env)) await supa.setDoc(env, col, docId, data); else await fs(env, `/${col}/${encodeURIComponent(docId)}`, { method: 'PATCH', body: JSON.stringify({ fields: docFields(data) }) }); rcClear(env, col); }
 // A createDoc refused because the document is there already (Firestore answers 409 ALREADY_EXISTS).
 export const alreadyExists = e => e?.status === 409 || /ALREADY_EXISTS|already exists/i.test(String(e?.message));
-export async function createDoc(env, col, docId, data) { const r = await fs(env, `/${col}?documentId=${encodeURIComponent(docId)}`, { method: 'POST', body: JSON.stringify({ fields: docFields(data) }) }); rcClear(env, col); return r; }
-export async function deleteDoc(env, col, docId) { await fs(env, `/${col}/${encodeURIComponent(docId)}`, { method: 'DELETE' }); rcClear(env, col); }
+export async function createDoc(env, col, docId, data) { const r = isSupabase(env) ? await supa.createDoc(env, col, docId, data) : await fs(env, `/${col}?documentId=${encodeURIComponent(docId)}`, { method: 'POST', body: JSON.stringify({ fields: docFields(data) }) }); rcClear(env, col); return r; }
+export async function deleteDoc(env, col, docId) { if (isSupabase(env)) await supa.deleteDoc(env, col, docId); else await fs(env, `/${col}/${encodeURIComponent(docId)}`, { method: 'DELETE' }); rcClear(env, col); }
 
 // Equality-only structured query (AND of filters), optionally inside a transaction.
 export async function queryWhere(env, col, filters, { limit = 1000, transaction } = {}) {
@@ -135,6 +118,7 @@ export async function queryWhere(env, col, filters, { limit = 1000, transaction 
   return cached(env, col, `where:${JSON.stringify([filters, limit])}`, () => queryWhereNow(env, col, filters, { limit }));
 }
 async function queryWhereNow(env, col, filters, { limit = 1000, transaction } = {}) {
+  if (isSupabase(env)) return supa.queryWhere(env, col, filters, { limit, transaction });
   const fieldFilters = filters.map(f => ({ fieldFilter: { field: { fieldPath: f.field }, op: 'EQUAL', value: firestoreValue(f.value) } }));
   const where = fieldFilters.length === 1 ? fieldFilters[0] : { compositeFilter: { op: 'AND', filters: fieldFilters } };
   const body = { structuredQuery: { from: [{ collectionId: col }], where, limit } };
@@ -146,6 +130,7 @@ async function queryWhereNow(env, col, filters, { limit = 1000, transaction } = 
 // Every matching document, read 1000 at a time (queryWhere stops at its limit, in no set order, so a
 // collection that keeps growing, like stock moves, would quietly lose records from its totals).
 export async function queryAll(env, col, filters, { page = 1000, max = 200000 } = {}) {
+  if (isSupabase(env)) return supa.queryAll(env, col, filters, { page, max });
   const fieldFilters = filters.map(f => ({ fieldFilter: { field: { fieldPath: f.field }, op: 'EQUAL', value: firestoreValue(f.value) } }));
   const where = fieldFilters.length === 1 ? fieldFilters[0] : { compositeFilter: { op: 'AND', filters: fieldFilters } };
   const out = [];
@@ -167,6 +152,7 @@ export async function queryRecent(env, col, field, since, limit = 50) {
   return cached(env, col, `recent:${field}:${Math.floor(new Date(since).getTime() / 300000)}:${limit}`, () => queryRecentNow(env, col, field, since, limit));
 }
 async function queryRecentNow(env, col, field, since, limit = 50) {
+  if (isSupabase(env)) return supa.queryRecent(env, col, field, since, limit);
   const body = { structuredQuery: {
     from: [{ collectionId: col }],
     where: { fieldFilter: { field: { fieldPath: field }, op: 'GREATER_THAN_OR_EQUAL', value: firestoreValue(since) } },
@@ -177,13 +163,14 @@ async function queryRecentNow(env, col, field, since, limit = 50) {
 }
 
 // ── Transactions ──
-async function beginTx(env) { const d = await fs(env, ':beginTransaction', { method: 'POST', body: JSON.stringify({ options: { readWrite: {} } }) }); return d.transaction; }
+async function beginTx(env) { if (isSupabase(env)) return supa.beginTx(env); const d = await fs(env, ':beginTransaction', { method: 'POST', body: JSON.stringify({ options: { readWrite: {} } }) }); return d.transaction; }
 export async function batchGet(env, paths, transaction) {
+  if (isSupabase(env)) return supa.batchGet(env, paths, transaction);
   const documents = paths.map(p => `projects/${env.FIREBASE_PROJECT_ID}/databases/(default)/documents/${p}`);
   return call(env, `${basePath(env)}:batchGet`, { method: 'POST', body: JSON.stringify({ documents, transaction }) });
 }
 export async function commitTx(env, writes, transaction) {
-  const r = await call(env, `${basePath(env)}:commit`, { method: 'POST', body: JSON.stringify({ writes, transaction }) });
+  const r = isSupabase(env) ? await supa.commitTx(env, writes, transaction) : await call(env, `${basePath(env)}:commit`, { method: 'POST', body: JSON.stringify({ writes, transaction }) });
   for (const w of writes || []) rcClear(env, colOfName(w.update?.name || w.delete || w.transform?.document));
   return r;
 }
