@@ -40,7 +40,8 @@ test('a manager adds a waiter by phone; the text has her PIN; she signs in with 
   const ok = await call(ctx.env, 'POST', '/api/staff-auth/sign-in', { body: { phone: '0245560000', pin } });
   assert.equal(ok.status, 200, ok.data.error);
   const t = decode(ok.data.token);
-  assert.equal(t.uid, r.data.uid); assert.equal(t.claims.role, 'waitStaff'); assert.equal(t.aud, 'https://identitytoolkit.googleapis.com/google.identity.identitytoolkit.v1.IdentityToolkit');
+  if (process.env.DB_BACKEND === 'supabase') { assert.equal(t.uid, r.data.uid); assert.equal(t.role, 'waitStaff'); assert.equal(t.iss, 'memories-staff'); assert.equal(ok.data.own, true); }
+  else { assert.equal(t.uid, r.data.uid); assert.equal(t.claims.role, 'waitStaff'); assert.equal(t.aud, 'https://identitytoolkit.googleapis.com/google.identity.identitytoolkit.v1.IdentityToolkit'); }
   assert.ok(ctx.store.list('members').some(m => m.fields.staffUid === r.data.uid), 'staff are members');
   // Changing it is optional; the texted PIN keeps working until she does.
   const asHer = { claims: { role: 'waitStaff' }, uid: r.data.uid };
@@ -153,11 +154,12 @@ test('a manager sends a new PIN (the old one stops); nobody can read a PIN back 
   const ctx = setup();
   const r = await addWaiter(ctx, '0245510040');
   const asHer = { claims: { role: 'waitStaff' }, uid: r.data.uid };
-  assert.equal((await call(ctx.env, 'POST', '/api/ops/change-pin', { ...asHer, body: { current: r.data.pin, pin: '4826' } })).status, 200);
+  const mine = r.data.pin === '4826' ? '4837' : '4826'; // never the same as the random starting PIN
+  assert.equal((await call(ctx.env, 'POST', '/api/ops/change-pin', { ...asHer, body: { current: r.data.pin, pin: mine } })).status, 200);
   assert.match((await call(ctx.env, 'POST', '/api/ops/change-pin', { ...asHer, body: { current: '0000', pin: '4827' } })).data.error, /current PIN/);
   const reset = await call(ctx.env, 'POST', '/api/admin/people/reset-pin', { ...ctx.MGR, body: { uid: r.data.uid } });
   assert.equal(reset.data.texted, true); assert.equal(reset.data.pin, lastPin(ctx.store, '0245510040'));
-  if (reset.data.pin !== '4826') assert.equal((await call(ctx.env, 'POST', '/api/staff-auth/sign-in', { body: { phone: '0245510040', pin: '4826' } })).status, 401, 'the old PIN stops working');
+  if (reset.data.pin !== mine) assert.equal((await call(ctx.env, 'POST', '/api/staff-auth/sign-in', { body: { phone: '0245510040', pin: mine } })).status, 401, 'the old PIN stops working');
   assert.equal((await call(ctx.env, 'POST', '/api/staff-auth/sign-in', { body: { phone: '0245510040', pin: reset.data.pin } })).status, 200);
   const list = await call(ctx.env, 'GET', '/api/admin/people', ctx.MGR);
   assert.ok(!list.text.includes('pinHash') && !list.text.includes(reset.data.pin), 'the staff list never carries a PIN');

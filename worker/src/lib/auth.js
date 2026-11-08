@@ -1,3 +1,4 @@
+import { ownAuth, verifySession } from './session.js';
 import { envKey, onResetCaches } from './envkey.js';
 import { createRemoteJWKSet, jwtVerify } from 'jose';
 import { getDoc } from './firestore.js';
@@ -73,14 +74,20 @@ export async function verifyStaff(req, env) {
   const h = req.headers.get('Authorization') || '';
   if (!h.startsWith('Bearer ')) return null;
   try {
-    jwks ||= createRemoteJWKSet(new URL('https://www.googleapis.com/service_accounts/v1/jwk/securetoken@system.gserviceaccount.com'));
-    const { payload } = await jwtVerify(h.slice(7), jwks, { issuer: `https://securetoken.google.com/${env.FIREBASE_PROJECT_ID}`, audience: env.FIREBASE_PROJECT_ID });
+    let payload;
+    if (ownAuth(env)) payload = await verifySession(env, h.slice(7));
+    else {
+      jwks ||= createRemoteJWKSet(new URL('https://www.googleapis.com/service_accounts/v1/jwk/securetoken@system.gserviceaccount.com'));
+      ({ payload } = await jwtVerify(h.slice(7), jwks, { issuer: `https://securetoken.google.com/${env.FIREBASE_PROJECT_ID}`, audience: env.FIREBASE_PROJECT_ID }));
+    }
     const uid = payload.uid || payload.sub;
     const rec = await staffRecord(env, uid);
     if (rec) {
       // Removed, or no staff role on file: no access, whatever the token still says.
       const f = rec.fields, role = f.admin === true ? 'superAdmin' : f.role;
       if (f.removed === true || !STAFF_ROLES.includes(role)) return null;
+      // Signed out everywhere (a role change, a removal): tokens made before that moment stop.
+      if (ownAuth(env) && f.sessionsFrom && Math.floor(Date.parse(f.sessionsFrom) / 1000) > Number(payload.iat || 0)) return null;
       return { ...payload, uid, role, admin: role === 'superAdmin', name: f.name || '', nickname: f.nickname || '', phone: f.phone || '', email: payload.email || f.email || '' };
     }
     // Older accounts without a staff record yet: the token's role.

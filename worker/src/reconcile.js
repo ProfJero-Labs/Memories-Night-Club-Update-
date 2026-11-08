@@ -16,7 +16,7 @@
 //
 // It never refunds, never edits prices, never touches an order that is already issued.
 
-import { googleAccessToken, parseFields, firestoreValue, getDoc, setDoc } from './lib/firestore.js';
+import { getDoc, setDoc, queryRecent } from './lib/firestore.js';
 import { fulfill } from './checkout.js';
 import { refreshPendingFees } from './ops/ledger.js';
 import { alertOnce, reportError } from './lib/monitor.js';
@@ -35,19 +35,9 @@ const REF_PREFIX = 'MEM-';                // references this system creates (see
 
 const ageOf = f => { const t = Date.parse(f.createdAt); return Number.isFinite(t) ? Date.now() - t : 0; };
 
-// Firestore range query on createdAt. A single-field range needs no composite index.
+// Checkouts created since a time (a range query on createdAt, through the data layer).
 async function recentCheckouts(env, sinceMs) {
-  const token = await googleAccessToken(env);
-  const url = `https://firestore.googleapis.com/v1/projects/${env.FIREBASE_PROJECT_ID}/databases/(default)/documents:runQuery`;
-  const body = { structuredQuery: {
-    from: [{ collectionId: 'pending_checkouts' }],
-    where: { fieldFilter: { field: { fieldPath: 'createdAt' }, op: 'GREATER_THAN_OR_EQUAL', value: firestoreValue(new Date(sinceMs)) } },
-    limit: 1000,
-  } };
-  const r = await fetch(url, { method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
-  const d = await r.json().catch(() => null);
-  if (!r.ok || !Array.isArray(d)) throw new Error(`Firestore query failed (${r.status})`);
-  return d.filter(x => x.document).map(x => ({ id: x.document.name.split('/').pop(), fields: parseFields(x.document.fields) }));
+  return queryRecent(env, 'pending_checkouts', 'createdAt', new Date(sinceMs), 1000);
 }
 
 async function paystackSuccesses(env, sinceMs) {
@@ -137,11 +127,13 @@ const validJson = s => { try { const o = JSON.parse(s); return !!(o.client_email
 export async function health(req, env) {
   // Without the key: only whether each setting is there (yes/no, never a value), so a missing key
   // after a deploy shows from a browser: /api/health.
-  const configured = { firebase: !!env.FIREBASE_SERVICE_ACCOUNT_JSON && validJson(env.FIREBASE_SERVICE_ACCOUNT_JSON), firebaseProject: !!env.FIREBASE_PROJECT_ID, paystack: !!env.PAYSTACK_SECRET_KEY, sms: !!(env.SMS || env.SMS_WORKER_URL) && !!env.SMS_WORKER_KEY, email: !!env.BREVO_API_KEY };
-  if (!env.HEALTH_KEY || req.headers.get('x-health-key') !== env.HEALTH_KEY) return json({ ok: configured.firebase && configured.firebaseProject && configured.paystack, configured });
+  const onSupabase = env.DB_BACKEND === 'supabase';
+  const database = onSupabase ? { supabase: !!env.SUPABASE_URL && !!env.SUPABASE_SERVICE_ROLE_KEY } : { firebase: !!env.FIREBASE_SERVICE_ACCOUNT_JSON && validJson(env.FIREBASE_SERVICE_ACCOUNT_JSON), firebaseProject: !!env.FIREBASE_PROJECT_ID };
+  const configured = { ...database, paystack: !!env.PAYSTACK_SECRET_KEY, sms: !!(env.SMS || env.SMS_WORKER_URL) && !!env.SMS_WORKER_KEY, email: !!env.BREVO_API_KEY };
+  if (!env.HEALTH_KEY || req.headers.get('x-health-key') !== env.HEALTH_KEY) return json({ ok: Object.entries(database).every(([, v]) => v) && configured.paystack, configured });
   const probe = async fn => { try { await fn(); return true; } catch { return false; } };
   const checks = {
-    firestore: await probe(() => getDoc(env, 'settings', 'site')),
+    [onSupabase ? 'supabase' : 'firestore']: await probe(() => getDoc(env, 'settings', 'site')),
     paystack: await probe(async () => { const r = await fetch('https://api.paystack.co/transaction?perPage=1', { headers: { Authorization: `Bearer ${env.PAYSTACK_SECRET_KEY}` } }); if (!r.ok) throw new Error(String(r.status)); }),
   };
   const ok = Object.values(checks).every(Boolean);

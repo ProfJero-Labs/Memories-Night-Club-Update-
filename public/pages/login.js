@@ -32,7 +32,7 @@ const busy = (btn, on, text) => { btn.disabled = on; if (text) btn.textContent =
 // The site and the Worker update separately: if the Worker online is older than this page, its
 // PIN sign-in doesn't exist yet. Say so plainly (and point to email sign-in) instead of "Not found".
 const explain = e => (e.status === 404 ? 'Phone and PIN sign-in isn’t switched on yet (the system is being updated). Use “Sign in with email instead”, or try again later. Tell your manager.' : e.message);
-async function finish(d) { route(await signInWithToken(d.token)); }
+async function finish(d) { route(await signInWithToken(d.token, d.own === true)); }
 
 // 1. Phone + PIN
 $('#pinForm').onsubmit = async ev => {
@@ -81,7 +81,7 @@ $('#f').onsubmit = async e => {
   const btn = $('#goEmail'); busy(btn, true, 'Signing in…');
   try { route(await signIn($('#email').value.trim(), $('#pw').value)); }
   catch (err) {
-    msg(err.code === 'auth/too-many-requests' ? 'Too many attempts. Wait a few minutes.' : err.code === 'auth/network-request-failed' ? 'Connection dropped. Try again.' : 'That email and password don’t match.');
+    msg(err.code === 'auth/off' ? err.message : err.code === 'auth/too-many-requests' ? 'Too many attempts. Wait a few minutes.' : err.code === 'auth/network-request-failed' ? 'Connection dropped. Try again.' : 'That email and password don’t match.');
     busy(btn, false, 'Sign in');
   }
 };

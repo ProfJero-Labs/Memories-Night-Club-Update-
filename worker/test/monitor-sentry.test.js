@@ -19,7 +19,7 @@ test('with a DSN set, the real Sentry envelope is sent and contains no secrets',
   const inner = globalThis.fetch;
   globalThis.fetch = async (url, o) => {
     if (String(url).includes('ingest.sentry.io')) { envelopes.push(typeof o.body === 'string' ? o.body : Buffer.from(o.body).toString()); return new Response('{}', { status: 200 }); }
-    if (String(url).includes('firestore.googleapis.com')) throw new Error(`No document: tickets/${TOKEN} for 0241234567 sk_live_abc123`);
+    if (/firestore\.googleapis\.com|\.supabase\.test/.test(String(url))) throw new Error(`No document: tickets/${TOKEN} for 0241234567 sk_live_abc123`);
     return inner(url, o);
   };
   const pending = [];

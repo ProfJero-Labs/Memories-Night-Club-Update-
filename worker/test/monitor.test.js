@@ -10,7 +10,7 @@ const ORIGIN = 'http://localhost:3000';
 // Makes every Firestore call fail with an error that quotes secrets, like a real outage can.
 function breakFirestore() {
   const inner = globalThis.fetch;
-  globalThis.fetch = (url, o) => String(url).includes('firestore.googleapis.com')
+  globalThis.fetch = (url, o) => /firestore\.googleapis\.com|\.supabase\.test/.test(String(url))
     ? Promise.reject(new Error(`No document: projects/p/databases/(default)/documents/tickets/${TOKEN} for 0241234567 sk_live_abc123`))
     : inner(url, o);
   return () => { globalThis.fetch = inner; };

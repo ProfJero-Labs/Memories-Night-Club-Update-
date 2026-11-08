@@ -1,5 +1,6 @@
 // Staff operations. Every write the admin console makes comes through here: role-checked,
 // validated, and audit-logged. The browser never writes Firestore directly.
+import { ownAuth } from './lib/session.js';
 import { getDoc, setDoc, deleteDoc, listDocs, queryWhere, queryRecent, commitTx, updateWrite, withTransaction, googleAccessToken } from './lib/firestore.js';
 import { now, id, clean, normalizePhone, ticketToken, displayCode, dateKey, firstName, TICKET_STYLES, cleanTicketColors, generatePassword } from './lib/util.js';
 import { requireRole, ADMIN, CMS, TICKET_MONEY, MONEY, STAFF_ROLES, uidOf, forgetStaffRecord } from './lib/auth.js';
@@ -435,6 +436,7 @@ async function identity(env, path, body) {
 // removes a role. 'none' strips all claims.
 export async function setRole(env, b, user) {
   if (!requireRole(user, ['superAdmin'])) return FORBIDDEN;
+  if (ownAuth(env)) return { error: 'Staff sign in with their phone number and a PIN now. Add people under Staff (More → Staff) and they get their PIN by text.', status: 410 };
   const email = clean(b?.email, 120).toLowerCase(), role = String(b?.role || '');
   if (!email || !(STAFF_ROLES.includes(role) || role === 'none')) return { error: 'A valid email and role are required.' };
   const account = ((await identity(env, 'accounts:lookup', { email: [email] })).users || [])[0];
@@ -458,6 +460,7 @@ export async function setRole(env, b, user) {
 // password, set the role claim, mirror in Firestore, text the credentials.
 export async function inviteStaff(env, b, user) {
   if (!requireRole(user, ['superAdmin'])) return FORBIDDEN;
+  if (ownAuth(env)) return { error: 'Staff sign in with their phone number and a PIN now. Add people under Staff (More → Staff) and they get their PIN by text.', status: 410 };
   const email = clean(b?.email, 120).toLowerCase();
   const name = clean(b?.name, 80);
   const phone = normalizePhone(b?.phone);
