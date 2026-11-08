@@ -79,3 +79,14 @@ test('the old email invite is switched off with a plain explanation', async () =
   const out = await setRole(env, { email: 'a@b.co', role: 'manager' }, { uid: 'x', role: 'superAdmin', admin: true });
   assert.equal(out.status, 410); assert.match(out.error, /phone number and a PIN/);
 });
+
+test('with no separate session secret, one is derived from the Supabase service key (one secret to set, not two)', async () => {
+  const { env, call } = setup();
+  delete env.APP_JWT_SECRET; env.SUPABASE_SERVICE_ROLE_KEY = 'sb_secret_a-long-service-key-for-the-test-0123456789';
+  const token = await signSession(env, 'u1', 'waitStaff');
+  assert.equal((await call('GET', '/api/ops/me', token)).status, 200);
+  env.SUPABASE_SERVICE_ROLE_KEY = 'sb_secret_a-different-service-key-0123456789abcdef';
+  assert.equal((await call('GET', '/api/ops/me', token)).status, 401, 'a different key signs differently');
+  delete env.SUPABASE_SERVICE_ROLE_KEY;
+  await assert.rejects(signSession(env, 'u1', 'waitStaff'), /SUPABASE_SERVICE_ROLE_KEY is not set/);
+});

@@ -1,132 +1,79 @@
-# Moving Memories from Firebase to Supabase
+# Moving Memories from Firebase to Supabase (a short job)
 
-The club's database and staff sign-in move from Firebase to Supabase. **No old sales move**: all of it was
-test data. Only the setup comes across: the drinks, the bars, the staff and the upcoming event.
-Everything is switched by one Worker setting, so going back is as quick as going forward.
+The club's database and staff sign-in move from Firebase to Supabase. **Nothing is copied**: all the old
+data was test data. The drinks, the bars, the event and the staff are set up again in the app, and everyone
+gets a new PIN by text. Pictures stay on Cloudinary, payments on Paystack, texts on the SMS worker.
 
-What changes: where records are kept (Supabase instead of Firebase's Firestore) and how staff stay signed
-in (a token the Worker signs itself instead of one from Firebase). Pictures stay on Cloudinary, payments
-on Paystack, texts on the SMS worker: none of that changes.
+The Supabase side is already done: the project **memories** (`itebqtwpobjostoerijl`) has its tables, they
+are locked so only the Worker can use them, and the first staff are already in. The Worker's code and the
+test suite (both databases) are ready. What is left is these steps, about 15 minutes.
 
-Supabase project: **memories** (`itebqtwpobjostoerijl`, address `https://itebqtwpobjostoerijl.supabase.co`).
-The tables and functions are already created (`supabase/migrations/001_docs_and_functions.sql`).
+## What you do
 
-## 0. You need
+**1. Upgrade the Supabase plan (the owner does this).** Supabase dashboard → the organization → Billing →
+Pro. The free plan pauses a project after a week with no activity; a paused database means the club's system
+is down. Do it before real customers use the system.
 
-- A computer with **Node.js 22** and this project (the same as for `npm run worker:deploy`), after
-  `npm ci --prefix worker`.
-- The **Firebase key file** (the service-account JSON the Worker already uses; or make a new one in the
-  Firebase console → Project settings → Service accounts → Generate new private key). It is only read from.
-- Access to the **Supabase dashboard** for the `memories` project, and to **Cloudflare** for the Worker.
-
-## 1. Before anything else: the paid plan
-
-On the Supabase dashboard (Organization → Billing) move the project to the **Pro plan**. The free plan pauses
-a project after a week with no activity, and a paused database means the club's system is down. Do this
-before real customers use it.
-
-## 2. Two secrets and one setting on the Worker
-
-Supabase dashboard → **Project Settings → API**: copy the **service_role** (secret) key. Then, in the
-`worker` folder:
+**2. Put the new code on the Worker.** In the project folder:
 
 ```bash
-npx wrangler secret put SUPABASE_URL
+npm ci --prefix worker
 ```
 
-(paste `https://itebqtwpobjostoerijl.supabase.co`)
+```bash
+npm run worker:deploy
+```
+
+(This also sets `SUPABASE_URL`, which is in `worker/wrangler.toml`. Nothing uses Supabase yet.)
+
+**3. Give the Worker the Supabase key (one secret).** Supabase dashboard → project **memories** →
+**Project Settings → API Keys** → the **service_role** key (click Reveal, Copy). Use the *service_role* one,
+not the anon or publishable one. Then:
+
+```bash
+cd worker
+```
 
 ```bash
 npx wrangler secret put SUPABASE_SERVICE_ROLE_KEY
 ```
 
-(paste the service_role key; never put it in chat, a text or the repository)
+and paste it when asked. (Never put it in chat, in a text, or in the project files.)
 
-```bash
-openssl rand -hex 32
-```
+**4. Flip the switch.** Cloudflare dashboard → Workers → `memories-paystack-verify` → **Settings →
+Variables and Secrets** → **Add** a plain *Variable* named `DB_BACKEND` with the value `supabase` → Deploy.
 
-Copy that output, then:
+**5. Check.** Open `https://memories-paystack-verify.diamondj04102026.workers.dev/api/health` in a browser. You
+want `"ok":true` and `"supabase":true` under `configured`. Then tell the owner: staff can sign in.
 
-```bash
-npx wrangler secret put APP_JWT_SECRET
-```
+## Then, in the app (the owner and managers)
 
-Do **not** set `DB_BACKEND` yet: that is the switch (step 5).
+1. **Sign in.** On the staff login page, enter your phone number and tap **First time, or forgot your PIN?**:
+   a text arrives with your PIN. (Everyone does this once; no PIN carries over from before.)
+2. **Control room → Setup:** the **bars** (one or three; if the bar QR cards were printed already, print new
+   ones: each bar's QR code is new), **drinks and prices**, and **Nights**: create the event on the 14th with its
+   tickets and tables.
+3. **More → Staff:** add anyone who isn't there yet; each gets a PIN by text.
+4. Each bar does its **opening stock count** before the first order.
+5. **Pair the MoMo phone** again: Control room → Setup → MoMo phone → Pair a phone.
+6. Then the small real payments in `docs/ENGINEER-CHECKLIST.md`.
 
-## 3. Copy the setup (drinks, bars, staff, the upcoming event)
+## Going back
 
-First look at what it would copy (nothing is written):
-
-```bash
-FIREBASE_SERVICE_ACCOUNT_FILE=./service-account.json SUPABASE_URL=https://itebqtwpobjostoerijl.supabase.co SUPABASE_SERVICE_ROLE_KEY=PASTE_KEY node scripts/copy-setup-from-firebase.mjs
-```
-
-Read the list. Then copy it by adding `--go`:
-
-```bash
-FIREBASE_SERVICE_ACCOUNT_FILE=./service-account.json SUPABASE_URL=https://itebqtwpobjostoerijl.supabase.co SUPABASE_SERVICE_ROLE_KEY=PASTE_KEY node scripts/copy-setup-from-firebase.mjs --go
-```
-
-It prints, for each kind of record, how many it copied and how many are now on Supabase. If a line says
-"FEWER THAN COPIED", send the output to the developer. It is safe to run again.
-
-Not copied, on purpose: tabs, orders, tickets sold, payments, cash, stock counts and movements, expenses,
-payroll, reviews and logs. **Stock starts from an opening count** on the new database. Check the "left"
-numbers on the tickets and tables of the upcoming event in the admin before tickets go on sale (test sales
-may have reduced them). The picture on the event is a Cloudinary link and comes with it.
-
-Staff PINs are not copied: each person taps **First time, or forgot your PIN?** on the login page and gets a
-text with a new one.
-
-## 4. The first admin's PIN
-
-So there is someone who can sign in straight away (6 numbers for an admin):
-
-```bash
-SUPABASE_URL=https://itebqtwpobjostoerijl.supabase.co SUPABASE_SERVICE_ROLE_KEY=PASTE_KEY node scripts/set-pin.mjs 0244XXXXXXX 123456
-```
-
-(the admin's phone number, then the PIN you chose). Everyone else texts themselves a PIN, or the admin
-sends them one from **More → Staff**.
-
-## 5. Flip the switch
-
-Cloudflare → Workers → `memories-paystack-verify` → **Settings → Variables and Secrets** → add a plain
-**Variable**: `DB_BACKEND` = `supabase`. Save and deploy (the Worker picks it up within a minute).
-
-Check `https://memories-paystack-verify.diamondj04102026.workers.dev/api/health` in a browser. You want
-`"ok":true` and `"supabase":true,"sessionSecret":true` under `configured`.
-
-## 6. Check it works (about 15 minutes)
-
-1. Sign in on the staff login with the admin's phone and PIN. You land on the admin's page.
-2. A manager signs in the same way (after texting themselves a PIN).
-3. **Control room → Nights**: the upcoming event is there with its tickets and tables.
-4. A bar does its **opening stock count**, then a waiter opens a tab, orders, the bar hands it over, and the
-   waiter closes it with cash. It shows on the Manager's Tonight.
-5. **Pairing the MoMo phone**: Control room → Setup → MoMo phone → Pair a phone (the pairing code is kept on
-   Supabase now, so pair again if it was paired before).
-6. One small real Paystack payment and one MoMo-to-the-wallet payment, as in `docs/ENGINEER-CHECKLIST.md`.
-
-## 7. Going back (if something is wrong)
-
-Delete the `DB_BACKEND` variable (or set it to `firebase`) and deploy. The Worker is back on Firebase within
-a minute, with the old data and logins there. People signed in with the new kind of session just sign in
-again with their PIN. Nothing on Firebase was changed by any of this.
-
-## 8. After a calm week
-
-Nothing needs removing: Firebase can sit idle. When you are sure, the Firebase settings on the Worker
-(`FIREBASE_*`) can be deleted.
+Delete the `DB_BACKEND` variable (Cloudflare → the Worker → Settings → Variables and Secrets) and deploy.
+The Worker is back on Firebase within a minute, with its old data and logins. Nothing on Firebase was
+changed by any of this.
 
 ## If something shows up
 
 | What you see | What it means |
 |---|---|
-| `SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are not set` | Step 2 wasn't done on this Worker. |
-| `APP_JWT_SECRET is not set` (staff can't sign in) | Step 2: the third secret. |
-| `Could not find the function public.m_…` | The tables weren't created: run `supabase/migrations/001_docs_and_functions.sql` in Supabase → SQL editor. |
-| `Something went wrong on our side (code 401)` or a Supabase key error | The service_role key was pasted wrongly (use the *service_role* one, not the anon key). |
-| "You don't have a PIN yet" | Tap **First time, or forgot your PIN?** on the login page, or run step 4 for that person. |
-| The site slows down or fails after a quiet week | The project was on the free plan and paused: restore it on the Supabase dashboard, then do step 1. |
+| `SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are not set` | Step 2 (the address) or step 3 (the key) wasn't done on this Worker. |
+| `/api/health` says `"supabase":false` | Same: the key or the address is missing. |
+| `Something went wrong on our side (code 401)` | The wrong key was pasted: use *service_role*, not anon or publishable. |
+| `Could not find the function public.m_…` | Ask the developer: the tables are missing from the project. |
+| "You don't have a PIN yet" | Tap **First time, or forgot your PIN?** on the login page. |
+| "That phone number and PIN don't match" for someone who should be in | They aren't in the staff list yet (or the number is typed differently): the owner adds them under More → Staff, or asks the developer. |
+| The site fails after a quiet week | The project was on the free plan and paused: restore it on the Supabase dashboard, then do step 1. |
+
+Anything else: copy the exact message and send it to the developer.

@@ -123,7 +123,7 @@ test('health: shallow without the key, deep with it, 503 when a dependency is do
   assert.equal(r.status, 200);
   const shallow = await r.json();
   assert.equal(shallow.ok, true); assert.equal(shallow.checks, undefined, 'no deep checks without the key');
-  assert.deepEqual(Object.keys(shallow.configured).sort(), process.env.DB_BACKEND === 'supabase' ? ['email', 'paystack', 'sessionSecret', 'sms', 'supabase'] : ['email', 'firebase', 'firebaseProject', 'paystack', 'sms']);
+  assert.deepEqual(Object.keys(shallow.configured).sort(), process.env.DB_BACKEND === 'supabase' ? ['email', 'paystack', 'sms', 'supabase'] : ['email', 'firebase', 'firebaseProject', 'paystack', 'sms']);
   assert.ok(Object.values(shallow.configured).every(v => typeof v === 'boolean'));
   const text = JSON.stringify(shallow);
   for (const v of [env.FIREBASE_SERVICE_ACCOUNT_JSON, env.PAYSTACK_SECRET_KEY].filter(Boolean)) assert.ok(!text.includes(v), 'never a secret value');

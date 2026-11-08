@@ -128,7 +128,7 @@ export async function health(req, env) {
   // Without the key: only whether each setting is there (yes/no, never a value), so a missing key
   // after a deploy shows from a browser: /api/health.
   const onSupabase = env.DB_BACKEND === 'supabase';
-  const database = onSupabase ? { supabase: !!env.SUPABASE_URL && !!env.SUPABASE_SERVICE_ROLE_KEY, sessionSecret: !!env.APP_JWT_SECRET && String(env.APP_JWT_SECRET).length >= 24 } : { firebase: !!env.FIREBASE_SERVICE_ACCOUNT_JSON && validJson(env.FIREBASE_SERVICE_ACCOUNT_JSON), firebaseProject: !!env.FIREBASE_PROJECT_ID };
+  const database = onSupabase ? { supabase: !!env.SUPABASE_URL && !!env.SUPABASE_SERVICE_ROLE_KEY } : { firebase: !!env.FIREBASE_SERVICE_ACCOUNT_JSON && validJson(env.FIREBASE_SERVICE_ACCOUNT_JSON), firebaseProject: !!env.FIREBASE_PROJECT_ID };
   const configured = { ...database, paystack: !!env.PAYSTACK_SECRET_KEY, sms: !!(env.SMS || env.SMS_WORKER_URL) && !!env.SMS_WORKER_KEY, email: !!env.BREVO_API_KEY };
   if (!env.HEALTH_KEY || req.headers.get('x-health-key') !== env.HEALTH_KEY) return json({ ok: Object.entries(database).every(([, v]) => v) && configured.paystack, configured });
   const probe = async fn => { try { await fn(); return true; } catch { return false; } };
