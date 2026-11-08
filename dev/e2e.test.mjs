@@ -1358,3 +1358,25 @@ test('Control room: the admin pairs the MoMo phone (the code shows on screen) an
   await admin.goto(`${base}/admin.html#payrules`); await admin.locator('#panel').getByText('Payment settings').first().waitFor();
   assert.deepEqual(admin.errors, []);
 });
+
+test('invoice for a bill above GHS 2,000: three steps, the number to copy, and the customer gives their MoMo transaction ID', async () => {
+  const now = new Date().toISOString();
+  store.seed('tabs', 'invtab', { number: 31, businessDate: now.slice(0, 10), table: 'VIP', status: 'open', closeWhenPaid: true, walletWait: 'invwid', payments: [], discounts: [], billToken: 'abcdef0123456789abcdef0123456789', waiterName: 'Efua Waiter', customerPhone: '0244445555', createdAt: now });
+  store.seed('rounds', 'invround', { tabId: 'invtab', tabNumber: 31, status: 'delivered', stationId: 'dev-bar', createdAt: now, lines: [{ lineId: 'l1', productId: 'dev-magnum', name: 'Magnum', unitPesewas: 150000, qty: 2, returnedQty: 0, brokenQty: 0, compQty: 0 }] });
+  store.seed('wallet_payments', 'invwid', { tabId: 'invtab', tabNumber: 31, table: 'VIP', billPesewas: 300000, chargePesewas: 10000, duePesewas: 310000, code: 'K7QX', status: 'waiting', businessDate: now.slice(0, 10), reason: 'big', wallet: { number: '0595986313', name: 'Samuel Forson / Memories Night Club' }, customerPhone: '0244445555', createdAt: now });
+  const c = await phone(390);
+  await c.goto(`${base}/bill.html?t=abcdef0123456789abcdef0123456789`, { waitUntil: 'networkidle' });
+  const root = c.locator('#root');
+  await root.getByText('Pay GHS 3,100 by MoMo').waitFor();
+  const text = await root.textContent();
+  assert.match(text, /0595986313/); assert.match(text, /Send exactly\s*GHS 3,100/); assert.match(text, /To pay\s*GHS 3,100/);
+  assert.doesNotMatch(text, /charge/i, 'one amount: the charge is never named');
+  await c.locator('[data-copy="0595986313"]').waitFor();
+  // Too short an ID is refused on the page; a real one is saved against the bill.
+  await c.fill('#txid', '123'); await c.click('#txGo'); await c.locator('#txMsg').getByText(/at least 6/).waitFor();
+  await c.fill('#txid', '51234567890'); await c.click('#txGo');
+  await root.getByText('Got your transaction ID').waitFor();
+  assert.equal(store.get('wallet_payments', 'invwid').fields.claimedTxId, '51234567890');
+  assert.equal(store.get('wallet_payments', 'invwid').fields.status, 'waiting', 'an ID alone confirms nothing');
+  assert.deepEqual(c.errors, []);
+});

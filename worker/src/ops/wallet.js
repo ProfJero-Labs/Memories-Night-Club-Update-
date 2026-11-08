@@ -19,7 +19,7 @@
 import { getDoc, setDoc, listDocs, queryWhere, queryRecent, withTransaction, batchGet, foundFields, updateWrite, commitTx } from '../lib/firestore.js';
 import { now, id, clean, normalizePhone, maskPhone } from '../lib/util.js';
 import { requireRole, uidOf } from '../lib/auth.js';
-import { sendSms } from '../lib/notify.js';
+import { sendSms, siteUrl } from '../lib/notify.js';
 import { routeFor } from '../lib/routes.js';
 import { commercialConfig } from '../lib/fee.js';
 import { FORBIDDEN, bizDate, audit, ghs, int } from './common.js';
@@ -28,6 +28,8 @@ import { FORBIDDEN, bizDate, audit, ghs, int } from './common.js';
 // Finance is never at the club, so can't check the wallet.
 export const CONFIRMERS = ['superAdmin', 'director', 'manager', 'hrManager'];
 const CODE = '23456789ABCDEFGHJKMNPQRSTUVWXYZ';
+// The invoice text: one line and the link (the page shows the bill, the number to pay to and the steps).
+export const walletInvoiceSms = (env, tab, duePesewas) => `MEMORIES: your bill is ${ghs(duePesewas)}. Open to pay: ${siteUrl(env, `/bill.html?t=${tab.billToken}`)}`;
 const code = () => Array.from(crypto.getRandomValues(new Uint8Array(4)), b => CODE[b % CODE.length]).join('');
 const sum = (xs, f) => xs.reduce((n, x) => n + Number(f(x) || 0), 0);
 
@@ -66,7 +68,7 @@ export async function startWallet(env, t, bill, user, { phone } = {}) {
     customerPhone: phone || t.fields.customerPhone || '', status: 'waiting', startedBy: uidOf(user), startedByName: user.name || '', createdAt: at };
   await setDoc(env, 'wallet_payments', wid, w);
   await setDoc(env, 'tabs', t.id, { ...t.fields, ...(phone ? { customerPhone: phone } : {}), closeWhenPaid: true, closeAskedByName: user.name || '', walletWait: wid });
-  if (w.customerPhone) await sendSms(env, w.customerPhone, `MEMORIES: send ${ghs(w.duePesewas)} by MoMo to ${w.wallet.number}. Ref ${w.code}.`);
+  if (w.customerPhone) await sendSms(env, w.customerPhone, walletInvoiceSms(env, t.fields, w.duePesewas));
   await audit(env, user, 'WALLET_PAYMENT_STARTED', { walletPaymentId: wid, tabId: t.id, duePesewas: w.duePesewas, reason: w.reason });
   return view(wid, w);
 }
@@ -85,7 +87,7 @@ export async function startOrderWallet(env, oid, order) {
 }
 
 const view = (wid, w) => ({ id: wid, orderId: w.orderId || '', tabId: w.tabId, tabNumber: w.tabNumber, table: w.table, waiterName: w.waiterName, billPesewas: w.billPesewas, chargePesewas: w.chargePesewas, duePesewas: w.duePesewas,
-  reason: w.reason, code: w.code, wallet: w.wallet, status: w.status, phoneHint: w.customerPhone ? maskPhone(w.customerPhone) : '', createdAt: w.createdAt,
+  reason: w.reason, code: w.code, wallet: w.wallet, status: w.status, claimedTxId: w.claimedTxId || '', phoneHint: w.customerPhone ? maskPhone(w.customerPhone) : '', createdAt: w.createdAt,
   ...(w.status === 'confirmed' ? { receivedPesewas: w.receivedPesewas, momoRef: w.momoRef, confirmedByName: w.confirmedByName, changePesewas: Math.max(0, w.receivedPesewas - w.duePesewas) } : {}) });
 
 // The customer, on their bill link (a bill above the limit): starts MoMo to the wallet themselves.

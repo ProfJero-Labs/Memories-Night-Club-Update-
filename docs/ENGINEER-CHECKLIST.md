@@ -104,6 +104,14 @@ Directors see them in plain words under **More → How customers pay**, with not
      the MoMo phone reads the payment text that MTN sends for a merchant (QR) payment: paste it into
      **MoMo phone → Test a text**; if it isn't read, send us the text so the reader can be fixed.
 
+   - **The invoice (bills above GHS 2,000).** A waiter's **Text the invoice** (or the bar's **Sell →
+     Send an invoice**) texts the customer one line with a link. The page shows the bill, three
+     steps, the number to copy, and a box for the MoMo **transaction ID** (optional). The business
+     phone confirms the payment by itself when MTN's message arrives; the ID only tells it which bill
+     when two wait for the same amount. Check: send an invoice to your own phone, pay a small test
+     amount, and watch the page turn to **Paid**. At the bar, the drinks can't be handed over until it
+     shows Paid.
+
 ## 8. Leave it running
 
 - Phone at the club, **plugged in**, data or Wi-Fi on. A small notification shows the app is

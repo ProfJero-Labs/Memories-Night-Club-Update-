@@ -9,6 +9,7 @@ import { requireStaff, sapi } from '../staff.js';
 import { sheet, say, st, every, bottomNav, busy, ghsIn, moneyField, money, when, ask } from '../lib/ops-ui.js';
 import { drinkPicker, paySheet, handInCash, tipSheet, tipSaid } from '../lib/sell.js';
 import { accountsView } from '../lib/ops-views.js';
+import { qrSvg } from '../ticket-art.js';
 
 const user = await requireStaff(['superAdmin', 'director', 'manager', 'eventManager', 'barManager', 'barStaff']);
 // The bar manager: everything the bar does, plus the night's accounts and everyone's cash.
@@ -120,6 +121,7 @@ async function rounds() {
   $('#returns').innerHTML = d.returns.length ? `<div class="say warn"><b>Drinks coming back</b>${d.returns.map(r => `<div class="ret"><span>${esc(r.waiterName)} · Tab ${r.tabNumber}: ${r.lines.filter(l => l.returnPending).map(l => `${l.returnPending} × ${esc(l.name)}`).join(', ')}</span><button class="mid okc" data-back="${esc(r.id)}">Got them back</button></div>`).join('')}</div>` : '';
   $('#rounds').innerHTML = atBar.map(r => `<article class="ord s-${esc(r.status)}" aria-label="Tab ${r.tabNumber}"><div class="head"><span class="tbl-name">${esc(r.table)}</span><span class="waited">${when(r.createdAt)}</span></div>
       <div class="head"><span class="who">Tab ${r.tabNumber} · ${esc(r.waiterName)}</span>${st(r.status, r.statusLabel)}</div>
+      ${r.payFirst ? '<span class="note"><b>Pays by phone first:</b> hand over only when it shows Paid (the system checks too).</span>' : ''}
       <ul>${r.lines.map(l => `<li><b>${l.qty}×</b><span>${esc(l.name)}</span></li>`).join('')}</ul>${r.note ? `<span class="note">${esc(r.note)}</span>` : ''}
       ${ticketActs(r)}</article>`).join('')
     || '<p class="none">None right now. They appear here by themselves.</p>';
@@ -149,9 +151,29 @@ async function sellView() {
         const r = await sapi('/api/ops/quick-sale', { method: 'POST', body: { lines, stationId: sid, fromBar: true, ...pay } });
         top(`${pay.method === 'momo' ? 'MoMo' : 'Cash'} ${money(total)} recorded.${tipSaid(r)} Serve the drinks.`);
         sellView();
-      }, { title: 'Sell', sapi, tipFor: user.uid });
+      }, { title: 'Sell', sapi, tipFor: user.uid, alt: [{ label: 'Send an invoice (customer pays on their phone)', run: async close => { close(); invoiceSheet(lines, total, sid); } }] });
     },
   });
+}
+
+// ── An invoice from the bar: the customer pays on their own phone (Paystack; above GHS 2,000 MoMo to the
+// wallet). The invoice goes to their phone by text, or they scan the QR on this screen. The drinks
+// go to the bar's list, marked "pays first": handed over only once it shows Paid.
+function invoiceSheet(lines, total, sid) {
+  const { box, close } = sheet(`<h2>Invoice: ${money(total)}</h2>
+    <p class="muted" style="margin:0">The customer pays on their phone. Hand over the drinks when it shows Paid.</p>
+    <div class="sfield"><label for="ivPhone">Customer’s phone (we text them the invoice)</label><input id="ivPhone" type="tel" inputmode="tel" placeholder="024 123 4567"><span class="hint">Or leave it blank and let them scan the QR that appears.</span></div>
+    <div id="ivMsg"></div><div id="ivOut"></div><button class="big" id="ivGo">Send the invoice</button><button class="big ghost" data-close>Close</button>`, { label: 'Invoice' });
+  $('#ivGo', box).onclick = async () => {
+    try {
+      const phone = $('#ivPhone', box).value.trim();
+      const r = await busy($('#ivGo', box), () => sapi('/api/ops/tabs/order', { method: 'POST', body: { stationId: sid, lines, payFirst: true, ...(phone ? { customerPhone: phone, sendInvoice: true } : {}) } }), 'Sending…');
+      $('#ivGo', box).hidden = true; $('#ivPhone', box).disabled = true;
+      say($('#ivMsg', box), r.invoice?.sent ? `Invoice texted to ${r.invoice.phoneHint}. They can also scan this.` : r.invoice?.error ? r.invoice.error : 'Ready. Let the customer scan this to see the bill and pay.', r.invoice?.error ? 'bad' : 'good');
+      if (r.billUrl) $('#ivOut', box).innerHTML = `<div class="qrbox" id="ivQr" style="max-width:260px;margin:8px auto"></div>`, qrSvg(r.billUrl).then(svg => { const el = $('#ivQr', box); if (el) el.innerHTML = svg; }).catch(() => {});
+      top(`Invoice for ${money(total)} sent: the drinks are on the list, marked “pays first”.`);
+    } catch (e) { say($('#ivMsg', box), e.message, 'bad'); }
+  };
 }
 
 // ── My shift: what I sold, my tips, hand in my cash, my report ──

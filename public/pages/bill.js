@@ -48,10 +48,14 @@ async function load(note = '') {
       ${b.payments.map(p => `<div class="ln sub"><span>Paid · ${esc(p.method)}<small>${esc(when(p.at))}</small></span><span>−${money(p.amountPesewas)}</span></div>`).join('')}
       <div class="ln due"><span>${paid ? 'Paid in full' : 'To pay'}</span><span>${money(b.balancePesewas + (paid ? 0 : chargeNow))}</span></div></div>
     <p style="margin:0"><span class="st ${esc(b.status)}">${esc(b.statusLabel)}</span></p>
-    ${walletWait ? `<div class="pay-box" id="walletBox"><h2 style="margin:0">Send ${money(walletWait.duePesewas)} by MoMo</h2>
-      <p style="margin:0">To <b style="font-size:26px">${esc(walletWait.number)}</b><br>${esc(walletWait.name)}<br>Reference: <b>${esc(walletWait.code)}</b></p>
+    ${walletWait ? `<div class="pay-box" id="walletBox"><h2 style="margin:0">Pay ${money(walletWait.duePesewas)} by MoMo</h2>
+      <ol class="pay-steps"><li>Open your MoMo app, or dial your MoMo menu, and choose <b>Send money</b>.</li>
+        <li>Send exactly <b>${money(walletWait.duePesewas)}</b> to:<br><b style="font-size:28px;letter-spacing:1px">${esc(walletWait.number)}</b><br>${esc(walletWait.name)}<br><small>Reference, if it asks: <b>${esc(walletWait.code)}</b></small></li>
+        <li>Come back here. This page turns to <b>Paid</b> by itself once the club sees it.</li></ol>
       <div class="btn-row">${copyBtn('Copy number', walletWait.number)}${copyBtn('Copy amount', String(walletWait.duePesewas / 100))}</div>
-      <p class="fine" style="margin:0">This page updates once the club sees the money arrive; your waiter is told.</p></div>`
+      ${walletWait.claimedTxId ? `<div class="say good" id="txDone"><b>Got your transaction ID</b>${esc(walletWait.claimedTxId)}. We’re waiting for the payment message to reach the club.</div>`
+        : `<div class="field" id="txBox"><label for="txid">Already paid? Your MoMo transaction ID <small>(optional, makes it faster)</small></label><input id="txid" autocomplete="off" autocapitalize="characters" placeholder="From your payment message, e.g. 51234567890"><button class="mid" id="txGo" type="button" style="margin-top:8px">Send my transaction ID</button><div id="txMsg"></div></div>`}
+      <p class="fine" style="margin:0">Your waiter or the bar is told as soon as it arrives.</p></div>`
     : tooBig || (due && walletOk(b.balancePesewas, b.totalPesewas)) ? `<div class="pay-box"><h2 style="margin:0">${tooBig ? 'How to pay' : 'Card payments are down tonight'}</h2>
       <p style="margin:0">${tooBig ? `Bills above ${money(paystackLimit())}: pay <b>${money(b.balancePesewas)} in cash</b> to your waiter, or <b>${money(b.balancePesewas + bigFlat())} by MoMo</b> to the club’s wallet.` : 'Pay in cash to your waiter, or by MoMo to the club’s wallet.'}</p>
       <div class="field"><label for="wph">Your phone (we text you the details)</label><input id="wph" type="tel" inputmode="tel" autocomplete="tel" placeholder="024 123 4567" value="${esc(pick.phone)}"></div>
@@ -64,6 +68,13 @@ async function load(note = '') {
       <button class="big ghost" id="save" type="button">Save receipt</button>
       <p class="foot-small" style="text-align:center;margin:10px 0 0">How was your night? <a href="review.html?s=bill&back=${encodeURIComponent(`bill.html?t=${token}`)}">Rate us</a> (optional)</p>` : ''}`;
   bindCopy(root);
+  $('#txGo') && ($('#txGo').onclick = async () => {
+    const btn = $('#txGo'), v = $('#txid').value.trim();
+    if (v.replace(/[^A-Za-z0-9]/g, '').length < 6) { $('#txMsg').innerHTML = '<div class="say bad">Type the transaction ID from your payment message (at least 6 letters or numbers).</div>'; return; }
+    btn.disabled = true; btn.textContent = 'Sending…';
+    try { await api(`/api/guest/bill/${encodeURIComponent(token)}/claim`, { method: 'POST', body: { txId: v } }); load(); }
+    catch (e) { btn.disabled = false; btn.textContent = 'Send my transaction ID'; $('#txMsg').innerHTML = `<div class="say bad">${esc(e.message)}</div>`; }
+  });
   $('#save') && ($('#save').onclick = () => print());
   $('#walletGo') && ($('#walletGo').onclick = async () => {
     const btn = $('#walletGo'); btn.disabled = true; btn.textContent = 'One moment…';
@@ -94,7 +105,7 @@ async function load(note = '') {
     catch (e) { btn.disabled = false; payLabel(); load({ kind: 'bad', text: e.message }); }
   });
   // Still open: refresh now and then, so new rounds and the waiter's cash show up (not while they type).
-  if (!paid || open) timer = setTimeout(function again() { if (document.activeElement?.matches('input, select')) { timer = setTimeout(again, 5000); return; } load(); }, 15000);
+  if (!paid || open) timer = setTimeout(function again() { if (document.activeElement?.matches('input, select')) { timer = setTimeout(again, 5000); return; } load(); }, walletWait ? 8000 : 15000);
 }
 
 // A tip, on top of the bill: for their waiter, or anyone on the team they pick.

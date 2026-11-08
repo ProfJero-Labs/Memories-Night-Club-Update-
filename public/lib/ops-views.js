@@ -397,7 +397,7 @@ export function walletSheet(w, done = () => {}, texts = []) {
     <p class="muted" style="margin:0">${esc(w.table && w.table !== 'Walk-in' ? `Table ${w.table}` : `Tab ${w.tabNumber}`)} · reference ${esc(w.code)} · ${esc(w.waiterName)}. Look in the wallet itself.</p>
     <div id="wsPaste"></div>
     ${moneyField('wsAmt', 'Amount that arrived (GHS)', String(w.duePesewas / 100))}
-    <div class="sfield"><label for="wsRef">MoMo transaction ID</label><input id="wsRef" maxlength="40" autocomplete="off" autocapitalize="characters" placeholder="From the wallet’s message"></div>
+    <div class="sfield"><label for="wsRef">MoMo transaction ID</label><input id="wsRef" maxlength="40" autocomplete="off" autocapitalize="characters" placeholder="From the wallet’s message" value="${esc(w.claimedTxId || '')}"></div>
     <div id="wsShort" hidden><div class="sfield"><label for="wsWhy">Accept it short? Why</label><input id="wsWhy" maxlength="200" placeholder="e.g. regular customer, paying the rest tomorrow"></div></div>
     <div id="wsMsg"></div><button class="big okc" id="wsGo">Confirm: it arrived</button><button class="big ghost" data-close>Cancel</button>`, { label: 'MoMo arrived' });
   $$('[data-usetext]', box).forEach(b => b.onclick = async () => {
@@ -427,7 +427,7 @@ export function walletWaitingHtml(wl) {
   const where = w => (w.table && w.table !== 'Walk-in' ? (String(w.table).startsWith('QR') ? w.table : `Table ${w.table}`) : `Tab ${w.tabNumber}`);
   return `${phone}<section class="pos-need"><h2>MoMo to confirm <span class="count">${wl.waiting.length}</span></h2>
       <p class="muted" style="margin:0">${wl.phone?.online ? 'The MoMo phone confirms these by itself when the money arrives. Only step in if it can’t.' : `Check the wallet (${esc(wl.wallet.number)}) itself, never a screenshot.`}</p>
-      ${wl.waiting.map((w, i) => `<div class="need"><div><b>${money(w.duePesewas)} · ${esc(where(w))}</b><span>Reference ${esc(w.code)} · ${esc(w.waiterName)} · ${when(w.createdAt)}</span></div>
+      ${wl.waiting.map((w, i) => `<div class="need"><div><b>${money(w.duePesewas)} · ${esc(where(w))}</b><span>Reference ${esc(w.code)} · ${esc(w.waiterName)} · ${when(w.createdAt)}${w.claimedTxId ? ` · customer’s ID ${esc(w.claimedTxId)}` : ''}</span></div>
         <div class="need-btns"><button class="mid okc" data-wok="${i}">Arrived</button><button class="mid" data-wno="${i}">Not yet</button></div></div>`).join('')}</section>`;
 }
 export function bindWalletWaiting(el, wl, done) {

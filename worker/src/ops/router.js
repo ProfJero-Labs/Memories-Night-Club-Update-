@@ -109,6 +109,7 @@ export async function opsRoute(m, p, u, b, env, user) {
     case '/api/ops/stock/set-level': return stock.setStockLevel(env, b, user);
     case '/api/ops/quick-sale': return tabs.quickSale(env, b, user);
     case '/api/ops/wallet/confirm': return wallet.confirmWallet(env, b, user, { closeIfPaid: tabs.closeIfPaid });
+    case '/api/ops/wallet/claim': return (await import('./momophone.js')).claimStaff(env, b, user);
     case '/api/ops/wallet/cancel': return wallet.cancelWallet(env, b, user);
     case '/api/ops/paystack-down': return wallet.setPaystackDown(env, b, user);
     case '/api/ops/evolveit/paid': return evolveit.recordEvolveitPayment(env, b, user);
