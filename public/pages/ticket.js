@@ -11,10 +11,10 @@ let T, blob, blobUrl;
 async function inviteView(t) {
   const v = { ...t, date: t.eventDate, code: t.displayCode };
   root.innerHTML = `<div class="rc-page">
-    <div class="vz-frame"><img class="vz-img" id="visa" alt="${esc(t.invite.title || t.eventName)} invitation: admits ${t.admits}, phone ending ${esc(t.phoneLast4 || '')}"></div>
+    <div class="vz-frame"><img class="vz-img" id="visa" alt="${esc(t.invite.title || t.eventName)} ${t.invite.style === 'him' ? 'gentleman’s pass' : 'invitation'}: admits ${t.admits}, phone ending ${esc(t.phoneLast4 || '')}"></div>
     <p class="rc-hint">${t.status === 'used' ? 'You’re in. Enjoy your night.' : t.status === 'cancelled' ? 'This invitation was withdrawn.' : `At the door, give your phone number ending ${esc(t.phoneLast4 || '')}.`}</p>
     ${t.status === 'cancelled' ? '' : `<div class="vz-actions no-print"><button type="button" class="btn red" id="vzShare">Share <span aria-hidden="true">↗</span></button><button type="button" class="btn" id="vzSave">Download</button></div>
-    <p class="vz-note">Sharing makes a post for Instagram or your status: your number is hidden on it.</p>`}
+    <p class="vz-note">Share makes a post for Instagram or your status, with your number hidden.</p>`}
   </div>`;
   const { visaCanvas, visaPost, canvasBlob } = await import('../lib/visa.js');
   const card = await visaCanvas(v);
@@ -26,7 +26,7 @@ async function inviteView(t) {
     const btn = e.currentTarget; btn.disabled = true;
     try {
       const blob = await canvasBlob(await visaPost(v)), file = new File([blob], `${name}-post.png`, { type: 'image/png' });
-      const text = `I’m on the list: ${t.invite.title || t.eventName} at Memories Night Club ✨`;
+      const text = t.invite.style === 'him' ? `On the list to witness ${t.invite.title || t.eventName} at Memories Night Club` : `I’m on the list: ${t.invite.title || t.eventName} at Memories Night Club ✨`;
       if (navigator.canShare?.({ files: [file] })) { try { await navigator.share({ files: [file], text }); } catch { /* closed */ } }
       else { save(blob, file.name); toast('SAVED. POST IT FROM YOUR PHOTOS.'); }
     } finally { btn.disabled = false; }

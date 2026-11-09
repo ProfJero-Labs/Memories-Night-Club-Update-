@@ -755,6 +755,7 @@ async function invites(arg, notice) {
       <div class="sfield"><label for="ivList">Phone numbers, one per line</label>
         <textarea id="ivList" rows="7" placeholder="024 123 4567&#10;0201112222 3&#10;+233 55 123 4567"></textarea>
         <span class="hint">A number after the phone sets that person’s passes (otherwise ${inv.passes}). <span id="ivCount"></span></span></div>
+      <div class="sfield"><label for="ivStyle">Which card</label><select id="ivStyle"><option value="her">Ladies: the visa (with the free drinks)</option><option value="him">Gentlemen: the Memories card, a pass to witness (no free drinks)</option></select></div>
       <div class="sfield"><label for="ivAgain">Someone already invited</label><select id="ivAgain"><option value="skip">Leave them as they are</option><option value="add">Add these passes to their invitation (texted again)</option></select></div>
       <div class="toolbar"><button class="sbtn red" type="button" id="ivSend">Send invitations</button></div>
       <div id="ivMsgBox" role="status"></div><div id="ivResults"></div>
@@ -768,9 +769,11 @@ async function invites(arg, notice) {
     const s = settings();
     const { visaCanvas, visaPost } = await import('./lib/visa.js');
     const t = { phoneLast4: '4567', invite: { title: s.title || ev.name, tagline: s.tagline, perk: s.perk, dress: s.dress }, eventName: ev.name, date: ev.date, admits: s.passes, status: 'valid' };
-    const [card, post] = await Promise.all([visaCanvas(t), visaPost(t)]);
-    $('#ivPreviewBox').innerHTML = `<div style="display:grid;gap:12px;max-width:420px"><p class="hint" style="margin:0">The card she gets:</p><img src="${card.toDataURL('image/png')}" alt="The invitation card" style="width:100%;height:auto">
-      <p class="hint" style="margin:0">What her <b>Share</b> button makes (number hidden):</p><img src="${post.toDataURL('image/png')}" alt="The social media post" style="width:100%;height:auto;max-width:320px"></div>`;
+    const him = { ...t, invite: { ...t.invite, style: 'him', tagline: `A pass to witness ${t.invite.title}`, perk: '' } };
+    const [card, post, card2, post2] = await Promise.all([visaCanvas(t), visaPost(t), visaCanvas(him), visaPost(him)]);
+    const img = (c, alt, w = '100%') => `<img src="${c.toDataURL('image/png')}" alt="${alt}" style="width:${w};max-width:100%;height:auto">`;
+    $('#ivPreviewBox').innerHTML = `<div style="display:grid;gap:12px;max-width:420px"><p class="hint" style="margin:0"><b>Ladies:</b> the card, and the post her <b>Share</b> button makes (number hidden):</p>${img(card, 'The ladies’ card')}${img(post, 'The ladies’ post', '320px')}
+      <p class="hint" style="margin:12px 0 0"><b>Gentlemen:</b> the pass, and his post:</p>${img(card2, 'The gentlemen’s pass')}${img(post2, 'The gentlemen’s post', '320px')}</div>`;
   };
   const count = () => { const n = parseInviteLines($('#ivList').value).length; $('#ivCount').textContent = n ? `${n} number${n > 1 ? 's' : ''}.` : ''; };
   $('#ivList').oninput = count;
@@ -782,12 +785,12 @@ async function invites(arg, notice) {
   const load = async () => {
     const d = await sapi(`/api/admin/invites?eventId=${encodeURIComponent(ev.id)}`);
     $('#ivTotals').textContent = d.totals.invitations ? `${d.totals.invitations} cards · ${d.totals.passes} passes · ${d.totals.in} in` : '';
-    $('#ivSent').innerHTML = d.sent.length ? `<div class="tbl-wrap"><table class="tbl"><thead><tr><th>Phone</th><th class="num">Passes</th><th>Code</th><th>At the door</th></tr></thead><tbody>
-      ${d.sent.map(x => `<tr><td>${esc(x.phone)}</td><td class="num">${x.passes}</td><td>${esc(x.code)}</td><td>${x.status === 'used' ? pill(`in ${when(x.checkedInAt)}`, 'green') : x.status === 'cancelled' ? pill('cancelled', 'red') : pill('not yet', 'grey')}</td></tr>`).join('')}</tbody></table></div>` : '<p class="muted" style="margin:0">None sent yet.</p>';
+    $('#ivSent').innerHTML = d.sent.length ? `<div class="tbl-wrap"><table class="tbl"><thead><tr><th>Phone</th><th>Card</th><th class="num">Passes</th><th>Code</th><th>At the door</th></tr></thead><tbody>
+      ${d.sent.map(x => `<tr><td>${esc(x.phone)}</td><td>${x.style === 'him' ? 'Gentleman' : 'Lady'}</td><td class="num">${x.passes}</td><td>${esc(x.code)}</td><td>${x.status === 'used' ? pill(`in ${when(x.checkedInAt)}`, 'green') : x.status === 'cancelled' ? pill('cancelled', 'red') : pill('not yet', 'grey')}</td></tr>`).join('')}</tbody></table></div>` : '<p class="muted" style="margin:0">None sent yet.</p>';
     const pending = d.requests.filter(r => r.status === 'pending'), done = d.requests.filter(r => r.status !== 'pending');
     $('#ivPending').textContent = pending.length ? `${pending.length} waiting` : '';
     $('#ivReq').innerHTML = `${pending.length ? `<div class="toolbar"><label class="check" style="margin:0"><input type="checkbox" id="ivAll"> Select all</label><button class="sbtn ok" type="button" data-decide="approve">Approve selected</button><button class="sbtn" type="button" data-decide="decline">Decline selected</button></div>
-      <div class="cards">${pending.map(r => `<label class="tcard" style="cursor:pointer;display:grid;gap:6px"><span class="row" style="display:flex;justify-content:space-between;gap:10px"><span><input type="checkbox" data-req="${esc(r.id)}"> <b>${esc(r.phone)}</b>${r.instagram ? ` · <a href="https://instagram.com/${encodeURIComponent(r.instagram)}" target="_blank" rel="noopener">@${esc(r.instagram)}</a>` : ''}</span><span class="muted">${esc(when(r.createdAt))}</span></span>
+      <div class="cards">${pending.map(r => `<label class="tcard" style="cursor:pointer;display:grid;gap:6px"><span class="row" style="display:flex;justify-content:space-between;gap:10px"><span><input type="checkbox" data-req="${esc(r.id)}"> ${pill(r.style === 'him' ? 'gentleman' : 'lady', r.style === 'him' ? 'grey' : 'amber')} <b>${esc(r.phone)}</b>${r.instagram ? ` · <a href="https://instagram.com/${encodeURIComponent(r.instagram)}" target="_blank" rel="noopener">@${esc(r.instagram)}</a>` : ''}</span><span class="muted">${esc(when(r.createdAt))}</span></span>
         ${r.answers.map(x => `<span><span class="muted">${esc(x.q)}</span><br>${esc(x.a)}</span>`).join('')}</label>`).join('')}</div>` : '<p class="muted" style="margin:0">No requests waiting.</p>'}
       ${done.length ? `<details style="margin-top:10px"><summary>${done.length} decided</summary><div class="tbl-wrap"><table class="tbl"><tbody>${done.map(r => `<tr><td>${esc(r.phone)}</td><td>${pill(r.status, r.status === 'approved' ? 'green' : 'grey')}</td><td>${esc(r.decidedByName)}</td></tr>`).join('')}</tbody></table></div></details>` : ''}<div id="ivReqMsg"></div>`;
     $('#ivAll') && ($('#ivAll').onchange = e => $$('[data-req]').forEach(c => { c.checked = e.target.checked; }));
@@ -810,7 +813,7 @@ async function invites(arg, notice) {
     try {
       for (let i = 0; i < rows.length; i += INVITE_PART) {
         btn.textContent = `Sending ${Math.min(i + INVITE_PART, rows.length)} of ${rows.length}…`;
-        results.push(...(await sapi('/api/admin/invites', { method: 'POST', body: { eventId: ev.id, rows: rows.slice(i, i + INVITE_PART), ifInvited: $('#ivAgain').value } })).results);
+        results.push(...(await sapi('/api/admin/invites', { method: 'POST', body: { eventId: ev.id, rows: rows.slice(i, i + INVITE_PART), ifInvited: $('#ivAgain').value, style: $('#ivStyle').value } })).results);
       }
     } catch (err) { flash($('#ivMsgBox'), `${err.message} (${results.length} of ${rows.length} done).`, true); }
     btn.disabled = false; btn.textContent = 'Send invitations';

@@ -41,7 +41,7 @@ function fitFont(ctx, text, font, size, maxW, min = 6) {
 function roundRect(ctx, x, y, w, h, r) { ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r); ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath(); }
 
 // An ink stamp: rings, words around the edge, one or two words in the middle, a worn ink texture.
-function stamp(ctx, { cx, cy, r, rot, colour, ring, l1, l2, seed }) {
+function stamp(ctx, { cx, cy, r, rot, colour, ring, l1, l2, seed, blend = 'multiply' }) {
   const size = Math.ceil(r * 2 + 8), off = document.createElement('canvas');
   const k = ctx.getTransform().a || 1; // draw at the target's resolution
   off.width = off.height = Math.ceil(size * k);
@@ -57,7 +57,7 @@ function stamp(ctx, { cx, cy, r, rot, colour, ring, l1, l2, seed }) {
   // Worn ink: specks taken out of the print.
   const rand = rng(seed); s.globalCompositeOperation = 'destination-out';
   for (let i = 0; i < 520; i++) { const a = rand() * Math.PI * 2, d = rand() * r; s.globalAlpha = 0.25 + rand() * 0.6; s.beginPath(); s.arc(Math.cos(a) * d, Math.sin(a) * d, 0.3 + rand() * 0.9, 0, Math.PI * 2); s.fill(); }
-  ctx.save(); ctx.translate(cx, cy); ctx.rotate(rot); ctx.globalAlpha = 0.9; ctx.globalCompositeOperation = 'multiply';
+  ctx.save(); ctx.translate(cx, cy); ctx.rotate(rot); ctx.globalAlpha = 0.9; ctx.globalCompositeOperation = blend;
   ctx.drawImage(off, -size / 2, -size / 2, size, size); ctx.restore();
 }
 
@@ -145,11 +145,80 @@ export function drawVisa(ctx, t, { share = false } = {}) {
   ctx.save(); roundRect(ctx, 0.5, 0.5, W - 1, H - 1, 14); ctx.strokeStyle = 'rgba(150,20,40,.3)'; ctx.lineWidth = 1; ctx.stroke(); ctx.restore();
 }
 
+// ── The gentlemen's pass: a black Memories card, a pass to witness the night (no perks) ──
+// Matte black with a woven carbon texture, a red edge, the infinity mark and the night's name in
+// brushed silver, the phone's last four embossed like a card number.
+const silver = (ctx, x0, y0, x1, y1) => { const g = ctx.createLinearGradient(x0, y0, x1, y1); [['#8b8e94', 0], ['#f1f2f4', 0.35], ['#a5a8ae', 0.55], ['#e4e6e9', 0.8], ['#7d8086', 1]].forEach(([c, o]) => g.addColorStop(o, c)); return g; };
+export function drawPass(ctx, t, { share = false } = {}) {
+  const inv = t.invite || {}, title = String(inv.title || t.eventName || 'Ladies Night').toUpperCase();
+  const last4 = String(t.phoneLast4 || '').slice(-4) || '····';
+  const n = Math.max(1, Number(t.admits || 1));
+  const no = String(t.code || '').replace(/^MEM-/i, '') || 'PREVIEW';
+  const valid = t.date ? formatAccra(t.date, { day: '2-digit', month: '2-digit', year: '2-digit' }).replace(/[^\d]+/g, '/') : '';
+  const shortDay = t.date ? formatAccra(t.date, { day: 'numeric', month: 'short' }).toUpperCase() : 'TONIGHT';
+  const dress = /^strict( dress code)?$/i.test(inv.dress || '') ? 'STRICT' : String(inv.dress || '').toUpperCase();
+  const W = VISA_W, H = VISA_H, seed = [...no].reduce((a, c) => a * 31 + c.charCodeAt(0), 11);
+  ctx.save(); roundRect(ctx, 0, 0, W, H, 14); ctx.clip();
+  // Matte black with a soft light from the top left.
+  let g = ctx.createRadialGradient(40, 0, 10, 120, 60, W * 1.1);
+  g.addColorStop(0, '#2c2c31'); g.addColorStop(0.45, '#141417'); g.addColorStop(1, '#070708');
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  // Woven carbon texture.
+  ctx.lineWidth = 0.6;
+  for (let i = -H; i < W + H; i += 3.2) {
+    ctx.strokeStyle = 'rgba(255,255,255,.035)'; ctx.beginPath(); ctx.moveTo(i, 0); ctx.lineTo(i + H, H); ctx.stroke();
+    ctx.strokeStyle = 'rgba(0,0,0,.35)'; ctx.beginPath(); ctx.moveTo(i, H); ctx.lineTo(i + H, 0); ctx.stroke();
+  }
+  // A big infinity watermark.
+  ctx.save(); ctx.translate(268, 128); ctx.scale(5.2, 5.2); ctx.translate(-32, -32);
+  ctx.strokeStyle = 'rgba(255,255,255,.045)'; ctx.lineWidth = 3; ctx.stroke(new Path2D(INFINITY)); ctx.restore();
+  // The red edge.
+  g = ctx.createLinearGradient(0, 0, 0, H); g.addColorStop(0, '#e2213f'); g.addColorStop(1, '#7a0519');
+  ctx.fillStyle = g; ctx.fillRect(0, 0, 6, H);
+  // Brand: the infinity mark and MEMORIES in brushed silver.
+  ctx.save(); ctx.translate(34, 30); ctx.scale(0.62, 0.62); ctx.translate(-32, -32);
+  ctx.strokeStyle = silver(ctx, 18, 24, 46, 40); ctx.lineWidth = 3.6; ctx.lineCap = 'round'; ctx.stroke(new Path2D(INFINITY)); ctx.restore();
+  ctx.textBaseline = 'alphabetic'; ctx.fillStyle = silver(ctx, 52, 20, 140, 34);
+  ctx.font = `400 15px ${F.display}`; spaced(ctx, 'MEMORIES', 52, 35, 4.2);
+  ctx.fillStyle = '#8f9298'; ctx.font = `600 5.5px ${F.sans}`; spaced(ctx, 'NIGHT CLUB', 53, 44, 3.4);
+  ctx.fillStyle = '#e2213f'; ctx.font = `700 6.5px ${F.sans}`; spaced(ctx, 'GENTLEMAN’S PASS', W - 18, 30, 2.2, 'right');
+  ctx.fillStyle = '#8f9298'; ctx.font = `400 7px ${F.mono}`; spaced(ctx, `Nº ${share ? 'VIP' : no}`, W - 18, 41, 1.4, 'right');
+  // The chip (silver).
+  ctx.save(); ctx.translate(20, 66);
+  roundRect(ctx, 0, 0, 40, 30, 5.5); ctx.fillStyle = silver(ctx, 0, 0, 40, 30); ctx.fill();
+  ctx.strokeStyle = 'rgba(40,40,44,.7)'; ctx.lineWidth = 0.8; ctx.beginPath();
+  [[0, 11, 12, 11], [0, 20, 12, 20], [28, 11, 40, 11], [28, 20, 40, 20], [12, 0, 12, 30], [28, 0, 28, 30], [12, 15, 28, 15]].forEach(([a, b, c, d]) => { ctx.moveTo(a, b); ctx.lineTo(c, d); });
+  ctx.stroke(); roundRect(ctx, 0, 0, 40, 30, 5.5); ctx.stroke(); ctx.restore();
+  // The night: "TO WITNESS" over its name in silver.
+  ctx.fillStyle = '#e2213f'; ctx.font = `700 7px ${F.sans}`; spaced(ctx, 'A PASS TO WITNESS', 20, 120, 2.6);
+  const tsz = fitFont(ctx, title, `400 {s} ${F.display}`, 40, W - 40, 18);
+  ctx.font = `400 ${tsz}px ${F.display}`; ctx.fillStyle = 'rgba(0,0,0,.6)'; spaced(ctx, title, 20, 120 + tsz + 1.2, 1.6);
+  ctx.fillStyle = silver(ctx, 20, 120, 20 + W * 0.7, 120 + tsz); spaced(ctx, title, 20, 120 + tsz, 1.6);
+  // Embossed number (the phone's last four).
+  const num = share ? '•••• •••• •••• ••••' : `•••• •••• •••• ${last4}`;
+  ctx.font = `700 13px ${F.mono}`;
+  ctx.fillStyle = 'rgba(0,0,0,.8)'; spaced(ctx, num, 20, 186 + 1, 2.2);
+  ctx.fillStyle = 'rgba(255,255,255,.35)'; spaced(ctx, num, 20, 186 - 0.6, 2.2);
+  ctx.fillStyle = silver(ctx, 20, 176, 260, 190); spaced(ctx, num, 20, 186, 2.2);
+  // Bottom row.
+  const cell = (label, value, x, align = 'left') => {
+    ctx.fillStyle = '#8f9298'; ctx.font = `600 5.5px ${F.sans}`; spaced(ctx, label, x, 208, 1.8, align);
+    ctx.fillStyle = '#e9eaec'; ctx.font = `700 9px ${F.mono}`; spaced(ctx, value, x, 220, 0.8, align);
+  };
+  cell('VALID', valid, 20); cell('ADMITS', String(n).padStart(2, '0'), 104); if (dress) cell('DRESS CODE', dress, 166);
+  cell('VENUE', 'MEMORIES', W - 18, 'right');
+  if (t.status === 'used') stamp(ctx, { cx: W - 72, cy: 92, r: 42, rot: -0.2, colour: '#e2213f', ring: `ENTERED ✦ ${shortDay} ✦ WELCOME ✦ `, l1: 'ENTERED', l2: '', seed, blend: 'source-over' });
+  if (t.status === 'cancelled') stamp(ctx, { cx: W - 72, cy: 92, r: 42, rot: -0.2, colour: '#9a9ca1', ring: 'VOID ✦ VOID ✦ VOID ✦ VOID ✦ ', l1: 'VOID', l2: '', seed, blend: 'source-over' });
+  ctx.restore();
+  ctx.save(); roundRect(ctx, 0.5, 0.5, W - 1, H - 1, 14); ctx.strokeStyle = 'rgba(220,222,226,.22)'; ctx.lineWidth = 1; ctx.stroke(); ctx.restore();
+}
+const isHim = t => t?.invite?.style === 'him';
+
 // The visa as an image (PNG blob), sharp on any screen (3× the grid).
 export async function visaCanvas(t, { scale = 3, share = false } = {}) {
   await loadVisaFonts();
   const c = document.createElement('canvas'); c.width = VISA_W * scale; c.height = VISA_H * scale;
-  const ctx = c.getContext('2d'); ctx.scale(scale, scale); drawVisa(ctx, t, { share });
+  const ctx = c.getContext('2d'); ctx.scale(scale, scale); (isHim(t) ? drawPass : drawVisa)(ctx, t, { share });
   return c;
 }
 export const canvasBlob = c => new Promise(res => c.toBlob(res, 'image/png'));
@@ -157,6 +226,7 @@ export const canvasBlob = c => new Promise(res => c.toBlob(res, 'image/png'));
 // The post for social media (1080 × 1350): the visa on Memories red, "I'm on the list".
 export async function visaPost(t) {
   await loadVisaFonts();
+  if (isHim(t)) return passPost(t);
   const W = 1080, H = 1350, c = document.createElement('canvas'); c.width = W; c.height = H;
   const ctx = c.getContext('2d');
   let g = ctx.createRadialGradient(W * 0.2, H * 0.05, 40, W * 0.5, H * 0.5, H * 0.95);
@@ -183,5 +253,31 @@ export async function visaPost(t) {
   spaced(ctx, [String(inv.title || t.eventName || 'Ladies Night').toUpperCase(), when].filter(Boolean).join('  ·  '), W / 2, 1140, 5, 'center');
   if (inv.tagline) { ctx.font = `italic 500 40px ${F.serif}`; ctx.fillStyle = '#ffe3dc'; ctx.fillText(inv.tagline, W / 2, 1210); }
   ctx.globalAlpha = 0.7; ctx.fillStyle = '#fff1e6'; ctx.font = `600 20px ${F.sans}`; spaced(ctx, 'BY INVITATION ONLY', W / 2, 1290, 6, 'center');
+  return c;
+}
+
+// The gentlemen's post: black, a red glow, the card tilted, "On the list" in silver.
+async function passPost(t) {
+  const W = 1080, H = 1350, c = document.createElement('canvas'); c.width = W; c.height = H;
+  const ctx = c.getContext('2d');
+  ctx.fillStyle = '#08080a'; ctx.fillRect(0, 0, W, H);
+  let g = ctx.createRadialGradient(W / 2, H * 0.95, 20, W / 2, H * 0.95, H * 0.75);
+  g.addColorStop(0, 'rgba(196,17,44,.55)'); g.addColorStop(1, 'rgba(196,17,44,0)'); ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  ctx.lineWidth = 1;
+  for (let i = -H; i < W + H; i += 9) { ctx.strokeStyle = 'rgba(255,255,255,.025)'; ctx.beginPath(); ctx.moveTo(i, 0); ctx.lineTo(i + H, H); ctx.stroke(); }
+  ctx.save(); ctx.translate(W / 2, 128); ctx.scale(2.4, 2.4); ctx.translate(-32, -32);
+  ctx.strokeStyle = silver(ctx, 18, 24, 46, 40); ctx.lineWidth = 3.4; ctx.lineCap = 'round'; ctx.stroke(new Path2D(INFINITY)); ctx.restore();
+  ctx.fillStyle = '#e9eaec'; ctx.font = `400 34px ${F.display}`; ctx.textBaseline = 'alphabetic'; spaced(ctx, 'MEMORIES NIGHT CLUB', W / 2, 220, 12, 'center');
+  const vw = 930, s = vw / VISA_W;
+  ctx.save(); ctx.translate(W / 2, 600); ctx.rotate(-0.05); ctx.translate(-vw / 2, -(VISA_H * s) / 2);
+  ctx.shadowColor = 'rgba(0,0,0,.8)'; ctx.shadowBlur = 70; ctx.shadowOffsetY = 34;
+  ctx.fillStyle = '#111'; roundRect(ctx, 0, 0, vw, VISA_H * s, 14 * s); ctx.fill();
+  ctx.shadowColor = 'transparent'; ctx.scale(s, s); drawPass(ctx, t, { share: true }); ctx.restore();
+  ctx.textAlign = 'left';
+  ctx.font = `400 120px ${F.display}`; ctx.fillStyle = silver(ctx, 200, 960, 880, 1080); spaced(ctx, 'ON THE LIST', W / 2, 1075, 10, 'center');
+  const inv = t.invite || {}, when = t.date ? formatAccra(t.date, { weekday: 'short', day: 'numeric', month: 'short' }).toUpperCase() : '';
+  ctx.fillStyle = '#e2213f'; ctx.font = `700 26px ${F.sans}`;
+  spaced(ctx, ['TO WITNESS ' + String(inv.title || t.eventName || 'Ladies Night').toUpperCase(), when].filter(Boolean).join('  ·  '), W / 2, 1150, 5, 'center');
+  ctx.globalAlpha = 0.65; ctx.fillStyle = '#e9eaec'; ctx.font = `600 20px ${F.sans}`; spaced(ctx, 'BY INVITATION ONLY', W / 2, 1290, 6, 'center');
   return c;
 }

@@ -206,9 +206,16 @@ night coming up.
   tick and **Approve** (her card is texted) or **Decline** (nothing is texted).
 - **Send by phone number:** paste numbers, one per line; a number after the phone sets that person's
   passes. Someone already invited is left alone, or (if chosen) gets the extra passes.
-- **The card:** a red entry visa with the Memories infinity sign and no names: the night in script,
-  valid on (the date), entries (how many it admits, also as an "ADMIT TWO" stamp), holder (the last
-  four digits of her phone), dress code and privileges. Once she's in, an "ENTERED" stamp lands on it.
+- **Two cards.** *Ladies:* a red entry visa with the Memories infinity sign: the night in script,
+  valid on, entries (also as an "ADMIT TWO" stamp), holder (the last four digits of her phone), dress
+  code and privileges (free drinks). *Gentlemen:* a black Memories card, "a pass to witness" the
+  night: no free drinks, the dress code still applies. No names on either. On the website the guest
+  picks *I'm a lady* or *I'm a gentleman* (each has its own questions); staff see which on each
+  request; when sending by number, pick **Which card**. Once in, an "ENTERED" stamp lands on it.
+- **Share and Download** under the card: Download saves the card as a picture; Share makes a post for
+  Instagram or a status (the card on Memories red, or black for gentlemen, "on the list"), with the
+  phone digits hidden.
+- **The texts** are one short paragraph with the link at the end.
 - **At the door:** type her **phone number** in *Find a guest* and **Admit**. One admit lets in all its
   passes together; after that the number can't be used again for that night. The door screen shows
   what it comes with and the dress code.
