@@ -4,12 +4,12 @@ plugins {
 
 android {
     namespace 'com.memories.momophone'
-    compileSdk 34
+    compileSdk 36
 
     defaultConfig {
         applicationId 'com.memories.momophone'
         minSdk 23            // Android 6: the club's business phone
-        targetSdk 34
+        targetSdk 36
         versionCode Integer.parseInt(System.getenv('MOMO_VERSION_CODE') ?: '1')
         versionName '1.0.' + (System.getenv('MOMO_VERSION_CODE') ?: '1')
     }

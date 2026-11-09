@@ -77,6 +77,8 @@ public class MainActivity extends Activity {
         col.addView(server);
 
         ScrollView sv = new ScrollView(this);
+        // Android 15+ draws apps under the status and navigation bars: keep the screen clear of them.
+        sv.setFitsSystemWindows(true);
         sv.addView(col);
         setContentView(sv);
         SenderService.kick(this);
