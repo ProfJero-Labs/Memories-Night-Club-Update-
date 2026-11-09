@@ -191,6 +191,26 @@ these texts: set `bookingAlerts: false` on their staff record.
 If a guest pays but the booking doesn't appear: the payment check runs every 10 minutes, finishes
 any paid booking it finds and texts the people on the alert list if it can't.
 
+## Invitations (e.g. Ladies Night): free entry as a red VIP card
+
+**Where:** Control room → **Invitations** (directors, managers, the Human manager, the Event manager;
+directors and managers also find it under More → Guests). Pick the night coming up.
+
+- **The card and the website:** the name on the card (e.g. *Ladies Night*), the line under it
+  (*Her night. Her rules.*), what it comes with (*Free drinks till 12AM*) and how many people one
+  invitation lets in. Tick **Let guests ask for an invitation on the website** and save: the night's
+  page then shows **Ask for your invitation**, and the link can be shared on its own.
+- **Requests from the website:** the guest answers three short questions (picked at random each time;
+  any can be swapped) and gives her phone (Instagram optional). She's told the house is considering
+  her request. Staff read the answers, tick and **Approve** (her card is texted) or **Decline** (no
+  text is sent).
+- **Send by phone number:** paste numbers, one per line; a number after the phone sets that
+  person's passes. Someone already invited is left alone, or (if chosen) gets the extra passes.
+- **The card:** no names, only the phone's last four digits. It flips to show the entry QR.
+- **At the door:** scan the QR, or type her **phone number** in *Find a guest*. One admit lets in all
+  its passes together; after that the card says **Access used** and the number can't be used again.
+  The door screen shows what it comes with (e.g. free drinks till 12AM).
+
 ## Discounted tickets (promos)
 
 - The price a customer pays is always worked out by the system: with a promo, Paystack is asked for

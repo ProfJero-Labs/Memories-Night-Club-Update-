@@ -59,6 +59,7 @@ function more() {
   const groups = [
     ['Tonight', [['momophone', 'MoMo phone', 'Pair it, see its texts'], ['close', 'Close the night', 'When the Manager hands it over to you'], ['payments', 'Payments tonight', 'Every payment, with details']]],
     ['People', [['feedback', 'Staff feedback', 'Complaints and ideas from the staff'], ['perf', 'Performance reviews', 'Each person, every month'], ['@admin.html#members', 'Members and passes', 'Members at the gate'], ['@admin.html#attendance', 'Attendance', 'Who came in, by night']]],
+    ['Guests', [['@admin.html#invites', 'Invitations', 'Send free entry (e.g. Ladies Night); approve requests']]],
     ['Messages', [['@me.html#notices', 'Notices and messages', 'Post to everyone or a team'], ['@me.html', 'My page', 'My own pay and messages']]],
   ];
   const { box, close } = sheet(`<h2>More</h2>${groups.map(([g, items]) => `<p class="group-h">${esc(g)}</p><div class="more-list">${items.map(([k, l, sub]) => `<button type="button" data-more="${esc(k)}"><b>${esc(l)}</b><span>${esc(sub)}</span></button>`).join('')}</div>`).join('')}`, { label: 'More', full: true });

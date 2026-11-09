@@ -1,5 +1,6 @@
 // Memories API — Cloudflare Worker. Firestore is the database; this Worker is the only thing that
 // writes business data. See docs/ARCHITECTURE.md for the route map and role matrix.
+import * as invites from './invites.js';
 import { cors, ok, fail, reply, throttled, allowedOrigin } from './lib/http.js';
 import { logError } from './lib/log.js';
 import { verifyStaff, requireRole, ADMIN, MONEY, DOOR } from './lib/auth.js';
@@ -123,6 +124,7 @@ async function route(req, env, ctx) {
     const t = await publicTicket(env, last(p)); return t ? ok(req, env, { ticket: t }) : fail(req, env, 'Ticket not found.', 404);
   }
   if (m === 'GET' && p.startsWith('/api/verify/')) { if (await throttled(req, env, 'ticket', 'standard')) return tooMany(req, env); return ok(req, env, await verifyTicket(env, last(p))); }
+  if (m === 'POST' && p === '/api/invite-request') { if (await throttled(req, env, 'invite-request', 'strict')) return tooMany(req, env); return reply(req, env, await invites.requestInvite(env, await body(req))); }
   if (m === 'POST' && p === '/api/private-requests') { if (await throttled(req, env, 'private', 'strict')) return tooMany(req, env); return reply(req, env, await createPrivateRequest(env, await body(req))); }
   if (m === 'POST' && p === '/api/paystack/webhook') return paystackWebhook(req, env, ctx);
   // ── Scan to order (guests at the bar) ──
@@ -298,6 +300,11 @@ async function route(req, env, ctx) {
   if (m === 'GET' && p === '/api/admin/bottles') return reply(req, env, await admin.listBottles(env, user));
   if (m === 'GET' && p === '/api/admin/orders') return reply(req, env, await admin.listOrders(env, { eventId: u.searchParams.get('eventId'), kind: u.searchParams.get('kind') }, user));
   if (m === 'POST' && p === '/api/admin/comps') return reply(req, env, await admin.issueComp(env, await body(req), user));
+  if (m === 'GET' && p === '/api/admin/invites/nights') return reply(req, env, await invites.inviteNights(env, user));
+  if (m === 'POST' && p === '/api/admin/invites/settings') return reply(req, env, await invites.saveInvitation(env, await body(req), user));
+  if (m === 'POST' && p === '/api/admin/invites/decide') return reply(req, env, await invites.decideRequests(env, await body(req), user));
+  if (m === 'POST' && p === '/api/admin/invites') return reply(req, env, await invites.sendInvites(env, await body(req), user));
+  if (m === 'GET' && p === '/api/admin/invites') return reply(req, env, await invites.invitesFor(env, user, u.searchParams.get('eventId')));
   if (m === 'POST' && p === '/api/admin/raffles') return reply(req, env, await upsertRaffle(env, await body(req), user));
   if (m === 'POST' && p === '/api/admin/raffle/draw') { if (await throttled(req, env, 'draw', 'strict')) return tooMany(req, env); return reply(req, env, await drawRaffle(env, await body(req), user)); }
   if (m === 'GET' && p === '/api/admin/requests') return reply(req, env, await admin.listRequests(env, user));

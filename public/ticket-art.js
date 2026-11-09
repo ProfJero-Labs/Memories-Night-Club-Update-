@@ -63,6 +63,37 @@ export function ticketHTML(t, { preview = false, qr = '' } = {}) {
   </article>`;
 }
 
+// ── The invitation: the Red Card (e.g. Ladies Night) ──
+// A short, landscape red card, like a VIP key card. Only what matters at the door: the night, its
+// line, the date, what it comes with, the dress code, and the phone it was sent to (in Ghana the
+// phone number is the guest's identity: the door types it in). No names, no QR.
+const CHIP = `<svg class="rc-chip" viewBox="0 0 52 40" aria-hidden="true"><defs><linearGradient id="rcGold" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#f7e3a1"/><stop offset=".45" stop-color="#c9a24a"/><stop offset=".7" stop-color="#f3d98a"/><stop offset="1" stop-color="#9c7425"/></linearGradient></defs>
+  <rect x="1" y="1" width="50" height="38" rx="7" fill="url(#rcGold)" stroke="#7d5a17" stroke-width="1"/><path d="M1 14h15M1 26h15M36 14h15M36 26h15M16 1v38M36 1v38M16 20h20" stroke="#7d5a17" stroke-width="1.1" fill="none"/><rect x="20" y="10" width="12" height="20" rx="3" fill="none" stroke="#7d5a17" stroke-width="1.1"/></svg>`;
+// t: { invite: { title, tagline, perk, dress }, phoneLast4, eventName, date, admits, status }
+export function inviteHTML(t) {
+  const inv = t.invite || {}, title = (inv.title || t.eventName || 'Ladies Night').trim();
+  const words = title.split(/\s+/);
+  const head = words.length > 1 ? `${esc(words.slice(0, -1).join(' '))} <span class="out">${esc(words.at(-1))}</span>` : esc(title);
+  const last4 = String(t.phoneLast4 || '').slice(-4) || '····';
+  const date = t.date ? formatAccra(t.date, { weekday: 'short', day: 'numeric', month: 'short' }) : '';
+  const notes = [inv.perk, inv.dress].filter(Boolean);
+  const stamp = t.status === 'used' ? '<span class="rc-stamp used">Welcome in</span>' : t.status === 'cancelled' ? '<span class="rc-stamp void">Void</span>' : '';
+  return `<article class="rc" aria-label="${esc(title)} invitation">
+    <span class="rc-mono" aria-hidden="true">M</span>
+    <div class="rc-row">${CHIP}<span class="rc-brand">Memories</span></div>
+    <div class="rc-mid">
+      <h2 class="rc-title">${head}</h2>
+      ${inv.tagline ? `<p class="rc-tag">${esc(inv.tagline)}</p>` : ''}
+    </div>
+    ${notes.length ? `<p class="rc-notes">${notes.map(n => `<span>${esc(n)}</span>`).join('')}</p>` : ''}
+    <div class="rc-row rc-foot">
+      <div><small>Entry by phone</small><b class="rc-num">•••• ${esc(last4)}</b></div>
+      <div class="r"><small>${t.admits > 1 ? `Admits ${t.admits}` : 'Admits one'}</small><b>${esc(date)}</b></div>
+    </div>
+    ${stamp}
+  </article>`;
+}
+
 // ── Square share image (1080×1080), drawn in the browser ──
 // Deliberately carries no QR and no code: it's for posting, and a posted QR is a stolen ticket.
 function wrapLines(ctx, text, maxW) {

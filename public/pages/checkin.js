@@ -74,6 +74,7 @@ function show(r) {
     ${t.firstName ? `<p style="margin:0;font-size:24px"><strong>${esc(t.firstName)}</strong>${!r.valid && t.admits > 1 ? ` · admits ${t.admits}` : ''}</p>` : ''}
     ${t.eventName ? `<p class="foot-small" style="margin:0">${esc(t.eventName)} · ${esc(t.type || '')} · ${esc(t.displayCode || '')}${t.comp ? ' · comp' : ''}</p>` : ''}
     ${t.note ? `<p style="margin:0"><b>${esc(t.note)}</b></p>` : ''}
+    ${r.valid && t.perk ? `<p style="margin:0;font-size:20px"><b>${esc(t.perk)}</b> (invitation)</p>` : ''}
     ${(r.code === 'used' || r.code === 'table_used') && t.checkedInAt ? `<p class="foot-small" style="margin:0">First scanned ${esc(new Date(t.checkedInAt).toLocaleTimeString('en-GB', { timeZone: 'Africa/Accra', hour: '2-digit', minute: '2-digit' }))}</p>` : ''}
     ${r.checkinId ? '<button type="button" class="sbtn undo" id="undo">Undo · admitted by mistake</button>' : ''}</div>`;
   // Tapped Admit by mistake: undo it while the card is up (the server allows 2 minutes).
@@ -154,7 +155,7 @@ $('#search').oninput = () => {
   searchT = setTimeout(async () => {
     try {
       const { results } = await sapi(`/api/door/search?eventId=${encodeURIComponent(night())}&q=${encodeURIComponent(q)}`);
-      $('#hits').innerHTML = results.length ? results.map(r => `<li><span><strong>${esc(r.firstName)}</strong>${r.phoneLast4 ? ` · …${esc(r.phoneLast4)}` : ''}<br><span class="foot-small">${r.table ? 'Table · ' : ''}${esc(r.type)} · ${esc(r.code)}${r.admits > 1 ? ` · admits ${r.admits}` : ''}${r.comp ? ' · comp' : ''}</span></span>${r.status === 'valid' ? `<button class="sbtn red" type="button" ${r.table ? 'data-table' : 'data-code'}="${esc(r.code)}">${r.table ? 'Seat' : 'Admit'}</button>` : `<span class="pill ${r.status === 'used' ? 'amber' : 'red'}">${r.status === 'used' ? (r.table ? 'Seated' : 'In') : esc(r.status)}</span>`}</li>`).join('') : '<li>No match for this night.</li>';
+      $('#hits').innerHTML = results.length ? results.map(r => `<li><span><strong>${esc(r.firstName)}</strong>${r.phoneLast4 ? ` · …${esc(r.phoneLast4)}` : ''}<br><span class="foot-small">${r.table ? 'Table · ' : ''}${esc(r.type)} · ${esc(r.code)}${r.admits > 1 ? ` · admits ${r.admits}` : ''}${r.invite ? ' · invitation' : r.comp ? ' · comp' : ''}</span></span>${r.status === 'valid' ? `<button class="sbtn red" type="button" ${r.table ? 'data-table' : 'data-code'}="${esc(r.code)}">${r.table ? 'Seat' : 'Admit'}</button>` : `<span class="pill ${r.status === 'used' ? 'amber' : 'red'}">${r.status === 'used' ? (r.table ? 'Seated' : 'In') : esc(r.status)}</span>`}</li>`).join('') : '<li>No match for this night.</li>';
       $('#hits').querySelectorAll('[data-code]').forEach(b => b.onclick = () => admit({ code: b.dataset.code }).then(() => $('#search').dispatchEvent(new Event('input'))));
       $('#hits').querySelectorAll('[data-table]').forEach(b => b.onclick = () => admit({ table: b.dataset.table }).then(() => $('#search').dispatchEvent(new Event('input'))));
     } catch (e) { $('#hits').innerHTML = `<li>${e.status === 0 ? 'No connection.' : esc(e.message)}</li>`; }

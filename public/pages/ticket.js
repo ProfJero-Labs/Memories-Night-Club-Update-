@@ -1,12 +1,33 @@
 // ticket.html: page script (kept out of the HTML so the CSP can forbid inline scripts).
 import { chrome, api, esc, params, $, $$, errorState, toast, shortDate, shareUrl, money } from '../app.js';
-import { ticketHTML, qrSvg, verifyUrl, shareImage } from '../ticket-art.js';
+import { ticketHTML, inviteHTML, qrSvg, verifyUrl, shareImage } from '../ticket-art.js';
 chrome();
 const root = $('#root');
 const token = params.get('token');
 let T, blob, blobUrl;
 
+// An invitation (the Red Card): just the card, one line on how to get in, and a way to save it.
+function inviteView(t) {
+  root.innerHTML = `<div class="rc-page">
+    ${inviteHTML({ ...t, date: t.eventDate })}
+    <p class="rc-hint">${t.status === 'used' ? 'You’re in. Enjoy your night.' : t.status === 'cancelled' ? 'This invitation was withdrawn.' : `At the door, give your phone number ending ${esc(t.phoneLast4 || '')}.`}</p>
+    ${t.status === 'valid' ? '<button type="button" class="rc-save no-print" id="print">Save the card</button>' : ''}
+  </div>`;
+  $('#print') && ($('#print').onclick = () => print());
+}
+function bigQr(t, qr) {
+  const small = $('.t-qr'); if (!qr || !small || t.status !== 'valid') return;
+  small.setAttribute('role', 'button'); small.tabIndex = 0; small.setAttribute('aria-label', 'Show the QR code full screen');
+  const big = document.createElement('dialog'); big.className = 'qr-full';
+  big.innerHTML = `<div class="qr-big">${qr}</div><p class="qr-code">${esc(t.displayCode || '')}</p><p class="qr-hint">Turn your brightness up. Tap anywhere to close.</p>`;
+  document.body.append(big);
+  const open = () => { big.showModal(); navigator.wakeLock?.request('screen').catch(() => {}); };
+  small.onclick = open; small.onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(); } };
+  big.onclick = () => big.close();
+}
+
 function view(t, qr) {
+  if (t.invite) return inviteView(t);
   const r = t.raffle;
   const drawNote = r?.status === 'drawn' && r.youWon ? `<div class="notice ok">You won the draw${r.prize ? `: ${esc(r.prize)}` : ''}. Show this ticket at the door.</div>`
     : r?.status === 'drawn' && r.winner ? `<div class="notice">The draw is done: won by ${esc(r.winner.name)}.</div>`
@@ -32,14 +53,7 @@ function view(t, qr) {
   $$('[data-send]').forEach(btn => btn.onclick = () => shareUrl(`Your ticket for ${t.eventName} at Memories (ticket ${btn.dataset.no} of ${t.groupSize}). It gets one person in, once.`, `${location.origin}${location.pathname}?token=${encodeURIComponent(btn.dataset.send)}`));
   if (t.status !== 'cancelled') makePost(t);
   // A dark doorway and a dim phone: tap the QR and it fills the screen on white.
-  const small = $('.t-qr'); if (!qr || !small || t.status !== 'valid') return;
-  small.setAttribute('role', 'button'); small.tabIndex = 0; small.setAttribute('aria-label', 'Show the QR code full screen');
-  const big = document.createElement('dialog'); big.className = 'qr-full';
-  big.innerHTML = `<div class="qr-big">${qr}</div><p class="qr-code">${esc(t.displayCode || '')}</p><p class="qr-hint">Turn your brightness up. Tap anywhere to close.</p>`;
-  document.body.append(big);
-  const open = () => { big.showModal(); navigator.wakeLock?.request('screen').catch(() => {}); };
-  small.onclick = open; small.onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(); } };
-  big.onclick = () => big.close();
+  bigQr(t, qr);
 }
 
 // The buyer's ticket of a group: the others, each to send to one friend. A friend's ticket only says
@@ -75,7 +89,7 @@ async function load() {
   if (!token) return errorState(root, 'This link is missing its ticket.');
   try {
     T = (await api(`/api/tickets/${encodeURIComponent(token)}`)).ticket;
-    document.title = `${T.eventName} · Your ticket · Memories`;
+    document.title = T.invite ? `${T.invite.title || T.eventName} · Your invitation · Memories` : `${T.eventName} · Your ticket · Memories`;
     view(T, await qrSvg(verifyUrl(token)).catch(() => ''));
   } catch (e) {
     if (e.status === 404) root.innerHTML = '<div class="state-msg"><h2 class="display">This ticket isn’t valid.</h2><p>Check the link from your text message, or have it sent again.</p><a class="btn red" href="find.html">Find my ticket</a></div>';

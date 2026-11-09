@@ -1,7 +1,7 @@
 // Door check-in: the QR carries only a verify URL with the ticket token; the scanner sends the
 // token here and the ticket is marked used inside a transaction, so a second scan always fails.
 import { getDoc, batchGet, commitTx, updateWrite, parseFields, withTransaction, queryWhere, foundFields } from './lib/firestore.js';
-import { now, id, firstName, tableCode } from './lib/util.js';
+import { now, id, firstName, tableCode, normalizePhone } from './lib/util.js';
 import { requireRole, uidOf } from './lib/auth.js';
 import { releaseHolds } from './gate.js';
 
@@ -32,7 +32,7 @@ export async function checkin(env, rawToken, user, { eventId, code } = {}) {
     const f = (await batchGet(env, [`tickets/${token}`], tx)).find(x => x.found)?.found;
     if (!f) return { valid: false, code: 'invalid', message: 'TICKET NOT VALID' };
     const t = parseFields(f.fields);
-    const summary = { firstName: firstName(t.customerName), eventName: t.eventName, type: t.type, admits: Number(t.admitCount || 1), displayCode: t.displayCode, comp: t.comp === true };
+    const summary = { firstName: firstName(t.customerName), eventName: t.eventName, type: t.type, admits: Number(t.admitCount || 1), displayCode: t.displayCode, comp: t.comp === true, ...(t.invite ? { perk: [t.invite.perk, t.invite.dress].filter(Boolean).join(' · ') } : {}) };
     if (organiserEvents) {
       const ev = await getDoc(env, 'events', t.eventId);
       if (!ev || ev.fields.organiserId !== uidOf(user)) return { valid: false, code: 'forbidden', message: 'NOT YOUR NIGHT', ticket: { eventName: t.eventName } };
@@ -138,6 +138,8 @@ export async function doorSearch(env, user, eventId, q) {
   const s = String(q || '').trim().toLowerCase();
   if (s.length < 2) return { results: [] };
   const code = s.replace(/^mem-?/, ''), tcode = s.replace(/^tbl-?/, '');
+  // A whole phone number (an invitation is found by the number it was sent to).
+  const phone = /^[+\d\s-]{9,16}$/.test(s) ? normalizePhone(s) : null;
   const tables = (await queryWhere(env, 'orders', [{ field: 'eventId', value: ev.id }, { field: 'kind', value: 'table' }]))
     .filter(o => o.fields.status === 'confirmed')
     .filter(o => String(o.fields.buyerName || '').toLowerCase().includes(s) || (/^\d{4}$/.test(s) && String(o.fields.buyerPhone || '').slice(-4) === s)
@@ -147,8 +149,8 @@ export async function doorSearch(env, user, eventId, q) {
   const results = (await queryWhere(env, 'tickets', [{ field: 'eventId', value: ev.id }])).map(t => t.fields)
     .filter(t => firstName(t.customerName).toLowerCase().startsWith(s) || String(t.customerName || '').toLowerCase().includes(s)
       || (code.length >= 3 && String(t.displayCode || '').toLowerCase().replace(/^mem-/, '').startsWith(code))
-      || (/^\d{4}$/.test(s) && t.phoneLast4 === s))
+      || (/^\d{4}$/.test(s) && t.phoneLast4 === s) || (phone && t.phone === phone))
     .slice(0, 20)
-    .map(t => ({ code: t.displayCode, firstName: firstName(t.customerName), phoneLast4: t.phoneLast4 || '', type: t.type || '', admits: Number(t.admitCount || 1), status: t.revoked || t.cancelled ? 'cancelled' : t.status, comp: t.comp === true }));
+    .map(t => ({ code: t.displayCode, firstName: firstName(t.customerName), phoneLast4: t.phoneLast4 || '', type: t.type || '', admits: Number(t.admitCount || 1), status: t.revoked || t.cancelled ? 'cancelled' : t.status, comp: t.comp === true, ...(t.invite ? { invite: true, perk: [t.invite.perk, t.invite.dress].filter(Boolean).join(' · ') } : {}) }));
   return { results: [...tables, ...results] };
 }

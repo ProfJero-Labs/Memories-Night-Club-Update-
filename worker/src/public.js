@@ -88,6 +88,8 @@ export async function eventBundle(env, eventId) {
   return {
     event: { ...publicEvent(eventId, e.fields, settings), over: isOver(e.fields), autoStyle },
     lines: resolveLines(e.fields, settings),
+    // Guests may ask for an invitation on this night (invite.html): the wording, never the list.
+    invitation: e.fields.invitation?.open === true && !isOver(e.fields) ? { title: clean(e.fields.invitation.title, 40) || clean(e.fields.name, 40), tagline: clean(e.fields.invitation.tagline, 60) || 'Her night. Her rules.', perk: e.fields.invitation.perk === undefined ? 'Free drinks till 12AM' : clean(e.fields.invitation.perk, 60), dress: e.fields.invitation.dress === undefined ? 'Strict dress code' : clean(e.fields.invitation.dress, 60) } : null,
     ticketTypes,
     // Promos running now: names and promo prices for the page; codes never leave the server.
     promo: publicPromos(promosNow, ticketTypes),
@@ -203,6 +205,7 @@ export async function publicTicket(env, token) {
     ticketStyle: ev?.fields?.ticketStyle || 'auto', ticketColors: cleanTicketColors(ev?.fields?.ticketColors), autoStyle,
     identityLine: t.identityLine || '', displayCode: t.displayCode, status: t.revoked || t.cancelled ? 'cancelled' : t.status,
     inDraw: t.inDraw === true, comp: t.comp === true, ...(group.price ? { price: group.price } : {}),
+    ...(t.invite ? { invite: { title: t.invite.title || '', tagline: t.invite.tagline || '', perk: t.invite.perk || '', dress: t.invite.dress || '' }, phoneLast4: t.phoneLast4 || '' } : {}),
     // Every ticket for the night sees who won, never the winning code; only the winner's own ticket is told it won.
     raffle: raffle ? { prize: raffle.fields.prize || '', status: raffle.fields.status, winner: raffle.fields.status === 'drawn' ? { name: raffle.fields.winnerDisplayName || 'Winner' } : null,
       youWon: raffle.fields.status === 'drawn' && !!t.displayCode && raffle.fields.winnerDisplayCode === t.displayCode } : null,
