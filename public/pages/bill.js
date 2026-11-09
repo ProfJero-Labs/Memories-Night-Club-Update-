@@ -34,7 +34,7 @@ async function load(note = '') {
   const feeOn = x => feeFor(x, b.totalPesewas);
   const due = b.balancePesewas >= 100 && !paid && b.status !== 'written_off' && paystackOk(b.balancePesewas, b.totalPesewas);
   const tooBig = b.balancePesewas >= 100 && !paid && b.status !== 'written_off' && !due;
-  // The charge is part of what they pay: shown on the bill, inside "To pay".
+  // The charge is part of what they pay: shown on the bill as "Service", and inside "To pay".
   const chargeNow = walletWait ? Number(walletWait.chargePesewas || 0) : due && !walletOk(b.balancePesewas, b.totalPesewas) ? feeOn(b.balancePesewas) : 0;
   root.innerHTML = `<h1>${esc(b.label)}</h1><p class="lead">${esc(b.table)}${b.waiterFirstName ? ` · served by ${esc(b.waiterFirstName)}` : ''}</p>
     ${note ? `<div class="say ${note.kind}" role="status">${esc(note.text)}</div>` : ''}
@@ -46,6 +46,7 @@ async function load(note = '') {
       ${b.discountPesewas ? `<div class="ln sub"><span>Discount</span><span>−${money(b.discountPesewas)}</span></div>` : ''}${tableBillLines(b, 'ln sub')}
       <div class="ln total"><span>Total</span><span>${money(b.totalPesewas)}</span></div>
       ${b.payments.map(p => `<div class="ln sub"><span>Paid · ${esc(p.method)}<small>${esc(when(p.at))}</small></span><span>−${money(p.amountPesewas)}</span></div>`).join('')}
+      ${!paid && chargeNow > 0 ? `<div class="ln sub"><span>Service</span><span>+${money(chargeNow)}</span></div>` : ''}
       <div class="ln due"><span>${paid ? 'Paid in full' : 'To pay'}</span><span>${money(b.balancePesewas + (paid ? 0 : chargeNow))}</span></div></div>
     <p style="margin:0"><span class="st ${esc(b.status)}">${esc(b.statusLabel)}</span></p>
     ${walletWait ? `<div class="pay-box" id="walletBox"><h2 style="margin:0">Pay ${money(walletWait.duePesewas)} by MoMo</h2>

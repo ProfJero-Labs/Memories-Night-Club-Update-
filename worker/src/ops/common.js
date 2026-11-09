@@ -45,7 +45,7 @@ export const nightAt = at => (Date.now() - new Date(at).getTime() < 2 * 3600e3 ?
 export const bizDate = d => (d ? nightKey(d) : current && Date.now() - current.at < NIGHT_TTL ? current.date : nightKey(new Date()));
 export const dateOr = (s, d = bizDate()) => (isDate(s) ? s : d);
 export const who = user => ({ by: uidOf(user), byName: user?.name || user?.email || '' });
-export const ghs = p => `GHS ${(Number(p || 0) / 100).toLocaleString('en-GH', { maximumFractionDigits: 2 })}`;
+export const ghs = p => { const n = Number(p || 0); return `GHS ${(n / 100).toLocaleString('en-GH', { minimumFractionDigits: n % 100 ? 2 : 0, maximumFractionDigits: 2 })}`; };
 export const int = v => (Number.isInteger(Number(v)) ? Number(v) : NaN);
 
 export async function nightState(env, date) { return (await getDoc(env, 'shifts', date))?.fields || { status: 'open' }; }

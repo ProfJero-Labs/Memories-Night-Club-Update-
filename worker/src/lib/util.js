@@ -39,7 +39,7 @@ export function normalizeOrderCode(raw) {
 }
 
 export const clean = (s, max = 200) => String(s ?? '').replace(/[\u0000-\u001f\u007f]/g, ' ').trim().slice(0, max);
-export const money = pesewas => `GHS ${(Number(pesewas || 0) / 100).toLocaleString('en-GH', { maximumFractionDigits: 2 })}`;
+export const money = pesewas => { const n = Number(pesewas || 0); return `GHS ${(n / 100).toLocaleString('en-GH', { minimumFractionDigits: n % 100 ? 2 : 0, maximumFractionDigits: 2 })}`; };
 
 export const validEmail = e => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(e || ''));
 export const firstName = full => String(full || '').trim().split(/\s+/)[0] || '';
