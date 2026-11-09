@@ -11,13 +11,14 @@
 import { formatAccra } from '../app.js';
 
 export const VISA_W = 358, VISA_H = 236;
+const venueText = t => String(t.venue || 'SamRit Hotel, Cape Coast').toUpperCase();
 const INFINITY = 'M18 32c0-4.4 3-7.5 6.6-7.5 6.8 0 8 15 14.8 15 3.6 0 6.6-3.1 6.6-7.5s-3-7.5-6.6-7.5c-6.8 0-8 15-14.8 15-3.6 0-6.6-3.1-6.6-7.5Z';
 const WORDS = ['ONE', 'TWO', 'THREE', 'FOUR', 'FIVE', 'SIX', 'SEVEN', 'EIGHT', 'NINE', 'TEN'];
-const F = { script: '"Great Vibes", "Instrument Serif", cursive', mono: '"Space Mono", ui-monospace, monospace', serif: '"Cormorant Garamond", "Instrument Serif", Georgia, serif', display: 'Anton, Impact, sans-serif', sans: 'Archivo, system-ui, sans-serif' };
+const F = { card: '"Share Tech Mono", "Space Mono", ui-monospace, monospace', script: '"Great Vibes", "Instrument Serif", cursive', mono: '"Space Mono", ui-monospace, monospace', serif: '"Cormorant Garamond", "Instrument Serif", Georgia, serif', display: 'Anton, Impact, sans-serif', sans: 'Archivo, system-ui, sans-serif' };
 
 export async function loadVisaFonts() {
   if (!document.fonts?.load) return;
-  await Promise.all([`400 46px ${F.script}`, `700 10px ${F.mono}`, `400 10px ${F.mono}`, `italic 500 13px ${F.serif}`, `400 15px ${F.display}`, `600 7px ${F.sans}`, `700 7px ${F.sans}`]
+  await Promise.all([`400 12px ${F.card}`, `400 46px ${F.script}`, `700 10px ${F.mono}`, `400 10px ${F.mono}`, `italic 500 13px ${F.serif}`, `400 15px ${F.display}`, `600 7px ${F.sans}`, `700 7px ${F.sans}`]
     .map(f => document.fonts.load(f).catch(() => {})));
 }
 
@@ -61,6 +62,19 @@ function stamp(ctx, { cx, cy, r, rot, colour, ring, l1, l2, seed, blend = 'multi
   ctx.drawImage(off, -size / 2, -size / 2, size, size); ctx.restore();
 }
 
+// A masked card number: groups of four raised dots, then the last four digits, embossed.
+// fills: [shadow, highlight, face]. Returns where it ended.
+function maskedNumber(ctx, x, y, { groups, last4, size, fills, gap = 2.2 }) {
+  const r = size * 0.13, step = size * 0.42, groupGap = size * 0.55;
+  ctx.font = `400 ${size}px ${F.card}`;
+  const draw = (dx, dy, fill) => {
+    let cx = x + dx;
+    for (let gi = 0; gi < groups; gi++) { for (let k = 0; k < 4; k++) { ctx.fillStyle = fill; ctx.beginPath(); ctx.arc(cx + r, y + dy - size * 0.32, r, 0, Math.PI * 2); ctx.fill(); cx += step; } cx += groupGap; }
+    if (last4) { ctx.fillStyle = fill; return cx + spaced(ctx, last4, cx, y + dy, gap); }
+    return cx;
+  };
+  draw(0, 1, fills[0]); draw(0, -0.6, fills[1]); return draw(0, 0, fills[2]);
+}
 const mrz = (s, n) => (s.toUpperCase().replace(/[^A-Z0-9<]/g, '<') + '<'.repeat(n)).slice(0, n);
 
 // Draws the visa with its top-left at (0, 0) in grid units (the caller scales). share: hide the phone.
@@ -125,16 +139,19 @@ export function drawVisa(ctx, t, { share = false } = {}) {
   // The fields: two columns, the privileges across both.
   const field = (label, value, x, fy, maxW) => {
     ctx.fillStyle = '#b3142f'; ctx.globalAlpha = 0.85; ctx.font = `600 6px ${F.sans}`; spaced(ctx, label, x, fy, 1.2); ctx.globalAlpha = 1;
-    ctx.fillStyle = '#2b040c'; fitFont(ctx, value, `700 {s} ${F.mono}`, 10, maxW, 6); ctx.fillText(value, x, fy + 12);
+    fitFont(ctx, value, `400 {s} ${F.card}`, 11.5, maxW, 6);
+    ctx.fillStyle = 'rgba(255,255,255,.75)'; ctx.fillText(value, x, fy + 12.6); ctx.fillStyle = '#2b040c'; ctx.fillText(value, x, fy + 12);
   };
-  const fy = Math.max(y + 6, 110);
+  const fy = Math.max(y + 4, 104);
   field('VALID ON', day, 96, fy, 80); field('ENTRIES', String(n).padStart(2, '0'), 180, fy, 60);
-  field('HOLDER', share ? 'ON THE LIST' : `••• ${last4}`, 96, fy + 24, 80); if (dress) field('DRESS CODE', dress, 180, fy + 24, 70);
+  if (share) field('HOLDER', 'ON THE LIST', 96, fy + 24, 80);
+  else { field('HOLDER', '', 96, fy + 24, 80); maskedNumber(ctx, 96, fy + 36, { groups: 1, last4, size: 11.5, fills: ['rgba(255,255,255,.75)', 'rgba(255,255,255,0)', '#2b040c'], gap: 0.4 }); } if (dress) field('DRESS CODE', dress, 180, fy + 24, 70);
   if (inv.perk) field('PRIVILEGES', String(inv.perk).toUpperCase(), 96, fy + 48, 150);
+  field('VENUE', venueText(t), 96, fy + (inv.perk ? 72 : 48), 150);
   // The code line.
   ctx.fillStyle = '#3a0612'; ctx.globalAlpha = 0.85; ctx.font = `400 9.4px ${F.mono}`;
-  spaced(ctx, mrz(`V<MEMORIES<<${title}`, 30), 96, H - 20, 0.95);
-  spaced(ctx, mrz(share ? `VIP<<<<<<<<<<${dmy}<${String(n).padStart(2, '0')}` : `${no}<<${last4}<VIP<<${dmy}<${String(n).padStart(2, '0')}`, 30), 96, H - 7.5, 0.95);
+  ctx.font = `400 9.4px ${F.card}`; spaced(ctx, mrz(`V<MEMORIES<<${title}`, 30), 96, H - 18, 1.05);
+  spaced(ctx, mrz(share ? `VIP<<<<<<<<<<${dmy}<${String(n).padStart(2, '0')}` : `${no}<<${last4}<VIP<<${dmy}<${String(n).padStart(2, '0')}`, 30), 96, H - 6.5, 1.05);
   ctx.globalAlpha = 1;
   // Stamps.
   stamp(ctx, { cx: W - 58, cy: 144, r: 46, rot: -0.21, colour: '#c4112f', ring: `MEMORIES ✦ ADMITTED ✦ ${shortDay} ✦ MEMORIES ✦ `, l1: 'ADMIT', l2: word, seed });
@@ -182,7 +199,7 @@ export function drawPass(ctx, t, { share = false } = {}) {
   ctx.font = `400 15px ${F.display}`; spaced(ctx, 'MEMORIES', 52, 35, 4.2);
   ctx.fillStyle = '#8f9298'; ctx.font = `600 5.5px ${F.sans}`; spaced(ctx, 'NIGHT CLUB', 53, 44, 3.4);
   ctx.fillStyle = '#e2213f'; ctx.font = `700 6.5px ${F.sans}`; spaced(ctx, 'GENTLEMAN’S PASS', W - 18, 30, 2.2, 'right');
-  ctx.fillStyle = '#8f9298'; ctx.font = `400 7px ${F.mono}`; spaced(ctx, `Nº ${share ? 'VIP' : no}`, W - 18, 41, 1.4, 'right');
+  ctx.fillStyle = '#8f9298'; ctx.font = `400 8px ${F.card}`; spaced(ctx, `Nº ${share ? 'VIP' : no}`, W - 18, 41, 1.4, 'right');
   // The chip (silver).
   ctx.save(); ctx.translate(20, 66);
   roundRect(ctx, 0, 0, 40, 30, 5.5); ctx.fillStyle = silver(ctx, 0, 0, 40, 30); ctx.fill();
@@ -195,18 +212,15 @@ export function drawPass(ctx, t, { share = false } = {}) {
   ctx.font = `400 ${tsz}px ${F.display}`; ctx.fillStyle = 'rgba(0,0,0,.6)'; spaced(ctx, title, 20, 120 + tsz + 1.2, 1.6);
   ctx.fillStyle = silver(ctx, 20, 120, 20 + W * 0.7, 120 + tsz); spaced(ctx, title, 20, 120 + tsz, 1.6);
   // Embossed number (the phone's last four).
-  const num = share ? '•••• •••• •••• ••••' : `•••• •••• •••• ${last4}`;
-  ctx.font = `700 13px ${F.mono}`;
-  ctx.fillStyle = 'rgba(0,0,0,.8)'; spaced(ctx, num, 20, 186 + 1, 2.2);
-  ctx.fillStyle = 'rgba(255,255,255,.35)'; spaced(ctx, num, 20, 186 - 0.6, 2.2);
-  ctx.fillStyle = silver(ctx, 20, 176, 260, 190); spaced(ctx, num, 20, 186, 2.2);
+  maskedNumber(ctx, 20, 188, { groups: share ? 4 : 3, last4: share ? '' : last4, size: 19, fills: ['rgba(0,0,0,.85)', 'rgba(255,255,255,.35)', silver(ctx, 20, 172, 280, 192)], gap: 2.6 });
   // Bottom row.
   const cell = (label, value, x, align = 'left') => {
     ctx.fillStyle = '#8f9298'; ctx.font = `600 5.5px ${F.sans}`; spaced(ctx, label, x, 208, 1.8, align);
-    ctx.fillStyle = '#e9eaec'; ctx.font = `700 9px ${F.mono}`; spaced(ctx, value, x, 220, 0.8, align);
+    ctx.font = `400 10.5px ${F.card}`; ctx.fillStyle = 'rgba(0,0,0,.8)'; spaced(ctx, value, x, 220.8, 0.8, align);
+    ctx.fillStyle = '#e9eaec'; spaced(ctx, value, x, 220, 0.8, align);
   };
   cell('VALID', valid, 20); cell('ADMITS', String(n).padStart(2, '0'), 104); if (dress) cell('DRESS CODE', dress, 166);
-  cell('VENUE', 'MEMORIES', W - 18, 'right');
+  cell('VENUE', venueText(t).split(',')[0], W - 18, 'right');
   if (t.status === 'used') stamp(ctx, { cx: W - 72, cy: 92, r: 42, rot: -0.2, colour: '#e2213f', ring: `ENTERED ✦ ${shortDay} ✦ WELCOME ✦ `, l1: 'ENTERED', l2: '', seed, blend: 'source-over' });
   if (t.status === 'cancelled') stamp(ctx, { cx: W - 72, cy: 92, r: 42, rot: -0.2, colour: '#9a9ca1', ring: 'VOID ✦ VOID ✦ VOID ✦ VOID ✦ ', l1: 'VOID', l2: '', seed, blend: 'source-over' });
   ctx.restore();
@@ -252,7 +266,7 @@ export async function visaPost(t) {
   ctx.fillStyle = '#ecc878'; ctx.font = `700 26px ${F.sans}`;
   spaced(ctx, [String(inv.title || t.eventName || 'Ladies Night').toUpperCase(), when].filter(Boolean).join('  ·  '), W / 2, 1140, 5, 'center');
   if (inv.tagline) { ctx.font = `italic 500 40px ${F.serif}`; ctx.fillStyle = '#ffe3dc'; ctx.fillText(inv.tagline, W / 2, 1210); }
-  ctx.globalAlpha = 0.7; ctx.fillStyle = '#fff1e6'; ctx.font = `600 20px ${F.sans}`; spaced(ctx, 'BY INVITATION ONLY', W / 2, 1290, 6, 'center');
+  ctx.globalAlpha = 0.7; ctx.fillStyle = '#fff1e6'; ctx.font = `600 20px ${F.sans}`; spaced(ctx, `${venueText(t)}  ·  BY INVITATION ONLY`, W / 2, 1290, 5, 'center');
   return c;
 }
 

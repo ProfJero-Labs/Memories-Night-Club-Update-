@@ -11,6 +11,7 @@ import { bottomNav, sheet, st, every, money, when, backBar, bindBackBar, say } f
 import { approvalsView, paymentsView, feedbackInboxView, closingView, walletWaitingHtml, bindWalletWaiting, momoPhoneView } from '../lib/ops-views.js';
 import { staffView } from '../lib/staff-view.js';
 import * as people from '../lib/people-views.js';
+import { invitesView } from '../lib/invites-view.js';
 
 const user = await requireStaff(['hrManager', 'director', 'superAdmin']);
 staffHeader(user, 'Human manager');
@@ -34,6 +35,7 @@ async function route() {
     if (key === 'payments') { app.innerHTML = `${back('Floor', 'floor')}<div id="pv"></div>`; bindBack(); return await paymentsView($('#pv')); }
     if (key === 'feedback') { app.innerHTML = `${back()}<div id="fv"></div>`; bindBack(); return await feedbackInboxView($('#fv')); }
     if (key === 'perf') { app.innerHTML = `${back()}<div id="pfv"></div>`; bindBack(); return await people.perfView($('#pfv'), arg); }
+    if (key === 'invites') { app.innerHTML = `${back()}<div id="ivv"></div>`; bindBack(); return await invitesView($('#ivv'), { eventId: arg || '', onNight: id => { location.hash = `invites/${id}`; } }); }
     if (key === 'momophone') { app.innerHTML = `${back()}<div id="mpv"></div>`; bindBack(); return await momoPhoneView($('#mpv')); }
     if (key === 'close') { app.innerHTML = `${back()}<div id="clv"></div>`; bindBack(); return await closingView($('#clv'), undefined, { canClose: true }); }
     stop = every(30000, alive => floor(alive).catch(e => alive() && fail(e)));
@@ -59,7 +61,7 @@ function more() {
   const groups = [
     ['Tonight', [['momophone', 'MoMo phone', 'Pair it, see its texts'], ['close', 'Close the night', 'When the Manager hands it over to you'], ['payments', 'Payments tonight', 'Every payment, with details']]],
     ['People', [['feedback', 'Staff feedback', 'Complaints and ideas from the staff'], ['perf', 'Performance reviews', 'Each person, every month'], ['@admin.html#members', 'Members and passes', 'Members at the gate'], ['@admin.html#attendance', 'Attendance', 'Who came in, by night']]],
-    ['Guests', [['@admin.html#invites', 'Invitations', 'Send free entry (e.g. Ladies Night); approve requests']]],
+    ['Guests', [['invites', 'Invitations', 'Send free entry (e.g. Ladies Night); approve requests']]],
     ['Messages', [['@me.html#notices', 'Notices and messages', 'Post to everyone or a team'], ['@me.html', 'My page', 'My own pay and messages']]],
   ];
   const { box, close } = sheet(`<h2>More</h2>${groups.map(([g, items]) => `<p class="group-h">${esc(g)}</p><div class="more-list">${items.map(([k, l, sub]) => `<button type="button" data-more="${esc(k)}"><b>${esc(l)}</b><span>${esc(sub)}</span></button>`).join('')}</div>`).join('')}`, { label: 'More', full: true });

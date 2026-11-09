@@ -31,9 +31,11 @@ export function invitationOf(ev) {
     perk: i.perk === undefined ? 'Free drinks till 12AM' : clean(i.perk, 60), dress: i.dress === undefined ? 'Strict dress code' : clean(i.dress, 60), passes: Number.isInteger(i.passes) && i.passes >= 1 && i.passes <= MAX_PASSES ? i.passes : 1 };
 }
 const night = ev => formatAccra(ev.fields.date, { weekday: 'short', day: 'numeric', month: 'short' });
+// Where it is: the night's venue, or the club's home at SamRit Hotel, Cape Coast.
+export const venueOf = ev => { const v = clean(ev?.fields?.venue, 60); return v && !/^memories/i.test(v) ? v : 'SamRit Hotel, Cape Coast'; };
 // One flowing paragraph with the link last, so it reads across the phone, not down it.
 function smsFor(ev, inv, passes, link, { added = false, approved = false } = {}) {
-  const him = inv.style === 'him', when = `${night(ev)} at Memories Night Club`;
+  const him = inv.style === 'him', when = `${night(ev)} at Memories Night Club, ${venueOf(ev)}`;
   const head = approved ? `MEMORIES: Your request is accepted. ${him ? `You're invited to witness ${inv.title}` : `You're on the list for ${inv.title}`}, ${when}.`
     : `MEMORIES: ${him ? `You're invited to witness ${inv.title}` : `You're invited to ${inv.title}`}, ${when}.`;
   const notes = [him ? '' : inv.perk, inv.dress, passes > 1 ? `Admits ${passes}` : ''].filter(Boolean).join('. ');
@@ -94,7 +96,7 @@ export async function inviteNights(env, user) {
   const out = [];
   for (const e of events) {
     const pending = (await queryWhere(env, 'invite_requests', [{ field: 'eventId', value: e.id }])).filter(r => r.fields.status === 'pending').length;
-    out.push({ id: e.id, name: e.fields.name || '', date: e.fields.date, doors: e.fields.doors || '', venue: e.fields.venue || '', invitation: invitationOf(e), pending, applyUrl: siteUrl(env, `/invite.html?event=${encodeURIComponent(e.id)}`) });
+    out.push({ id: e.id, name: e.fields.name || '', date: e.fields.date, doors: e.fields.doors || '', venue: venueOf(e), invitation: invitationOf(e), pending, applyUrl: siteUrl(env, `/invite.html?event=${encodeURIComponent(e.id)}`) });
   }
   return { nights: out };
 }
@@ -176,7 +178,7 @@ export async function decideRequests(env, b, user) {
 }
 
 // ── The website: a guest asks for an invitation ──
-// { eventId, phone, style: 'her'|'him', instagram?, answers: [{ q, a }] x3 }. The same answer for any phone, so the page
+// { eventId, phone, instagram?, answers: [{ q, a }] x3 }. The same answer for any phone, so the page
 // never tells anyone whether a number is already on the list.
 export async function requestInvite(env, b) {
   const ev = b?.eventId ? await getDoc(env, 'events', String(b.eventId)) : null;
@@ -187,6 +189,7 @@ export async function requestInvite(env, b) {
   if (answers.length < 3 || answers.some(x => !x.q || x.a.length < 2)) return { error: 'Answer all three, even in a few words.' };
   const instagram = clean(String(b.instagram || '').replace(/^@+/, ''), 40).replace(/[^A-Za-z0-9._]/g, '');
   const rid = `${ev.id}_${phone}`, had = await getDoc(env, 'invite_requests', rid);
-  if (!had) await setDoc(env, 'invite_requests', rid, { eventId: ev.id, phone, style: styleOf(b.style), instagram, answers, status: 'pending', createdAt: now() });
+  // Ladies only ask on the website; the gentlemen's passes are sent by staff.
+  if (!had) await setDoc(env, 'invite_requests', rid, { eventId: ev.id, phone, style: 'her', instagram, answers, status: 'pending', createdAt: now() });
   return { received: true, phoneHint: maskPhone(phone) };
 }

@@ -191,32 +191,32 @@ these texts: set `bookingAlerts: false` on their staff record.
 If a guest pays but the booking doesn't appear: the payment check runs every 10 minutes, finishes
 any paid booking it finds and texts the people on the alert list if it can't.
 
-## Invitations (e.g. Ladies Night): a red "entry visa" by text
+## Invitations (e.g. Ladies Night): free entry by text, a card per guest
 
-**Where:** Control room → **Invitations** (directors, managers, the Human manager, the Event manager,
-Media). Directors, managers and the Human manager also find it under **More → Guests**. Pick the
-night coming up.
+**Where:** **More → Invitations** in the directors', managers' and Human manager's apps (it opens in
+the app), and Control room → Nights → Invitations. Pick the night coming up. The screen, in order:
 
-- **The card and the website:** the name on the card (*Ladies Night*), the line under it (*Her night.
-  Her rules.*), what it comes with (*Free drinks till 12AM*), the dress code (*Strict dress code*) and
-  how many people one invitation lets in. Tick **Let guests ask for an invitation on the website** and
-  save: the night's page shows **Ask for your invitation**, and the link can be shared on its own.
-- **Requests from the website:** the guest answers three short questions (picked at random, any can
-  be swapped), gives her phone number (Instagram optional) and is thanked. Staff read the answers,
-  tick and **Approve** (her card is texted) or **Decline** (nothing is texted).
-- **Send by phone number:** paste numbers, one per line; a number after the phone sets that person's
-  passes. Someone already invited is left alone, or (if chosen) gets the extra passes.
-- **Two cards.** *Ladies:* a red entry visa with the Memories infinity sign: the night in script,
-  valid on, entries (also as an "ADMIT TWO" stamp), holder (the last four digits of her phone), dress
-  code and privileges (free drinks). *Gentlemen:* a black Memories card, "a pass to witness" the
-  night: no free drinks, the dress code still applies. No names on either. On the website the guest
-  picks *I'm a lady* or *I'm a gentleman* (each has its own questions); staff see which on each
-  request; when sending by number, pick **Which card**. Once in, an "ENTERED" stamp lands on it.
-- **Share and Download** under the card: Download saves the card as a picture; Share makes a post for
-  Instagram or a status (the card on Memories red, or black for gentlemen, "on the list"), with the
-  phone digits hidden.
-- **The texts** are one short paragraph with the link at the end.
-- **At the door:** type her **phone number** in *Find a guest* and **Admit**. One admit lets in all its
+- **Send invitations:** pick **Which card** (*Ladies:* the red visa with the free drinks;
+  *Gentlemen:* the black Memories card, a pass to witness the night, no free drinks), paste phone
+  numbers one per line (a number after the phone sets that person's passes) and send. Someone
+  already invited is left alone, or (if chosen) gets the extra passes. **See the cards** shows both.
+- **Requests from the website:** ladies only. On the night's page they tap **Ask for your
+  invitation**, answer three short questions (picked at random, any can be swapped), give their phone
+  (Instagram optional) and are thanked. Staff read the answers and **Approve** (her card is texted)
+  or **Decline** (nothing is texted). Gentlemen don't ask on the website: staff send their passes.
+- **Sent:** every card, lady or gentleman, and who's in.
+- **The card's wording and the website** (folded away): name on the card, the line under it, what
+  it comes with (ladies), dress code, passes per invitation, and whether ladies can ask on the
+  website (with the page's link to share).
+- **The cards** carry no names: the phone's last four digits, the date, how many it admits, the dress
+  code and the venue (SamRit Hotel, Cape Coast), in card-number lettering. Once in, an "ENTERED"
+  stamp lands on it.
+- **Under the card:** *Ladies:* **Share** (the phone's own share menu, any app; a post with the card on
+  Memories red, "I'm on the list", the number hidden) and **Download**. *Gentlemen:* **Download**.
+- **The texts** are one short paragraph with the link last, e.g. "MEMORIES: You're invited to Ladies
+  Night, Fri 13 Nov at Memories Night Club, SamRit Hotel, Cape Coast. Free drinks till 12AM. Strict
+  dress code. At the door, give this number. Your card: …"
+- **At the door:** type the **phone number** in *Find a guest* and **Admit**. One admit lets in all its
   passes together; after that the number can't be used again for that night. The door screen shows
   what it comes with and the dress code.
 

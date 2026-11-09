@@ -201,7 +201,7 @@ export async function publicTicket(env, token) {
     token, firstName: firstName(t.customerName), type: t.type, admits: Number(t.admitCount || 1),
     ticketNo: group.no, groupSize: group.size, ...(group.others ? { others: group.others } : {}),
     eventId: t.eventId, eventName: ev?.fields?.name || t.eventName || '', eventDate: ev?.fields?.date || t.eventDate || '',
-    doors: ev?.fields?.doors || '', venue: ev?.fields?.venue || '', artwork: ev?.fields?.artwork || '',
+    doors: ev?.fields?.doors || '', venue: t.invite ? (clean(ev?.fields?.venue, 60) && !/^memories/i.test(clean(ev?.fields?.venue, 60)) ? clean(ev.fields.venue, 60) : 'SamRit Hotel, Cape Coast') : ev?.fields?.venue || '', artwork: ev?.fields?.artwork || '',
     ticketStyle: ev?.fields?.ticketStyle || 'auto', ticketColors: cleanTicketColors(ev?.fields?.ticketColors), autoStyle,
     identityLine: t.identityLine || '', displayCode: t.displayCode, status: t.revoked || t.cancelled ? 'cancelled' : t.status,
     inDraw: t.inDraw === true, comp: t.comp === true, ...(group.price ? { price: group.price } : {}),

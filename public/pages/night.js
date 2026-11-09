@@ -20,6 +20,7 @@ loadFee().catch(() => {});
 import { accountsView, ticketsView, findOrderView, expensesView, nightsView, salesView, closingView, approvalsView, productsView, stockAdminView, eodListView, eodView, moneyView, expenseSheet, explainSheet, budgetView, paymentsView, commissionsView, toApproveView, stockValueView, salesListView, openSales, evolveitView, walletWaitingHtml, bindWalletWaiting, momoPhoneView, purchasesView, cashReceiveView, feedbackInboxView, chargesView, financeNightView, tabClearView } from '../lib/ops-views.js';
 import { payView, reviewsView, perfView } from '../lib/people-views.js';
 import { staffView } from '../lib/staff-view.js';
+import { invitesView } from '../lib/invites-view.js';
 
 const user = await requireStaff(['manager', 'director', 'superAdmin']);
 const director = user.role !== 'manager';
@@ -58,6 +59,7 @@ async function route() {
     if (key === 'customers') { app.innerHTML = `${director ? back() : ''}<div id="rv2"></div><div id="yv" style="margin-top:20px"></div>`; bindBack(); await reviewsView($('#rv2')).catch(() => {}); return await paymentsView($('#yv'), { tab: 'customers' }); }
     if (key === 'approve') { app.innerHTML = '<div id="tav"></div>'; return await toApproveView($('#tav'), { onCount: n => nav.setDot('approve', n) }); }
     if (key === 'salaries') { app.innerHTML = `${back('Money', 'money')}<div id="slv"></div>`; bindBack(); return await payView($('#slv'), arg); }
+    if (key === 'invites') { app.innerHTML = `${back()}<div id="ivv"></div>`; bindBack(); return await invitesView($('#ivv'), { eventId: arg || '', onNight: id => { location.hash = `invites/${id}`; } }); }
     if (key === 'reviews') { app.innerHTML = `${back()}<div id="rvv"></div>`; bindBack(); return await reviewsView($('#rvv')); }
     if (key === 'feedback') { app.innerHTML = `${back()}<div id="fbv"></div>`; bindBack(); return await feedbackInboxView($('#fbv')); }
     if (key === 'perf') { app.innerHTML = `${back()}<div id="pfv"></div>`; bindBack(); return await perfView($('#pfv'), arg); }
@@ -214,12 +216,12 @@ function more() {
     ['Tabs', [['opentabs', 'Tabs left open', 'Clear tabs still open after a night']]],
     ['People', [['staff', 'Staff', 'Add people, send PINs'], ['feedback', 'Staff feedback', 'Complaints and ideas'], ['perf', 'Performance reviews', 'Each staff member, every month'], ['@admin.html#members', 'Members', 'Members and passes']]],
     ['Floor', [['tables', 'Tables', 'Open tables and what they owe'], ['reviews', 'Customer reviews', 'What customers say']]],
-    ['Guests', [['@admin.html#invites', 'Invitations', 'Send free entry (e.g. Ladies Night); approve requests']]],
+    ['Guests', [['invites', 'Invitations', 'Send free entry (e.g. Ladies Night); approve requests']]],
     ...(admin ? [['Admin only (technical)', [['charges', 'Payment settings', 'The payment rules, service charge, commission'], ['momophone', 'MoMo phone', 'Pair it, see its texts'], ['@paystackdown', 'Paystack is down tonight', 'Let any bill be paid by MoMo to the wallet'], ['@admin.html', 'Control room', 'Site, nights, settings']]]] : []),
   ] : [
     ['Tonight', [['accounts', 'Night accounts', 'What the drinks should bring; who isn’t aligned'], ['tickets', 'Tickets tonight', 'Sold online and at the gate'], ['find', 'Find an order', 'A table booking or tickets'], ['payments', 'Payments tonight', 'Every payment, with details'], ['cash', 'Cash from the staff', 'Receive each person’s counted cash'], ['momophone', 'MoMo phone', 'Pair it, see its texts'], ['approvals', 'Approvals', 'Everything asked tonight'], ['saleslist', 'Every sale', 'One by one: what, who, how paid'], ['sales', 'Tonight in detail', 'By waiter, by bar, by drink']]],
     ['Stock and money', [['expenses', 'Expenses', 'What was spent; add one'], ['purchases', 'Buying drinks', 'Ask; finance and a director approve'], ['stock', 'Stock', 'New stock, counts, differences'], ['stockvalue', 'Stock value', 'What’s in the bars, at cost'], ['money', 'Money', 'In, out, profit'], ['prices', 'Drinks & prices', 'Set by finance'], ['commissions', 'Commissions', 'Who brought the big tables']]],
-    ['Guests', [['@admin.html#invites', 'Invitations', 'Send free entry (e.g. Ladies Night); approve requests']]],
+    ['Guests', [['invites', 'Invitations', 'Send free entry (e.g. Ladies Night); approve requests']]],
     ['Records', [['nights', 'Nights coming up', 'Tickets sold, tables booked'], ['reports', 'Past nights', 'End-of-day reports'], ['@admin.html#members', 'Members', 'Members and passes']]],
   ];
   const { box, close } = sheet(`<h2>More</h2>${groups.map(([g, items]) => `<p class="group-h">${esc(g)}</p><div class="more-list">${items.map(([k, l, sub]) => `<button type="button" data-more="${esc(k)}"><b>${esc(l)}</b><span>${esc(sub)}</span></button>`).join('')}</div>`).join('')}`, { label: 'More', full: true });

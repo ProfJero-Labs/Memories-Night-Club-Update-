@@ -35,10 +35,10 @@ test('sending by phone number: a free card per number, texted as a link; names a
   assert.deepEqual([one.type, one.comp, one.admitCount, one.invite.perk, one.status], ['Invitation', true, 1, 'Free drinks till 12AM', 'valid'], 'default wording: free drinks till 12AM');
   assert.equal(three.admitCount, 3);
   const sms = store.sms.find(s => s.to === '0241234567').message;
-  assert.match(sms, /^MEMORIES: You're invited to Ladies Night, .+ at Memories Night Club\./);
+  assert.match(sms, /^MEMORIES: You're invited to Ladies Night, .+ at Memories Night Club, SamRit Hotel, Cape Coast\./);
   assert.doesNotMatch(sms, /\n/, 'one paragraph: it reads across the phone, not down it');
   assert.match(sms, /Free drinks till 12AM/);
-  assert.match(sms, /Memories Night Club/);
+  assert.match(sms, /Memories Night Club, SamRit Hotel, Cape Coast/);
   assert.match(sms, /Strict dress code/);
   assert.match(sms, /At the door, give this number\. Your card: https:\/\/memories\.test\/ticket\.html\?token=\w+$/);
   assert.match(sms, /ticket\.html\?token=/);
@@ -116,7 +116,7 @@ test('who may: directors, managers, the human manager, the event manager; not th
   assert.equal(ok(await send([{ phone: '0241119999', passes: 25 }]), 'too many').results[0].status, 'invalid');
 });
 
-test('gentlemen: a Memories card pass to witness the night, no free drinks; asked for on the website or sent by number', async () => {
+test('gentlemen: a Memories card pass to witness the night, no free drinks, sent by staff only', async () => {
   const { store, call, send, open } = setup();
   ok(await open('admin'), 'open');
   // Sent by number as gentlemen's passes.
@@ -129,15 +129,12 @@ test('gentlemen: a Memories card pass to witness the night, no free drinks; aske
   assert.match(sms, /Your pass: /);
   const page = ok(await call('GET', `/api/tickets/${him.id}`), 'ticket').ticket;
   assert.deepEqual([page.invite.style, page.invite.perk], ['him', '']);
-  // Asked for on the website as a gentleman; approved as one.
+  // Only ladies ask on the website: a request is always for the ladies' visa.
   ok(await call('POST', '/api/invite-request', { body: { eventId: 'ladies', phone: '0241110002', style: 'him', answers: Q } }), 'ask');
-  const list = ok(await call('GET', '/api/admin/invites?eventId=ladies', { who: 'admin' }), 'list');
-  const req = list.requests.find(r => r.phone === '0241110002');
-  assert.equal(req.style, 'him');
-  ok(await call('POST', '/api/admin/invites/decide', { who: 'admin', body: { eventId: 'ladies', ids: [req.id], decision: 'approve' } }), 'approve');
-  assert.equal(store.list('tickets').find(t => t.fields.phone === '0241110002').fields.invite.style, 'him');
+  const req = ok(await call('GET', '/api/admin/invites?eventId=ladies', { who: 'admin' }), 'list').requests.find(r => r.phone === '0241110002');
+  assert.equal(req.style, 'her');
   // At the door: the dress code, no drinks.
   const hit = ok(await call('GET', '/api/door/search?eventId=ladies&q=0241110001', { who: 'door' }), 'search').results[0];
   assert.equal(hit.perk, 'Strict dress code');
-  assert.equal(ok(await call('GET', '/api/admin/invites?eventId=ladies', { who: 'admin' }), 'list').sent.filter(x => x.style === 'him').length, 2);
+  assert.equal(ok(await call('GET', '/api/admin/invites?eventId=ladies', { who: 'admin' }), 'list').sent.filter(x => x.style === 'him').length, 1);
 });
