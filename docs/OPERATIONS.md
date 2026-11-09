@@ -162,10 +162,25 @@ night for six hours). The table is held until **one hour after** that time; they
 code and the time it's held until. Nothing else happens to a no-show: the table is simply free
 again (the door and the gate can give it to someone else). If they come later and a table of that
 kind is still free, the door seats them; if not, the door says "Hold ended: no table free".
-One table per phone number per night. They pay for the table and the drinks at the club, like any
+**The table's price is its minimum spend**, not a charge on top of the drinks. While reserving, the
+customer can pick drinks from the bar menu (they count towards the minimum, with a running total) and
+type a drink they want that isn't on the menu. Their bill at the club is the higher of the two: the
+minimum or the drinks. Staff see the minimum, the drinks picked, what's left to spend and the request
+on **Bookings** / **Tables** / **Find an order**, and in the booking text.
+**At the club, link the table's bill to its booking.** When a waiter opens a table, the booked
+tables seated tonight show as buttons: tapping one links the bill to that booking (or later: the
+tab's **More → It's a booked table**). Then:
+- **Paid at the gate** (or online): that payment is credit on the bill. Drinks up to it are already
+  paid; only what goes over it is owed. The table price and the drinks are never both charged.
+- **Reserved, not paid**: the bill is at least the minimum spend. If the drinks come to less, the
+  rest shows as *Unspent minimum spend*.
+The night's money counts the table's payment once (under tables) and only the rest of the bill under
+drinks. A table's commission is its payment plus what its bill paid, as one deal.
+One table per phone number per night. They pay for the drinks at the club, like any
 table, so a reserved table's commission comes from what its bill actually pays (see Commissions).
 Tables already **paid online** before this are honoured as before. (Paying online for a table can
-only come back by the engineer setting `TABLE_PAYMENTS=on` on the Worker.)
+only come back by the engineer setting `TABLE_PAYMENTS=on` on the Worker; it charges the same way:
+the minimum spend or the bottles, whichever is higher.)
 
 A table booked online shows straight away on the waiter's **Bookings**, the front office's
 **Tables** and the manager's **Tables** screens: tonight's, and **Coming up** for the next 30

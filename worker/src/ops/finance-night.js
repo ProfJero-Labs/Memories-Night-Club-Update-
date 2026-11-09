@@ -47,7 +47,9 @@ export async function nightFinance(env, user, { date, channel = 'all' } = {}) {
 
   // ── A. Sales ──
   const promoOff = o => Number(o.promo?.discountPesewas || 0);
-  const drinksGross = sum(tabs, t => t.bill.grossPesewas) + sum(qr, o => o.totalPesewas);
+  // A linked table's minimum-spend top-up is a sale on the bill; its credit (paid at the gate or
+  // online) is already counted under tickets and tables, so it comes off the drinks here.
+  const drinksGross = sum(tabs, t => t.bill.grossPesewas + t.bill.minimumTopUpPesewas - t.bill.prepaidPesewas) + sum(qr, o => o.totalPesewas);
   const drinksDiscount = sum(tabs, t => t.bill.discountPesewas);
   const ticketsGross = sum(orders, o => Number(o.amountPesewas || 0) + promoOff(o)), ticketsDiscount = sum(orders, promoOff);
   const qrRefunds = qr.filter(o => ['refund_due', 'refunded'].includes(o.status));

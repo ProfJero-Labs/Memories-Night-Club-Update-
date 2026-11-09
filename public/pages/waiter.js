@@ -7,11 +7,11 @@
 //     once paid.
 //   Quick sale: pick drinks → Cash or MoMo → the bar makes it → "I got them" → done.
 // "Bookings": booked tables and the bottles they paid for. "My report": sales, cash, hand in, submit.
-import { $, $$, esc, normalizePhone, loadFee, paystackOk, paystackLimit, momoDirectOff, walletOk, walletQr } from '../app.js';
+import { $, $$, esc, tableBillLines, normalizePhone, loadFee, paystackOk, paystackLimit, momoDirectOff, walletOk, walletQr } from '../app.js';
 loadFee().catch(() => {});
 import { requireStaff, staffHeader, sapi } from '../staff.js';
 import { qrSvg } from '../ticket-art.js';
-import { sheet, say, st, every, bottomNav, busy, ghsIn, moneyField, money, when, backBar, bindBackBar, returnTo, pasteMomoButton, upcomingBookings } from '../lib/ops-ui.js';
+import { sheet, say, st, every, bottomNav, busy, ghsIn, moneyField, money, when, backBar, bindBackBar, returnTo, pasteMomoButton, upcomingBookings, tableSpend } from '../lib/ops-ui.js';
 import { drinkPicker, paySheet, handInCash, tipBox, tipSheet, tipSaid } from '../lib/sell.js';
 
 const user = await requireStaff(['waitStaff', 'eventManager', 'superAdmin', 'director', 'manager']);
@@ -96,6 +96,7 @@ async function tabView(id) {
     const open = t.status === 'open';
     app.innerHTML = `${backBar('', 'tabs')}
       <div class="row" style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap"><h1>${esc(t.label)} · ${esc(t.table)}</h1>${st(t.payStatus, t.payLabel)}</div>
+      ${t.booking ? `<p class="lead" style="margin:0">Booked table <b>${esc(t.booking.code)}</b> · ${esc(t.booking.packageName)} · minimum spend ${money(t.booking.minSpendPesewas)}${t.booking.prepaidPesewas ? ` (${esc(t.booking.how.toLowerCase())}: ${money(t.booking.prepaidPesewas)})` : ''}</p>` : ''}
       ${t.customerName || t.customerPhoneHint ? `<p class="lead">${esc(t.customerName)}${t.customerPhoneHint ? ` · ${esc(t.customerPhoneHint)}` : ''}</p>` : ''}
       <div id="msg"></div>
       ${open && t.quick ? '<div class="say warn"><b>Quick sale</b>Collect the drinks at the bar, then tap “I got them”. It closes by itself.</div>' : ''}
@@ -109,13 +110,13 @@ async function tabView(id) {
       <div class="cards">${t.rounds.map(roundCard).join('') || '<div class="empty-box"><b>No drinks yet</b>Tap “Add drinks”.</div>'}</div>
       <h2>Bill</h2>
       <div class="lines-list">${b.lines.map(l => `<div class="ln"><span>${l.qty} × ${esc(l.name)}</span><span>${money(l.amountPesewas)}</span></div>`).join('')}
-        ${b.discountPesewas ? `<div class="ln"><span>Discount</span><span>−${money(b.discountPesewas)}</span></div>` : ''}
+        ${b.discountPesewas ? `<div class="ln"><span>Discount</span><span>−${money(b.discountPesewas)}</span></div>` : ''}${tableBillLines(b)}
         <div class="ln total"><span>Total</span><span>${money(b.totalPesewas)}</span></div>
         <div class="ln"><span>Paid${t.payments.length ? ` <small>(${t.payments.map(p => `${p.method === 'cash' ? 'cash' : 'MoMo'} ${money(p.amountPesewas)}`).join(', ')})</small>` : ''}</span><span>${money(b.paidPesewas)}</span></div>
         <div class="ln total"><span>Still to pay</span><span>${money(b.balancePesewas)}</span></div></div>
       ${open && !t.quick ? `<details class="fold"><summary>More</summary><div class="btn-row" style="margin-top:10px">
         ${b.balancePesewas ? '<button class="mid" id="showBill">Show QR to pay</button><button class="mid" id="invoice">Text the invoice now</button>' : ''}
-        <button class="mid" id="ask">Ask for a discount</button></div></details>` : ''}`;
+        <button class="mid" id="ask">Ask for a discount</button>${t.booking ? '' : '<button class="mid" id="linkBk">It’s a booked table</button>'}</div></details>` : ''}`;
     bindBackBar(app);
     const flash = sessionStorage.getItem('waiter-flash'); if (flash) { sessionStorage.removeItem('waiter-flash'); say($('#msg'), flash); }
     $('#add') && ($('#add').onclick = () => { location.hash = `add/${t.id}`; });
@@ -128,9 +129,25 @@ async function tabView(id) {
       catch (er) { say($('#msg'), er.message, 'bad'); }
     });
     $('#ask') && ($('#ask').onclick = () => askManager(t));
+    $('#linkBk') && ($('#linkBk').onclick = () => linkBookingSheet(t, () => draw()));
     $$('[data-act]').forEach(btn => btn.onclick = () => roundAct(btn.dataset.r, btn.dataset.act, t));
   };
   stop = every(10000, alive => { if (document.querySelector('.sheet-back')) return; return draw(alive).catch(e => alive() && fail(e)); });
+}
+
+// A table that was booked (reserved online, or paid at the gate): link its booking to this bill, so
+// the table's minimum spend counts and what it already paid comes off.
+async function linkBookingSheet(t, done) {
+  let list = [];
+  try { list = (await sapi('/api/ops/tables')).tables.filter(x => x.arrived && !x.tabNumber); } catch (e) { return say($('#msg'), e.message, 'bad'); }
+  const { box, close } = sheet(`<h2>Which booking is this table?</h2>
+    ${list.length ? `<div class="rows">${list.map(x => `<button class="row-btn" type="button" data-bk="${esc(x.orderId)}"><span class="t">${esc(x.name)}${x.tableNumber ? ` · table ${esc(x.tableNumber)}` : ''}</span><span class="s">${esc(x.code)} · ${esc(x.packageName)} · minimum ${money(x.minSpendPesewas)}</span></button>`).join('')}</div>`
+      : '<p class="muted" style="margin:0">No seated table booking without a bill. The door or the gate seats the table first.</p>'}
+    <div id="bkMsg"></div><button class="big ghost" data-close>Cancel</button>`, { label: 'Booked table' });
+  $$('[data-bk]', box).forEach(b => b.onclick = async () => {
+    try { await busy(b, () => sapi('/api/ops/tabs/booking', { method: 'POST', body: { tabId: t.id, orderId: b.dataset.bk } })); close(); done(); }
+    catch (e) { say($('#bkMsg', box), e.message, 'bad'); }
+  });
 }
 
 // Close tab: cash or MoMo. Cash → take it, closed, receipt texted. MoMo → a prompt on their phone and
@@ -403,19 +420,25 @@ async function takeOrder(tabId = '') {
     let stationId = t?.stationId || sessionStorage.getItem('waiter-bar') || stations[0]?.id || '';
     if (!stations.some(x => x.id === stationId)) stationId = stations[0]?.id || '';
     d = { stations, stationId, products: (await sapi(`/api/ops/products?stationId=${encodeURIComponent(stationId)}`)).products };
-    if (!t) booked = (await sapi('/api/ops/tables').catch(() => ({ tables: [] }))).tables.filter(x => x.arrived).map(x => x.tableNumber || x.firstName).filter(Boolean);
+    if (!t) booked = (await sapi('/api/ops/tables').catch(() => ({ tables: [] }))).tables.filter(x => x.arrived && !x.tabNumber).map(x => ({ label: x.tableNumber || x.firstName, orderId: x.orderId, what: `${x.code} · ${x.packageName}` })).filter(x => x.label);
   } catch (e) { return fail(e); }
   // The table and the customer's phone: typed once, kept while drinks are added.
   const top = document.createElement('div'); top.className = 'order-top';
   top.innerHTML = t ? `<p class="lead" style="margin:0">${esc(t.table === 'Walk-in' ? 'No table' : `Table ${t.table}`)}${t.customerPhoneHint ? ` · invoice to ${esc(t.customerPhoneHint)}` : ''}</p>${t.customerPhoneHint ? '' : '<div class="sfield"><label for="odPhone">Customer’s phone, for the invoice (optional)</label><input id="odPhone" type="tel" inputmode="tel" autocomplete="off" placeholder="024 123 4567"></div>'}`
     : `<div class="sfield"><label for="odTable">Table (leave empty if standing)</label><input id="odTable" maxlength="30" autocomplete="off" placeholder="e.g. 5, VIP 2"></div>
-    ${booked.length ? `<div class="chips" aria-label="Booked tables here tonight">${booked.map(b => `<button type="button" data-t="${esc(b)}">${esc(b)}</button>`).join('')}</div>` : ''}
+    ${booked.length ? `<div class="chips" aria-label="Booked tables here tonight">${booked.map(b => `<button type="button" data-t="${esc(b.label)}" data-o="${esc(b.orderId)}" title="${esc(b.what)}">${esc(b.label)}</button>`).join('')}</div><span class="hint" id="odBk">A booked table? Tap it: its price is the minimum spend, and what it paid at the gate counts towards the drinks.</span>` : ''}
     <div class="sfield"><label for="odPhone">Customer’s phone, for the invoice (optional)</label><input id="odPhone" type="tel" inputmode="tel" autocomplete="off" placeholder="024 123 4567"><span class="hint">The invoice goes to it when you close the tab.</span></div>
     ${d.stations.length > 1 ? `<div class="sfield"><label for="odBar">Which bar makes the drinks?</label><select id="odBar">${d.stations.map(x => `<option value="${esc(x.id)}" ${x.id === d.stationId ? 'selected' : ''}>${esc(x.name)}</option>`).join('')}</select></div>` : ''}
     <details class="fold"><summary>Someone brought this table? (commission)</summary>
       <div class="sfield"><label for="odBy">Their name</label><input id="odBy" maxlength="60" autocomplete="off"></div>
       <div class="sfield"><label for="odByPh">Their phone</label><input id="odByPh" type="tel" inputmode="tel" placeholder="024 123 4567"></div></details>`;
-  $$('[data-t]', top).forEach(b => b.onclick = () => { $('#odTable', top).value = b.dataset.t; });
+  let bookingId = '';
+  $$('[data-t]', top).forEach(b => b.onclick = () => {
+    $('#odTable', top).value = b.dataset.t; bookingId = b.dataset.o || '';
+    $$('[data-t]', top).forEach(x => x.setAttribute('aria-pressed', String(x === b)));
+    const bk = booked.find(x => x.orderId === bookingId); if (bk && $('#odBk', top)) $('#odBk', top).textContent = `Linked to the booking ${bk.what}.`;
+  });
+  $('#odTable', top) && $('#odTable', top).addEventListener('input', () => { if (bookingId) { bookingId = ''; $$('[data-t]', top).forEach(x => x.setAttribute('aria-pressed', 'false')); } });
   $('#odBar', top) && ($('#odBar', top).onchange = e => { sessionStorage.setItem('waiter-bar', e.target.value); takeOrder(); });
   const v = s => $(s, top)?.value.trim() || '';
   drinkPicker(app, d.products, {
@@ -425,7 +448,7 @@ async function takeOrder(tabId = '') {
       sessionStorage.removeItem('waiter-swap');
       const phone = v('#odPhone');
       if (phone && !normalizePhone(phone)) throw new Error('That phone number doesn’t look right. Fix it, or leave it empty.');
-      const r = await sapi('/api/ops/tabs/order', { method: 'POST', body: { tabId: t?.id, table: v('#odTable'), stationId: v('#odBar') || d.stationId, customerPhone: phone, broughtByName: v('#odBy'), broughtByPhone: v('#odByPh'), lines } });
+      const r = await sapi('/api/ops/tabs/order', { method: 'POST', body: { tabId: t?.id, table: v('#odTable'), bookingId: t ? undefined : bookingId || undefined, stationId: v('#odBar') || d.stationId, customerPhone: phone, broughtByName: v('#odBy'), broughtByPhone: v('#odByPh'), lines } });
       // Back to My tables: free to take the next order. The tab is one tap away to add or close.
       sessionStorage.setItem('waiter-flash', `Sent to the bar: Tab ${r.number}${t?.table && t.table !== 'Walk-in' ? ` · table ${t.table}` : v('#odTable') ? ` · table ${v('#odTable')}` : ''}. Collect it when it’s ready.`);
       returnTo('tabs');
@@ -468,7 +491,7 @@ async function quickSale(stationId) {
 
 // ── Bookings tonight ──
 async function bookings() {
-  app.innerHTML = '<h1>Bookings tonight</h1><p class="lead">Tables reserved online (they pay at the club, like any table), and bottles paid for earlier. Tick when served.</p><div id="msg"></div><div class="cards" id="list"><div class="loading">Loading…</div></div><h2>Coming up</h2><div id="soon"></div>';
+  app.innerHTML = '<h1>Bookings tonight</h1><p class="lead">Tables reserved online. The table’s price is its minimum spend: the drinks they picked count towards it. Tick when served.</p><div id="msg"></div><div class="cards" id="list"><div class="loading">Loading…</div></div><h2>Coming up</h2><div id="soon"></div>';
   stop = every(30000, async alive => {
     const { tables, upcoming } = await sapi('/api/ops/tables');
     if (!alive()) return;
@@ -477,6 +500,7 @@ async function bookings() {
       <span class="sub">${esc(t.name)} · ${esc(t.packageName)}${t.capacity ? ` · up to ${t.capacity}` : ''}</span>
       ${t.holdLine ? `<span class="sub">${esc(t.holdLine)}</span>` : ''}
       ${t.bottles.length ? `<span>${t.bottles.map(b => `<b>${b.quantity} ×</b> ${esc(b.name)}`).join('<br>')}</span>` : '<span class="sub">No bottles booked.</span>'}
+      ${tableSpend(t) ? `<span class="sub">${tableSpend(t)}</span>` : ''}
       ${t.bottles.length ? `<button class="mid ${t.bottlesServed ? '' : 'okc'}" data-served="${esc(t.orderId)}" data-v="${t.bottlesServed ? '0' : '1'}">${t.bottlesServed ? 'Served ✓ (undo)' : 'Bottles served'}</button>` : ''}</div>`).join('') || '<div class="empty-box"><b>No bookings tonight</b></div>';
     $('#soon').innerHTML = upcomingBookings(upcoming);
     $$('[data-served]').forEach(b => b.onclick = async () => { try { await sapi('/api/ops/tables', { method: 'POST', body: { orderId: b.dataset.served, bottlesServed: b.dataset.v === '1' } }); route(); } catch (e) { say($('#msg'), e.message, 'bad'); } });

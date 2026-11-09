@@ -2,7 +2,8 @@
 //
 // A deal is a table booked online (orders, kind 'table', confirmed) or a table in the club (a tab,
 // not a quick sale) whose amount is over the line: for a booking, what the customer paid; for a table
-// in the club, what has been paid on its bill. The commission is 10% of that whole amount.
+// in the club, what has been paid on its bill (plus the table's own payment when the bill is linked
+// to its booking; that booking then isn't counted on its own). The commission is 10% of that whole amount.
 //
 // Who brought it: `broughtBy` { name, phone, setByName, at } on the booking or the tab, named by the
 // waiter when opening the table, or later by the manager or finance. Paid: `commissionPaid`
@@ -29,13 +30,14 @@ async function dealsIn(env, m) {
   const since = new Date(new Date(`${m}-01T00:00:00Z`).getTime() - 864e5);
   const [orders, tabs, rounds] = await Promise.all([queryRecent(env, 'orders', 'createdAt', since, 10000), queryRecent(env, 'tabs', 'createdAt', since, 10000), queryRecent(env, 'rounds', 'createdAt', since, 20000)]);
   const deals = [];
-  for (const o of orders.map(d => ({ id: d.id, ...d.fields })).filter(o => o.kind === 'table' && o.status === 'confirmed' && nightKey(o.createdAt).slice(0, 7) === m)) {
+  for (const o of orders.map(d => ({ id: d.id, ...d.fields })).filter(o => o.kind === 'table' && o.status === 'confirmed' && !o.tabId && nightKey(o.createdAt).slice(0, 7) === m)) {
     const amount = Number(o.amountPesewas || 0); if (!commissionOf(amount)) continue;
     deals.push({ kind: 'booking', id: o.id, date: nightKey(o.createdAt), label: `${o.packageName || 'Table'} booked online`, night: o.eventName || '', customer: o.buyerName || '', customerPhone: o.buyerPhone || '', amountPesewas: amount, broughtBy: o.broughtBy || null, paid: o.commissionPaid || null });
   }
   const R = rounds.map(r => ({ id: r.id, ...r.fields }));
   for (const t of tabs.map(d => ({ id: d.id, ...d.fields })).filter(t => !t.quick && t.status !== 'written_off' && String(t.businessDate || '').slice(0, 7) === m)) {
-    const bill = billOf(t, R.filter(r => r.tabId === t.id)), amount = Math.min(bill.paidPesewas, bill.totalPesewas);
+    // A bill linked to a table booking: the table's payment (credit on the bill) counts too.
+    const bill = billOf(t, R.filter(r => r.tabId === t.id)), amount = Math.min(bill.paidPesewas, bill.totalPesewas) + bill.prepaidPesewas;
     if (!commissionOf(amount)) continue;
     deals.push({ kind: 'tab', id: t.id, date: t.businessDate, label: `${t.table === 'Walk-in' ? 'No table' : `Table ${t.table}`} · Tab ${t.number}`, night: '', customer: t.customerName || '', customerPhone: t.customerPhone || '', amountPesewas: amount, servedBy: t.waiterName || '', broughtBy: t.broughtBy || null, paid: t.commissionPaid || null });
   }

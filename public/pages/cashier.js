@@ -3,7 +3,7 @@
 // approves), and at the end count the cash: the system shows expected vs counted, and any
 // difference needs an explanation. A customer saying "I sent MoMo" is not a payment: only payments
 // Paystack confirmed show as paid.
-import { $, $$, esc } from '../app.js';
+import { $, $$, esc, tableBillLines } from '../app.js';
 import { requireStaff, staffHeader, sapi } from '../staff.js';
 import { sheet, say, st, every, bottomNav, busy, ghsIn, moneyField, money, when } from '../lib/ops-ui.js';
 
@@ -30,7 +30,7 @@ async function openBill(id) {
   const tab = (await sapi(`/api/ops/tab?id=${encodeURIComponent(id)}`)).tab, b = tab.bill;
   const { box, close } = sheet(`<h2>${esc(tab.label)} · ${esc(tab.table)}</h2><p class="muted" style="margin:0">${esc(tab.waiterName)}</p>
     <div class="lines-list">${b.lines.map(l => `<div class="ln"><span>${l.qty} × ${esc(l.name)}</span><span>${money(l.amountPesewas)}</span></div>`).join('')}
-      ${b.discountPesewas ? `<div class="ln"><span>Discount</span><span>−${money(b.discountPesewas)}</span></div>` : ''}
+      ${b.discountPesewas ? `<div class="ln"><span>Discount</span><span>−${money(b.discountPesewas)}</span></div>` : ''}${tableBillLines(b)}
       <div class="ln total"><span>Total</span><span>${money(b.totalPesewas)}</span></div>
       ${tab.payments.map(p => `<div class="ln"><span>${p.method === 'cash' ? 'Cash' : 'MoMo / card (confirmed)'} <small>${when(p.at)}${p.byName ? ` · ${esc(p.byName)}` : ''}</small></span><span>−${money(p.amountPesewas)}</span></div>`).join('')}
       <div class="ln total"><span>Still to pay</span><span>${money(b.balancePesewas)}</span></div></div>

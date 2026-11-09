@@ -4,7 +4,7 @@
 // an element to draw into.
 import { $, $$, esc } from '../app.js';
 import { sapi } from '../staff.js';
-import { sheet, say, st, busy, ghsIn, moneyField, money, when, dayName, ask, pasteMomoButton } from './ops-ui.js';
+import { sheet, say, st, busy, ghsIn, moneyField, money, when, dayName, ask, pasteMomoButton, tableSpend } from './ops-ui.js';
 // One-tap reasons for refusing a request or a payment (they can still type their own).
 const REFUSE_QUICK = ['Wrong amount', 'Not in this month’s budget', 'Too expensive', 'Not needed now', 'Ask me first'];
 
@@ -1055,6 +1055,7 @@ export async function findOrderView(el, q = '') {
         <span class="row"><span class="t" style="font-size:20px">${esc(o.name || 'Guest')}</span><span class="sub">${esc(o.code)}</span></span>
         <span><b>${esc(o.what)}</b> · ${esc(o.night)}${o.nightDate ? ` · ${esc(dayName(String(o.nightDate).slice(0, 10)))}` : ''}</span>
         ${o.bottles.length ? `<span>Bottles: ${o.bottles.map(b => `${b.quantity} × ${esc(b.name)}`).join(', ')}${o.kind === 'table' ? (o.bottlesServed ? ' · served' : ' · not served yet') : ''}</span>` : ''}
+        ${o.kind === 'table' && tableSpend(o) ? `<span class="sub">${tableSpend(o)}</span>` : ''}
         <div class="lines-list"><div class="ln"><span>Paid</span><span>${money(o.amountPesewas)}</span></div><div class="ln"><span>How</span><span>${esc(o.paid)}</span></div>
           ${o.promo ? `<div class="ln"><span>Promo</span><span>${esc(o.promo)}</span></div>` : ''}<div class="ln"><span>Phone</span><span>…${esc(o.phoneLast4)}</span></div>
           ${o.kind === 'table' ? `<div class="ln"><span>Table</span><span>${o.tableNumber ? `Table ${esc(o.tableNumber)}` : 'No number yet'}${o.guestsArrived ? ` · ${o.guestsArrived} people in` : ''}</span></div>` : `<div class="ln"><span>Tickets</span><span>${o.tickets}</span></div>`}

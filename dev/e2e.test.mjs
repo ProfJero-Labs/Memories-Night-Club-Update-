@@ -296,7 +296,14 @@ test('tables: night → table → arrival time → reserved, nothing to pay; the
   const page = await phone();
   await page.goto(`${base}/tables.html?event=dev-piano`, { waitUntil: 'networkidle' });
   await page.getByRole('radio', { name: /birthday table/i }).click(); await page.click('[data-next]');
+  // Drinks: the table's price is the minimum spend; the drinks count towards it, plus a request.
+  await page.getByText(/minimum spend/i).first().waitFor();
+  const firstAdd = page.locator('[data-inc]').first();
+  if (await firstAdd.count()) await firstAdd.click();
+  await page.fill('#req', 'A bottle of Don Julio 1942');
+  await page.click('[data-next]');
   await page.getByText('To pay now', { exact: true }).waitFor();
+  await page.getByText(/your bill at the club/i).waitFor();
   await page.fill('#name', 'Efua Mensah'); await page.fill('#phone', '0551234567');
   await page.click('#go'); await page.locator('#err').getByText(/time you’ll arrive/).waitFor();
   await page.selectOption('#arrive', { index: 2 });
@@ -304,7 +311,8 @@ test('tables: night → table → arrival time → reserved, nothing to pay; the
   await page.click('#go');
   await page.getByText(/your table is reserved/i).waitFor({ timeout: 20000 });
   const o = docs('orders').find(x => x.kind === 'table' && x.buyerName === 'Efua Mensah');
-  assert.deepEqual([o.reservation, o.amountPesewas, o.status], [true, 0, 'confirmed']);
+  assert.deepEqual([o.reservation, o.amountPesewas, o.status, o.drinkRequest], [true, 0, 'confirmed', 'A bottle of Don Julio 1942']);
+  assert.equal(o.billPesewas, Math.max(o.minSpendPesewas, o.drinksPesewas), 'the bill is the minimum spend or the drinks, never both added');
   assert.ok(o.holdUntil > o.arriveAt);
   assert.deepEqual(page.errors, []);
 });

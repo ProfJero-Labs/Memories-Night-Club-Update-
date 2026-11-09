@@ -24,9 +24,10 @@ async function bookingRows(env, e) {
     if (pid && !caps.has(pid)) caps.set(pid, Number((await getDoc(env, 'table_packages', pid))?.fields?.capacity || 0));
     out.push({ orderId: o.id, code: tableCode(o.id), eventId: e.id, eventName: e.fields.name, night: nightKey(e.fields.date), name: o.fields.buyerName, firstName: firstName(o.fields.buyerName), phoneLast4: String(o.fields.buyerPhone || '').slice(-4),
       packageName: o.fields.packageName, capacity: caps.get(pid) || 0, bottles: (o.fields.bottles || []).map(b => ({ name: b.name, quantity: b.quantity })),
+      minSpendPesewas: Number(o.fields.minSpendPesewas ?? o.fields.packagePricePesewas ?? 0), drinksPesewas: Number(o.fields.drinksPesewas || 0), drinkRequest: o.fields.drinkRequest || '',
       bookedAt: o.fields.createdAt || null, channel: o.fields.channel || 'online',
       reservation: !!o.fields.reservation, arriveAt: o.fields.arriveAt || null, holdUntil: o.fields.holdUntil || null, released: !!o.fields.released, holdLine: tableHoldLine(o.fields),
-      arrived: !!o.fields.arrivedAt, arrivedAt: o.fields.arrivedAt || null, guestsArrived: Number(o.fields.guestsArrived || 0), tableNumber: o.fields.tableNumber || '', bottlesServed: o.fields.bottlesServed === true });
+      arrived: !!o.fields.arrivedAt, arrivedAt: o.fields.arrivedAt || null, guestsArrived: Number(o.fields.guestsArrived || 0), tableNumber: o.fields.tableNumber || '', tabNumber: o.fields.tabNumber || null, bottlesServed: o.fields.bottlesServed === true });
   }
   return out;
 }

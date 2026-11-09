@@ -125,6 +125,7 @@ export async function opsRoute(m, p, u, b, env, user) {
     case '/api/ops/stock/count': return stock.submitCount(env, b, user);
     case '/api/ops/stock/review': return stock.reviewCount(env, b, user);
     case '/api/ops/tabs/open': return tabs.openTab(env, b, user);
+    case '/api/ops/tabs/booking': return tabs.linkBooking(env, b, user);
     case '/api/ops/tabs/round': return tabs.addRound(env, b, user);
     case '/api/ops/tabs/order': return tabs.takeOrder(env, b, user);
     case '/api/ops/tabs/checkout': return tabs.checkoutTab(env, b, user);
