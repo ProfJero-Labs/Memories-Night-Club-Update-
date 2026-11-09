@@ -664,39 +664,12 @@ h1, h2, h3 { margin: 0; }
 .pay-steps { margin: 0; padding-left: 22px; display: grid; gap: 12px; }
 .pay-steps li { line-height: 1.35; }
 
-/* ═══ THE INVITATION VISA (e.g. Ladies Night) ═══
-   Drawn on a 358 × 236 grid and scaled to the card's width with container units (--u = 1 grid px). */
-.vz-wrap { width: min(100%, 400px); margin: 0 auto; container-type: inline-size; }
-.vz { --u: calc(100cqw / 358); position: relative; width: 100%; aspect-ratio: 358 / 236; border-radius: calc(14 * var(--u)); overflow: hidden; color: #4a0716;
-  background: radial-gradient(140% 120% at 100% 0%, #ffe9e3 0%, #fbe1da 40%, #f4cfc6 100%);
-  box-shadow: 0 22px 44px -18px rgba(200, 20, 50, .5), inset 0 0 0 1px rgba(150, 20, 40, .25); }
-.vz > * { position: absolute; }
-.vz-guil { inset: 0; width: 100%; height: 100%; opacity: .55; }
-.vz-band { left: 0; top: 0; bottom: 0; width: calc(84 * var(--u)); background: linear-gradient(160deg, #e2213f, #a30a27 70%, #74041a); }
-.vz-band::after { content: ''; position: absolute; inset: 0; background: repeating-linear-gradient(115deg, rgba(255, 255, 255, .07) 0 1px, transparent 1px 5px); }
-.vz-micro { left: calc(84 * var(--u)); right: 0; top: 0; height: calc(20 * var(--u)); display: flex; align-items: center; padding-left: calc(12 * var(--u)); overflow: hidden; white-space: nowrap;
-  font: 700 calc(6.5 * var(--u))/1 'Space Mono', ui-monospace, monospace; letter-spacing: .12em; color: #b3142f; background: rgba(255, 255, 255, .55); border-bottom: 1px solid rgba(179, 20, 47, .25); }
-.vz-holo { left: calc(14 * var(--u)); top: calc(28 * var(--u)); width: calc(56 * var(--u)); height: calc(56 * var(--u)); border-radius: 50%; display: grid; place-items: center; overflow: hidden;
-  box-shadow: inset 0 0 0 2px rgba(255, 255, 255, .6), 0 2px 6px rgba(0, 0, 0, .25); }
-.vz-holo::before { content: ''; position: absolute; inset: 0; background: conic-gradient(from 30deg, #ffd1dc, #ffe8a3, #b8f3e6, #c9c4ff, #ffd1dc, #ffe8a3, #ffd1dc); animation: vz-holo 6s linear infinite; }
-.vz-holo svg { position: relative; width: 68%; height: auto; }
-@keyframes vz-holo { to { filter: hue-rotate(360deg); } }
-@media (prefers-reduced-motion: reduce) { .vz-holo::before { animation: none; } }
-.vz-side { left: 0; width: calc(84 * var(--u)); bottom: calc(16 * var(--u)); text-align: center; color: #ffe9e3; }
-.vz-side small { display: block; font: 600 calc(6.5 * var(--u))/1 var(--sans); letter-spacing: .22em; text-transform: uppercase; opacity: .8; }
-.vz-side b { display: block; margin-top: calc(4 * var(--u)); font: 400 calc(15 * var(--u))/1 var(--display); letter-spacing: .14em; }
-.vz-vert { position: absolute; left: 50%; bottom: calc(52 * var(--u)); transform: translateX(-50%) rotate(-90deg); white-space: nowrap; font: 400 calc(13 * var(--u))/1 var(--display); letter-spacing: .5em; opacity: .9; }
-.vz-main { left: calc(96 * var(--u)); right: calc(12 * var(--u)); top: calc(26 * var(--u)); }
-.vz-kick { display: flex; justify-content: space-between; font: 700 calc(7.5 * var(--u))/1 var(--sans); letter-spacing: .26em; text-transform: uppercase; color: #b3142f; }
-.vz-title { margin: calc(6 * var(--u)) 0 0; font: 400 calc(46 * var(--u))/.9 'Great Vibes', 'Instrument Serif', cursive; color: #b0102c; text-shadow: 0 1px 0 rgba(255, 255, 255, .7); white-space: nowrap; }
-.vz-tag { margin: 0; font: italic 500 calc(13 * var(--u))/1.1 'Cormorant Garamond', var(--serif); color: #6b0a1f; }
-.vz-grid { display: grid; grid-template-columns: auto auto; justify-content: start; gap: calc(8 * var(--u)) calc(22 * var(--u)); margin-top: calc(10 * var(--u)); max-width: calc(170 * var(--u)); }
-.vz-grid .w { grid-column: span 2; }
-.vz-grid small { display: block; font: 600 calc(6 * var(--u))/1 var(--sans); letter-spacing: .2em; text-transform: uppercase; color: #b3142f; opacity: .85; }
-.vz-grid b { display: block; margin-top: calc(3 * var(--u)); font: 700 calc(10 * var(--u))/1.1 'Space Mono', ui-monospace, monospace; color: #2b040c; letter-spacing: .02em; text-transform: uppercase; }
-.vz-stamp { right: calc(10 * var(--u)); top: calc(96 * var(--u)); width: calc(96 * var(--u)); height: calc(96 * var(--u)); transform: rotate(-12deg); opacity: .92; mix-blend-mode: multiply; }
-.vz-stamp.entered { right: calc(44 * var(--u)); top: calc(118 * var(--u)); transform: rotate(9deg); opacity: .88; }
-.vz-mrz { left: calc(96 * var(--u)); right: calc(10 * var(--u)); bottom: calc(9 * var(--u)); font: 400 calc(9.4 * var(--u))/1.35 'Space Mono', ui-monospace, monospace; letter-spacing: .1em; color: #3a0612; opacity: .85; white-space: nowrap; overflow: hidden; }
+/* ═══ THE INVITATION VISA (e.g. Ladies Night) ═══ drawn as a picture by lib/visa.js */
+.vz-frame { width: min(100%, 420px); margin: 0 auto; aspect-ratio: 358 / 236; border-radius: 14px; filter: drop-shadow(0 22px 30px rgba(200, 20, 50, .35)); }
+.vz-img { display: block; width: 100%; height: auto; }
+.vz-actions { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
+.vz-actions .btn { min-width: 140px; }
+.vz-note { margin: 0; max-width: 34ch; text-align: center; font: 400 13px/1.5 var(--sans); color: var(--muted); }
 .rc-page { display: grid; justify-items: center; gap: 16px; padding: 32px 0 48px; }
 .rc-page .rc-hint { margin: 0; max-width: 32ch; text-align: center; font: 400 15px/1.5 var(--sans); color: var(--muted); }
 .rc-page .rc-save { font: 600 12px/1 var(--sans); letter-spacing: .14em; text-transform: uppercase; background: none; border: 0; color: inherit; text-decoration: underline; text-underline-offset: 4px; cursor: pointer; padding: 8px; }

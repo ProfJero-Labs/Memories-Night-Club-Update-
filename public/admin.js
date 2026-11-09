@@ -2,7 +2,7 @@
 // the Worker enforces roles, validation and audit logging. Uploads go to Firebase Storage.
 import { esc, money, $, $$, shortDate } from './app.js';
 import { requireStaff, staffHeader, sapi, compressImage, paletteFrom, ghs, pes, when, ROLE_LABEL } from './staff.js';
-import { ticketHTML, inviteHTML, designFor, qrSvg } from './ticket-art.js';
+import { ticketHTML, designFor, qrSvg } from './ticket-art.js';
 import { openQrMaker, ensureQrCss } from './lib/qrcard.js';
 import * as OV from './lib/ops-views.js';
 import { staffView } from './lib/staff-view.js';
@@ -766,7 +766,11 @@ async function invites(arg, notice) {
   $('#ivCopy') && ($('#ivCopy').onclick = async () => { try { await navigator.clipboard.writeText(ev.applyUrl); $('#ivCopy').textContent = 'Copied'; } catch { prompt('Copy this link:', ev.applyUrl); } });
   $('#ivPreview').onclick = async () => {
     const s = settings();
-    $('#ivPreviewBox').innerHTML = `<div style="max-width:400px">${inviteHTML({ phoneLast4: '4567', invite: { title: s.title || ev.name, tagline: s.tagline, perk: s.perk, dress: s.dress }, eventName: ev.name, date: ev.date, admits: s.passes, status: 'valid' })}</div>`;
+    const { visaCanvas, visaPost } = await import('./lib/visa.js');
+    const t = { phoneLast4: '4567', invite: { title: s.title || ev.name, tagline: s.tagline, perk: s.perk, dress: s.dress }, eventName: ev.name, date: ev.date, admits: s.passes, status: 'valid' };
+    const [card, post] = await Promise.all([visaCanvas(t), visaPost(t)]);
+    $('#ivPreviewBox').innerHTML = `<div style="display:grid;gap:12px;max-width:420px"><p class="hint" style="margin:0">The card she gets:</p><img src="${card.toDataURL('image/png')}" alt="The invitation card" style="width:100%;height:auto">
+      <p class="hint" style="margin:0">What her <b>Share</b> button makes (number hidden):</p><img src="${post.toDataURL('image/png')}" alt="The social media post" style="width:100%;height:auto;max-width:320px"></div>`;
   };
   const count = () => { const n = parseInviteLines($('#ivList').value).length; $('#ivCount').textContent = n ? `${n} number${n > 1 ? 's' : ''}.` : ''; };
   $('#ivList').oninput = count;
