@@ -28,8 +28,10 @@ const TABS = [
   ['system', 'System', ADMIN], ['members', 'Members', MEMBERS], ['attendance', 'Attendance', MEMBERS], ['bits', 'Pay in bits', MONEY], ['refunds', 'Refunds', MONEY], ['counter', 'Bar orders', ADMIN], ['bar', 'Table bottles', CMS], ['settings', 'Site settings', ADMIN], ['momophone', 'MoMo phone', ADMIN], ['payrules', 'Payment settings', ADMIN], ['invites', 'Invitations', INVITERS], ['staff', can(['eventManager']) ? 'Organisers' : 'Staff', ['superAdmin', 'eventManager']],
 ].filter(t => can(t[2]));
 // Five places, not ten: related tabs sit together behind one button, with their own row underneath.
-const GROUPS = [['tonight', can(CMS) ? 'Tonight' : 'Tickets', ['today', 'overview', 'closing', 'approvals', 'system']], ['nights', 'Nights', ['nights', 'requests']], ['money', 'Money', ['eod', 'payments', 'bookings', 'bits', 'refunds']], ['people', 'People', ['staff', 'members', 'attendance']], ['guests', 'Invitations', ['invites']], ['setup', 'Setup', ['products', 'stock', 'counter', 'bar', 'settings', 'momophone', 'payrules']]]
-  .map(([k, l, tabs]) => [k, l, tabs.filter(t => TABS.some(x => x[0] === t))]).filter(([, , tabs]) => tabs.length);
+const GROUPS = [['tonight', can(CMS) ? 'Tonight' : 'Tickets', ['today', 'overview', 'closing', 'approvals', 'system']], ['nights', 'Nights', ['nights', 'requests', 'invites']], ['money', 'Money', ['eod', 'payments', 'bookings', 'bits', 'refunds']], ['people', 'People', ['staff', 'members', 'attendance']], ['setup', 'Setup', ['products', 'stock', 'counter', 'bar', 'settings', 'momophone', 'payrules']]]
+  .map(([k, l, tabs]) => [k, l, tabs.filter(t => TABS.some(x => x[0] === t))]).filter(([, , tabs]) => tabs.length)
+  // Someone who only sends invitations (a director, the Human manager) sees that group by its name.
+  .map(([k, l, tabs]) => [k, tabs.length === 1 && tabs[0] === 'invites' ? 'Invitations' : l, tabs]);
 const groupOf = tab => GROUPS.find(g => g[2].includes(tab)) || GROUPS[0];
 const panel = $('#panel');
 // Phones: every table becomes a stack of cards (CSS in admin.css). Each cell is labelled with its
@@ -961,7 +963,10 @@ function fromHash() {
   const [tab, arg] = location.hash.slice(1).split('/');
   if (location.hash.slice(1) === current && current) return;
   // First screen: the night's sales for those who run it; tickets and nights for the events team.
-  show(TABS.some(t => t[0] === tab) ? tab : GROUPS[0][2][0], arg);
+  // Landing: the first tab of the first group, Invitations last (it's what a director or the Human
+  // manager opens on purpose, not where they start).
+  const home = GROUPS.flatMap(g => g[2]).find(t => t !== 'invites') || GROUPS[0][2][0];
+  show(TABS.some(t => t[0] === tab) ? tab : home, arg);
 }
 window.addEventListener('hashchange', fromHash);
 fromHash();
