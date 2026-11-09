@@ -59,7 +59,7 @@ function form(ev, inv) {
       await api('/api/invite-request', { method: 'POST', body: { eventId, phone: $('#phone').value, instagram: $('#ig').value, answers } });
       remember.set({ ...remember.get(), phone: $('#phone').value });
       root.innerHTML = `<section class="ask-done"><div>
-        <div class="seal" aria-hidden="true">M</div>
+        <div class="seal" aria-hidden="true"><svg viewBox="14 20 36 24" width="34" height="23"><path d="M18 32c0-4.4 3-7.5 6.6-7.5 6.8 0 8 15 14.8 15 3.6 0 6.6-3.1 6.6-7.5s-3-7.5-6.6-7.5c-6.8 0-8 15-14.8 15-3.6 0-6.6-3.1-6.6-7.5Z" fill="none" stroke="#fff3ea" stroke-width="3.2" stroke-linecap="round"/></svg></div>
         <span class="k">Request received</span>
         <h2>Thank you.</h2>
         <p>We’ll text you if you’re on the list.</p>

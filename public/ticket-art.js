@@ -63,35 +63,75 @@ export function ticketHTML(t, { preview = false, qr = '' } = {}) {
   </article>`;
 }
 
-// ── The invitation: the Red Card (e.g. Ladies Night) ──
-// A short, landscape red card, like a VIP key card. Only what matters at the door: the night, its
-// line, the date, what it comes with, the dress code, and the phone it was sent to (in Ghana the
-// phone number is the guest's identity: the door types it in). No names, no QR.
-const CHIP = `<svg class="rc-chip" viewBox="0 0 52 40" aria-hidden="true"><defs><linearGradient id="rcGold" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#f7e3a1"/><stop offset=".45" stop-color="#c9a24a"/><stop offset=".7" stop-color="#f3d98a"/><stop offset="1" stop-color="#9c7425"/></linearGradient></defs>
-  <rect x="1" y="1" width="50" height="38" rx="7" fill="url(#rcGold)" stroke="#7d5a17" stroke-width="1"/><path d="M1 14h15M1 26h15M36 14h15M36 26h15M16 1v38M36 1v38M16 20h20" stroke="#7d5a17" stroke-width="1.1" fill="none"/><rect x="20" y="10" width="12" height="20" rx="3" fill="none" stroke="#7d5a17" stroke-width="1.1"/></svg>`;
-// t: { invite: { title, tagline, perk, dress }, phoneLast4, eventName, date, admits, status }
+// ── The invitation: the Ladies Night visa ──
+// A red "entry visa": a hologram seal with the Memories infinity sign, security-print lines, the
+// night's name in script, typewriter fields (valid on, entries, holder = the phone's last four, dress
+// code, privileges), an ink stamp "ADMIT TWO", and a passport-style code line. No names, no QR: the
+// door finds the guest by her phone number. Once she's in, an "ENTERED" stamp lands on it.
+const INFINITY = 'M18 32c0-4.4 3-7.5 6.6-7.5 6.8 0 8 15 14.8 15 3.6 0 6.6-3.1 6.6-7.5s-3-7.5-6.6-7.5c-6.8 0-8 15-14.8 15-3.6 0-6.6-3.1-6.6-7.5Z';
+const WORDS = ['ONE', 'TWO', 'THREE', 'FOUR', 'FIVE', 'SIX', 'SEVEN', 'EIGHT', 'NINE', 'TEN'];
+// Security print: interlaced waves and a rosette, drawn once per card (deterministic).
+function guilloche() {
+  let d = '';
+  for (let k = 0; k < 14; k++) {
+    let p = '';
+    for (let x = 84; x <= 358; x += 3) {
+      const y = 118 + Math.sin((x / 22) + k * 0.45) * (40 + k * 2.2) * Math.cos((x / 90) - k * 0.2);
+      p += `${x === 84 ? 'M' : 'L'}${x} ${y.toFixed(1)}`;
+    }
+    d += `<path d="${p}" opacity="${(0.35 + (k % 3) * 0.15).toFixed(2)}"/>`;
+  }
+  for (let r = 6; r < 70; r += 5) d += `<circle cx="300" cy="58" r="${r}" opacity=".35"/>`;
+  return `<svg class="vz-guil" viewBox="0 0 358 236" preserveAspectRatio="none" aria-hidden="true" fill="none" stroke="#d2273f" stroke-width=".45">${d}</svg>`;
+}
+let stampN = 0;
+function stamp(cls, ring, l1, l2, colour) {
+  const n = ++stampN;
+  return `<svg class="vz-stamp ${cls}" viewBox="0 0 100 100" aria-hidden="true">
+    <defs><filter id="vzInk${n}"><feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="2" seed="${3 + n}"/><feColorMatrix values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 -1.4 1.5"/><feComposite in="SourceGraphic" operator="in"/></filter>
+      <path id="vzRing${n}" d="M50 50 m-36 0 a36 36 0 1 1 72 0 a36 36 0 1 1 -72 0"/></defs>
+    <g filter="url(#vzInk${n})" fill="none" stroke="${colour}">
+      <circle cx="50" cy="50" r="46" stroke-width="3"/><circle cx="50" cy="50" r="41" stroke-width="1"/><circle cx="50" cy="50" r="27" stroke-width="1.2"/>
+      <text fill="${colour}" stroke="none" font-family="Space Mono, monospace" font-weight="700" font-size="7.6" letter-spacing="1.4"><textPath href="#vzRing${n}" textLength="222">${esc(ring)}</textPath></text>
+      <text x="50" y="${l2 ? 47 : 54}" text-anchor="middle" fill="${colour}" stroke="none" font-family="Anton, Impact, sans-serif" font-size="13" letter-spacing="1">${esc(l1)}</text>
+      ${l2 ? `<text x="50" y="62" text-anchor="middle" fill="${colour}" stroke="none" font-family="Anton, Impact, sans-serif" font-size="${l2.length > 4 ? 12 : 15}" letter-spacing="1">${esc(l2)}</text>` : ''}
+    </g></svg>`;
+}
+const mrz = (s, n) => (s.toUpperCase().replace(/[^A-Z0-9<]/g, '<') + '<'.repeat(n)).slice(0, n);
+// t: { invite: { title, tagline, perk, dress }, phoneLast4, code, eventName, date, admits, status }
 export function inviteHTML(t) {
   const inv = t.invite || {}, title = (inv.title || t.eventName || 'Ladies Night').trim();
-  const words = title.split(/\s+/);
-  const head = words.length > 1 ? `${esc(words.slice(0, -1).join(' '))} <span class="out">${esc(words.at(-1))}</span>` : esc(title);
   const last4 = String(t.phoneLast4 || '').slice(-4) || '····';
-  const date = t.date ? formatAccra(t.date, { weekday: 'short', day: 'numeric', month: 'short' }) : '';
-  const notes = [inv.perk, inv.dress].filter(Boolean);
-  const stamp = t.status === 'used' ? '<span class="rc-stamp used">Welcome in</span>' : t.status === 'cancelled' ? '<span class="rc-stamp void">Void</span>' : '';
-  return `<article class="rc" aria-label="${esc(title)} invitation">
-    <span class="rc-mono" aria-hidden="true">M</span>
-    <div class="rc-row">${CHIP}<span class="rc-brand">Memories</span></div>
-    <div class="rc-mid">
-      <h2 class="rc-title">${head}</h2>
-      ${inv.tagline ? `<p class="rc-tag">${esc(inv.tagline)}</p>` : ''}
+  const n = Math.max(1, Number(t.admits || 1)), word = WORDS[n - 1] || String(n);
+  const no = String(t.code || '').replace(/^MEM-/i, '') || 'PREVIEW';
+  const day = t.date ? formatAccra(t.date, { day: '2-digit', month: 'short', year: '2-digit' }).toUpperCase() : '';
+  const dmy = t.date ? formatAccra(t.date, { day: '2-digit', month: '2-digit', year: '2-digit' }).replace(/\D/g, '') : '000000';
+  const shortDay = t.date ? formatAccra(t.date, { day: 'numeric', month: 'short' }).toUpperCase() : 'TONIGHT';
+  const dress = /^strict( dress code)?$/i.test(inv.dress || '') ? 'Strict' : (inv.dress || '');
+  const entered = t.status === 'used' ? stamp('entered', `ENTERED ✦ ${shortDay} ✦ WELCOME ✦ `, 'ENTERED', '', '#1f5fa8')
+    : t.status === 'cancelled' ? stamp('entered', 'VOID ✦ VOID ✦ VOID ✦ VOID ✦ ', 'VOID', '', '#3a3a3a') : '';
+  return `<div class="vz-wrap"><article class="vz" aria-label="${esc(title)} entry visa: admits ${n}, phone ending ${esc(last4)}">
+    ${guilloche()}
+    <div class="vz-band"></div>
+    <div class="vz-micro" aria-hidden="true">${'MEMORIES · HER NIGHT · HER RULES · '.repeat(4)}</div>
+    <div class="vz-holo" aria-hidden="true"><svg viewBox="14 20 36 24"><path d="${INFINITY}" fill="none" stroke="#c4112f" stroke-width="3" stroke-linecap="round"/></svg></div>
+    <div class="vz-side"><span class="vz-vert">VISA</span><small>Class</small><b>VIP</b></div>
+    <div class="vz-main">
+      <div class="vz-kick"><span>Entry visa</span><span>Nº ${esc(no)}</span></div>
+      <h2 class="vz-title">${esc(title)}</h2>
+      ${inv.tagline ? `<p class="vz-tag">${esc(inv.tagline)}</p>` : ''}
+      <div class="vz-grid">
+        <div><small>Valid on</small><b>${esc(day)}</b></div>
+        <div><small>Entries</small><b>${String(n).padStart(2, '0')}</b></div>
+        <div><small>Holder</small><b>••• ${esc(last4)}</b></div>
+        ${dress ? `<div><small>Dress code</small><b>${esc(dress)}</b></div>` : ''}
+        ${inv.perk ? `<div class="w"><small>Privileges</small><b>${esc(inv.perk)}</b></div>` : ''}
+      </div>
     </div>
-    ${notes.length ? `<p class="rc-notes">${notes.map(n => `<span>${esc(n)}</span>`).join('')}</p>` : ''}
-    <div class="rc-row rc-foot">
-      <div><small>Entry by phone</small><b class="rc-num">•••• ${esc(last4)}</b></div>
-      <div class="r"><small>${t.admits > 1 ? `Admits ${t.admits}` : 'Admits one'}</small><b>${esc(date)}</b></div>
-    </div>
-    ${stamp}
-  </article>`;
+    ${stamp('admit', `MEMORIES ✦ ADMITTED ✦ ${shortDay} ✦ MEMORIES ✦ `, 'ADMIT', word, '#c4112f')}
+    ${entered}
+    <div class="vz-mrz" aria-hidden="true">${esc(mrz(`V<MEMORIES<<${title}`, 30))}<br>${esc(mrz(`${no}<<${last4}<VIP<<${dmy}<${String(n).padStart(2, '0')}`, 30))}</div>
+  </article></div>`;
 }
 
 // ── Square share image (1080×1080), drawn in the browser ──

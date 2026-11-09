@@ -9,7 +9,7 @@ let T, blob, blobUrl;
 // An invitation (the Red Card): just the card, one line on how to get in, and a way to save it.
 function inviteView(t) {
   root.innerHTML = `<div class="rc-page">
-    ${inviteHTML({ ...t, date: t.eventDate })}
+    ${inviteHTML({ ...t, date: t.eventDate, code: t.displayCode })}
     <p class="rc-hint">${t.status === 'used' ? 'You’re in. Enjoy your night.' : t.status === 'cancelled' ? 'This invitation was withdrawn.' : `At the door, give your phone number ending ${esc(t.phoneLast4 || '')}.`}</p>
     ${t.status === 'valid' ? '<button type="button" class="rc-save no-print" id="print">Save the card</button>' : ''}
   </div>`;
