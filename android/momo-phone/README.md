@@ -17,7 +17,7 @@ Android 16; the app works on Android 6 and later.
 1. Copy the `.apk` to the phone (WhatsApp it to yourself, or download it on the phone directly).
 2. Tap it. Android asks to allow installing from that app (Chrome, Files or WhatsApp): **Settings →
    Allow from this source → on**, go back, **Install**. If Play Protect warns about an unknown app,
-   tap **More details → Install anyway** (it's our own app, not from the Play Store).
+   tap **More details → Install anyway** (it’s our own app, not from the Play Store). The same goes for "built for an older version of Android".
 3. Open **Memories MoMo** and do the three steps on the screen:
    1. **Allow texts and notifications** → Allow both. If Android says **"Restricted setting"**
       (Android 15 and 16 do this for apps not from the Play Store): the app offers **Open app info**

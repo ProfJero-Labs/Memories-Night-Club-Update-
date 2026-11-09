@@ -44,7 +44,8 @@ function render(b, s) {
       ${e.description ? `<p class="desc">${esc(e.description)}</p>` : ''}
       ${ticketsOpen && b.promo?.promos?.length ? b.promo.promos.map(p => `<p class="ev-promo"><span class="promo-tag">${esc(p.name)}</span><b>${esc(p.label)}</b>${p.endsAt ? `<span class="muted">until ${esc(shortDate(p.endsAt))}, ${esc(time(p.endsAt))}</span>` : ''}${p.left !== null && p.left <= 30 ? `<span class="muted">${p.left} left at this price</span>` : ''}</p>`).join('') : ''}
       <div class="row-actions">
-        ${ticketsOpen ? `<a class="btn red" href="tickets.html?event=${encodeURIComponent(e.id)}">Get tickets · from ${money(from)} <span class="arrow">→</span></a>` : `<span class="btn" aria-disabled="true">${closed}</span>`}
+        ${b.invitation ? `<a class="btn red" href="invite.html?event=${encodeURIComponent(e.id)}">Ask for your invitation <span class="arrow">→</span></a>` : ''}
+        ${ticketsOpen ? `<a class="btn ${b.invitation ? '' : 'red'}" href="tickets.html?event=${encodeURIComponent(e.id)}">Get tickets · from ${money(from)} <span class="arrow">→</span></a>` : b.invitation ? '' : `<span class="btn" aria-disabled="true">${closed}</span>`}
         ${b.tablePackages.length && !e.over ? `<a class="btn" href="tables.html?event=${encodeURIComponent(e.id)}">Book a table</a>` : ''}
       </div>
       <button type="button" class="link" id="share" style="justify-self:start">Share this night ↗</button>
@@ -62,7 +63,8 @@ function render(b, s) {
     </div>
   </div>`;
   $('#share').onclick = () => shareUrl(`${e.name} · Memories`);
-  if (ticketsOpen) buyBar({ sum: `From ${money(from)}`, small: `${e.name} · ${shortDate(e.date)}`, label: 'Get tickets', href: `tickets.html?event=${encodeURIComponent(e.id)}` });
+  if (b.invitation) buyBar({ sum: b.invitation.perk || 'By invitation', small: `${e.name} · ${shortDate(e.date)}`, label: 'Ask for your invitation', href: `invite.html?event=${encodeURIComponent(e.id)}` });
+  else if (ticketsOpen) buyBar({ sum: `From ${money(from)}`, small: `${e.name} · ${shortDate(e.date)}`, label: 'Get tickets', href: `tickets.html?event=${encodeURIComponent(e.id)}` });
 }
 
 async function load() {

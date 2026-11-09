@@ -23,7 +23,7 @@ jobs:
           java-version: 17
       - uses: gradle/actions/setup-gradle@v4
         with:
-          gradle-version: '8.9'
+          gradle-version: '8.14.3'
       # Optional fixed signing key (repository secrets): MOMO_KEYSTORE_B64 (the keystore file,
       # base64), MOMO_KEYSTORE_PASSWORD, MOMO_KEY_ALIAS, MOMO_KEY_PASSWORD.
       - name: Signing key
