@@ -759,13 +759,13 @@ export function invoiceText(env, tab, bill) {
   // recorded it, so a customer who hasn't paid can't be told they have without seeing who said so.
   const how = (tab.payments || []).map(p => `${p.method === 'cash' ? 'Cash' : 'MoMo'} ${ghs(p.amountPesewas)}${p.method === 'digital' ? ' (confirmed by Paystack)' : p.byName ? ` (taken by ${p.byNick || String(p.byName).split(/\s+/)[0]})` : ''}`);
   const due = bill.balancePesewas > 0;
-  return [due ? 'MEMORIES INVOICE' : 'MEMORIES RECEIPT', `Tab ${tab.number} · ${where}`, ...items,
-    ...(bill.minimumTopUpPesewas ? [`Unspent minimum spend +${ghs(bill.minimumTopUpPesewas)}`] : []),
-    ...(bill.discountPesewas ? [`Discount -${ghs(bill.discountPesewas)}`] : []),
-    ...(bill.prepaidPesewas ? [`Table ${bill.prepaidHow ? bill.prepaidHow.toLowerCase() : 'paid'} -${ghs(bill.prepaidPesewas)}`] : []),
-    `Total ${ghs(bill.totalPesewas)}`, ...(how.length ? [`Paid: ${how.join(', ')}`] : []),
-    due ? `TO PAY ${ghs(bill.balancePesewas)}` : 'Paid in full. Thank you!',
-    ...(due ? [`Pay with MoMo or card: ${siteUrl(env, `/bill.html?t=${tab.billToken}`)}`, 'Paystack may text you a code first: check your messages.'] : ['Not right? Tell your waiter or the manager.'])].join('\n');
+  // One paragraph (it reads across the phone, not down it), the link last.
+  const extras = [bill.minimumTopUpPesewas ? `Unspent minimum spend +${ghs(bill.minimumTopUpPesewas)}` : '', bill.discountPesewas ? `Discount -${ghs(bill.discountPesewas)}` : '',
+    bill.prepaidPesewas ? `Table ${bill.prepaidHow ? bill.prepaidHow.toLowerCase() : 'paid'} -${ghs(bill.prepaidPesewas)}` : ''].filter(Boolean);
+  return [`${due ? 'MEMORIES INVOICE' : 'MEMORIES RECEIPT'} · Tab ${tab.number} · ${where}: ${items.join(', ')}.`, ...extras.map(x => `${x}.`),
+    `Total ${ghs(bill.totalPesewas)}.`, ...(how.length ? [`Paid: ${how.join(', ')}.`] : []),
+    due ? `TO PAY ${ghs(bill.balancePesewas)} (plus a small service charge if paid by MoMo or card).` : 'Paid in full. Thank you!',
+    ...(due ? ['Paystack may text you a code first.', `Pay with MoMo or card: ${siteUrl(env, `/bill.html?t=${tab.billToken}`)}`] : ['Not right? Tell your waiter or the manager.'])].join(' ');
 }
 
 export async function textBill(env, b, user) {

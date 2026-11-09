@@ -1,19 +1,37 @@
 // ticket.html: page script (kept out of the HTML so the CSP can forbid inline scripts).
 import { chrome, api, esc, params, $, $$, errorState, toast, shortDate, shareUrl, money } from '../app.js';
-import { ticketHTML, inviteHTML, qrSvg, verifyUrl, shareImage } from '../ticket-art.js';
+import { ticketHTML, qrSvg, verifyUrl, shareImage } from '../ticket-art.js';
 chrome();
 const root = $('#root');
 const token = params.get('token');
 let T, blob, blobUrl;
 
-// An invitation (the Red Card): just the card, one line on how to get in, and a way to save it.
-function inviteView(t) {
+// An invitation (the visa): drawn as a picture (the same on every phone), with Share (a post for
+// Instagram / WhatsApp Status, phone digits hidden) and Download (the visa itself).
+async function inviteView(t) {
+  const v = { ...t, date: t.eventDate, code: t.displayCode };
   root.innerHTML = `<div class="rc-page">
-    ${inviteHTML({ ...t, date: t.eventDate, code: t.displayCode })}
+    <div class="vz-frame"><img class="vz-img" id="visa" alt="${esc(t.invite.title || t.eventName)} ${t.invite.style === 'him' ? 'gentleman’s pass' : 'invitation'}: admits ${t.admits}, phone ending ${esc(t.phoneLast4 || '')}"></div>
     <p class="rc-hint">${t.status === 'used' ? 'You’re in. Enjoy your night.' : t.status === 'cancelled' ? 'This invitation was withdrawn.' : `At the door, give your phone number ending ${esc(t.phoneLast4 || '')}.`}</p>
-    ${t.status === 'valid' ? '<button type="button" class="rc-save no-print" id="print">Save the card</button>' : ''}
+    ${t.status === 'cancelled' ? '' : t.invite.style === 'him' ? '<div class="vz-actions no-print"><button type="button" class="btn red" id="vzSave">Download</button></div>'
+      : `<div class="vz-actions no-print"><button type="button" class="btn red" id="vzShare">Share <span aria-hidden="true">↗</span></button><button type="button" class="btn" id="vzSave">Download</button></div>
+    <p class="vz-note">Share opens your phone’s share menu: pick any app. Your number is hidden on it.</p>`}
   </div>`;
-  $('#print') && ($('#print').onclick = () => print());
+  const { visaCanvas, visaPost, canvasBlob } = await import('../lib/visa.js');
+  const card = await visaCanvas(v);
+  $('#visa').src = card.toDataURL('image/png');
+  const name = `memories-${String(t.invite.title || t.eventName || 'invitation').toLowerCase().replace(/[^a-z0-9]+/g, '-')}`;
+  const save = (blob, file) => { const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(blob), download: file }); document.body.append(a); a.click(); a.remove(); };
+  $('#vzSave') && ($('#vzSave').onclick = async () => save(await canvasBlob(card), `${name}.png`));
+  $('#vzShare') && ($('#vzShare').onclick = async e => {
+    const btn = e.currentTarget; btn.disabled = true;
+    try {
+      const blob = await canvasBlob(await visaPost(v)), file = new File([blob], `${name}-post.png`, { type: 'image/png' });
+      const text = `I’m on the list: ${t.invite.title || t.eventName} at Memories Night Club ✨`;
+      if (navigator.canShare?.({ files: [file] })) { try { await navigator.share({ files: [file], text }); } catch { /* closed */ } }
+      else { save(blob, file.name); toast('SAVED TO YOUR PHONE.'); }
+    } finally { btn.disabled = false; }
+  });
 }
 function bigQr(t, qr) {
   const small = $('.t-qr'); if (!qr || !small || t.status !== 'valid') return;

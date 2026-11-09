@@ -7,9 +7,10 @@
 // One invitation admits its passes together, once. The door finds it by the phone number.
 //
 //   events/{id}.invitation   { open, title, tagline, perk, dress, passes }   (open: guests may ask online)
-//   invite_requests/{eventId_phone}  eventId, phone, instagram, answers [{ q, a }], status
+//   invite_requests/{eventId_phone}  eventId, phone, style her|him, instagram, answers [{ q, a }], status
 //                            pending|approved|declined, createdAt, decidedAt, decidedByName, ticketId
-//   tickets/{token}.invite   { title, tagline, perk, dress }   (a free ticket: comp true, type 'Invitation')
+//   tickets/{token}.invite   { title, tagline, perk, dress, style }   style 'her' (the ladies' visa)
+//                            or 'him' (the gentlemen's Memories card: a pass to witness, no perks)   (a free ticket: comp true, type 'Invitation')
 import { getDoc, setDoc, queryWhere, commitTx, updateWrite, withTransaction, batchGet, parseFields, listDocs } from './lib/firestore.js';
 import { now, id, clean, normalizePhone, ticketToken, displayCode, maskPhone, formatAccra } from './lib/util.js';
 import { requireRole, uidOf } from './lib/auth.js';
@@ -30,16 +31,20 @@ export function invitationOf(ev) {
     perk: i.perk === undefined ? 'Free drinks till 12AM' : clean(i.perk, 60), dress: i.dress === undefined ? 'Strict dress code' : clean(i.dress, 60), passes: Number.isInteger(i.passes) && i.passes >= 1 && i.passes <= MAX_PASSES ? i.passes : 1 };
 }
 const night = ev => formatAccra(ev.fields.date, { weekday: 'short', day: 'numeric', month: 'short' });
+// Where it is: the night's venue, or the club's home at SamRit Hotel, Cape Coast.
+export const venueOf = ev => { const v = clean(ev?.fields?.venue, 60); return v && !/^memories/i.test(v) ? v : 'SamRit Hotel, Cape Coast'; };
+// One flowing paragraph with the link last, so it reads across the phone, not down it.
 function smsFor(ev, inv, passes, link, { added = false, approved = false } = {}) {
-  return ['MEMORIES', approved ? `Your request was accepted. You're in: ${inv.title}.` : `You're invited: ${inv.title}.`,
-    `${inv.tagline ? `${inv.tagline} ` : ''}${night(ev)}, Memories Night Club.`,
-    [inv.perk, inv.dress, passes > 1 ? `Admits ${passes}` : ''].filter(Boolean).join('. ') + (inv.perk || inv.dress || passes > 1 ? '.' : ''),
-    ...(added ? [`Passes added: you now have ${passes}.`] : []),
-    `Your card: ${link}`, 'At the door: give this phone number.'].filter(Boolean).join('\n');
+  const him = inv.style === 'him', when = `${night(ev)} at Memories Night Club, ${venueOf(ev)}`;
+  const head = approved ? `MEMORIES: Your request is accepted. ${him ? `You're invited to witness ${inv.title}` : `You're on the list for ${inv.title}`}, ${when}.`
+    : `MEMORIES: ${him ? `You're invited to witness ${inv.title}` : `You're invited to ${inv.title}`}, ${when}.`;
+  const notes = [him ? '' : inv.perk, inv.dress, passes > 1 ? `Admits ${passes}` : ''].filter(Boolean).join('. ');
+  return [head, notes ? `${notes}.` : '', added ? `You now have ${passes} passes.` : '', `At the door, give this number. Your ${him ? 'pass' : 'card'}: ${link}`].filter(Boolean).join(' ');
 }
 
 // Issues one invitation (or adds passes to the one this phone already has). Returns a result row.
-async function issueOne(env, ev, inv, phone, passes, { ifInvited = 'skip', existing, user, approved = false } = {}) {
+async function issueOne(env, ev, invNight, phone, passes, { ifInvited = 'skip', existing, user, approved = false, style = 'her' } = {}) {
+  const inv = cardFor(invNight, style);
   const had = existing.find(t => t.fields.phone === phone);
   if (had && ifInvited !== 'add') return { phone, status: 'already', passes: Number(had.fields.admitCount || 1), message: `Already invited (${Number(had.fields.admitCount || 1)} pass${Number(had.fields.admitCount || 1) > 1 ? 'es' : ''})`, token: had.id };
   if (had) {
@@ -57,7 +62,7 @@ async function issueOne(env, ev, inv, phone, passes, { ifInvited = 'skip', exist
     return { phone, status: texted ? 'added' : 'added_not_texted', passes: r.total, link, token: had.id };
   }
   const token = ticketToken(), orderId = id(), issuedBy = uidOf(user);
-  const invite = { title: inv.title, tagline: inv.tagline, perk: inv.perk, dress: inv.dress };
+  const invite = { title: inv.title, tagline: inv.tagline, perk: inv.perk, dress: inv.dress, style: inv.style };
   await commitTx(env, [
     updateWrite(env, 'tickets', token, { customerName: 'Guest', phone, phoneLast4: phone.slice(-4), type: 'Invitation', admitCount: passes, eventId: ev.id, eventName: ev.fields.name || '', identityLine: '', reference: orderId, displayCode: displayCode(token), status: 'valid', revoked: false, cancelled: false, comp: true, invite, issuedBy, compNote: `Invitation: ${inv.title}`, inDraw: false, issuedAt: now() }),
     updateWrite(env, 'orders', orderId, { orderId, kind: 'comp', invite: true, eventId: ev.id, eventName: ev.fields.name || '', quantity: 1, admits: passes, amountPesewas: 0, buyerName: 'Guest', buyerPhone: phone, status: 'confirmed', issuedBy, note: `Invitation: ${inv.title}`, inDraw: false, ticketIds: [token], createdAt: now() }),
@@ -75,6 +80,14 @@ async function inviteNight(env, eventId) {
   return { ev };
 }
 
+// The card's wording for her (the visa: the night's line and perks) or him (a pass to witness the
+// night: no free drinks, the dress code still applies).
+export function cardFor(inv, style) {
+  if (style === 'him') return { ...inv, style: 'him', tagline: `A pass to witness ${inv.title}`, perk: '' };
+  return { ...inv, style: 'her' };
+}
+const styleOf = s => (s === 'him' ? 'him' : 'her');
+
 // ── Staff ──
 // The nights coming up, each with its invitation wording and how many requests are waiting.
 export async function inviteNights(env, user) {
@@ -83,7 +96,7 @@ export async function inviteNights(env, user) {
   const out = [];
   for (const e of events) {
     const pending = (await queryWhere(env, 'invite_requests', [{ field: 'eventId', value: e.id }])).filter(r => r.fields.status === 'pending').length;
-    out.push({ id: e.id, name: e.fields.name || '', date: e.fields.date, doors: e.fields.doors || '', venue: e.fields.venue || '', invitation: invitationOf(e), pending, applyUrl: siteUrl(env, `/invite.html?event=${encodeURIComponent(e.id)}`) });
+    out.push({ id: e.id, name: e.fields.name || '', date: e.fields.date, doors: e.fields.doors || '', venue: venueOf(e), invitation: invitationOf(e), pending, applyUrl: siteUrl(env, `/invite.html?event=${encodeURIComponent(e.id)}`) });
   }
   return { nights: out };
 }
@@ -98,7 +111,8 @@ export async function saveInvitation(env, b, user) {
   await audit(env, user, 'INVITATION_SAVED', { eventId: n.ev.id, open: invitation.open });
   return { saved: true, invitation: invitationOf({ fields: { ...n.ev.fields, invitation } }) };
 }
-// Send: { eventId, rows: [{ phone, passes? }] (at most INVITE_BATCH a call), passes, ifInvited: 'skip'|'add' }
+// Send: { eventId, rows: [{ phone, passes? }] (at most INVITE_BATCH a call), passes, ifInvited: 'skip'|'add',
+//   style: 'her' (the ladies' visa) | 'him' (the gentlemen's pass) }
 export async function sendInvites(env, b, user) {
   if (!requireRole(user, INVITERS)) return FORBIDDEN;
   const n = await inviteNight(env, b?.eventId); if (n.error) return n;
@@ -113,7 +127,7 @@ export async function sendInvites(env, b, user) {
     if (!phone) { out.push({ phone: String(raw?.phone || '').slice(0, 20), status: 'invalid', message: 'Not a Ghana phone number' }); continue; }
     if (!Number.isInteger(passes) || passes < 1 || passes > MAX_PASSES) { out.push({ phone, status: 'invalid', message: `Passes: 1 to ${MAX_PASSES}` }); continue; }
     if (out.some(o => o.phone === phone && o.status !== 'invalid')) { out.push({ phone, status: 'duplicate', message: 'Twice in this list' }); continue; }
-    const r = await issueOne(env, n.ev, inv, phone, passes, { ifInvited: b.ifInvited, existing, user });
+    const r = await issueOne(env, n.ev, inv, phone, passes, { ifInvited: b.ifInvited, existing, user, style: styleOf(b.style) });
     if (['sent', 'not_texted'].includes(r.status)) {
       // Someone who had asked online and is now sent one: their request is done.
       const req = await getDoc(env, 'invite_requests', `${n.ev.id}_${phone}`);
@@ -130,10 +144,10 @@ export async function invitesFor(env, user, eventId) {
   const n = await getDoc(env, 'events', String(eventId || ''));
   if (!n) return { error: 'Night not found.', status: 404 };
   const sent = (await queryWhere(env, 'tickets', [{ field: 'eventId', value: n.id }])).filter(t => t.fields.invite)
-    .map(t => ({ phone: t.fields.phone || '', passes: Number(t.fields.admitCount || 1), code: t.fields.displayCode, status: t.fields.revoked || t.fields.cancelled ? 'cancelled' : t.fields.status, checkedInAt: t.fields.checkedInAt || null, issuedAt: t.fields.issuedAt || '' }))
+    .map(t => ({ phone: t.fields.phone || '', style: styleOf(t.fields.invite?.style), passes: Number(t.fields.admitCount || 1), code: t.fields.displayCode, status: t.fields.revoked || t.fields.cancelled ? 'cancelled' : t.fields.status, checkedInAt: t.fields.checkedInAt || null, issuedAt: t.fields.issuedAt || '' }))
     .sort((a, b) => String(b.issuedAt).localeCompare(String(a.issuedAt)));
   const requests = (await queryWhere(env, 'invite_requests', [{ field: 'eventId', value: n.id }]))
-    .map(r => ({ id: r.id, phone: r.fields.phone, instagram: r.fields.instagram || '', answers: r.fields.answers || [], status: r.fields.status, createdAt: r.fields.createdAt, decidedByName: r.fields.decidedByName || '' }))
+    .map(r => ({ id: r.id, phone: r.fields.phone, style: styleOf(r.fields.style), instagram: r.fields.instagram || '', answers: r.fields.answers || [], status: r.fields.status, createdAt: r.fields.createdAt, decidedByName: r.fields.decidedByName || '' }))
     .sort((a, b) => (a.status === 'pending') - (b.status === 'pending') || String(a.createdAt).localeCompare(String(b.createdAt))).reverse();
   return { sent, requests, totals: { invitations: sent.length, passes: sent.reduce((k, x) => k + x.passes, 0), in: sent.filter(x => x.status === 'used').reduce((k, x) => k + x.passes, 0), pending: requests.filter(r => r.status === 'pending').length } };
 }
@@ -155,7 +169,7 @@ export async function decideRequests(env, b, user) {
       await setDoc(env, 'invite_requests', rid, { ...r.fields, status: 'declined', decidedAt: now(), decidedByName: user.name || '' });
       out.push({ id: rid, phone: r.fields.phone, status: 'declined' }); continue;
     }
-    const s = await issueOne(env, n.ev, inv, r.fields.phone, passes, { existing, user, approved: true });
+    const s = await issueOne(env, n.ev, inv, r.fields.phone, passes, { existing, user, approved: true, style: styleOf(r.fields.style) });
     await setDoc(env, 'invite_requests', rid, { ...r.fields, status: 'approved', decidedAt: now(), decidedByName: user.name || '', ...(s.token ? { ticketId: s.token } : {}) });
     const { token, ...row } = s; out.push({ id: rid, ...row });
   }
@@ -175,6 +189,7 @@ export async function requestInvite(env, b) {
   if (answers.length < 3 || answers.some(x => !x.q || x.a.length < 2)) return { error: 'Answer all three, even in a few words.' };
   const instagram = clean(String(b.instagram || '').replace(/^@+/, ''), 40).replace(/[^A-Za-z0-9._]/g, '');
   const rid = `${ev.id}_${phone}`, had = await getDoc(env, 'invite_requests', rid);
-  if (!had) await setDoc(env, 'invite_requests', rid, { eventId: ev.id, phone, instagram, answers, status: 'pending', createdAt: now() });
+  // Ladies only ask on the website; the gentlemen's passes are sent by staff.
+  if (!had) await setDoc(env, 'invite_requests', rid, { eventId: ev.id, phone, style: 'her', instagram, answers, status: 'pending', createdAt: now() });
   return { received: true, phoneHint: maskPhone(phone) };
 }

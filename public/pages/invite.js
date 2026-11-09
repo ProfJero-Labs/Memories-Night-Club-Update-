@@ -1,6 +1,7 @@
 // invite.html?event=ID: a guest asks for an invitation (e.g. Ladies Night). Three questions, picked
 // at random from a pool each visit (any one can be swapped for another); then "the house is
-// considering your request". Staff approve it, and the invitation (the Red Card) arrives by text.
+// considering your request". Staff approve it, and her invitation (the visa) arrives by text. Ladies
+// only: the gentlemen's passes are sent by staff.
 import { chrome, api, esc, params, $, $$, errorState, normalizePhone, remember, shortDate } from '../app.js';
 chrome();
 const root = $('#root');

@@ -294,7 +294,7 @@ test('waiters: invoice by SMS lists every drink; cash and MoMo recorded by the w
 
   // The invoice now shows what's paid and what's left.
   ok(await ctx.call('POST', '/api/ops/tabs/text-bill', { who: ctx.W1, body: { tabId: tab.id } }), 'invoice again');
-  assert.match(ctx.store.sms.at(-1).message, /Paid: Cash GHS 50 \(taken by Efua\), MoMo GHS 50 \(taken by Efua\)\nTO PAY GHS 35/);
+  assert.match(ctx.store.sms.at(-1).message, /Paid: Cash GHS 50 \(taken by Efua\), MoMo GHS 50 \(taken by Efua\)\. TO PAY GHS 35/);
   const t = ok(await ctx.call('GET', `/api/ops/tab?id=${tab.id}`, { who: ctx.W1 }), 'tab').tab;
   assert.deepEqual(t.payments.map(p => [p.method, p.amountPesewas, p.momoRef]), [['cash', 5000, ''], ['momo', 5000, '51234567890']]);
   const token = new URL(t.billUrl).searchParams.get('t');
