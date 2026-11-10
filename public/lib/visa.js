@@ -129,8 +129,11 @@ export function drawVisa(ctx, t, { share = false } = {}) {
   ctx.globalAlpha = 0.8; ctx.font = `600 6.5px ${F.sans}`; spaced(ctx, 'CLASS', 42, 200, 1.4, 'center'); ctx.globalAlpha = 1;
   ctx.font = `400 16px ${F.display}`; spaced(ctx, share ? 'VIP' : 'VIP', 42, 218, 2.2, 'center');
   // The heading.
-  ctx.fillStyle = '#b3142f'; ctx.font = `700 7.5px ${F.sans}`;
-  spaced(ctx, 'ENTRY VISA', 96, 36, 2); spaced(ctx, `Nº ${share ? 'VIP' : no}`, W - 12, 36, 2, 'right');
+  ctx.save(); ctx.translate(99, 29); ctx.scale(0.42, 0.42); ctx.translate(-32, -32);
+  ctx.strokeStyle = '#b3142f'; ctx.lineWidth = 4.5; ctx.lineCap = 'round'; ctx.stroke(new Path2D(INFINITY)); ctx.restore();
+  ctx.fillStyle = '#b3142f'; ctx.font = `400 12px ${F.display}`; spaced(ctx, 'MEMORIES', 116, 30, 3);
+  ctx.fillStyle = 'rgba(140,15,35,.65)'; ctx.font = `600 5.5px ${F.sans}`; spaced(ctx, 'NIGHT CLUB', 117, 38, 2.5);
+  ctx.fillStyle = '#b3142f'; ctx.font = `700 6.5px ${F.sans}`; spaced(ctx, `Nº ${share ? 'VIP' : no}`, W - 12, 38, 2, 'right');
   const tsz = fitFont(ctx, title, `italic 500 {s} ${F.serif}`, 38, W - 108, 18);
   ctx.font = `italic 500 ${tsz}px ${F.serif}`;
   ctx.fillStyle = 'rgba(255,255,255,.55)'; ctx.fillText(title, 96, 41 + tsz * 0.82 + 0.8);
