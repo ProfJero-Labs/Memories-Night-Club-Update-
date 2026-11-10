@@ -35,6 +35,7 @@ const cashFresh = f => f.status === 'cash_due' && Date.now() - new Date(f.create
 
 const FORBIDDEN = { error: 'Forbidden.', status: 403 };
 export const BAR = ['superAdmin', 'director', 'manager', 'eventManager', 'barManager', 'barStaff', 'waitStaff'];
+export const BAR_MANAGERS = ['superAdmin', 'director', 'manager', 'eventManager', 'barManager']; // can pause/open bar orders
 export const PAID_CANCELLERS = ['superAdmin', 'manager']; // a paid order cancelled (a refund): the Manager only
 const MAX_LINES = 20, MAX_QTY = 20;
 const PICKUP = '23456789ABCDEFGHJKMNPQRSTUVWXYZ'; // no 0/O, 1/I/L: read across a loud bar
@@ -319,7 +320,7 @@ export async function upsertStation(env, b, user) {
   return { id: sid, url: stationUrl(env, token) };
 }
 export async function setStationOpen(env, user, b) {
-  if (!requireRole(user, BAR)) return FORBIDDEN;
+  if (!requireRole(user, BAR_MANAGERS)) return FORBIDDEN;
   const st = await getDoc(env, 'bar_stations', String(b?.stationId || ''));
   if (!st) return { error: 'Bar not found.', status: 404 };
   await setDoc(env, 'bar_stations', st.id, { ...st.fields, open: b.open === true, updatedAt: now() });

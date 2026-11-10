@@ -79,7 +79,7 @@ function drawSettings() {
   $('.sheet-body', setBox).innerHTML = `
     ${many ? `<div class="sfield"><label for="st">Which bar</label><select id="st">${data.stations.map(s => `<option value="${esc(s.id)}" ${s.id === station ? 'selected' : ''}>${esc(s.name)}</option>`).join('')}</select></div>` : ''}
     <div class="stat-rows"><div><span>App orders (guests pay by QR)</span><b>${open ? '<span class="lamp">On</span>' : '<span class="lamp off">Paused</span>'}</b></div></div>
-    <button class="big ghost" id="open" type="button">${open ? 'Pause app orders' : 'Take app orders'}</button>
+    ${['superAdmin', 'director', 'manager', 'eventManager', 'barManager'].includes(user.role) ? `<button class="big ghost" id="open" type="button">${open ? 'Pause app orders' : 'Take app orders'}</button>` : ''}
     <button class="big ghost" id="qr" type="button" ${data?.stations?.length ? '' : 'hidden'}>Table QR codes</button>
     <button class="big ghost" id="sound" type="button" aria-pressed="${sound}">${sound ? 'Sound for new orders: on' : 'Sound for new orders: off'}</button>
     <div id="setMsg"></div>`;
@@ -87,7 +87,7 @@ function drawSettings() {
   $('#st', box) && ($('#st', box).onchange = () => { station = $('#st', box).value; load(); document.dispatchEvent(new CustomEvent('bar-station', { detail: station })); });
   $('#qr', box).onclick = () => { const st = data.stations; close(); openQrMaker(st, station); };
   $('#sound', box).onclick = () => { sound = !sound; localStorage.setItem('bar-sound', sound ? '1' : '0'); drawSettings(); if (sound) beep(); };
-  $('#open', box).onclick = async () => {
+  if ($('#open', box)) $('#open', box).onclick = async () => {
     if (open && !confirm('Pause app orders at this bar? Guests will be told to order at the bar.')) return;
     try { await sapi('/api/bar/station-open', { method: 'POST', body: { stationId: station, open: !open } }); await load(); } catch (e) { $('#setMsg', box).innerHTML = `<div class="say bad" role="alert">${esc(e.message)}</div>`; }
   };
