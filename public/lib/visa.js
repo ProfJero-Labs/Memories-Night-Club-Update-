@@ -123,17 +123,16 @@ export function drawVisa(ctx, t, { share = false } = {}) {
   ctx.strokeStyle = 'rgba(255,255,255,.7)'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(42, 56, 27, 0, Math.PI * 2); ctx.stroke();
   ctx.save(); ctx.translate(42, 56); ctx.scale(1.3, 1.3); ctx.translate(-32, -32);
   ctx.strokeStyle = '#c4112f'; ctx.lineWidth = 3.4; ctx.lineCap = 'round'; ctx.stroke(new Path2D(INFINITY)); ctx.restore();
-  // Side words.
+  // Side words: brand name below the infinity seal, then rotated labels.
   ctx.fillStyle = '#ffe9e3'; ctx.textBaseline = 'alphabetic';
+  ctx.font = `700 7px ${F.sans}`; spaced(ctx, 'MEMORIES', 42, 90, 1.2, 'center');
+  ctx.globalAlpha = 0.7; ctx.font = `600 5px ${F.sans}`; spaced(ctx, 'NIGHT CLUB', 42, 99, 1.8, 'center'); ctx.globalAlpha = 1;
   ctx.save(); ctx.translate(46, 150); ctx.rotate(-Math.PI / 2); ctx.font = `400 13px ${F.display}`; spaced(ctx, 'VISA', 0, 0, 6.5, 'center'); ctx.restore();
   ctx.globalAlpha = 0.8; ctx.font = `600 6.5px ${F.sans}`; spaced(ctx, 'CLASS', 42, 200, 1.4, 'center'); ctx.globalAlpha = 1;
   ctx.font = `400 16px ${F.display}`; spaced(ctx, share ? 'VIP' : 'VIP', 42, 218, 2.2, 'center');
   // The heading.
-  ctx.save(); ctx.translate(99, 29); ctx.scale(0.42, 0.42); ctx.translate(-32, -32);
-  ctx.strokeStyle = '#b3142f'; ctx.lineWidth = 4.5; ctx.lineCap = 'round'; ctx.stroke(new Path2D(INFINITY)); ctx.restore();
-  ctx.fillStyle = '#b3142f'; ctx.font = `400 12px ${F.display}`; spaced(ctx, 'MEMORIES', 116, 30, 3);
-  ctx.fillStyle = 'rgba(140,15,35,.65)'; ctx.font = `600 5.5px ${F.sans}`; spaced(ctx, 'NIGHT CLUB', 117, 38, 2.5);
-  ctx.fillStyle = '#b3142f'; ctx.font = `700 6.5px ${F.sans}`; spaced(ctx, `Nº ${share ? 'VIP' : no}`, W - 12, 38, 2, 'right');
+  ctx.fillStyle = '#b3142f'; ctx.font = `700 7.5px ${F.sans}`;
+  spaced(ctx, 'ENTRY VISA', 96, 36, 2); spaced(ctx, `Nº ${share ? 'VIP' : no}`, W - 12, 36, 2, 'right');
   const tsz = fitFont(ctx, title, `italic 500 {s} ${F.serif}`, 38, W - 108, 18);
   ctx.font = `italic 500 ${tsz}px ${F.serif}`;
   ctx.fillStyle = 'rgba(255,255,255,.55)'; ctx.fillText(title, 96, 41 + tsz * 0.82 + 0.8);
