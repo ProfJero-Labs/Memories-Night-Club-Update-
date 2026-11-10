@@ -189,8 +189,8 @@ test('the Human manager sees only the staff he looks after: no directors, no sha
   const ctx = setup();
   const hr = ok(await ctx.call('GET', '/api/admin/people', { who: ctx.HR }), 'hr list');
   const roles = hr.staff.map(s => s.role);
-  assert.ok(roles.includes('dj') && roles.includes('barStaff') && roles.includes('waitStaff'), 'his staff');
-  assert.ok(!roles.includes('director') && !roles.includes('manager') && !roles.includes('finance'), 'not the directors or other managers');
+  assert.ok(roles.includes('dj') && roles.includes('barStaff') && roles.includes('waitStaff') && roles.includes('manager'), 'his staff (including manager and event manager)');
+  assert.ok(!roles.includes('director') && !roles.includes('finance'), 'not directors or finance (those are the directors\' domain)');
   assert.ok(!JSON.stringify(hr).includes('sharePct'));
   const d = ok(await ctx.call('GET', '/api/admin/people', { who: ctx.D1 }), 'director list');
   assert.ok(d.staff.some(s => s.role === 'director'), 'a director still sees everyone');
