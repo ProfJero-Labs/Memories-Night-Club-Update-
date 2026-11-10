@@ -11,11 +11,12 @@ let T, blob, blobUrl;
 async function inviteView(t) {
   const v = { ...t, date: t.eventDate, code: t.displayCode };
   root.innerHTML = `<div class="rc-page">
+    ${t.fullName && t.status !== 'cancelled' ? `<p style="text-align:center;font-family:var(--serif);font-style:italic;font-size:clamp(32px,10vw,56px);color:var(--paper);margin:12px 0 20px;line-height:1.1;letter-spacing:.01em">${esc(t.fullName)}</p>` : ''}
     <div class="vz-frame"><img class="vz-img" id="visa" alt="${esc(t.invite.title || t.eventName)} ${t.invite.style === 'him' ? 'gentleman’s pass' : 'invitation'}: admits ${t.admits}, phone ending ${esc(t.phoneLast4 || '')}"></div>
     <p class="rc-hint">${t.status === 'used' ? 'You’re in. Enjoy your night.' : t.status === 'cancelled' ? 'This invitation was withdrawn.' : `At the door, give your phone number ending ${esc(t.phoneLast4 || '')}.`}</p>
     ${t.status === 'cancelled' ? '' : t.invite.style === 'him' ? '<div class="vz-actions no-print"><button type="button" class="btn red" id="vzSave">Download</button></div>'
       : `<div class="vz-actions no-print"><button type="button" class="btn red" id="vzShare">Share <span aria-hidden="true">↗</span></button><button type="button" class="btn" id="vzSave">Download</button></div>
-    <p class="vz-note">Share opens your phone’s share menu: pick any app. Your number is hidden on it.</p>`}
+    <p class="vz-note">Share opens your phone's share menu: pick any app. Your number is hidden on it.</p>`}
   </div>`;
   const { visaCanvas, visaPost, canvasBlob } = await import('../lib/visa.js');
   const card = await visaCanvas(v);

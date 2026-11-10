@@ -124,6 +124,19 @@ export async function reconcilePayments(env, scheduledTime = Date.now()) {
 const json = (obj, status = 200) => new Response(JSON.stringify(obj), { status, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' } });
 
 const validJson = s => { try { const o = JSON.parse(s); return !!(o.client_email && o.private_key); } catch { return false; } };
+// Paystack is asked at most once per 5 minutes per Worker instance: an uptime monitor checking every
+// minute would otherwise spend the club's live payment key 1,440 times a day, and a key Paystack
+// throttles is a key real customers can't pay with. An outage still shows within 5 minutes.
+const PAYSTACK_PROBE_MS = 5 * 60_000;
+let paystackProbe = { at: 0, ok: true };
+async function paystackReachable(env, probe, now = Date.now()) {
+  if (now - paystackProbe.at < PAYSTACK_PROBE_MS) return paystackProbe.ok;
+  const ok = await probe(async () => { const r = await fetch('https://api.paystack.co/transaction?perPage=1', { headers: { Authorization: `Bearer ${env.PAYSTACK_SECRET_KEY}` } }); if (!r.ok) throw new Error(String(r.status)); });
+  paystackProbe = { at: now, ok };
+  return ok;
+}
+export const resetHealthProbe = () => { paystackProbe = { at: 0, ok: true }; }; // tests
+
 export async function health(req, env) {
   // Without the key: only whether each setting is there (yes/no, never a value), so a missing key
   // after a deploy shows from a browser: /api/health.
@@ -134,7 +147,7 @@ export async function health(req, env) {
   const probe = async fn => { try { await fn(); return true; } catch { return false; } };
   const checks = {
     [onSupabase ? 'supabase' : 'firestore']: await probe(() => getDoc(env, 'settings', 'site')),
-    paystack: await probe(async () => { const r = await fetch('https://api.paystack.co/transaction?perPage=1', { headers: { Authorization: `Bearer ${env.PAYSTACK_SECRET_KEY}` } }); if (!r.ok) throw new Error(String(r.status)); }),
+    paystack: await paystackReachable(env, probe),
   };
   const ok = Object.values(checks).every(Boolean);
   return json({ ok, checks }, ok ? 200 : 503);

@@ -36,6 +36,7 @@ function form(ev, inv) {
     <form id="ask" class="ask-form" novalidate>
       ${picked.map((q, i) => `<div class="ask-q"><span class="n"><span>${i + 1} of 3</span><button type="button" class="swap" data-swap="${i}">Another question</button></span>
         <label for="a${i}" data-q="${i}">${esc(q)}</label><input id="a${i}" maxlength="160" autocomplete="off"></div>`).join('')}
+      <div class="ask-q"><span class="n"><span>Your name</span></span><input id="gname" maxlength="60" autocomplete="name" placeholder="Your name" aria-label="Your name"><span class="hint">It appears on your card.</span></div>
       <div class="ask-q"><span class="n"><span>Your phone</span></span><input id="phone" type="tel" inputmode="tel" autocomplete="tel" placeholder="024 123 4567" value="${esc(remember.get().phone || '')}" aria-label="Your phone number"><span class="hint">Your invitation is sent here. At the door, this number is your entry.</span></div>
       <div class="ask-q"><span class="n"><span>Instagram (optional)</span></span><input id="ig" maxlength="40" autocomplete="off" placeholder="@yourname" aria-label="Instagram (optional)"></div>
       <div class="notice" id="err" hidden role="alert"></div>
@@ -57,7 +58,7 @@ function form(ev, inv) {
     if (!normalizePhone($('#phone').value)) { err.hidden = false; err.textContent = 'Use a Ghana number, e.g. 024 123 4567.'; return $('#phone').focus(); }
     const go = $('#go'); go.disabled = true; go.textContent = 'Sending…';
     try {
-      await api('/api/invite-request', { method: 'POST', body: { eventId, phone: $('#phone').value, instagram: $('#ig').value, answers } });
+      await api('/api/invite-request', { method: 'POST', body: { eventId, name: $('#gname').value.trim(), phone: $('#phone').value, instagram: $('#ig').value, answers } });
       remember.set({ ...remember.get(), phone: $('#phone').value });
       root.innerHTML = `<section class="ask-done"><div>
         <div class="seal" aria-hidden="true"><svg viewBox="14 20 36 24" width="34" height="23"><path d="M18 32c0-4.4 3-7.5 6.6-7.5 6.8 0 8 15 14.8 15 3.6 0 6.6-3.1 6.6-7.5s-3-7.5-6.6-7.5c-6.8 0-8 15-14.8 15-3.6 0-6.6-3.1-6.6-7.5Z" fill="none" stroke="#fff3ea" stroke-width="3.2" stroke-linecap="round"/></svg></div>

@@ -48,6 +48,29 @@ test('sending by phone number: a free card per number, texted as a link; names a
   assert.equal(page.fullName, undefined, 'no name on the card');
 });
 
+test('name on the card and in the SMS when the row includes one; no name = Guest = no fullName on ticket', async () => {
+  const { store, call, send } = setup();
+  ok(await send([{ phone: '0241110010', name: 'Ama Mensah' }, { phone: '0241110011' }]), 'send with name');
+  const named = store.list('tickets').find(t => t.fields.phone === '0241110010');
+  const unnamed = store.list('tickets').find(t => t.fields.phone === '0241110011');
+  assert.equal(named.fields.customerName, 'Ama Mensah', 'name stored on ticket');
+  assert.equal(unnamed.fields.customerName, 'Guest', 'no name → Guest');
+  // SMS is personalised with the first name.
+  const smsNamed = store.sms.find(s => s.to === '0241110010').message;
+  assert.match(smsNamed, /^MEMORIES: Hi Ama,/);
+  const smsUnnamed = store.sms.find(s => s.to === '0241110011').message;
+  assert.match(smsUnnamed, /^MEMORIES: You're invited/);
+  // Public ticket: fullName only when not Guest.
+  const namedPage = ok(await call('GET', `/api/tickets/${named.id}`), 'named ticket').ticket;
+  assert.equal(namedPage.fullName, 'Ama Mensah');
+  const unnamedPage = ok(await call('GET', `/api/tickets/${unnamed.id}`), 'unnamed ticket').ticket;
+  assert.equal(unnamedPage.fullName, undefined, 'no fullName when no name given');
+  // Sent list includes name.
+  const list = ok(await call('GET', '/api/admin/invites?eventId=ladies', { who: 'admin' }), 'list');
+  assert.equal(list.sent.find(x => x.phone === '0241110010').name, 'Ama Mensah');
+  assert.equal(list.sent.find(x => x.phone === '0241110011').name, '');
+});
+
 test('the door finds a card by the whole phone number and lets it in once, all passes together', async () => {
   const { store, call, send } = setup();
   ok(await send([{ phone: '0551234567', passes: 2 }]), 'send');
@@ -81,7 +104,7 @@ test('guests ask on the website (three answers); staff approve, and the card is 
   const night = ok(await call('GET', '/api/events/ladies'), 'event');
   assert.deepEqual(night.invitation, { title: 'Ladies Night', tagline: 'Her night. Her rules.', perk: 'Free drinks till 12AM', dress: 'Strict dress code' });
   assert.match((await call('POST', '/api/invite-request', { body: { eventId: 'ladies', phone: '0241234567', answers: Q.slice(0, 2) } })).data.error, /all three/);
-  const asked = ok(await call('POST', '/api/invite-request', { body: { eventId: 'ladies', phone: '024 123 4567', instagram: '@ama.gh', answers: Q } }), 'ask');
+  const asked = ok(await call('POST', '/api/invite-request', { body: { eventId: 'ladies', name: 'Ama Boateng', phone: '024 123 4567', instagram: '@ama.gh', answers: Q } }), 'ask');
   assert.equal(asked.received, true);
   ok(await call('POST', '/api/invite-request', { body: { eventId: 'ladies', phone: '0201112222', answers: Q } }), 'ask 2');
   assert.equal(store.list('tickets').length, 0, 'nothing issued until approved');
@@ -89,11 +112,14 @@ test('guests ask on the website (three answers); staff approve, and the card is 
   const list = ok(await call('GET', '/api/admin/invites?eventId=ladies', { who: 'hr' }), 'list (human manager)');
   assert.equal(list.totals.pending, 2);
   const ama = list.requests.find(r => r.phone === '0241234567');
-  assert.deepEqual([ama.instagram, ama.answers.length, ama.answers[0].a], ['ama.gh', 3, 'Rosé, always']);
+  assert.deepEqual([ama.name, ama.instagram, ama.answers.length, ama.answers[0].a], ['Ama Boateng', 'ama.gh', 3, 'Rosé, always']);
   const other = list.requests.find(r => r.phone === '0201112222');
   const yes = ok(await call('POST', '/api/admin/invites/decide', { who: 'em', body: { eventId: 'ladies', ids: [ama.id], decision: 'approve' } }), 'approve (event manager)');
   assert.equal(yes.results[0].status, 'sent');
-  assert.match(store.sms.find(s => s.to === '0241234567').message, /Your request is accepted/);
+  const approveSms = store.sms.find(s => s.to === '0241234567').message;
+  assert.match(approveSms, /Your request is accepted/);
+  assert.match(approveSms, /Hi Ama,/, 'name personalises the approval SMS');
+  assert.equal(store.list('tickets').find(t => t.fields.phone === '0241234567').fields.customerName, 'Ama Boateng', 'name from request goes on the ticket');
   ok(await call('POST', '/api/admin/invites/decide', { who: 'mgr', body: { eventId: 'ladies', ids: [other.id], decision: 'decline' } }), 'decline (manager)');
   assert.equal(store.sms.filter(s => s.to === '0201112222').length, 0, 'a decline isn’t texted');
   const after = ok(await call('GET', '/api/admin/invites?eventId=ladies', { who: 'admin' }), 'after');

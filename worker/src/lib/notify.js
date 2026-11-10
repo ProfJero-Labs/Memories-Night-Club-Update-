@@ -1,9 +1,11 @@
 import { esc } from './util.js';
 import { logError } from './log.js';
 import * as Sentry from '@sentry/cloudflare';
+import { sentryGate, heldNote } from './sentry-gate.js';
 
 // A failed text means a guest may not get their ticket link. Sentry groups these by message.
-const smsFailed = reason => { try { Sentry.captureMessage(`SMS send failed: ${reason}`, 'warning'); } catch { /* never break a payment */ } };
+// Once per 10 minutes per reason (an SMS outage during a bulk send is one report, with a count).
+const smsFailed = reason => { const g = sentryGate(`sms:${String(reason).slice(0, 80)}`); if (!g) return; try { Sentry.captureMessage(`SMS send failed: ${reason}${heldNote(g)}`, 'warning'); } catch { /* never break a payment */ } };
 
 // SMS goes through the club's existing SMS Worker. Payload shape matches what that worker already
 // accepts from the old admin (event/sms.js): {sender, recipients:[phone], message} → {success}.

@@ -178,7 +178,7 @@ export async function productsView(el, { canEdit = true } = {}) {
       ${moneyField('pfP', 'Selling price (GHS)', p ? String(p.pricePesewas / 100) : '')}${moneyField('pfK', 'Cost price: what the club pays for one (GHS)', p?.costPesewas ? String(p.costPesewas / 100) : '', 'So the director sees the profit. A bill already sent keeps its price.')}
       <label class="check"><input type="checkbox" id="pfA" ${p?.available === false ? '' : 'checked'}> On sale tonight</label>
       <details class="fold" ${p ? '' : 'open'}><summary>Group, unit and stock limits</summary>
-        <div class="sfield"><label for="pfC">Group (e.g. Beer, Spirits, Soft)</label><input id="pfC" maxlength="30" value="${esc(p?.category || '')}"></div>
+        <div class="sfield"><label for="pfC">Category</label><input id="pfC" maxlength="30" list="pfCList" value="${esc(p?.category || '')}"><datalist id="pfCList"><option>Bottle service</option><option>Cocktails</option><option>Shots</option><option>Ready to drink</option><option>Water &amp; soft drinks</option></datalist></div>
         <div class="sfield"><label for="pfU">Sold by the</label><select id="pfU">${units.map(u => `<option ${u === (p?.unit || 'bottle') ? 'selected' : ''}>${u}</option>`).join('')}</select></div>
         <label class="check"><input type="checkbox" id="pfT" ${p?.tracked === false ? '' : 'checked'}> Count it at the bar (bottles and cans)</label>
         <div class="sfield"><label for="pfL">Minimum stock: buy more at or below (optional)</label><input id="pfL" inputmode="numeric" pattern="[0-9]*" value="${esc(p?.lowStock || '')}"></div>

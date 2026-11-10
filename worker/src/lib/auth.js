@@ -45,7 +45,7 @@ export const STAFF_ADMIN = ['superAdmin', 'director', 'hrManager', 'eventManager
 export const CUSTOMER_CARE = ['superAdmin', 'director', 'manager', 'hrManager']; // customers: payments tonight, top customers, reviews
 // Who may give which role: only a super admin makes admins; directors add managers and finance; the
 // Human manager adds the staff; the Event manager adds organisers.
-export const HR_ROLES = ['doorStaff', 'security', 'barManager', 'barStaff', 'waitStaff', 'cashier', 'dj', 'mc', 'media'];
+export const HR_ROLES = ['manager', 'eventManager', 'doorStaff', 'security', 'barManager', 'barStaff', 'waitStaff', 'cashier', 'dj', 'mc', 'media'];
 export function canAssign(actorRole, role) {
   if (actorRole === 'superAdmin') return STAFF_ROLES.includes(role);
   if (actorRole === 'director') return STAFF_ROLES.includes(role) && role !== 'superAdmin';

@@ -34,16 +34,17 @@ const night = ev => formatAccra(ev.fields.date, { weekday: 'short', day: 'numeri
 // Where it is: the night's venue, or the club's home at SamRit Hotel, Cape Coast.
 export const venueOf = ev => { const v = clean(ev?.fields?.venue, 60); return v && !/^memories/i.test(v) ? v : 'SamRit Hotel, Cape Coast'; };
 // One flowing paragraph with the link last, so it reads across the phone, not down it.
-function smsFor(ev, inv, passes, link, { added = false, approved = false } = {}) {
+function smsFor(ev, inv, passes, link, { added = false, approved = false, name = '' } = {}) {
   const him = inv.style === 'him', when = `${night(ev)} at Memories Night Club, ${venueOf(ev)}`;
-  const head = approved ? `MEMORIES: Your request is accepted. ${him ? `You're invited to witness ${inv.title}` : `You're on the list for ${inv.title}`}, ${when}.`
-    : `MEMORIES: ${him ? `You're invited to witness ${inv.title}` : `You're invited to ${inv.title}`}, ${when}.`;
+  const greeting = name ? `Hi ${name.split(/\s+/)[0]}, ` : '';
+  const head = approved ? `MEMORIES: ${greeting}Your request is accepted. ${him ? `You're invited to witness ${inv.title}` : `You're on the list for ${inv.title}`}, ${when}.`
+    : `MEMORIES: ${greeting}${him ? `You're invited to witness ${inv.title}` : `You're invited to ${inv.title}`}, ${when}.`;
   const notes = [him ? '' : inv.perk, inv.dress, passes > 1 ? `Admits ${passes}` : ''].filter(Boolean).join('. ');
   return [head, notes ? `${notes}.` : '', added ? `You now have ${passes} passes.` : '', `At the door, give this number. Your ${him ? 'pass' : 'card'}: ${link}`].filter(Boolean).join(' ');
 }
 
 // Issues one invitation (or adds passes to the one this phone already has). Returns a result row.
-async function issueOne(env, ev, invNight, phone, passes, { ifInvited = 'skip', existing, user, approved = false, style = 'her' } = {}) {
+async function issueOne(env, ev, invNight, phone, passes, { ifInvited = 'skip', existing, user, approved = false, style = 'her', name = '' } = {}) {
   const inv = cardFor(invNight, style);
   const had = existing.find(t => t.fields.phone === phone);
   if (had && ifInvited !== 'add') return { phone, status: 'already', passes: Number(had.fields.admitCount || 1), message: `Already invited (${Number(had.fields.admitCount || 1)} pass${Number(had.fields.admitCount || 1) > 1 ? 'es' : ''})`, token: had.id };
@@ -58,18 +59,19 @@ async function issueOne(env, ev, invNight, phone, passes, { ifInvited = 'skip', 
     if (r.error) return { phone, status: 'invalid', message: r.error };
     had.fields.admitCount = r.total;
     const link = siteUrl(env, `/ticket.html?token=${had.id}`);
-    const texted = await sendSms(env, phone, smsFor(ev, inv, r.total, link, { added: true }));
+    const texted = await sendSms(env, phone, smsFor(ev, inv, r.total, link, { added: true, name }));
     return { phone, status: texted ? 'added' : 'added_not_texted', passes: r.total, link, token: had.id };
   }
   const token = ticketToken(), orderId = id(), issuedBy = uidOf(user);
+  const guestName = name || 'Guest';
   const invite = { title: inv.title, tagline: inv.tagline, perk: inv.perk, dress: inv.dress, style: inv.style };
   await commitTx(env, [
-    updateWrite(env, 'tickets', token, { customerName: 'Guest', phone, phoneLast4: phone.slice(-4), type: 'Invitation', admitCount: passes, eventId: ev.id, eventName: ev.fields.name || '', identityLine: '', reference: orderId, displayCode: displayCode(token), status: 'valid', revoked: false, cancelled: false, comp: true, invite, issuedBy, compNote: `Invitation: ${inv.title}`, inDraw: false, issuedAt: now() }),
-    updateWrite(env, 'orders', orderId, { orderId, kind: 'comp', invite: true, eventId: ev.id, eventName: ev.fields.name || '', quantity: 1, admits: passes, amountPesewas: 0, buyerName: 'Guest', buyerPhone: phone, status: 'confirmed', issuedBy, note: `Invitation: ${inv.title}`, inDraw: false, ticketIds: [token], createdAt: now() }),
+    updateWrite(env, 'tickets', token, { customerName: guestName, phone, phoneLast4: phone.slice(-4), type: 'Invitation', admitCount: passes, eventId: ev.id, eventName: ev.fields.name || '', identityLine: '', reference: orderId, displayCode: displayCode(token), status: 'valid', revoked: false, cancelled: false, comp: true, invite, issuedBy, compNote: `Invitation: ${inv.title}`, inDraw: false, issuedAt: now() }),
+    updateWrite(env, 'orders', orderId, { orderId, kind: 'comp', invite: true, eventId: ev.id, eventName: ev.fields.name || '', quantity: 1, admits: passes, amountPesewas: 0, buyerName: guestName, buyerPhone: phone, status: 'confirmed', issuedBy, note: `Invitation: ${inv.title}`, inDraw: false, ticketIds: [token], createdAt: now() }),
   ]);
   existing.push({ id: token, fields: { phone, invite, admitCount: passes } });
   const link = siteUrl(env, `/ticket.html?token=${token}`);
-  const texted = await sendSms(env, phone, smsFor(ev, inv, passes, link, { approved }));
+  const texted = await sendSms(env, phone, smsFor(ev, inv, passes, link, { approved, name }));
   return { phone, status: texted ? 'sent' : 'not_texted', passes, link, token };
 }
 const invitesOf = async (env, eventId) => (await queryWhere(env, 'tickets', [{ field: 'eventId', value: eventId }])).filter(t => t.fields.invite && !t.fields.revoked && !t.fields.cancelled);
@@ -124,10 +126,11 @@ export async function sendInvites(env, b, user) {
   const existing = await invitesOf(env, n.ev.id), out = [];
   for (const raw of rows) {
     const phone = normalizePhone(raw?.phone), passes = raw?.passes === undefined || raw?.passes === '' || raw?.passes === null ? def : Number(raw.passes);
+    const name = clean(raw?.name, 60);
     if (!phone) { out.push({ phone: String(raw?.phone || '').slice(0, 20), status: 'invalid', message: 'Not a Ghana phone number' }); continue; }
     if (!Number.isInteger(passes) || passes < 1 || passes > MAX_PASSES) { out.push({ phone, status: 'invalid', message: `Passes: 1 to ${MAX_PASSES}` }); continue; }
     if (out.some(o => o.phone === phone && o.status !== 'invalid')) { out.push({ phone, status: 'duplicate', message: 'Twice in this list' }); continue; }
-    const r = await issueOne(env, n.ev, inv, phone, passes, { ifInvited: b.ifInvited, existing, user, style: styleOf(b.style) });
+    const r = await issueOne(env, n.ev, inv, phone, passes, { ifInvited: b.ifInvited, existing, user, style: styleOf(b.style), name });
     if (['sent', 'not_texted'].includes(r.status)) {
       // Someone who had asked online and is now sent one: their request is done.
       const req = await getDoc(env, 'invite_requests', `${n.ev.id}_${phone}`);
@@ -135,8 +138,24 @@ export async function sendInvites(env, b, user) {
     }
     const { token, ...row } = r; out.push(row);
   }
+  for (const o of out) {
+    if (['sent', 'not_texted', 'added', 'added_not_texted'].includes(o.status)) {
+      const row = rows.find(r => normalizePhone(r?.phone) === o.phone);
+      const cname = clean(row?.name, 60);
+      if (cname) await setDoc(env, 'guest_contacts', o.phone, { phone: o.phone, name: cname, lastInvitedAt: now() });
+    }
+  }
   await audit(env, user, 'INVITES_SENT', { eventId: n.ev.id, sent: out.filter(o => ['sent', 'not_texted'].includes(o.status)).length, added: out.filter(o => o.status.startsWith('added')).length });
   return { results: out };
+}
+
+// All unique phone numbers that have ever been invited (auto-populated when invites are sent).
+export async function guestContacts(env, user) {
+  if (!requireRole(user, INVITERS)) return FORBIDDEN;
+  const all = await listDocs(env, 'guest_contacts');
+  const contacts = all.map(c => ({ phone: c.fields.phone || c.id, name: c.fields.name || '' }))
+    .sort((a, b) => (a.name || a.phone).localeCompare(b.name || b.phone));
+  return { contacts, total: contacts.length };
 }
 // The night's invitations sent and the requests from the website.
 export async function invitesFor(env, user, eventId) {
@@ -144,13 +163,39 @@ export async function invitesFor(env, user, eventId) {
   const n = await getDoc(env, 'events', String(eventId || ''));
   if (!n) return { error: 'Night not found.', status: 404 };
   const sent = (await queryWhere(env, 'tickets', [{ field: 'eventId', value: n.id }])).filter(t => t.fields.invite)
-    .map(t => ({ phone: t.fields.phone || '', style: styleOf(t.fields.invite?.style), passes: Number(t.fields.admitCount || 1), code: t.fields.displayCode, status: t.fields.revoked || t.fields.cancelled ? 'cancelled' : t.fields.status, checkedInAt: t.fields.checkedInAt || null, issuedAt: t.fields.issuedAt || '' }))
+    .map(t => ({ phone: t.fields.phone || '', name: t.fields.customerName !== 'Guest' ? (t.fields.customerName || '') : '', style: styleOf(t.fields.invite?.style), passes: Number(t.fields.admitCount || 1), code: t.fields.displayCode, status: t.fields.revoked || t.fields.cancelled ? 'cancelled' : t.fields.status, checkedInAt: t.fields.checkedInAt || null, issuedAt: t.fields.issuedAt || '' }))
     .sort((a, b) => String(b.issuedAt).localeCompare(String(a.issuedAt)));
   const requests = (await queryWhere(env, 'invite_requests', [{ field: 'eventId', value: n.id }]))
-    .map(r => ({ id: r.id, phone: r.fields.phone, style: styleOf(r.fields.style), instagram: r.fields.instagram || '', answers: r.fields.answers || [], status: r.fields.status, createdAt: r.fields.createdAt, decidedByName: r.fields.decidedByName || '' }))
+    .map(r => ({ id: r.id, phone: r.fields.phone, name: r.fields.name || '', style: styleOf(r.fields.style), instagram: r.fields.instagram || '', answers: r.fields.answers || [], status: r.fields.status, createdAt: r.fields.createdAt, decidedByName: r.fields.decidedByName || '' }))
     .sort((a, b) => (a.status === 'pending') - (b.status === 'pending') || String(a.createdAt).localeCompare(String(b.createdAt))).reverse();
   return { sent, requests, totals: { invitations: sent.length, passes: sent.reduce((k, x) => k + x.passes, 0), in: sent.filter(x => x.status === 'used').reduce((k, x) => k + x.passes, 0), pending: requests.filter(r => r.status === 'pending').length } };
 }
+// Send a reminder text to all valid invitees who haven't checked in yet. { eventId, message? }
+function reminderSms(ev, inv, style, passes, link) {
+  const him = style === 'him';
+  const when = `${night(ev)} at Memories Night Club, ${venueOf(ev)}`;
+  const perks = [him ? '' : inv.perk, inv.dress, passes > 1 ? `Admits ${passes}` : ''].filter(Boolean).join('. ');
+  return [`MEMORIES: Reminder — ${him ? `Your pass to witness ${inv.title}` : `Your invitation to ${inv.title}`}, ${when}.`, perks ? `${perks}.` : '', `At the door, give this number. Your ${him ? 'pass' : 'card'}: ${link}`].filter(Boolean).join(' ');
+}
+export async function remindInvites(env, b, user) {
+  if (!requireRole(user, INVITERS)) return FORBIDDEN;
+  const n = await inviteNight(env, b?.eventId); if (n.error) return n;
+  const inv = invitationOf(n.ev);
+  const all = await invitesOf(env, n.ev.id);
+  const eligible = all.filter(t => t.fields.status !== 'used');
+  const customMsg = b?.message ? clean(String(b.message), 320) : null;
+  let sent = 0, failed = 0;
+  for (const t of eligible) {
+    const phone = t.fields.phone, passes = Number(t.fields.admitCount || 1);
+    const style = styleOf(t.fields.invite?.style), link = siteUrl(env, `/ticket.html?token=${t.id}`);
+    const msg = customMsg || reminderSms(n.ev, inv, style, passes, link);
+    const ok = await sendSms(env, phone, msg);
+    ok ? sent++ : failed++;
+  }
+  await audit(env, user, 'INVITES_REMINDED', { eventId: n.ev.id, sent, failed });
+  return { sent, failed, total: eligible.length };
+}
+
 // Approve (the invitation is texted) or decline website requests. { eventId, ids: [], decision, passes? }
 export async function decideRequests(env, b, user) {
   if (!requireRole(user, INVITERS)) return FORBIDDEN;
@@ -169,8 +214,9 @@ export async function decideRequests(env, b, user) {
       await setDoc(env, 'invite_requests', rid, { ...r.fields, status: 'declined', decidedAt: now(), decidedByName: user.name || '' });
       out.push({ id: rid, phone: r.fields.phone, status: 'declined' }); continue;
     }
-    const s = await issueOne(env, n.ev, inv, r.fields.phone, passes, { existing, user, approved: true, style: styleOf(r.fields.style) });
+    const s = await issueOne(env, n.ev, inv, r.fields.phone, passes, { existing, user, approved: true, style: styleOf(r.fields.style), name: r.fields.name || '' });
     await setDoc(env, 'invite_requests', rid, { ...r.fields, status: 'approved', decidedAt: now(), decidedByName: user.name || '', ...(s.token ? { ticketId: s.token } : {}) });
+    if (['sent', 'not_texted'].includes(s.status) && r.fields.name) await setDoc(env, 'guest_contacts', r.fields.phone, { phone: r.fields.phone, name: clean(r.fields.name, 60), lastInvitedAt: now() });
     const { token, ...row } = s; out.push({ id: rid, ...row });
   }
   await audit(env, user, b.decision === 'approve' ? 'INVITE_REQUESTS_APPROVED' : 'INVITE_REQUESTS_DECLINED', { eventId: n.ev.id, count: out.filter(o => o.status !== 'invalid').length });
@@ -188,8 +234,9 @@ export async function requestInvite(env, b) {
   const answers = (Array.isArray(b.answers) ? b.answers : []).slice(0, 3).map(x => ({ q: clean(x?.q, 120), a: clean(x?.a, 160) }));
   if (answers.length < 3 || answers.some(x => !x.q || x.a.length < 2)) return { error: 'Answer all three, even in a few words.' };
   const instagram = clean(String(b.instagram || '').replace(/^@+/, ''), 40).replace(/[^A-Za-z0-9._]/g, '');
+  const name = clean(b.name, 60);
   const rid = `${ev.id}_${phone}`, had = await getDoc(env, 'invite_requests', rid);
   // Ladies only ask on the website; the gentlemen's passes are sent by staff.
-  if (!had) await setDoc(env, 'invite_requests', rid, { eventId: ev.id, phone, style: 'her', instagram, answers, status: 'pending', createdAt: now() });
+  if (!had) await setDoc(env, 'invite_requests', rid, { eventId: ev.id, phone, ...(name ? { name } : {}), style: 'her', instagram, answers, status: 'pending', createdAt: now() });
   return { received: true, phoneHint: maskPhone(phone) };
 }

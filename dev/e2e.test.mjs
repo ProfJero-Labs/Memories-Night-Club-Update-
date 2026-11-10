@@ -784,7 +784,7 @@ test('staff sign-in: the Human manager adds a waitress; her PIN is texted and sh
   await signInAs(mgr, 'hr@dev'); await mgr.waitForURL(/hr\.html/);
   await mgr.click('.bnav [data-k="staff"]'); await mgr.click('#addBtn'); await mgr.waitForSelector('#aRole');
   assert.equal(await mgr.$eval('#aRole', e => e.value), '', 'no job is pre-selected');
-  assert.ok(!(await mgr.$$eval('#aRole option', os => os.map(o => o.value))).some(v => ['superAdmin', 'director', 'finance', 'manager', 'hrManager'].includes(v)), 'the Human manager adds the staff, not managers, directors or finance');
+  assert.ok(!(await mgr.$$eval('#aRole option', os => os.map(o => o.value))).some(v => ['superAdmin', 'director', 'finance', 'hrManager'].includes(v)), 'the Human manager does not add directors, finance or admins (but can add managers and event managers)');
   await mgr.fill('#aName', 'Abena Waitress'); await mgr.fill('#aPhone', '024 777 1001'); await mgr.selectOption('#aRole', 'waitStaff'); await mgr.click('#aBtn');
   await mgr.locator('.pincards').getByText(/Texted to 024\*\*\*1001/).waitFor();
   const sms = store.sms.filter(x => x.to === '0247771001').at(-1).message;

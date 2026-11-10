@@ -127,6 +127,8 @@ async function route(req, env, ctx) {
   if (m === 'POST' && p === '/api/invite-request') { if (await throttled(req, env, 'invite-request', 'strict')) return tooMany(req, env); return reply(req, env, await invites.requestInvite(env, await body(req))); }
   if (m === 'POST' && p === '/api/private-requests') { if (await throttled(req, env, 'private', 'strict')) return tooMany(req, env); return reply(req, env, await createPrivateRequest(env, await body(req))); }
   if (m === 'POST' && p === '/api/paystack/webhook') return paystackWebhook(req, env, ctx);
+  // ── Public bar menu (no auth, no station token) ──
+  if (m === 'GET' && p === '/api/menu') { if (await throttled(req, env, 'menu', 'standard')) return tooMany(req, env); return reply(req, env, await bar.publicMenu(env)); }
   // ── Scan to order (guests at the bar) ──
   if (m === 'GET' && p === '/api/guest/menu') { if (await throttled(req, env, 'menu', 'standard')) return tooMany(req, env); return reply(req, env, await bar.guestMenu(env, u.searchParams.get('station'))); }
   if (m === 'POST' && p === '/api/guest/counter/checkout') { if (await throttled(req, env, 'checkout', 'standard')) return tooMany(req, env); return reply(req, env, await bar.counterCheckout(env, await body(req))); }
@@ -301,8 +303,10 @@ async function route(req, env, ctx) {
   if (m === 'GET' && p === '/api/admin/orders') return reply(req, env, await admin.listOrders(env, { eventId: u.searchParams.get('eventId'), kind: u.searchParams.get('kind') }, user));
   if (m === 'POST' && p === '/api/admin/comps') return reply(req, env, await admin.issueComp(env, await body(req), user));
   if (m === 'GET' && p === '/api/admin/invites/nights') return reply(req, env, await invites.inviteNights(env, user));
+  if (m === 'GET' && p === '/api/admin/invites/contacts') return reply(req, env, await invites.guestContacts(env, user));
   if (m === 'POST' && p === '/api/admin/invites/settings') return reply(req, env, await invites.saveInvitation(env, await body(req), user));
   if (m === 'POST' && p === '/api/admin/invites/decide') return reply(req, env, await invites.decideRequests(env, await body(req), user));
+  if (m === 'POST' && p === '/api/admin/invites/remind') return reply(req, env, await invites.remindInvites(env, await body(req), user));
   if (m === 'POST' && p === '/api/admin/invites') return reply(req, env, await invites.sendInvites(env, await body(req), user));
   if (m === 'GET' && p === '/api/admin/invites') return reply(req, env, await invites.invitesFor(env, user, u.searchParams.get('eventId')));
   if (m === 'POST' && p === '/api/admin/raffles') return reply(req, env, await upsertRaffle(env, await body(req), user));

@@ -9,7 +9,7 @@ refund, or edits code on its own.
 | Reconciliation job (`worker/src/reconcile.js`) | Paid but no ticket (missed webhook, closed tab, brief outage) | The job, automatically |
 | Reconciliation alerts | Paid but cannot be fulfilled (sold out after payment, amount mismatch, no record) | A human, by SMS |
 | Heartbeat | The reconciliation job itself stopping | A human, phone call |
-| Uptime monitor | Site or API down, Firestore or Paystack unreachable | A human, phone call |
+| Uptime monitor | Site or API down, the database (Supabase) or Paystack unreachable | A human, phone call |
 | Sentry | Crashes and unexpected errors in the Worker and in guests' browsers | A human, with the cause already identified |
 | Direct SMS on payment-route errors | Payment failures even if nobody is watching Sentry | A human, within seconds |
 | Security alerts | Forged payment notices, someone guessing staff sign-ins or member gate codes, scripted floods | A human, by SMS, at most once an hour per kind |
@@ -48,9 +48,9 @@ Create three monitors, 1 minute interval, alert by phone call or SMS, not email 
 
 1. `https://memoriesnightclub.com` expects 200.
 2. `https://memories-paystack-verify.diamondj04102026.workers.dev/api/events` expects 200. This
-   exercises the Worker and Firestore through a real public route.
+   exercises the Worker and the database through a real public route.
 3. `https://memories-paystack-verify.diamondj04102026.workers.dev/api/health` with the header
-   `x-health-key: <HEALTH_KEY>` expects 200. This also proves Firestore and Paystack are reachable.
+   `x-health-key: <HEALTH_KEY>` expects 200. This also proves the database and Paystack are reachable (Paystack is asked at most once per 5 minutes, so the live payment key isn't spent every minute).
    Without the header it only proves the Worker is up.
 
 Alert on two consecutive failures so one blip does not wake anyone.
@@ -142,3 +142,20 @@ Do these once in Paystack test mode, then once more in live mode with a GHS 1 pa
    key straight after. A normal 404 will not trigger this, only a real server error does.
 
 If a drill does not alert, the setup is not finished.
+
+
+## 7. Free-tier limits: keeping each service inside its allowance (November 2026)
+
+Every service here has a free tier. None of them should ever run out on a normal month; the settings
+below keep a bad night from using a month's allowance.
+
+| Service | Its limit (free) | What this system sends | Keep it safe |
+|---|---|---|---|
+| **Sentry** | ~5,000 errors a month | Only errors and warnings, no performance tracing. The same problem is sent **once per 5–10 minutes** with a count of what was held back (`worker/src/lib/sentry-gate.js`); failed texts, guests' browser errors and security signals likewise. | In Sentry: **Project → Client Keys → Configure → Rate limit 60 per hour**; **Inbound Filters**: browser extensions, legacy browsers, web crawlers on; leave **Spike protection** on. |
+| **Better Stack / UptimeRobot** | Better Stack: 10 monitors, 3-minute checks; UptimeRobot: 50 monitors, 5-minute checks | Three monitors (section 2) and the heartbeat (section 3) | Use the free interval (3 or 5 minutes, not 1): an outage is still caught within minutes. Alert on 2 failures. |
+| **Paystack** (the live key) | Rate limits per key | The payment check every 10 minutes; the keyed health check at most once per 5 minutes | Never point more than one monitor at the keyed health check. |
+| **Cloudflare Workers** | 100,000 requests a day | Guests, staff, monitors, the payment check | Far inside it. The Cloudflare **preview builds** on pull requests (Settings → Builds) fail and aren't used: turn them off; deploys go through GitHub. |
+| **Supabase** | Free plan pauses after a week without activity | The payment check every 10 minutes keeps it awake, but **use the Pro plan**: a paused database stops the club. | |
+| **GitHub Actions** | Unlimited for a public repository | Tests, the secret scan, deploys | Keep the secret scan on: the repository is public, so a leaked key is public at once. |
+
+To see what's set up at a glance: control room → Tonight → **System**.
