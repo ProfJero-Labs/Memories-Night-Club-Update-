@@ -6,6 +6,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createMockEnv, idToken } from './mock-firestore.js';
 import worker from '../src/index.js';
+import { nightKey } from '../src/lib/util.js';
 
 let ip = 0;
 const ok = (r, what) => { assert.ok(r.status === 200, `${what}: ${r.status} ${r.data.error || ''}`); return r.data; };
@@ -14,7 +15,8 @@ function setup() {
   const { store, env } = createMockEnv();
   env.PUBLIC_SITE_URL = 'https://memories.test';
   store.seed('settings', 'commercial', {}); // nothing saved: the owner's rules, as live
-  const tonight = new Date(Date.now() - 2 * 3600e3).toISOString();
+  // 10pm on the current business night (nights roll over at 4am), whatever the time the tests run.
+  const tonight = `${nightKey(new Date())}T22:00:00.000Z`;
   store.seed('events', 'ev1', { name: 'Friday', date: tonight, active: true, visibility: 'public' });
   store.seed('ticket_types', 'reg', { eventId: 'ev1', name: 'Regular', pricePesewas: 8000, doorPricePesewas: 10000, admits: 1, remaining: 100, active: true });
   store.seed('bar_stations', 'main', { name: 'Main bar', token: 'a'.repeat(32), open: true });

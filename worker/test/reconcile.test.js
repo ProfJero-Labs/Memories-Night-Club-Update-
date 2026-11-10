@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createMockEnv } from './mock-firestore.js';
 import { reconcilePayments, health } from '../src/index.js';
+import { resetHealthProbe } from '../src/reconcile.js';
 
 const minsAgo = m => new Date(Date.now() - m * 60_000);
 const ref = n => `MEM-1700000000000-AAAA000${n}`;
@@ -116,6 +117,7 @@ test('heartbeat is pinged after a clean run and NOT pinged when the run fails', 
 
 test('health: shallow without the key, deep with it, 503 when a dependency is down', async () => {
   const { store, env } = setup();
+  resetHealthProbe();
   const get = key => health(new Request('https://x.test/api/health', { headers: key ? { 'x-health-key': key } : {} }), env);
 
   // Without the key: whether each setting is there (yes/no), never a value.
@@ -140,7 +142,11 @@ test('health: shallow without the key, deep with it, 503 when a dependency is do
   assert.equal(r.status, 200);
   assert.deepEqual((await r.json()).checks, { [process.env.DB_BACKEND === 'supabase' ? 'supabase' : 'firestore']: true, paystack: true });
 
+  // Paystack is asked at most once per 5 minutes (the live payment key isn't spent every minute).
   store.paystackListDown = true;
+  r = await get('secret-health-key');
+  assert.equal(r.status, 200, 'the last answer is reused within 5 minutes');
+  resetHealthProbe();
   r = await get('secret-health-key');
   assert.equal(r.status, 503);
   assert.equal((await r.json()).checks.paystack, false);

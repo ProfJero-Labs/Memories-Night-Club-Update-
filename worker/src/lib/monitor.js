@@ -8,6 +8,7 @@ import * as Sentry from '@sentry/cloudflare';
 import { redact, logError } from './log.js';
 import { createDoc } from './firestore.js';
 import { sendSms, sendEmail } from './notify.js';
+import { sentryGate, heldNote } from './sentry-gate.js';
 
 // ── Privacy ──
 // A ticket's document id is its bearer token, and Firestore/Paystack errors can quote paths,
@@ -65,8 +66,13 @@ const lastText = new Map();           // per-isolate floor, so an outage cannot 
 const TEXT_EVERY_MS = 15 * 60_000;
 
 export async function reportError(env, where, err, { critical = false } = {}) {
-  try { Sentry.withScope(scope => { scope.setTag('where', where); scope.setTag('critical', String(critical)); Sentry.captureException(err); }); }
-  catch (e) { logError('sentry capture failed', e); }
+  // The same error from the same place goes to Sentry once per 5 minutes (sentry-gate.js); the texts
+  // below are not affected.
+  const gate = sentryGate(`err:${where}:${String(err?.name || '')}:${String(err?.message || err).slice(0, 80)}`, 5 * 60_000);
+  if (gate) {
+    try { Sentry.withScope(scope => { scope.setTag('where', where); scope.setTag('critical', String(critical)); if (gate.held) scope.setTag('held_back', String(gate.held)); Sentry.captureException(err); }); }
+    catch (e) { logError('sentry capture failed', e); }
+  }
   if (!critical) return false;
   const now = Date.now();
   if (now - (lastText.get(where) || 0) < TEXT_EVERY_MS) return false;
@@ -81,7 +87,8 @@ export async function reportError(env, where, err, { critical = false } = {}) {
 }
 
 export const reportMessage = (where, text, level = 'warning') => {
-  try { Sentry.withScope(scope => { scope.setTag('where', where); Sentry.captureMessage(redact(text), level); }); } catch { /* never break a request */ }
+  const gate = sentryGate(`msg:${where}:${String(text).slice(0, 80)}`); if (!gate) return;
+  try { Sentry.withScope(scope => { scope.setTag('where', where); Sentry.captureMessage(redact(text) + heldNote(gate), level); }); } catch { /* never break a request */ }
 };
 
 // ── Errors from guests' browsers (public/lib/report.js) ──
@@ -95,12 +102,14 @@ export async function clientError(req, env, allowed) {
   let b; try { b = JSON.parse(raw); } catch { return {}; }
   const message = redact(clip(b.message, 300)), page = clip(b.page, 80).split('?')[0].split('#')[0];
   if (!message) return {};
+  // The same error on the same page goes to Sentry once per 10 minutes (many guests, one bug).
+  const gate = sentryGate(`browser:${page}:${message.slice(0, 80)}`); if (!gate) return {};
   try {
     Sentry.withScope(scope => {
       scope.setTag('where', 'browser'); scope.setTag('page', page); scope.setTag('kind', b.kind === 'rejection' ? 'rejection' : 'error');
       scope.setTag('source', `${clip(b.source, 100).split('?')[0]}:${Number(b.line) || 0}:${Number(b.col) || 0}`);
       scope.setFingerprint(['browser', page, message]);
-      Sentry.captureMessage(`Browser error on ${page}: ${message}`, 'error');
+      Sentry.captureMessage(`Browser error on ${page}: ${message}${heldNote(gate)}`, 'error');
     });
   } catch (e) { logError('client error capture failed', e); }
   return {};
