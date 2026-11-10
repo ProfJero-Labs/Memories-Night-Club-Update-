@@ -327,7 +327,7 @@ function pickLine(r, action) {
   $('#plGo', box).onclick = async e => { try { await send(e.currentTarget); close(); route(); } catch (er) { say($('#plMsg', box), er.message, 'bad'); } };
   // Swap: the drink goes back (off the bill once the bar has it) and the new one goes to the bar.
   $('#plSwap', box) && ($('#plSwap', box).onclick = async e => {
-    try { await send(e.currentTarget); close(); sessionStorage.setItem('waiter-swap', r.tabId); setTimeout(() => { location.hash = `add/${r.tabId}`; }, 0); }
+    try { await send(e.currentTarget); sessionStorage.setItem('waiter-swap', r.tabId); location.hash = `add/${r.tabId}`; close(); }
     catch (er) { say($('#plMsg', box), er.message, 'bad'); }
   });
 }
