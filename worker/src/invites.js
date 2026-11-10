@@ -154,6 +154,32 @@ export async function invitesFor(env, user, eventId) {
     .sort((a, b) => (a.status === 'pending') - (b.status === 'pending') || String(a.createdAt).localeCompare(String(b.createdAt))).reverse();
   return { sent, requests, totals: { invitations: sent.length, passes: sent.reduce((k, x) => k + x.passes, 0), in: sent.filter(x => x.status === 'used').reduce((k, x) => k + x.passes, 0), pending: requests.filter(r => r.status === 'pending').length } };
 }
+// Send a reminder text to all valid invitees who haven't checked in yet. { eventId, message? }
+function reminderSms(ev, inv, style, passes, link) {
+  const him = style === 'him';
+  const when = `${night(ev)} at Memories Night Club, ${venueOf(ev)}`;
+  const perks = [him ? '' : inv.perk, inv.dress, passes > 1 ? `Admits ${passes}` : ''].filter(Boolean).join('. ');
+  return [`MEMORIES: Reminder — ${him ? `Your pass to witness ${inv.title}` : `Your invitation to ${inv.title}`}, ${when}.`, perks ? `${perks}.` : '', `At the door, give this number. Your ${him ? 'pass' : 'card'}: ${link}`].filter(Boolean).join(' ');
+}
+export async function remindInvites(env, b, user) {
+  if (!requireRole(user, INVITERS)) return FORBIDDEN;
+  const n = await inviteNight(env, b?.eventId); if (n.error) return n;
+  const inv = invitationOf(n.ev);
+  const all = await invitesOf(env, n.ev.id);
+  const eligible = all.filter(t => t.fields.status !== 'used');
+  const customMsg = b?.message ? clean(String(b.message), 320) : null;
+  let sent = 0, failed = 0;
+  for (const t of eligible) {
+    const phone = t.fields.phone, passes = Number(t.fields.admitCount || 1);
+    const style = styleOf(t.fields.invite?.style), link = siteUrl(env, `/ticket.html?token=${t.id}`);
+    const msg = customMsg || reminderSms(n.ev, inv, style, passes, link);
+    const ok = await sendSms(env, phone, msg);
+    ok ? sent++ : failed++;
+  }
+  await audit(env, user, 'INVITES_REMINDED', { eventId: n.ev.id, sent, failed });
+  return { sent, failed, total: eligible.length };
+}
+
 // Approve (the invitation is texted) or decline website requests. { eventId, ids: [], decision, passes? }
 export async function decideRequests(env, b, user) {
   if (!requireRole(user, INVITERS)) return FORBIDDEN;

@@ -305,6 +305,7 @@ async function route(req, env, ctx) {
   if (m === 'GET' && p === '/api/admin/invites/nights') return reply(req, env, await invites.inviteNights(env, user));
   if (m === 'POST' && p === '/api/admin/invites/settings') return reply(req, env, await invites.saveInvitation(env, await body(req), user));
   if (m === 'POST' && p === '/api/admin/invites/decide') return reply(req, env, await invites.decideRequests(env, await body(req), user));
+  if (m === 'POST' && p === '/api/admin/invites/remind') return reply(req, env, await invites.remindInvites(env, await body(req), user));
   if (m === 'POST' && p === '/api/admin/invites') return reply(req, env, await invites.sendInvites(env, await body(req), user));
   if (m === 'GET' && p === '/api/admin/invites') return reply(req, env, await invites.invitesFor(env, user, u.searchParams.get('eventId')));
   if (m === 'POST' && p === '/api/admin/raffles') return reply(req, env, await upsertRaffle(env, await body(req), user));

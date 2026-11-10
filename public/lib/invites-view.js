@@ -74,6 +74,14 @@ export async function invitesView(el, { eventId = '', onNight } = {}) {
 
     <h2>Requests from the website <span class="kicker" id="ivPending"></span></h2><div id="ivReq"><div class="loading">Loading…</div></div>
     <h2>Sent <span class="kicker" id="ivTotals"></span></h2><div id="ivSent"><div class="loading">Loading…</div></div>
+    <details class="card" style="margin-top:8px"><summary><b>Send reminder to all invited</b></summary>
+      <div style="margin-top:10px">
+        <div class="sfield"><label for="ivRemindText">Message (optional — leave blank for the default reminder)</label>
+          <textarea id="ivRemindText" rows="3" placeholder="Leave blank to use the default reminder text"></textarea></div>
+        <div class="toolbar"><button class="sbtn" type="button" id="ivRemind">Send reminder</button></div>
+        <div id="ivRemindResult" role="status"></div>
+      </div>
+    </details>
 
     <details class="card" style="margin-top:18px"><summary><b>The card’s wording and the website</b> <span class="muted">${inv.open ? '· ladies can ask on the website' : '· website requests are off'}</span></summary>
       <div class="grid2" style="margin-top:12px">
@@ -152,4 +160,15 @@ export async function invitesView(el, { eventId = '', onNight } = {}) {
     load();
   };
   await load();
+  $('#ivRemind', el).onclick = async () => {
+    const btn = $('#ivRemind', el);
+    const msg = val(el, '#ivRemindText');
+    if (!confirm('Send a reminder text to all invited guests who haven\'t checked in yet?')) return;
+    btn.disabled = true; btn.textContent = 'Sending…';
+    try {
+      const r = await sapi('/api/admin/invites/remind', { method: 'POST', body: { eventId: ev.id, ...(msg ? { message: msg } : {}) } });
+      flash($('#ivRemindResult', el), `Reminder sent to ${r.sent} guest${r.sent !== 1 ? 's' : ''}${r.failed ? ` (${r.failed} failed)` : ''}.`);
+    } catch (err) { flash($('#ivRemindResult', el), err.message, true); }
+    btn.disabled = false; btn.textContent = 'Send reminder';
+  };
 }
