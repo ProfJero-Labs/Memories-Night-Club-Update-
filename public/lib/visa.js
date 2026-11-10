@@ -18,7 +18,7 @@ const F = { card: '"Share Tech Mono", "Space Mono", ui-monospace, monospace', sc
 
 export async function loadVisaFonts() {
   if (!document.fonts?.load) return;
-  await Promise.all([`400 12px ${F.card}`, `400 46px ${F.script}`, `700 10px ${F.mono}`, `400 10px ${F.mono}`, `italic 500 13px ${F.serif}`, `400 15px ${F.display}`, `600 7px ${F.sans}`, `700 7px ${F.sans}`]
+  await Promise.all([`400 12px ${F.card}`, `400 46px ${F.script}`, `700 10px ${F.mono}`, `400 10px ${F.mono}`, `italic 500 38px ${F.serif}`, `italic 500 13px ${F.serif}`, `400 15px ${F.display}`, `600 7px ${F.sans}`, `700 7px ${F.sans}`]
     .map(f => document.fonts.load(f).catch(() => {})));
 }
 
@@ -131,8 +131,9 @@ export function drawVisa(ctx, t, { share = false } = {}) {
   // The heading.
   ctx.fillStyle = '#b3142f'; ctx.font = `700 7.5px ${F.sans}`;
   spaced(ctx, 'ENTRY VISA', 96, 36, 2); spaced(ctx, `Nº ${share ? 'VIP' : no}`, W - 12, 36, 2, 'right');
-  const tsz = fitFont(ctx, title, `400 {s} ${F.script}`, 46, W - 108, 22);
-  ctx.fillStyle = 'rgba(255,255,255,.7)'; ctx.fillText(title, 96, 41 + tsz * 0.82 + 0.8);
+  const tsz = fitFont(ctx, title, `italic 500 {s} ${F.serif}`, 38, W - 108, 18);
+  ctx.font = `italic 500 ${tsz}px ${F.serif}`;
+  ctx.fillStyle = 'rgba(255,255,255,.55)'; ctx.fillText(title, 96, 41 + tsz * 0.82 + 0.8);
   ctx.fillStyle = '#b0102c'; ctx.fillText(title, 96, 41 + tsz * 0.82);
   let y = 41 + tsz * 0.82 + 19;
   if (inv.tagline) { ctx.fillStyle = '#6b0a1f'; fitFont(ctx, inv.tagline, `italic 500 {s} ${F.serif}`, 13, W - 210, 8); ctx.fillText(inv.tagline, 96, y); y += 9; }
