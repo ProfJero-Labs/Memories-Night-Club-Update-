@@ -60,6 +60,14 @@ export const stationUrl = (env, token, spot) => siteUrl(env, `/counter.html?s=${
 const cleanSpot = v => clean(v, 24).replace(/[^\p{L}\p{N} #\-.]/gu, '').trim();
 const sortMenu = (a, b) => a.category.localeCompare(b.category) || a.sortOrder - b.sortOrder || a.name.localeCompare(b.name);
 
+// ── Public menu (no auth, no station token — for browse/menu.html) ──
+export async function publicMenu(env) {
+  const all = (await listDocs(env, 'menu_items')).filter(x => !x.fields.deleted && x.fields.available !== false).map(publicItem).filter(i => i.pricePesewas > 0).sort(sortMenu);
+  const categories = [...new Set(all.map(i => i.category))];
+  const grouped = categories.map(cat => ({ category: cat, items: all.filter(i => i.category === cat) }));
+  return { categories: grouped };
+}
+
 // ── Guest ──
 export async function guestMenu(env, token) {
   const st = await stationByToken(env, token);

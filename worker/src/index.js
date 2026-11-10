@@ -127,6 +127,8 @@ async function route(req, env, ctx) {
   if (m === 'POST' && p === '/api/invite-request') { if (await throttled(req, env, 'invite-request', 'strict')) return tooMany(req, env); return reply(req, env, await invites.requestInvite(env, await body(req))); }
   if (m === 'POST' && p === '/api/private-requests') { if (await throttled(req, env, 'private', 'strict')) return tooMany(req, env); return reply(req, env, await createPrivateRequest(env, await body(req))); }
   if (m === 'POST' && p === '/api/paystack/webhook') return paystackWebhook(req, env, ctx);
+  // ── Public bar menu (no auth, no station token) ──
+  if (m === 'GET' && p === '/api/menu') { if (await throttled(req, env, 'menu', 'standard')) return tooMany(req, env); return reply(req, env, await bar.publicMenu(env)); }
   // ── Scan to order (guests at the bar) ──
   if (m === 'GET' && p === '/api/guest/menu') { if (await throttled(req, env, 'menu', 'standard')) return tooMany(req, env); return reply(req, env, await bar.guestMenu(env, u.searchParams.get('station'))); }
   if (m === 'POST' && p === '/api/guest/counter/checkout') { if (await throttled(req, env, 'checkout', 'standard')) return tooMany(req, env); return reply(req, env, await bar.counterCheckout(env, await body(req))); }
