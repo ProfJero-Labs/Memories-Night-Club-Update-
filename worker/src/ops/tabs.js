@@ -618,6 +618,24 @@ export async function quickSale(env, b, user) {
   return { id: tabId, number, label: `Tab ${number}`, roundId: rid, totalPesewas: total, method, ...(tip.none ? {} : { tip: { toName: tip.to.name, amountPesewas: tip.amount } }) };
 }
 
+// Discard an empty tab: no non-cancelled rounds, no payments, balance 0.
+// A waiter can discard their own tab; a manager can discard any tab.
+export async function voidTab(env, b, user) {
+  if (!requireRole(user, WAITERS)) return FORBIDDEN;
+  const t = await getDoc(env, 'tabs', String(b?.tabId || ''));
+  if (!t) return { error: 'Tab not found.', status: 404 };
+  if (!mineOrBoss(user, t.fields)) return { error: 'This is another waiter’s tab.', status: 403 };
+  if (t.fields.status !== 'open') return { error: 'This tab is already closed.' };
+  const rounds = await roundsOf(env, t.id);
+  const active = rounds.filter(r => !['cancelled'].includes(r.status));
+  if (active.length) return { error: `${active.length} order${active.length > 1 ? 's are' : ' is'} still active on this tab. Cancel ${active.length === 1 ? 'it' : 'them'} first, or close the tab normally.` };
+  const bill = billOf(t.fields, rounds);
+  if (bill.paidPesewas) return { error: 'A payment has already been recorded on this tab. Close it normally.' };
+  await setDoc(env, 'tabs', t.id, { ...t.fields, status: 'closed', closedAt: now(), closedByName: user.name || '', voidedAt: now(), voidReason: 'discarded_empty' });
+  await audit(env, user, 'TAB_VOIDED', { tabId: t.id, table: t.fields.table });
+  return { voided: true };
+}
+
 export async function closeTab(env, b, user) {
   if (!requireRole(user, [...WAITERS, 'cashier'])) return FORBIDDEN;
   const t = await getDoc(env, 'tabs', String(b?.tabId || ''));

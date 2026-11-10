@@ -96,3 +96,53 @@ test('clearing old tabs: a tab the customer paid in cash is recorded under the w
   assert.equal(sales.totals.cashPesewas, 15000, 'counted as cash in the night’s sales');
   assert.equal(sales.cashByPerson[0].name, 'Kojo Waiter');
 });
+
+test('void tab: a waiter can discard their own empty tab; blocked when drinks are active or paid', async () => {
+  const { store, env } = createMockEnv();
+  store.seed('bar_stations', 'main', { name: 'Main bar', token: 'a'.repeat(32), open: true });
+  const people = {
+    m1: ['Akos Manager', 'manager'],
+    w1: ['Kojo Waiter', 'waitStaff'],
+    w2: ['Ama Waiter', 'waitStaff'],
+    door1: ['Kofi Door', 'doorStaff'],
+    w3: ['Efua Waiter', 'waitStaff'],
+  };
+  for (const [uid, [name, role]] of Object.entries(people)) store.seed('users', uid, { name, role, phone: `024000080${Object.keys(people).indexOf(uid)}` });
+  const call = async (method, path, { body, who } = {}) => {
+    const headers = { 'Content-Type': 'application/json', 'CF-Connecting-IP': `10.95.0.${++ip % 250}` };
+    if (who) headers.Authorization = `Bearer ${await idToken({ role: people[who][1] }, { uid: who })}`;
+    const r = await worker.fetch(new Request(`https://api.test${path}`, { method, headers, body: body ? JSON.stringify(body) : undefined }), env);
+    return { status: r.status, data: JSON.parse((await r.text()) || '{}') };
+  };
+
+  // Open a tab with no orders (simulates "started but nothing sent").
+  const tabId = 'empty-tab';
+  store.seed('tabs', tabId, { number: 7, businessDate: bizDate(), stationId: 'main', table: 'T7', waiterUid: 'w1', waiterName: 'Kojo Waiter', status: 'open', payments: [], discounts: [], billToken: 'tok7', createdAt: new Date().toISOString() });
+
+  // Another waiter can't void it.
+  assert.equal((await call('POST', '/api/ops/tabs/void', { who: 'w2', body: { tabId } })).status, 403, 'another waiter blocked');
+
+  // Door staff can't void anything.
+  assert.equal((await call('POST', '/api/ops/tabs/void', { who: 'door1', body: { tabId } })).status, 403, 'door staff blocked');
+
+  // The waiter discards their own empty tab.
+  const r = ok(await call('POST', '/api/ops/tabs/void', { who: 'w1', body: { tabId } }), 'void');
+  assert.equal(r.voided, true);
+  assert.equal(store.get('tabs', tabId).fields.status, 'closed', 'tab is closed');
+  assert.ok(store.get('tabs', tabId).fields.voidReason, 'void reason recorded');
+
+  // Can't void twice.
+  assert.match((await call('POST', '/api/ops/tabs/void', { who: 'w1', body: { tabId } })).data.error, /already closed/i);
+
+  // Can't void a tab that has an active round.
+  const tabId2 = 'active-tab';
+  store.seed('tabs', tabId2, { number: 8, businessDate: bizDate(), stationId: 'main', table: 'T8', waiterUid: 'w1', waiterName: 'Kojo Waiter', status: 'open', payments: [], discounts: [], billToken: 'tok8', createdAt: new Date().toISOString() });
+  store.seed('rounds', 'r-active', { tabId: tabId2, stationId: 'main', waiterUid: 'w1', lines: [{ lineId: 'l1', productId: 'beer', name: 'Beer', unitPesewas: 2000, qty: 1 }], status: 'waiting', createdAt: new Date().toISOString() });
+  assert.match((await call('POST', '/api/ops/tabs/void', { who: 'w1', body: { tabId: tabId2 } })).data.error, /active/i);
+
+  // A manager can discard another waiter's empty tab.
+  const tabId3 = 'other-waiter-tab';
+  store.seed('tabs', tabId3, { number: 9, businessDate: bizDate(), stationId: 'main', table: 'T9', waiterUid: 'w3', waiterName: 'Efua Waiter', status: 'open', payments: [], discounts: [], billToken: 'tok9', createdAt: new Date().toISOString() });
+  const r2 = ok(await call('POST', '/api/ops/tabs/void', { who: 'm1', body: { tabId: tabId3 } }), 'manager void');
+  assert.equal(r2.voided, true);
+});

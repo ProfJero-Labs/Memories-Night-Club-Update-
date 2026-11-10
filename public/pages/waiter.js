@@ -73,13 +73,18 @@ async function tabsList() {
       try { const { tab } = await busy(b, () => sapi(`/api/ops/tab?id=${encodeURIComponent(b.dataset.pay)}`), 'Opening…'); closeSheet(tab); }
       catch (e) { say($('#msg'), e.message, 'bad'); }
     });
+    $$('[data-void]').forEach(b => b.onclick = async () => {
+      if (!confirm('Discard this empty tab? Nothing was ordered on it.')) return;
+      try { await busy(b, () => sapi('/api/ops/tabs/void', { method: 'POST', body: { tabId: b.dataset.void } }), 'Discarding…'); b.closest('.tcard')?.remove(); }
+      catch (e) { say($('#msg'), e.message, 'bad'); }
+    });
   });
 }
 // An open tab on My tables: its two next steps right on it.
 const card = t => t.status !== 'open' || t.quick ? doneCard(t) : `<div class="tcard ${t.openRounds ? 'warn' : ''}" style="cursor:default">
   <button type="button" class="tcard-open" data-tab="${esc(t.id)}"><span class="row"><span class="t">${esc(t.label)} · ${esc(t.table)}</span><span class="amt">${money(t.bill.balancePesewas || t.bill.totalPesewas)}</span></span>
   <span class="row"><span class="sub">${t.customerName ? `${esc(t.customerName)} · ` : ''}${t.openRounds ? `${t.openRounds} order${t.openRounds > 1 ? 's' : ''} to collect` : 'All collected'}</span>${st(t.payStatus, t.payLabel)}</span></button>
-  <span class="btn-row"><button type="button" class="mid" data-more="${esc(t.id)}">Add drinks</button><button type="button" class="mid okc" data-pay="${esc(t.id)}">Close tab</button></span></div>`;
+  <span class="btn-row"><button type="button" class="mid" data-more="${esc(t.id)}">Add drinks</button><button type="button" class="mid okc" data-pay="${esc(t.id)}">Close tab</button>${!t.openRounds && t.payStatus === 'empty' ? `<button type="button" class="mid" data-void="${esc(t.id)}">Discard</button>` : ''}</span></div>`;
 const doneCard = t => `<button class="tcard ${t.status !== 'open' ? 'done' : t.openRounds ? 'warn' : ''}" data-tab="${esc(t.id)}">
   <span class="row"><span class="t">${esc(t.label)} · ${esc(t.table)}</span><span class="amt">${money(t.bill.balancePesewas || t.bill.totalPesewas)}</span></span>
   <span class="row"><span class="sub">${t.customerName ? `${esc(t.customerName)} · ` : ''}${t.status === 'owed' ? `Owed by ${esc(t.customerName || 'the customer')}` : t.status !== 'open' ? 'Closed' : t.openRounds ? `${t.openRounds} order${t.openRounds > 1 ? 's' : ''} to collect` : 'Add drinks or close'}</span>${st(t.payStatus, t.payLabel)}</span></button>`;
@@ -101,7 +106,7 @@ async function tabView(id) {
       <div id="msg"></div>
       ${open && t.quick ? '<div class="say warn"><b>Quick sale</b>Collect the drinks at the bar, then tap “I got them”. It closes by itself.</div>' : ''}
       ${open && !t.quick ? `<div class="pay-now"><b>${money(b.balancePesewas)} ${b.paidPesewas && !b.balancePesewas ? 'paid' : 'so far'}</b>
-        <div class="btn-row"><button class="big ghost" id="add">Add drinks</button><button class="big" id="close">Close tab</button></div>
+        <div class="btn-row"><button class="big ghost" id="add">Add drinks</button><button class="big" id="close">Close tab</button>${b.status === 'empty' && !t.openRounds ? '<button class="big ghost" id="voidTab">Discard tab</button>' : ''}</div>
         ${b.balancePesewas && canCash ? `<button class="big ghost" id="cash">${momoDirectOff() ? 'Customer paid cash' : 'Customer paid (cash or MoMo)'}</button>` : ''}
         ${atBarOf(t).length ? `<span class="sub">${atBarOf(t).length} order${atBarOf(t).length > 1 ? 's' : ''} still at the bar (below).</span>` : ''}</div>` : ''}
       ${open && t.walletWait ? '<div class="say warn"><b>Waiting for MoMo to the wallet</b>A manager confirms it when the money arrives; the tab then closes by itself.</div>' : ''}
@@ -121,6 +126,11 @@ async function tabView(id) {
     const flash = sessionStorage.getItem('waiter-flash'); if (flash) { sessionStorage.removeItem('waiter-flash'); say($('#msg'), flash); }
     $('#add') && ($('#add').onclick = () => { location.hash = `add/${t.id}`; });
     $('#close') && ($('#close').onclick = () => closeSheet(t));
+    $('#voidTab') && ($('#voidTab').onclick = async () => {
+      if (!confirm('Discard this tab? Nothing was ordered on it and it will be removed from your list.')) return;
+      try { await busy($('#voidTab'), () => sapi('/api/ops/tabs/void', { method: 'POST', body: { tabId: t.id } }), 'Discarding…'); returnTo('tabs'); }
+      catch (e) { say($('#msg'), e.message, 'bad'); }
+    });
     $('#showBill') && ($('#showBill').onclick = () => showBill(t));
     $('#cash') && ($('#cash').onclick = () => takePayment(t));
     $('#invoice') && ($('#invoice').onclick = async e => {
