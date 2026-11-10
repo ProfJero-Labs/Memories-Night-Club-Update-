@@ -303,6 +303,7 @@ async function route(req, env, ctx) {
   if (m === 'GET' && p === '/api/admin/orders') return reply(req, env, await admin.listOrders(env, { eventId: u.searchParams.get('eventId'), kind: u.searchParams.get('kind') }, user));
   if (m === 'POST' && p === '/api/admin/comps') return reply(req, env, await admin.issueComp(env, await body(req), user));
   if (m === 'GET' && p === '/api/admin/invites/nights') return reply(req, env, await invites.inviteNights(env, user));
+  if (m === 'GET' && p === '/api/admin/invites/contacts') return reply(req, env, await invites.guestContacts(env, user));
   if (m === 'POST' && p === '/api/admin/invites/settings') return reply(req, env, await invites.saveInvitation(env, await body(req), user));
   if (m === 'POST' && p === '/api/admin/invites/decide') return reply(req, env, await invites.decideRequests(env, await body(req), user));
   if (m === 'POST' && p === '/api/admin/invites/remind') return reply(req, env, await invites.remindInvites(env, await body(req), user));

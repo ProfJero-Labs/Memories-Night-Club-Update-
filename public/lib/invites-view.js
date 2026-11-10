@@ -66,7 +66,8 @@ export async function invitesView(el, { eventId = '', onNight } = {}) {
       <div class="sfield"><label for="ivStyle">Which card</label><select id="ivStyle"><option value="her">Ladies: the red visa (${esc(inv.perk || 'no perks set')})</option><option value="him">Gentlemen: the black Memories card, a pass to witness (no free drinks)</option></select></div>
       <div class="sfield"><label for="ivList">Phone numbers, one per line</label>
         <textarea id="ivList" rows="7" placeholder="024 123 4567&#10;Ama Mensah 0201112222&#10;0241234567 Kofi Mensah 3&#10;+233 55 123 4567"></textarea>
-        <span class="hint">Include a name before or after the number; a 1–2 digit count sets that person’s passes (otherwise ${inv.passes}). <span id="ivCount"></span></span></div>
+        <span class="hint">Include a name before or after the number; a 1–2 digit count sets that person’s passes (otherwise ${inv.passes}). <span id="ivCount"></span></span>
+        <div style="margin-top:6px"><button class="sbtn" type="button" id="ivLoadContacts">Load guest list</button> <span id="ivContactCount" class="muted" style="font-size:13px"></span></div></div>
       <div class="sfield"><label for="ivAgain">Someone already invited</label><select id="ivAgain"><option value="skip">Leave them as they are</option><option value="add">Add these passes to their invitation (texted again)</option></select></div>
       <div class="toolbar"><button class="sbtn red" type="button" id="ivSend">Send invitations</button><button class="sbtn" type="button" id="ivPreview">See the cards</button></div>
       <div id="ivMsgBox" role="status"></div><div id="ivResults"></div><div id="ivPreviewBox" style="margin-top:12px"></div>
@@ -160,6 +161,23 @@ export async function invitesView(el, { eventId = '', onNight } = {}) {
     load();
   };
   await load();
+
+  // Load guest list contact count badge, then wire up "Load guest list" button.
+  sapi('/api/admin/invites/contacts').then(({ total }) => {
+    const badge = $('#ivContactCount', el);
+    if (badge) badge.textContent = total ? `· ${total} saved` : '';
+  }).catch(() => {});
+  $('#ivLoadContacts', el).onclick = async () => {
+    const btn = $('#ivLoadContacts', el);
+    btn.disabled = true; btn.textContent = 'Loading…';
+    try {
+      const { contacts } = await sapi('/api/admin/invites/contacts');
+      $('#ivList', el).value = contacts.map(c => c.name ? `${c.name} ${c.phone}` : c.phone).join('\n');
+      $('#ivList', el).dispatchEvent(new Event('input'));
+    } catch (err) { flash($('#ivMsgBox', el), err.message, true); }
+    btn.disabled = false; btn.textContent = 'Load guest list';
+  };
+
   $('#ivRemind', el).onclick = async () => {
     const btn = $('#ivRemind', el);
     const msg = val(el, '#ivRemindText');

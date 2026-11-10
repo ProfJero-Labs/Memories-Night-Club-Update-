@@ -138,8 +138,24 @@ export async function sendInvites(env, b, user) {
     }
     const { token, ...row } = r; out.push(row);
   }
+  for (const o of out) {
+    if (['sent', 'not_texted', 'added', 'added_not_texted'].includes(o.status)) {
+      const row = rows.find(r => normalizePhone(r?.phone) === o.phone);
+      const cname = clean(row?.name, 60);
+      if (cname) await setDoc(env, 'guest_contacts', o.phone, { phone: o.phone, name: cname, lastInvitedAt: now() });
+    }
+  }
   await audit(env, user, 'INVITES_SENT', { eventId: n.ev.id, sent: out.filter(o => ['sent', 'not_texted'].includes(o.status)).length, added: out.filter(o => o.status.startsWith('added')).length });
   return { results: out };
+}
+
+// All unique phone numbers that have ever been invited (auto-populated when invites are sent).
+export async function guestContacts(env, user) {
+  if (!requireRole(user, INVITERS)) return FORBIDDEN;
+  const all = await listDocs(env, 'guest_contacts');
+  const contacts = all.map(c => ({ phone: c.fields.phone || c.id, name: c.fields.name || '' }))
+    .sort((a, b) => (a.name || a.phone).localeCompare(b.name || b.phone));
+  return { contacts, total: contacts.length };
 }
 // The night's invitations sent and the requests from the website.
 export async function invitesFor(env, user, eventId) {
@@ -200,6 +216,7 @@ export async function decideRequests(env, b, user) {
     }
     const s = await issueOne(env, n.ev, inv, r.fields.phone, passes, { existing, user, approved: true, style: styleOf(r.fields.style), name: r.fields.name || '' });
     await setDoc(env, 'invite_requests', rid, { ...r.fields, status: 'approved', decidedAt: now(), decidedByName: user.name || '', ...(s.token ? { ticketId: s.token } : {}) });
+    if (['sent', 'not_texted'].includes(s.status) && r.fields.name) await setDoc(env, 'guest_contacts', r.fields.phone, { phone: r.fields.phone, name: clean(r.fields.name, 60), lastInvitedAt: now() });
     const { token, ...row } = s; out.push({ id: rid, ...row });
   }
   await audit(env, user, b.decision === 'approve' ? 'INVITE_REQUESTS_APPROVED' : 'INVITE_REQUESTS_DECLINED', { eventId: n.ev.id, count: out.filter(o => o.status !== 'invalid').length });
