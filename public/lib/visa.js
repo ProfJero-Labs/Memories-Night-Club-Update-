@@ -144,7 +144,9 @@ export function drawVisa(ctx, t, { share = false } = {}) {
   };
   const fy = Math.max(y + 4, 104);
   field('VALID ON', day, 96, fy, 80); field('ENTRIES', String(n).padStart(2, '0'), 180, fy, 60);
-  if (share) field('HOLDER', 'ON THE LIST', 96, fy + 24, 80);
+  const holderName = t.fullName ? String(t.fullName).toUpperCase() : '';
+  if (share) field('HOLDER', holderName || 'ON THE LIST', 96, fy + 24, 80);
+  else if (holderName) { field('HOLDER', holderName, 96, fy + 24, 150); }
   else { field('HOLDER', '', 96, fy + 24, 80); maskedNumber(ctx, 96, fy + 36, { groups: 1, last4, size: 11.5, fills: ['rgba(255,255,255,.75)', 'rgba(255,255,255,0)', '#2b040c'], gap: 0.4 }); } if (dress) field('DRESS CODE', dress, 180, fy + 24, 70);
   if (inv.perk) field('PRIVILEGES', String(inv.perk).toUpperCase(), 96, fy + 48, 150);
   field('VENUE', venueText(t), 96, fy + (inv.perk ? 72 : 48), 150);
@@ -211,6 +213,12 @@ export function drawPass(ctx, t, { share = false } = {}) {
   const tsz = fitFont(ctx, title, `400 {s} ${F.display}`, 40, W - 40, 18);
   ctx.font = `400 ${tsz}px ${F.display}`; ctx.fillStyle = 'rgba(0,0,0,.6)'; spaced(ctx, title, 20, 120 + tsz + 1.2, 1.6);
   ctx.fillStyle = silver(ctx, 20, 120, 20 + W * 0.7, 120 + tsz); spaced(ctx, title, 20, 120 + tsz, 1.6);
+  // Holder name (if known) above the embossed number.
+  if (t.fullName && !share) {
+    ctx.fillStyle = '#8f9298'; ctx.font = `600 5.5px ${F.sans}`; spaced(ctx, 'HOLDER', 20, 162, 1.8);
+    ctx.font = `400 10px ${F.card}`; ctx.fillStyle = silver(ctx, 20, 165, 200, 177);
+    spaced(ctx, String(t.fullName).toUpperCase(), 20, 174, 0.8);
+  }
   // Embossed number (the phone's last four).
   maskedNumber(ctx, 20, 188, { groups: share ? 4 : 3, last4: share ? '' : last4, size: 19, fills: ['rgba(0,0,0,.85)', 'rgba(255,255,255,.35)', silver(ctx, 20, 172, 280, 192)], gap: 2.6 });
   // Bottom row.

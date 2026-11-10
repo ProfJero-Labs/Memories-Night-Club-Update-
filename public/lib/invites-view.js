@@ -13,8 +13,11 @@ const pill = (text, c) => `<span class="pill ${c}">${esc(text)}</span>`;
 const flash = (el, text, bad = false) => { el.innerHTML = `<div class="msg ${bad ? 'err' : ''}" role="status">${esc(text)}</div>`; if (!bad) setTimeout(() => { el.innerHTML = ''; }, 5000); };
 const val = (root, sel) => $(sel, root).value.trim();
 
-// Paste phone numbers, one per line, each optionally followed by its own number of passes:
+// Paste phone numbers, one per line. Include the person's name on the same line (before or
+// after the number) and an optional passes count (1–2 digits) after the number:
 //   024 123 4567
+//   Ama Mensah 024 123 4567
+//   024 123 4567 Kofi Boateng 3
 //   0201112222 3
 //   +233 55 123 4567, 2
 export function parseInviteLines(text) {
@@ -22,15 +25,25 @@ export function parseInviteLines(text) {
   for (const raw of String(text || '').split(/\r?\n/)) {
     const line = raw.trim(); if (!line) continue;
     const tokens = line.split(/[\s,;\t]+/).filter(Boolean);
-    let digits = '', used = 0;
+    // Collect any name tokens that appear before the phone number.
+    let i = 0;
+    const namePre = [];
+    while (i < tokens.length && !/^\+?[\d-]+$/.test(tokens[i])) { namePre.push(tokens[i]); i++; }
+    // Collect the phone's digit tokens.
+    let digits = '', used = i;
     while (used < tokens.length && /^\+?[\d-]+$/.test(tokens[used])) {
       const want = (digits + tokens[used]).replace(/\D/g, '');
       if (digits && want.length > (/^233/.test(want) ? 12 : 10)) break;
       digits = want; used += 1;
       if (digits.length >= (/^233/.test(digits) ? 12 : 10)) break;
     }
-    const last = tokens.slice(used).find(t => /^\d{1,2}$/.test(t));
-    out.push({ phone: digits || line.slice(0, 20), ...(last ? { passes: Number(last) } : {}) });
+    // Remaining tokens: passes count and any name suffix.
+    const rest = tokens.slice(used);
+    const passesToken = rest.find(t => /^\d{1,2}$/.test(t));
+    const namePost = rest.filter(t => t !== passesToken && /[a-zA-Z]/.test(t));
+    const nameArr = [...namePre, ...namePost];
+    const name = nameArr.length ? nameArr.join(' ').replace(/[^a-zA-Z\s'\-.]/g, '').trim().slice(0, 60) : undefined;
+    out.push({ phone: digits || line.slice(0, 20), ...(passesToken ? { passes: Number(passesToken) } : {}), ...(name ? { name } : {}) });
   }
   return out;
 }
@@ -52,8 +65,8 @@ export async function invitesView(el, { eventId = '', onNight } = {}) {
     <div class="card">
       <div class="sfield"><label for="ivStyle">Which card</label><select id="ivStyle"><option value="her">Ladies: the red visa (${esc(inv.perk || 'no perks set')})</option><option value="him">Gentlemen: the black Memories card, a pass to witness (no free drinks)</option></select></div>
       <div class="sfield"><label for="ivList">Phone numbers, one per line</label>
-        <textarea id="ivList" rows="7" placeholder="024 123 4567&#10;0201112222 3&#10;+233 55 123 4567"></textarea>
-        <span class="hint">A number after the phone sets that person’s passes (otherwise ${inv.passes}). <span id="ivCount"></span></span></div>
+        <textarea id="ivList" rows="7" placeholder="024 123 4567&#10;Ama Mensah 0201112222&#10;0241234567 Kofi Mensah 3&#10;+233 55 123 4567"></textarea>
+        <span class="hint">Include a name before or after the number; a 1–2 digit count sets that person’s passes (otherwise ${inv.passes}). <span id="ivCount"></span></span></div>
       <div class="sfield"><label for="ivAgain">Someone already invited</label><select id="ivAgain"><option value="skip">Leave them as they are</option><option value="add">Add these passes to their invitation (texted again)</option></select></div>
       <div class="toolbar"><button class="sbtn red" type="button" id="ivSend">Send invitations</button><button class="sbtn" type="button" id="ivPreview">See the cards</button></div>
       <div id="ivMsgBox" role="status"></div><div id="ivResults"></div><div id="ivPreviewBox" style="margin-top:12px"></div>
@@ -101,15 +114,15 @@ export async function invitesView(el, { eventId = '', onNight } = {}) {
   const load = async () => {
     const d = await sapi(`/api/admin/invites?eventId=${encodeURIComponent(ev.id)}`);
     $('#ivTotals', el).textContent = d.totals.invitations ? `${d.totals.invitations} cards · ${d.totals.passes} passes · ${d.totals.in} in` : '';
-    $('#ivSent', el).innerHTML = d.sent.length ? `<div class="tbl-wrap"><table class="tbl"><thead><tr><th>Phone</th><th>Card</th><th class="num">Passes</th><th>At the door</th></tr></thead><tbody>
-      ${d.sent.map(x => `<tr><td>${esc(x.phone)}</td><td>${x.style === 'him' ? 'Gentleman' : 'Lady'}</td><td class="num">${x.passes}</td><td>${x.status === 'used' ? pill(`in ${when(x.checkedInAt)}`, 'green') : x.status === 'cancelled' ? pill('cancelled', 'red') : pill('not yet', 'grey')}</td></tr>`).join('')}</tbody></table></div>` : '<p class="muted" style="margin:0">None sent yet.</p>';
+    $('#ivSent', el).innerHTML = d.sent.length ? `<div class="tbl-wrap"><table class="tbl"><thead><tr><th>Phone</th><th>Name</th><th>Card</th><th class="num">Passes</th><th>At the door</th></tr></thead><tbody>
+      ${d.sent.map(x => `<tr><td>${esc(x.phone)}</td><td>${esc(x.name || '')}</td><td>${x.style === 'him' ? 'Gentleman' : 'Lady'}</td><td class="num">${x.passes}</td><td>${x.status === 'used' ? pill(`in ${when(x.checkedInAt)}`, 'green') : x.status === 'cancelled' ? pill('cancelled', 'red') : pill('not yet', 'grey')}</td></tr>`).join('')}</tbody></table></div>` : '<p class="muted" style="margin:0">None sent yet.</p>';
     const pending = d.requests.filter(r => r.status === 'pending'), done = d.requests.filter(r => r.status !== 'pending');
     $('#ivPending', el).textContent = pending.length ? `${pending.length} waiting` : '';
     $('#ivReq', el).innerHTML = `${pending.length ? `<div class="toolbar"><label class="check" style="margin:0"><input type="checkbox" id="ivAll"> Select all</label><button class="sbtn ok" type="button" data-decide="approve">Approve selected</button><button class="sbtn" type="button" data-decide="decline">Decline selected</button></div>
-      <div class="cards">${pending.map(r => `<label class="tcard" style="cursor:pointer;display:grid;gap:6px"><span class="row" style="display:flex;justify-content:space-between;gap:10px"><span><input type="checkbox" data-req="${esc(r.id)}"> <b>${esc(r.phone)}</b>${r.instagram ? ` · <a href="https://instagram.com/${encodeURIComponent(r.instagram)}" target="_blank" rel="noopener">@${esc(r.instagram)}</a>` : ''}</span><span class="muted">${esc(when(r.createdAt))}</span></span>
+      <div class="cards">${pending.map(r => `<label class="tcard" style="cursor:pointer;display:grid;gap:6px"><span class="row" style="display:flex;justify-content:space-between;gap:10px"><span><input type="checkbox" data-req="${esc(r.id)}"> <b>${esc(r.name || r.phone)}</b>${r.name ? ` · ${esc(r.phone)}` : ''}${r.instagram ? ` · <a href="https://instagram.com/${encodeURIComponent(r.instagram)}" target="_blank" rel="noopener">@${esc(r.instagram)}</a>` : ''}</span><span class="muted">${esc(when(r.createdAt))}</span></span>
         ${r.answers.map(x => `<span><span class="muted">${esc(x.q)}</span><br>${esc(x.a)}</span>`).join('')}</label>`).join('')}</div>`
       : `<p class="muted" style="margin:0">${inv.open ? 'No requests waiting.' : 'Website requests are off: turn them on under “The card’s wording and the website” below.'}</p>`}
-      ${done.length ? `<details style="margin-top:10px"><summary>${done.length} decided</summary><div class="tbl-wrap"><table class="tbl"><tbody>${done.map(r => `<tr><td>${esc(r.phone)}</td><td>${pill(r.status, r.status === 'approved' ? 'green' : 'grey')}</td><td>${esc(r.decidedByName)}</td></tr>`).join('')}</tbody></table></div></details>` : ''}<div id="ivReqMsg"></div>`;
+      ${done.length ? `<details style="margin-top:10px"><summary>${done.length} decided</summary><div class="tbl-wrap"><table class="tbl"><tbody>${done.map(r => `<tr><td>${esc(r.name || r.phone)}</td><td>${r.name ? `<span class="muted">${esc(r.phone)}</span>` : ''}</td><td>${pill(r.status, r.status === 'approved' ? 'green' : 'grey')}</td><td>${esc(r.decidedByName)}</td></tr>`).join('')}</tbody></table></div></details>` : ''}<div id="ivReqMsg"></div>`;
     $('#ivAll', el) && ($('#ivAll', el).onchange = e => $$('[data-req]', el).forEach(c => { c.checked = e.target.checked; }));
     $$('[data-decide]', el).forEach(btn => btn.onclick = async () => {
       const ids = $$('[data-req]', el).filter(c => c.checked).map(c => c.dataset.req);
