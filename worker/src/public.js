@@ -71,11 +71,12 @@ export async function publicEvents(env) {
 export async function eventBundle(env, eventId) {
   const e = await getDoc(env, 'events', eventId);
   if (!e || !isLive(e.fields)) return null;
-  const [tickets, tables, bottles, globalBottles, raffles, settings, autoStyle] = await Promise.all([
+  const [tickets, tables, bottles, globalBottles, menuItems, raffles, settings, autoStyle] = await Promise.all([
     queryWhere(env, 'ticket_types', [{ field: 'eventId', value: eventId }]),
     queryWhere(env, 'table_packages', [{ field: 'eventId', value: eventId }]),
     queryWhere(env, 'bottles', [{ field: 'eventId', value: eventId }]),
     queryWhere(env, 'bottles', [{ field: 'eventId', value: 'all' }]),
+    listDocs(env, 'menu_items'),
     queryWhere(env, 'raffles', [{ field: 'eventId', value: eventId }]),
     getSettings(env),
     autoStyleFor(env, eventId),
@@ -94,7 +95,13 @@ export async function eventBundle(env, eventId) {
     // Promos running now: names and promo prices for the page; codes never leave the server.
     promo: publicPromos(promosNow, ticketTypes),
     tablePackages: tables.filter(x => x.fields.active === true).map(x => ({ id: x.id, name: x.fields.name, pricePesewas: Number(x.fields.pricePesewas || 0), capacity: Number(x.fields.capacity || 0), includes: clean(x.fields.description, 200), sortOrder: x.fields.sortOrder ?? 0, ...stock(x.fields) })).sort(bySort),
-    bottles: [...bottles, ...globalBottles].filter(x => x.fields.active === true).map(x => ({ id: x.id, name: x.fields.name, category: x.fields.category || '', pricePesewas: Number(x.fields.pricePesewas || 0), ...stock(x.fields) })).sort((a, b) => a.category.localeCompare(b.category) || a.pricePesewas - b.pricePesewas),
+    bottles: (() => {
+      const catalog = [...bottles, ...globalBottles].filter(x => x.fields.active === true).map(x => ({ id: x.id, name: x.fields.name, category: x.fields.category || '', pricePesewas: Number(x.fields.pricePesewas || 0), ...stock(x.fields) }));
+      // Finance's bar menu fills in when no explicit bottles catalog exists for this night.
+      const catalogNames = new Set(catalog.map(b => b.name.toLowerCase()));
+      const fromMenu = menuItems.filter(x => !x.fields.deleted && x.fields.available !== false && x.fields.pricePesewas > 0).filter(x => !catalogNames.has(String(x.fields.name || '').toLowerCase())).map(x => ({ id: x.id, name: x.fields.name, category: x.fields.category || '', pricePesewas: Number(x.fields.pricePesewas || 0), soldOut: false, lastFew: false }));
+      return [...catalog, ...fromMenu].sort((a, b) => a.category.localeCompare(b.category) || a.pricePesewas - b.pricePesewas);
+    })(),
     // Whitelisted: a drawn raffle's raw ticket id is a bearer token and never leaves the server,
     // and the winner's display code stays off public pages too (the door can admit by that code).
     raffle: raffle ? {

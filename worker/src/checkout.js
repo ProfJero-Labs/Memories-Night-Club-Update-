@@ -84,7 +84,7 @@ export async function initiateTicket(env, b) {
   const reference = paymentRef(), claim = claimSecret();
   const shares = sharesFor(env, c.ev.fields, c.totalPesewas);
   const fee = await serviceFee(env, c.totalPesewas, c.settings, { mainExtraPesewas: shares.evolveitSharePesewas }), charge = c.totalPesewas + fee.feePesewas;
-  if (fee.blocked) return { error: `Orders above ${money(fee.limitPesewas)} can’t be paid online. Buy them in smaller orders, or at the gate.` };
+  if (fee.blocked) return { error: `Orders above ${money(fee.limitPesewas)} can't be paid online. Buy them in smaller orders, or at the gate.` };
   await setDoc(env, 'pending_checkouts', reference, {
     ...fee, chargePesewas: charge,
     reference, claimHash: await sha256Hex(claim), kind: 'ticket', eventId: c.ev.id, eventName: c.ev.fields.name || '', ticketTypeId: c.tt.id, ticketTypeName: c.tt.fields.name || 'Ticket',
@@ -225,9 +225,14 @@ async function pickBottles(env, eventId, raw) {
   const items = [];
   let total = 0;
   for (const item of chosen) {
-    const btl = await getDoc(env, 'bottles', item.id);
-    if (!btl || (btl.fields.eventId !== eventId && btl.fields.eventId !== 'all') || btl.fields.active !== true) return { error: 'A bottle you picked isn’t available any more.' };
-    if (typeof btl.fields.remaining === 'number' && btl.fields.remaining < item.quantity) return { error: `Not enough ${btl.fields.name || 'of that bottle'} left.` };
+    let btl = await getDoc(env, 'bottles', item.id);
+    let isMenuItem = false;
+    if (!btl) {
+      const mi = await getDoc(env, 'menu_items', item.id);
+      if (mi && !mi.fields.deleted && mi.fields.available !== false) { btl = { id: mi.id, fields: { ...mi.fields, eventId: 'all', active: true } }; isMenuItem = true; }
+    }
+    if (!btl || (!isMenuItem && btl.fields.eventId !== eventId && btl.fields.eventId !== 'all') || btl.fields.active !== true) return { error: 'A bottle you picked isn’t available any more.' };
+    if (!isMenuItem && typeof btl.fields.remaining === 'number' && btl.fields.remaining < item.quantity) return { error: `Not enough ${btl.fields.name || 'of that bottle'} left.` };
     const unit = Number(btl.fields.pricePesewas || 0);
     total += unit * item.quantity;
     items.push({ id: item.id, name: btl.fields.name, quantity: item.quantity, unitPricePesewas: unit });
@@ -244,7 +249,7 @@ export async function reserveTable(env, b) {
   if (!ev || !pkg || ev.fields.active === false || ev.fields.visibility !== 'public' || pkg.fields.eventId !== b.eventId || pkg.fields.active !== true) return { error: 'This table isn’t available any more.' };
   if (isOver(ev.fields)) return { error: 'This night has already happened.' };
   const arriveAt = arrivalFor(ev.fields.date, b.arriveTime);
-  if (!arriveAt) { const s = new Date(ev.fields.date); return { error: `Pick the time you’ll arrive, between ${accraTime(s)} and ${accraTime(new Date(s.getTime() + ARRIVE_WINDOW_HOURS * 3600e3))}.` }; }
+  if (!arriveAt) { const s = new Date(ev.fields.date); return { error: `Pick the time you'll arrive, between ${accraTime(s)} and ${accraTime(new Date(s.getTime() + ARRIVE_WINDOW_HOURS * 3600e3))}.` }; }
   const holdUntil = new Date(Date.parse(arriveAt) + HOLD_MINUTES * 60e3).toISOString();
   const drinks = await pickBottles(env, b.eventId, b.bottles); if (drinks.error) return drinks;
   const drinkRequest = clean(b.drinkRequest, 300);
@@ -309,7 +314,7 @@ export async function initiatePaidTable(env, b) {
   const reference = paymentRef();
   const shares = sharesFor(env, ev.fields, amount);
   const fee = await serviceFee(env, amount, undefined, { mainExtraPesewas: shares.evolveitSharePesewas }), charge = amount + fee.feePesewas;
-  if (fee.blocked) return { error: `Tables above ${money(fee.limitPesewas)} can’t be paid online. Call the club to reserve it, and pay on the night.` };
+  if (fee.blocked) return { error: `Tables above ${money(fee.limitPesewas)} can't be paid online. Call the club to reserve it, and pay on the night.` };
   await setDoc(env, 'pending_checkouts', reference, {
     ...fee, chargePesewas: charge,
     reference, kind: 'table', eventId: b.eventId, eventName: ev.fields.name || '', packageId: b.packageId, packageName: pkg.fields.name || '',
@@ -413,7 +418,7 @@ export async function startInstallmentTopup(env, planId, amountPesewas, email) {
     organizerSharePct: planShares.organizerSharePct,
   }, Number(env.EVOLVEIT_SHARE_PCT));
   const fee = await serviceFee(env, amountPesewas, undefined, { mainExtraPesewas: topupShares.evolveitSharePesewas }), charge = amountPesewas + fee.feePesewas;
-  if (fee.blocked) return { error: `A payment above ${money(fee.limitPesewas)} can’t be made online. Pay a smaller amount now.` };
+  if (fee.blocked) return { error: `A payment above ${money(fee.limitPesewas)} can't be made online. Pay a smaller amount now.` };
   await setDoc(env, 'pending_checkouts', reference, {
     ...fee, chargePesewas: charge,
     reference, kind: 'installment_topup', planId, amountPesewas, status: 'pending', createdAt: now(),
