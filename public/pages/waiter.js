@@ -102,6 +102,7 @@ async function tabView(id) {
     app.innerHTML = `${backBar('', 'tabs')}
       <div class="row" style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap"><h1>${esc(t.label)} · ${esc(t.table)}</h1>${st(t.payStatus, t.payLabel)}</div>
       ${t.booking ? `<p class="lead" style="margin:0">Booked table <b>${esc(t.booking.code)}</b> · ${esc(t.booking.packageName)} · minimum spend ${money(t.booking.minSpendPesewas)}${t.booking.prepaidPesewas ? ` (${esc(t.booking.how.toLowerCase())}: ${money(t.booking.prepaidPesewas)})` : ''}</p>` : ''}
+      ${t.booking && (t.booking.bottles?.length || t.booking.drinkRequest) ? `<div class="say" style="margin-top:4px"><b>Pre-ordered</b>${t.booking.bottles?.length ? `<ul style="margin:4px 0 0;padding-left:18px">${t.booking.bottles.map(b => `<li><b>${b.quantity}×</b> ${esc(b.name)}</li>`).join('')}</ul>` : ''}${t.booking.drinkRequest ? `<p style="margin:4px 0 0;font-size:14px">${esc(t.booking.drinkRequest)}</p>` : ''}${t.booking.bottles?.length && open ? `<div class="btn-row" style="margin-top:8px"><button class="mid" id="sendBookingDrinks">Send pre-ordered drinks to bar</button></div><div id="bdMsg"></div>` : ''}</div>` : ''}
       ${t.customerName || t.customerPhoneHint ? `<p class="lead">${esc(t.customerName)}${t.customerPhoneHint ? ` · ${esc(t.customerPhoneHint)}` : ''}</p>` : ''}
       <div id="msg"></div>
       ${open && t.quick ? '<div class="say warn"><b>Quick sale</b>Collect the drinks at the bar, then tap “I got them”. It closes by itself.</div>' : ''}
@@ -140,6 +141,14 @@ async function tabView(id) {
     });
     $('#ask') && ($('#ask').onclick = () => askManager(t));
     $('#linkBk') && ($('#linkBk').onclick = () => linkBookingSheet(t, () => draw()));
+    $('#sendBookingDrinks') && ($('#sendBookingDrinks').onclick = async e => {
+      const lines = (t.booking.bottles || []).map(b => ({ productId: b.id, qty: b.quantity }));
+      try {
+        await busy(e.currentTarget, () => sapi('/api/ops/tabs/order', { method: 'POST', body: { tabId: t.id, lines, note: t.booking.drinkRequest || undefined } }), 'Sending…');
+        say($('#bdMsg'), 'Pre-ordered drinks sent to the bar.', 'good');
+        setTimeout(() => draw(), 1500);
+      } catch (er) { say($('#bdMsg'), er.message, 'bad'); }
+    });
     $$('[data-act]').forEach(btn => btn.onclick = () => roundAct(btn.dataset.r, btn.dataset.act, t));
   };
   stop = every(10000, alive => { if (document.querySelector('.sheet-back')) return; return draw(alive).catch(e => alive() && fail(e)); });
