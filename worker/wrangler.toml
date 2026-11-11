@@ -12,8 +12,9 @@ keep_vars = true
 compatibility_flags = ["nodejs_als"]
 
 [vars]
-# Supabase (the new database). The address is public; the key is a secret (wrangler secret put
-# SUPABASE_SERVICE_ROLE_KEY). Nothing uses them until DB_BACKEND=supabase is set (see docs/SUPABASE-SWITCHOVER.md).
+# Supabase is the active database. The address is public; the key is a secret (wrangler secret put
+# SUPABASE_SERVICE_ROLE_KEY). DB_BACKEND=supabase activates the Supabase data layer.
+DB_BACKEND = "supabase"
 SUPABASE_URL = "https://itebqtwpobjostoerijl.supabase.co"
 FIREBASE_PROJECT_ID = "memoriesnightclub-2717f"
 ALLOWED_ORIGINS = "https://memoriesnightclub.com,https://www.memoriesnightclub.com,https://memoriesnightclub.pages.dev"
