@@ -101,7 +101,7 @@ const tabView = (t, rounds, { full = true } = {}) => {
   return {
     id: t.id, number: t.number, label: `Tab ${t.number}`, quick: !!t.quick, businessDate: t.businessDate, table: t.table || '', customerName: t.customerName || '', customerPhoneHint: t.customerPhone ? maskPhone(t.customerPhone) : '',
     waiterUid: t.waiterUid, waiterName: t.waiterName, stationId: t.stationId, stationName: t.stationName, status: t.status, payStatus: bill.status, payLabel: PAY_LABEL[bill.status],
-    booking: t.booking ? { code: t.booking.code, packageName: t.booking.packageName, minSpendPesewas: t.booking.minSpendPesewas, prepaidPesewas: t.booking.prepaidPesewas, how: t.booking.how } : null,
+    booking: t.booking ? { code: t.booking.code, packageName: t.booking.packageName, minSpendPesewas: t.booking.minSpendPesewas, prepaidPesewas: t.booking.prepaidPesewas, how: t.booking.how, bottles: t.booking.bottles || [], drinkRequest: t.booking.drinkRequest || '' } : null,
     bill, payments: (t.payments || []).map(p => ({ method: p.method, label: p.viaWallet ? METHOD_LABEL.wallet : METHOD_LABEL[p.method] || p.method, amountPesewas: p.amountPesewas, at: p.at, byName: p.byName || '', momoRef: p.momoRef || '' })),
     openRounds: rounds.filter(r => !['delivered', 'cancelled'].includes(r.status)).length, walletWait: t.walletWait || '',
     ...(full ? { rounds: rounds.sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt))).map(roundView), billUrl: null } : {}),
@@ -169,7 +169,7 @@ export async function linkBooking(env, b, user) {
     if (t.fields.booking) return t.fields.booking.orderId === orderId ? { already: true } : { error: `This bill is already linked to ${t.fields.booking.code}.` };
     const bad = bookingError(o, date); if (bad) return bad;
     if (o.fields.tabId && o.fields.tabId !== tabId) return { error: `That booking is already on Tab ${o.fields.tabNumber || ''}.`.replace(' .', '.') };
-    const booking = { orderId, code: tableCode(orderId), packageName: o.fields.packageName || 'Table', ...bookingTerms(o.fields), linkedByName: user.name || '', at: now() };
+    const booking = { orderId, code: tableCode(orderId), packageName: o.fields.packageName || 'Table', ...bookingTerms(o.fields), linkedByName: user.name || '', at: now(), bottles: o.fields.bottles || [], drinkRequest: o.fields.drinkRequest || '' };
     await commitTx(env, [
       updateWrite(env, 'tabs', tabId, { ...t.fields, booking, broughtBy: t.fields.broughtBy || o.fields.broughtBy || null, customerName: t.fields.customerName || o.fields.buyerName || '', customerPhone: t.fields.customerPhone || o.fields.buyerPhone || '' }),
       updateWrite(env, 'orders', orderId, { ...o.fields, tabId, tabNumber: t.fields.number }),
