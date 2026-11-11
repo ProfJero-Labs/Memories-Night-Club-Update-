@@ -67,7 +67,7 @@ export async function invitesView(el, { eventId = '', onNight } = {}) {
       <div class="sfield"><label for="ivPasses2">Passes for this batch</label><input id="ivPasses2" type="number" min="1" max="20" value="${inv.passes}" style="width:80px"><span class="hint">How many passes each person in this send gets. Type a different number after someone’s phone to override theirs individually.</span></div>
       <div class="sfield"><label for="ivList">Phone numbers, one per line</label>
         <textarea id="ivList" rows="7" placeholder="024 123 4567&#10;Ama Mensah 0201112222&#10;0241234567 Kofi Mensah 3&#10;+233 55 123 4567"></textarea>
-        <span class="hint">One number per line. Add a name before or after the number. <span id="ivCount"></span></span>
+        <span class="hint">Include a name before or after the number; a 1–2 digit count sets that person’s passes (otherwise ${inv.passes}). <span id="ivCount"></span></span>
         <div style="margin-top:6px"><button class="sbtn" type="button" id="ivLoadContacts">Load guest list</button> <span id="ivContactCount" class="muted" style="font-size:13px"></span></div></div>
       <div class="sfield"><label for="ivAgain">Someone already invited</label><select id="ivAgain"><option value="skip">Leave them as they are</option><option value="add">Add these passes to their invitation (texted again)</option></select></div>
       <div class="toolbar"><button class="sbtn red" type="button" id="ivSend">Send invitations</button><button class="sbtn" type="button" id="ivPreview">See the cards</button></div>
