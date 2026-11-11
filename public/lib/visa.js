@@ -140,11 +140,14 @@ export function drawVisa(ctx, t, { share = false } = {}) {
   let y = 41 + tsz * 0.82 + 19;
   if (inv.tagline) { ctx.fillStyle = '#6b0a1f'; fitFont(ctx, inv.tagline, `italic 500 {s} ${F.serif}`, 13, W - 210, 8); ctx.fillText(inv.tagline, 96, y); y += 9; }
   if (t.fullName && !share) {
-    const nsz = fitFont(ctx, t.fullName, `400 {s} ${F.script}`, 20, W - 110, 10);
-    ctx.font = `400 ${nsz}px ${F.script}`;
-    ctx.fillStyle = 'rgba(255,255,255,.3)'; ctx.fillText(t.fullName, 97, y + nsz + 1.5);
-    ctx.fillStyle = '#c0263f'; ctx.fillText(t.fullName, 97, y + nsz);
-    y += nsz + 6;
+    const name = String(t.fullName).toUpperCase();
+    ctx.fillStyle = '#b3142f'; ctx.globalAlpha = 0.7; ctx.font = `600 5.5px ${F.sans}`;
+    spaced(ctx, 'HOLDER NAME', 97, y, 1.2); ctx.globalAlpha = 1; y += 9;
+    const nsz = fitFont(ctx, name, `700 {s} ${F.card}`, 16, W - 110, 9);
+    ctx.font = `700 ${nsz}px ${F.card}`;
+    ctx.fillStyle = 'rgba(255,255,255,.9)'; ctx.fillText(name, 97, y + nsz + 1.4);
+    ctx.fillStyle = '#1a0408'; ctx.fillText(name, 97, y + nsz);
+    y += nsz + 7;
   }
   // The fields: two columns, the privileges across both.
   const field = (label, value, x, fy, maxW) => {
@@ -227,12 +230,13 @@ export function drawPass(ctx, t, { share = false } = {}) {
   ctx.fillStyle = silver(ctx, 20, 120, 20 + W * 0.7, 120 + tsz); spaced(ctx, title, 20, 120 + tsz, 1.6);
   // Holder name (if known) above the embossed number.
   if (t.fullName && !share) {
-    ctx.fillStyle = '#8f9298'; ctx.font = `600 5.5px ${F.sans}`; spaced(ctx, 'HOLDER', 20, 162, 1.8);
-    const nsz = fitFont(ctx, t.fullName, `400 {s} ${F.script}`, 16, W - 44, 10);
-    ctx.font = `400 ${nsz}px ${F.script}`;
-    ctx.fillStyle = 'rgba(0,0,0,.7)'; ctx.fillText(t.fullName, 20, 162 + nsz + 2.5);
-    ctx.fillStyle = silver(ctx, 20, 162, 20 + W * 0.7, 162 + nsz + 3);
-    ctx.fillText(t.fullName, 20, 162 + nsz + 2);
+    const name = String(t.fullName).toUpperCase();
+    ctx.fillStyle = '#8f9298'; ctx.font = `600 5.5px ${F.sans}`; spaced(ctx, 'HOLDER', 20, 157, 1.8);
+    const nsz = fitFont(ctx, name, `700 {s} ${F.card}`, 18, W - 44, 10);
+    ctx.font = `700 ${nsz}px ${F.card}`;
+    ctx.fillStyle = 'rgba(0,0,0,.95)'; ctx.fillText(name, 20, 157 + nsz + 2.5);
+    ctx.fillStyle = silver(ctx, 20, 157, 20 + W * 0.75, 157 + nsz + 3);
+    ctx.fillText(name, 20, 157 + nsz + 2);
   }
   // Embossed number (the phone's last four).
   maskedNumber(ctx, 20, 188, { groups: share ? 4 : 3, last4: share ? '' : last4, size: 19, fills: ['rgba(0,0,0,.85)', 'rgba(255,255,255,.35)', silver(ctx, 20, 172, 280, 192)], gap: 2.6 });
