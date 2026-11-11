@@ -124,12 +124,13 @@ test('the bar: paid orders queue oldest first; hand over once; "can’t make it"
   assert.equal(store.get('counter_orders', second.data.orderId).fields.status, 'refunded');
 });
 
-test('a paused bar takes no app orders; bar staff can pause and reopen it', async () => {
+test('a paused bar takes no app orders; only barManager+ can pause and reopen it', async () => {
   const { env } = setup();
-  assert.equal((await call(env, 'POST', '/api/bar/station-open', { claims: BAR, body: { stationId: 'main', open: false } })).data.open, false);
+  assert.equal((await call(env, 'POST', '/api/bar/station-open', { claims: BAR, body: { stationId: 'main', open: false } })).status, 403, 'barStaff cannot pause');
+  assert.equal((await call(env, 'POST', '/api/bar/station-open', { claims: { role: 'barManager' }, body: { stationId: 'main', open: false } })).data.open, false);
   assert.equal((await call(env, 'GET', `/api/guest/menu?station=${TOKEN}`)).data.open, false);
   assert.equal((await call(env, 'POST', '/api/guest/counter/checkout', { body: basket() })).status, 400);
-  await call(env, 'POST', '/api/bar/station-open', { claims: BAR, body: { stationId: 'main', open: true } });
+  await call(env, 'POST', '/api/bar/station-open', { claims: { role: 'barManager' }, body: { stationId: 'main', open: true } });
   assert.equal((await call(env, 'POST', '/api/guest/counter/checkout', { body: basket() })).status, 200);
 });
 

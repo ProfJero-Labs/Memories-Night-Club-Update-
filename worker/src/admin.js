@@ -510,7 +510,7 @@ export async function inviteStaff(env, b, user) {
 export async function organiserOverview(env, user) {
   if (!requireRole(user, ['organiser', 'superAdmin'])) return FORBIDDEN;
   const uid = uidOf(user);
-  const events = (await listDocs(env, 'events')).filter(e => e.fields.organiserId === uid).sort((a, b) => new Date(b.fields.date) - new Date(a.fields.date));
+  const events = (await listDocs(env, 'events')).filter(e => e.fields.organiserId === uid || (e.fields.organiserIds || []).includes(uid)).sort((a, b) => new Date(b.fields.date) - new Date(a.fields.date));
   const results = [];
   for (const e of events) {
     const [orders, checkins, plans, raffles] = await Promise.all(['orders', 'checkins', 'installment_plans', 'raffles'].map(c => queryWhere(env, c, [{ field: 'eventId', value: e.id }])));
@@ -537,7 +537,7 @@ export async function organiserOverview(env, user) {
 // Nights a door device can pick from: today's and upcoming ones (organisers: only their own).
 export async function doorEvents(env, user) {
   const all = await listDocs(env, 'events');
-  const mine = user.role === 'organiser' && user.admin !== true ? all.filter(e => e.fields.organiserId === uidOf(user)) : all;
+  const mine = user.role === 'organiser' && user.admin !== true ? all.filter(e => e.fields.organiserId === uidOf(user) || (e.fields.organiserIds || []).includes(uidOf(user))) : all;
   // Nights stay listed for a day after they start (the club closes when it closes); `tonight` is the
   // open night, so the door picks it however late it is.
   return { tonight: bizDate(), events: mine.filter(e => e.fields.active !== false && new Date(e.fields.date).getTime() + 24 * 3600e3 > Date.now()).map(e => ({ id: e.id, name: e.fields.name, date: e.fields.date })).sort((a, b) => new Date(a.date) - new Date(b.date)) };

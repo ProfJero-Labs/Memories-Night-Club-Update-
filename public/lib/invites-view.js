@@ -10,7 +10,7 @@ import { sapi, when } from '../staff.js';
 
 const PART = 20;
 const pill = (text, c) => `<span class="pill ${c}">${esc(text)}</span>`;
-const flash = (el, text, bad = false) => { el.innerHTML = `<div class="msg ${bad ? 'err' : ''}" role="status">${esc(text)}</div>`; if (!bad) setTimeout(() => { el.innerHTML = ''; }, 5000); };
+const flash = (el, text, bad = false) => { el.innerHTML = `<div class="say ${bad ? 'bad' : 'good'}" role="status" style="margin-top:8px">${esc(text)}</div>`; if (!bad) setTimeout(() => { el.innerHTML = ''; }, 8000); };
 const val = (root, sel) => $(sel, root).value.trim();
 
 // Paste phone numbers, one per line. Include the person's name on the same line (before or
@@ -64,6 +64,7 @@ export async function invitesView(el, { eventId = '', onNight } = {}) {
     <h2>Send invitations</h2>
     <div class="card">
       <div class="sfield"><label for="ivStyle">Which card</label><select id="ivStyle"><option value="her">Ladies: the red visa (${esc(inv.perk || 'no perks set')})</option><option value="him">Gentlemen: the black Memories card, a pass to witness (no free drinks)</option></select></div>
+      <div class="sfield"><label for="ivPasses2">Passes for this batch</label><input id="ivPasses2" type="number" min="1" max="20" value="${inv.passes}" style="width:80px"><span class="hint">How many passes each person in this send gets. Type a different number after someone’s phone to override theirs individually.</span></div>
       <div class="sfield"><label for="ivList">Phone numbers, one per line</label>
         <textarea id="ivList" rows="7" placeholder="024 123 4567&#10;Ama Mensah 0201112222&#10;0241234567 Kofi Mensah 3&#10;+233 55 123 4567"></textarea>
         <span class="hint">Include a name before or after the number; a 1–2 digit count sets that person’s passes (otherwise ${inv.passes}). <span id="ivCount"></span></span>
@@ -118,7 +119,7 @@ export async function invitesView(el, { eventId = '', onNight } = {}) {
   $('#ivList', el).oninput = count;
   const report = (results, box) => {
     const good = results.filter(r => ['sent', 'added', 'declined'].includes(r.status)).length, bad = results.filter(r => !['sent', 'added', 'declined'].includes(r.status));
-    box.innerHTML = `<div class="msg">${good} done${bad.length ? `, ${bad.length} to check:` : '.'}</div>${bad.length ? `<div class="tbl-wrap"><table class="tbl"><tbody>${bad.map(r => `<tr><td>${esc(r.phone || '')}</td><td>${pill(STATUS[r.status]?.[0] || r.status, STATUS[r.status]?.[1] || 'grey')}</td><td>${esc(r.message || '')}${r.link ? ` <a href="${esc(r.link)}" target="_blank" rel="noopener">card link</a>` : ''}</td></tr>`).join('')}</tbody></table></div>` : ''}`;
+    box.innerHTML = `<div class="say ${bad.length ? 'warn' : 'good'}" role="status" style="margin-top:8px"><b>${good} sent${bad.length ? `, ${bad.length} to check` : ' — all done'}.</b></div>${bad.length ? `<div class="tbl-wrap" style="margin-top:8px"><table class="tbl"><tbody>${bad.map(r => `<tr><td>${esc(r.phone || '')}</td><td>${pill(STATUS[r.status]?.[0] || r.status, STATUS[r.status]?.[1] || 'grey')}</td><td>${esc(r.message || '')}${r.link ? ` <a href="${esc(r.link)}" target="_blank" rel="noopener">card link</a>` : ''}</td></tr>`).join('')}</tbody></table></div>` : ''}`;
   };
   const load = async () => {
     const d = await sapi(`/api/admin/invites?eventId=${encodeURIComponent(ev.id)}`);
@@ -145,7 +146,8 @@ export async function invitesView(el, { eventId = '', onNight } = {}) {
     });
   };
   $('#ivSend', el).onclick = async () => {
-    const rows = parseInviteLines($('#ivList', el).value), style = $('#ivStyle', el).value;
+    const batchPasses = Math.max(1, Number($('#ivPasses2', el).value) || inv.passes);
+    const rows = parseInviteLines($('#ivList', el).value).map(r => r.passes ? r : { ...r, passes: batchPasses }), style = $('#ivStyle', el).value;
     if (!rows.length) return flash($('#ivMsgBox', el), 'Paste at least one phone number.', true);
     if (!confirm(`Send ${rows.length} ${style === 'him' ? 'gentlemen’s pass' : 'ladies’ invitation'}${rows.length > 1 ? 'es' : ''} for ${ev.name} by text?`.replace('invitationes', 'invitations'))) return;
     const btn = $('#ivSend', el); btn.disabled = true; const results = [];
