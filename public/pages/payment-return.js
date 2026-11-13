@@ -120,7 +120,7 @@ async function run() {
     await new Promise(r => setTimeout(r, Math.min(1500 + i * 500, 5000)));
   }
   if (!s) {
-    root.innerHTML = `<h1 class="display lg">Still confirming.</h1><p>MoMo can take a minute. You won’t be charged twice. We’ll text you when it lands, or check again now.</p><button class="btn red" id="again">Check again</button>`;
+    root.innerHTML = `<h1 class="display lg">Not paid yet.</h1><p>No ticket until the payment goes through. If you approved the MoMo prompt, tap Check again: you won’t be charged twice, and your ticket comes by text once the money lands.</p><button class="btn red" id="again">Check again</button>`;
     $('#again').onclick = () => { root.innerHTML = '<h1 class="display lg">Checking your payment…</h1><div class="loading" style="padding:0">One moment</div>'; run(); };
     return;
   }

@@ -148,11 +148,9 @@ async function overview() {
   ${h ? `<button type="button" class="health ov-health ${h.tone}" data-quick="system"><b>${esc(h.label)}</b><span>System</span></button>` : ''}
   <div class="kpis ov-kpis">
       <div><span>Revenue (confirmed)</span><b>${money(d.revenuePesewas)}</b></div>
-      <div><span>Pending payments</span><b>${d.pendingCheckouts}${d.staleCheckouts ? ` <small>(${d.staleCheckouts} over 30m)</small>` : ''}</b></div>
       <div><span>Memories’ share</span><b>${money(d.memoriesSharePesewas)}</b></div>
       <div><span>Organizers’ share</span><b>${money(d.organizerSharePesewas)}</b></div>
       ${d.serviceFeesPesewas ? `<div><span>Service charges (paid by customers)</span><b>${money(d.serviceFeesPesewas)}</b></div>` : ''}
-      ${d.failedCheckouts > 0 ? `<div class="bad"><span>Failed payments</span><b>${d.failedCheckouts}</b></div>` : ''}
     </div>
     ${d.funnel ? `<p class="funnel"><strong>Last 7 days:</strong> ${d.funnel.started} checkouts started · ${d.funnel.paid} paid${d.funnel.started ? ` (${Math.round(100 * d.funnel.paid / d.funnel.started)}%)` : ''} · ${d.funnel.abandoned} left at Paystack · ${d.funnel.failed} failed${d.funnel.waiting ? ` · ${d.funnel.waiting} paying now` : ''}</p>` : ''}
     <h2>Coming up</h2>
@@ -705,26 +703,28 @@ function bindComp(eventId) {
 // ── Invitations (lib/invites-view.js, the same screen as in the staff apps) ──
 async function invites(arg) { await invitesView(panel, { eventId: arg || '', onNight: id => show('invites', id) }); }
 
-// ── Payments (all checkout activity, not just confirmed orders) ──
+// ── Payments (paid only) ──
 async function payments() {
   const d = await sapi('/api/admin/payments');
-  const rows = (d.checkouts || []);
-  const confirmCount = rows.filter(r => r.status === 'issued').length;
-  const pendingCount = rows.filter(r => r.status === 'pending').length;
-  const failedCount = rows.filter(r => r.status === 'failed').length;
-  const statusPill = s => s === 'issued' ? pill('paid', 'green') : s === 'pending' ? pill('pending', 'amber') : s === 'failed' ? pill('failed', 'red') : pill(s || '—', 'grey');
+  // Only payments that went through. Checkouts Paystack hasn't settled are still checked in the
+  // background (reconcile.js issues the ticket if the money does arrive, and it then shows here),
+  // but an unpaid attempt is not a sale and staff never see it. The one other row: the guest paid
+  // but the ticket couldn't be issued (sold out meanwhile, or the amount didn't match): refund owed.
+  const refundOwed = r => r.status === 'failed' && /sold_out|mismatch/.test(r.error || '');
+  const rows = (d.checkouts || []).filter(r => r.status === 'issued' || refundOwed(r));
+  const paidCount = rows.filter(r => r.status === 'issued').length;
+  const statusPill = r => r.status === 'issued' ? pill('paid', 'green') : pill('refund owed', 'red');
+  const note = r => refundOwed(r) ? esc(r.error.replace(/_/g, ' ')) : '';
   panel.innerHTML = `<h1>Payments</h1>
-    <p class="muted" style="margin-top:-8px">Every checkout in the last 24 hours. Only <strong>paid</strong> rows count as revenue — those are the ones that hit the confirmed orders ledger. Anything <em>pending</em> over 30 minutes is worth a call. Anything <em>failed</em> was abandoned by the buyer or rejected by Paystack.</p>
+    <p class="muted" style="margin-top:-8px">Tickets and tables paid for in the last 24 hours.${rows.length > paidCount ? ' <strong>Refund owed</strong>: the guest paid but the ticket couldn’t be issued; see Refunds.' : ''} A guest who says they paid but isn’t listed: look up the reference in Paystack. If the money is there, the ticket is issued on its own within 10 minutes and appears here.</p>
     <div class="kpis">
-      <div><span>Paid</span><b>${confirmCount}</b></div>
-      <div><span>Pending</span><b>${pendingCount}</b></div>
-      <div><span>Failed</span><b>${failedCount}</b></div>
+      <div><span>Paid</span><b>${paidCount}</b></div>
     </div>
     <div class="tbl-wrap"><table class="tbl"><thead><tr><th>When</th><th>Status</th><th>Kind</th><th>Who</th><th>Night</th><th class="num">Amount</th><th>Note</th></tr></thead><tbody>
-    ${rows.map(r => `<tr><td>${esc(when(r.createdAt))}</td><td>${statusPill(r.status)}</td><td>${esc(r.kind)}</td>
+    ${rows.map(r => `<tr><td>${esc(when(r.createdAt))}</td><td>${statusPill(r)}</td><td>${esc(r.kind)}</td>
       <td>${esc(r.buyerName || '—')}${r.buyerPhone ? `<br><a href="tel:${esc(r.buyerPhone)}">${esc(r.buyerPhone)}</a>` : ''}</td>
       <td>${esc(r.eventName || '—')}</td><td class="num">${money(r.amountPesewas)}</td>
-      <td>${r.error ? `<span class="pill red">${esc(r.error.replace(/_/g, ' '))}</span>` : ''}</td></tr>`).join('') || '<tr><td colspan="7" class="empty-row">No checkout activity in the last 24 hours.</td></tr>'}
+      <td>${note(r)}</td></tr>`).join('') || '<tr><td colspan="7" class="empty-row">No payments in the last 24 hours.</td></tr>'}
     </tbody></table></div>`;
 }
 
