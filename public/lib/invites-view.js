@@ -65,10 +65,10 @@ export async function invitesView(el, { eventId = '', onNight, role = '' } = {})
     <h2>Send invitations</h2>
     <div class="card">
       <div class="sfield" ${canSendHim ? '' : 'hidden'}><label for="ivStyle">Which card</label><select id="ivStyle"><option value="her">Ladies: the red visa (${esc(inv.perk || 'no perks set')})</option>${canSendHim ? '<option value="him">Gentlemen: the black Memories card, a pass to witness (no free drinks)</option>' : ''}</select></div>
-      <div class="sfield"><label for="ivPasses2">Passes for this batch</label><input id="ivPasses2" type="number" min="1" max="20" value="${inv.passes}" style="width:80px"><span class="hint">How many passes each person in this send gets. Type a different number after someone’s phone to override theirs individually.</span></div>
+      <div class="sfield"><label for="ivPasses2">Passes for this batch</label><input id="ivPasses2" type="number" min="1" max="20" value="${inv.passes}" style="width:80px"><span class="hint">How many passes each person in this send gets. Type a different number after someone's phone to override theirs individually.</span></div>
       <div class="sfield"><label for="ivList">Phone numbers, one per line</label>
         <textarea id="ivList" rows="7" placeholder="024 123 4567&#10;Ama Mensah 0201112222&#10;0241234567 Kofi Mensah 3&#10;+233 55 123 4567"></textarea>
-        <span class="hint">Include a name before or after the number; a 1–2 digit count sets that person’s passes (otherwise ${inv.passes}). <span id="ivCount"></span></span>
+        <span class="hint">Include a name before or after the number; a 1–2 digit count sets that person's passes (otherwise ${inv.passes}). <span id="ivCount"></span></span>
         <div style="margin-top:6px"><button class="sbtn" type="button" id="ivLoadContacts">Load guest list</button> <span id="ivContactCount" class="muted" style="font-size:13px"></span></div></div>
       <div class="sfield"><label for="ivAgain">Someone already invited</label><select id="ivAgain"><option value="skip">Leave them as they are</option><option value="add">Add these passes to their invitation (texted again)</option></select></div>
       <div class="toolbar"><button class="sbtn red" type="button" id="ivSend">Send invitations</button><button class="sbtn" type="button" id="ivPreview">See the cards</button></div>
@@ -86,7 +86,7 @@ export async function invitesView(el, { eventId = '', onNight, role = '' } = {})
       </div>
     </details>
 
-    <details class="card" style="margin-top:18px"><summary><b>The card’s wording and the website</b> <span class="muted">${inv.open ? '· ladies can ask on the website' : '· website requests are off'}</span></summary>
+    <details class="card" style="margin-top:18px"><summary><b>The card's wording and the website</b> <span class="muted">${inv.open ? '· ladies can ask on the website' : '· website requests are off'}</span></summary>
       <div class="grid2" style="margin-top:12px">
         <div class="sfield"><label for="ivTitle">Name on the card</label><input id="ivTitle" maxlength="40" value="${esc(inv.title)}"></div>
         <div class="sfield"><label for="ivTag">Line under it (ladies)</label><input id="ivTag" maxlength="60" value="${esc(inv.tagline)}"></div>
@@ -95,7 +95,7 @@ export async function invitesView(el, { eventId = '', onNight, role = '' } = {})
         <div class="sfield"><label for="ivPasses">Passes per invitation</label><input id="ivPasses" type="number" min="1" max="20" value="${inv.passes}"><span class="hint">How many people one invitation lets in.</span></div>
       </div>
       <label class="check"><input type="checkbox" id="ivOpen" ${inv.open ? 'checked' : ''}> Let ladies ask for an invitation on the website</label>
-      ${inv.open ? `<p class="hint" style="margin:6px 0 0">The page: <a href="${esc(ev.applyUrl)}" target="_blank" rel="noopener">${esc(ev.applyUrl)}</a> (also a button on the night’s page). <button class="sbtn" type="button" id="ivCopy">Copy link</button></p>` : ''}
+      ${inv.open ? `<p class="hint" style="margin:6px 0 0">The page: <a href="${esc(ev.applyUrl)}" target="_blank" rel="noopener">${esc(ev.applyUrl)}</a> (also a button on the night's page). <button class="sbtn" type="button" id="ivCopy">Copy link</button></p>` : ''}
       <div class="toolbar"><button class="sbtn red" type="button" id="ivSave">Save</button></div><div id="ivSaveMsg"></div>
     </details>`;
 

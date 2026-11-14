@@ -34,7 +34,7 @@ const navItems = director ? [['tonight', 'Tonight'], ['money', 'Money'], ['appro
 if (director) sapi('/api/ops/to-approve').then(d => nav.setDot('approve', d.items.length)).catch(() => {});
 const nav = bottomNav(navItems, k => { if (k === 'more') more(); else location.hash = k; });
 let stop = null;
-const fail = e => { app.innerHTML = `<div class="say bad" role="alert"><b>Couldn’t load</b>${esc(e.message)}</div><button class="big ghost" id="retry">Try again</button>`; $('#retry').onclick = route; };
+const fail = e => { app.innerHTML = `<div class="say bad" role="alert"><b>Couldn't load</b>${esc(e.message)}</div><button class="big ghost" id="retry">Try again</button>`; $('#retry').onclick = route; };
 const back = (label = '', to = 'tonight') => backBar('', to); // ← Back: where they came from (or the parent screen)
 const bindBack = () => { bindBackBar(app); $$('[data-goto]:not(.back-btn)', app).forEach(b => b.onclick = () => { location.hash = b.dataset.goto; }); };
 
@@ -136,7 +136,7 @@ async function tonight(alive) {
       ${toExplain.map((c, i) => `<div class="need"><div><b>${esc(c.stationName)}: the bar found a different number</b><span>${c.differences.map(d => `${esc(d.name)} ${Math.abs(d.difference)} ${d.difference < 0 ? 'fewer' : 'more'}`).join(' · ')}</span><small>${esc(c.byName)} counted when the bar opened · ${esc(c.date)}</small></div>
         <div class="need-btns"><button class="mid" data-explain="${i}">Explain</button></div></div>`).join('')}</section>` : ''}
     ${waiting.length ? `<section class="pos-need"><h2>Needs you <span class="count">${waiting.length}</span></h2>
-      ${waiting.map(p => `<div class="need"><div><b>${esc(p.label)}</b><span>${esc(p.summary)}</span><small>${esc(p.requestedByName)} · “${esc(p.reason)}”</small></div>
+      ${waiting.map(p => `<div class="need"><div><b>${esc(p.label)}</b><span>${esc(p.summary)}</span><small>${esc(p.requestedByName)} · "${esc(p.reason)}"</small></div>
         <div class="need-btns"><button class="mid okc" data-yes="${esc(p.id)}" aria-label="Approve">✓</button><button class="mid" data-no="${esc(p.id)}" aria-label="Refuse">✗</button></div></div>`).join('')}</section>` : ''}
     ${closed ? `<div class="say good"><b>The night is closed</b>The report is under ${director ? 'More → End-of-day reports' : 'More → Past nights'}.</div>` : '<button class="big" id="toClose">Close the night</button>'}
     <div class="rows">

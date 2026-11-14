@@ -18,7 +18,7 @@ staffHeader(user, 'Human manager');
 const app = $('#app');
 let stop = null;
 const nav = bottomNav([['floor', 'Floor'], ['staff', 'Staff'], ['pay', 'Pay'], ['customers', 'Customers'], ['more', 'More']], k => { if (k === 'more') more(); else location.hash = k; });
-const fail = e => { app.innerHTML = `<div class="say bad" role="alert"><b>Couldn’t load</b>${esc(e.message)}</div><button class="big ghost" id="retry">Try again</button>`; $('#retry').onclick = route; };
+const fail = e => { app.innerHTML = `<div class="say bad" role="alert"><b>Couldn't load</b>${esc(e.message)}</div><button class="big ghost" id="retry">Try again</button>`; $('#retry').onclick = route; };
 const back = (label = '', to = 'floor') => backBar('', to); // ← Back: where they came from (or the parent screen)
 const bindBack = () => { bindBackBar(app); $$('[data-goto]:not(.back-btn)', app).forEach(b => b.onclick = () => { location.hash = b.dataset.goto; }); };
 
