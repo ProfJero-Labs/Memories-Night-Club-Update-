@@ -117,6 +117,7 @@ export async function saveInvitation(env, b, user) {
 //   style: 'her' (the ladies' visa) | 'him' (the gentlemen's pass) }
 export async function sendInvites(env, b, user) {
   if (!requireRole(user, INVITERS)) return FORBIDDEN;
+  if (styleOf(b.style) === 'him' && !requireRole(user, ['superAdmin', 'director'])) return { error: 'Only directors can send gentlemen\'s passes.', status: 403 };
   const n = await inviteNight(env, b?.eventId); if (n.error) return n;
   const rows = Array.isArray(b.rows) ? b.rows : [];
   if (!rows.length) return { error: 'Add at least one phone number.' };
@@ -132,7 +133,6 @@ export async function sendInvites(env, b, user) {
     if (out.some(o => o.phone === phone && o.status !== 'invalid')) { out.push({ phone, status: 'duplicate', message: 'Twice in this list' }); continue; }
     const r = await issueOne(env, n.ev, inv, phone, passes, { ifInvited: b.ifInvited, existing, user, style: styleOf(b.style), name });
     if (['sent', 'not_texted'].includes(r.status)) {
-      // Someone who had asked online and is now sent one: their request is done.
       const req = await getDoc(env, 'invite_requests', `${n.ev.id}_${phone}`);
       if (req?.fields?.status === 'pending') await setDoc(env, 'invite_requests', req.id, { ...req.fields, status: 'approved', decidedAt: now(), decidedByName: user.name || '', ticketId: r.token });
     }
@@ -224,8 +224,6 @@ export async function decideRequests(env, b, user) {
 }
 
 // ── The website: a guest asks for an invitation ──
-// { eventId, phone, instagram?, answers: [{ q, a }] x3 }. The same answer for any phone, so the page
-// never tells anyone whether a number is already on the list.
 export async function requestInvite(env, b) {
   const ev = b?.eventId ? await getDoc(env, 'events', String(b.eventId)) : null;
   if (!ev || ev.fields.active === false || ev.fields.visibility !== 'public' || isOver(ev.fields) || !invitationOf(ev).open) return { error: 'Requests for this night are closed.' };
@@ -236,7 +234,6 @@ export async function requestInvite(env, b) {
   const instagram = clean(String(b.instagram || '').replace(/^@+/, ''), 40).replace(/[^A-Za-z0-9._]/g, '');
   const name = clean(b.name, 60);
   const rid = `${ev.id}_${phone}`, had = await getDoc(env, 'invite_requests', rid);
-  // Ladies only ask on the website; the gentlemen's passes are sent by staff.
   if (!had) await setDoc(env, 'invite_requests', rid, { eventId: ev.id, phone, ...(name ? { name } : {}), style: 'her', instagram, answers, status: 'pending', createdAt: now() });
   return { received: true, phoneHint: maskPhone(phone) };
 }
