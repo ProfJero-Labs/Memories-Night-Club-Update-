@@ -703,7 +703,7 @@ function bindComp(eventId) {
 }
 
 // ── Invitations (lib/invites-view.js, the same screen as in the staff apps) ──
-async function invites(arg) { await invitesView(panel, { eventId: arg || '', onNight: id => show('invites', id) }); }
+async function invites(arg) { await invitesView(panel, { eventId: arg || '', onNight: id => show('invites', id), role: user.role }); }
 
 // ── Payments (all checkout activity, not just confirmed orders) ──
 async function payments() {
