@@ -1,10 +1,4 @@
 // hr.html: the Human manager. The floor and the people.
-//   Floor: open tables and what they owe, approvals (free drinks, discounts), payments tonight.
-//   Staff: add, change and remove staff (texts their PIN), members and attendance.
-//   Pay: salaries, payment details, bonuses, deductions and loans; the month's payroll goes to the
-//        directors to approve, then finance pays and each person is told.
-//   Customers: top customers tonight, customer reviews and complaints.
-//   More: staff feedback and complaints, notices, performance reviews, my page.
 import { $, $$, esc } from '../app.js';
 import { requireStaff, staffHeader, sapi } from '../staff.js';
 import { bottomNav, sheet, st, every, money, when, backBar, bindBackBar, say } from '../lib/ops-ui.js';
@@ -18,8 +12,8 @@ staffHeader(user, 'Human manager');
 const app = $('#app');
 let stop = null;
 const nav = bottomNav([['floor', 'Floor'], ['staff', 'Staff'], ['pay', 'Pay'], ['customers', 'Customers'], ['more', 'More']], k => { if (k === 'more') more(); else location.hash = k; });
-const fail = e => { app.innerHTML = `<div class="say bad" role="alert"><b>Couldn’t load</b>${esc(e.message)}</div><button class="big ghost" id="retry">Try again</button>`; $('#retry').onclick = route; };
-const back = (label = '', to = 'floor') => backBar('', to); // ← Back: where they came from (or the parent screen)
+const fail = e => { app.innerHTML = `<div class="say bad" role="alert"><b>Couldn't load</b>${esc(e.message)}</div><button class="big ghost" id="retry">Try again</button>`; $('#retry').onclick = route; };
+const back = (label = '', to = 'floor') => backBar('', to);
 const bindBack = () => { bindBackBar(app); $$('[data-goto]:not(.back-btn)', app).forEach(b => b.onclick = () => { location.hash = b.dataset.goto; }); };
 
 async function route() {
@@ -35,7 +29,7 @@ async function route() {
     if (key === 'payments') { app.innerHTML = `${back('Floor', 'floor')}<div id="pv"></div>`; bindBack(); return await paymentsView($('#pv')); }
     if (key === 'feedback') { app.innerHTML = `${back()}<div id="fv"></div>`; bindBack(); return await feedbackInboxView($('#fv')); }
     if (key === 'perf') { app.innerHTML = `${back()}<div id="pfv"></div>`; bindBack(); return await people.perfView($('#pfv'), arg); }
-    if (key === 'invites') { app.innerHTML = `${back()}<div id="ivv"></div>`; bindBack(); return await invitesView($('#ivv'), { eventId: arg || '', onNight: id => { location.hash = `invites/${id}`; } }); }
+    if (key === 'invites') { app.innerHTML = `${back()}<div id="ivv"></div>`; bindBack(); return await invitesView($('#ivv'), { eventId: arg || '', onNight: id => { location.hash = `invites/${id}`; }, role: user.role }); }
     if (key === 'momophone') { app.innerHTML = `${back()}<div id="mpv"></div>`; bindBack(); return await momoPhoneView($('#mpv')); }
     if (key === 'close') { app.innerHTML = `${back()}<div id="clv"></div>`; bindBack(); return await closingView($('#clv'), undefined, { canClose: true }); }
     stop = every(30000, alive => floor(alive).catch(e => alive() && fail(e)));
@@ -43,7 +37,6 @@ async function route() {
 }
 addEventListener('hashchange', route);
 
-// ── Floor: tables open now, what needs approving ──
 async function floor(alive = () => true) {
   const [{ tabs }, wl] = await Promise.all([sapi('/api/ops/tabs?all=1'), sapi('/api/ops/wallet').catch(() => null)]);
   if (!alive()) return;

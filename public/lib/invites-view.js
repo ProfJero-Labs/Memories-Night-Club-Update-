@@ -13,23 +13,14 @@ const pill = (text, c) => `<span class="pill ${c}">${esc(text)}</span>`;
 const flash = (el, text, bad = false) => { el.innerHTML = `<div class="say ${bad ? 'bad' : 'good'}" role="status" style="margin-top:8px">${esc(text)}</div>`; if (!bad) setTimeout(() => { el.innerHTML = ''; }, 8000); };
 const val = (root, sel) => $(sel, root).value.trim();
 
-// Paste phone numbers, one per line. Include the person's name on the same line (before or
-// after the number) and an optional passes count (1–2 digits) after the number:
-//   024 123 4567
-//   Ama Mensah 024 123 4567
-//   024 123 4567 Kofi Boateng 3
-//   0201112222 3
-//   +233 55 123 4567, 2
 export function parseInviteLines(text) {
   const out = [];
   for (const raw of String(text || '').split(/\r?\n/)) {
     const line = raw.trim(); if (!line) continue;
     const tokens = line.split(/[\s,;\t]+/).filter(Boolean);
-    // Collect any name tokens that appear before the phone number.
     let i = 0;
     const namePre = [];
     while (i < tokens.length && !/^\+?[\d-]+$/.test(tokens[i])) { namePre.push(tokens[i]); i++; }
-    // Collect the phone's digit tokens.
     let digits = '', used = i;
     while (used < tokens.length && /^\+?[\d-]+$/.test(tokens[used])) {
       const want = (digits + tokens[used]).replace(/\D/g, '');
@@ -37,7 +28,6 @@ export function parseInviteLines(text) {
       digits = want; used += 1;
       if (digits.length >= (/^233/.test(digits) ? 12 : 10)) break;
     }
-    // Remaining tokens: passes count and any name suffix.
     const rest = tokens.slice(used);
     const passesToken = rest.find(t => /^\d{1,2}$/.test(t));
     const namePost = rest.filter(t => t !== passesToken && /[a-zA-Z]/.test(t));
@@ -50,9 +40,8 @@ export function parseInviteLines(text) {
 
 const STATUS = { sent: ['sent', 'green'], not_texted: ['made, text failed', 'amber'], added: ['passes added', 'green'], added_not_texted: ['passes added, text failed', 'amber'], already: ['already invited', 'grey'], duplicate: ['twice in the list', 'grey'], invalid: ['not sent', 'red'], declined: ['declined', 'grey'] };
 
-// el: where to draw. eventId: the night to open (else the one taking requests, else the next).
-// onNight(id): called when another night is picked (to keep it in the address).
-export async function invitesView(el, { eventId = '', onNight } = {}) {
+export async function invitesView(el, { eventId = '', onNight, role = '' } = {}) {
+  const canSendHim = role === 'superAdmin' || role === 'director';
   el.innerHTML = '<div class="loading">Loading…</div>';
   const { nights } = await sapi('/api/admin/invites/nights');
   if (!nights.length) { el.innerHTML = '<h1>Invitations</h1><p class="muted">No nights coming up. Add the night first (control room → Nights).</p>'; return; }
@@ -63,11 +52,11 @@ export async function invitesView(el, { eventId = '', onNight } = {}) {
 
     <h2>Send invitations</h2>
     <div class="card">
-      <div class="sfield"><label for="ivStyle">Which card</label><select id="ivStyle"><option value="her">Ladies: the red visa (${esc(inv.perk || 'no perks set')})</option><option value="him">Gentlemen: the black Memories card, a pass to witness (no free drinks)</option></select></div>
-      <div class="sfield"><label for="ivPasses2">Passes for this batch</label><input id="ivPasses2" type="number" min="1" max="20" value="${inv.passes}" style="width:80px"><span class="hint">How many passes each person in this send gets. Type a different number after someone’s phone to override theirs individually.</span></div>
+      <div class="sfield" ${canSendHim ? '' : 'hidden'}><label for="ivStyle">Which card</label><select id="ivStyle"><option value="her">Ladies: the red visa (${esc(inv.perk || 'no perks set')})</option>${canSendHim ? '<option value="him">Gentlemen: the black Memories card, a pass to witness (no free drinks)</option>' : ''}</select></div>
+      <div class="sfield"><label for="ivPasses2">Passes for this batch</label><input id="ivPasses2" type="number" min="1" max="20" value="${inv.passes}" style="width:80px"><span class="hint">How many passes each person in this send gets. Type a different number after someone's phone to override theirs individually.</span></div>
       <div class="sfield"><label for="ivList">Phone numbers, one per line</label>
         <textarea id="ivList" rows="7" placeholder="024 123 4567&#10;Ama Mensah 0201112222&#10;0241234567 Kofi Mensah 3&#10;+233 55 123 4567"></textarea>
-        <span class="hint">Include a name before or after the number; a 1–2 digit count sets that person’s passes (otherwise ${inv.passes}). <span id="ivCount"></span></span>
+        <span class="hint">Include a name before or after the number; a 1–2 digit count sets that person's passes (otherwise ${inv.passes}). <span id="ivCount"></span></span>
         <div style="margin-top:6px"><button class="sbtn" type="button" id="ivLoadContacts">Load guest list</button> <span id="ivContactCount" class="muted" style="font-size:13px"></span></div></div>
       <div class="sfield"><label for="ivAgain">Someone already invited</label><select id="ivAgain"><option value="skip">Leave them as they are</option><option value="add">Add these passes to their invitation (texted again)</option></select></div>
       <div class="toolbar"><button class="sbtn red" type="button" id="ivSend">Send invitations</button><button class="sbtn" type="button" id="ivPreview">See the cards</button></div>
@@ -85,7 +74,7 @@ export async function invitesView(el, { eventId = '', onNight } = {}) {
       </div>
     </details>
 
-    <details class="card" style="margin-top:18px"><summary><b>The card’s wording and the website</b> <span class="muted">${inv.open ? '· ladies can ask on the website' : '· website requests are off'}</span></summary>
+    <details class="card" style="margin-top:18px"><summary><b>The card's wording and the website</b> <span class="muted">${inv.open ? '· ladies can ask on the website' : '· website requests are off'}</span></summary>
       <div class="grid2" style="margin-top:12px">
         <div class="sfield"><label for="ivTitle">Name on the card</label><input id="ivTitle" maxlength="40" value="${esc(inv.title)}"></div>
         <div class="sfield"><label for="ivTag">Line under it (ladies)</label><input id="ivTag" maxlength="60" value="${esc(inv.tagline)}"></div>
@@ -94,14 +83,14 @@ export async function invitesView(el, { eventId = '', onNight } = {}) {
         <div class="sfield"><label for="ivPasses">Passes per invitation</label><input id="ivPasses" type="number" min="1" max="20" value="${inv.passes}"><span class="hint">How many people one invitation lets in.</span></div>
       </div>
       <label class="check"><input type="checkbox" id="ivOpen" ${inv.open ? 'checked' : ''}> Let ladies ask for an invitation on the website</label>
-      ${inv.open ? `<p class="hint" style="margin:6px 0 0">The page: <a href="${esc(ev.applyUrl)}" target="_blank" rel="noopener">${esc(ev.applyUrl)}</a> (also a button on the night’s page). <button class="sbtn" type="button" id="ivCopy">Copy link</button></p>` : ''}
+      ${inv.open ? `<p class="hint" style="margin:6px 0 0">The page: <a href="${esc(ev.applyUrl)}" target="_blank" rel="noopener">${esc(ev.applyUrl)}</a> (also a button on the night's page). <button class="sbtn" type="button" id="ivCopy">Copy link</button></p>` : ''}
       <div class="toolbar"><button class="sbtn red" type="button" id="ivSave">Save</button></div><div id="ivSaveMsg"></div>
     </details>`;
 
-  $('#ivNight', el).onchange = () => { const id = $('#ivNight', el).value; if (onNight) onNight(id); else invitesView(el, { eventId: id, onNight }); };
+  $('#ivNight', el).onchange = () => { const id = $('#ivNight', el).value; if (onNight) onNight(id); else invitesView(el, { eventId: id, onNight, role }); };
   const wording = () => ({ eventId: ev.id, open: $('#ivOpen', el).checked, title: val(el, '#ivTitle'), tagline: val(el, '#ivTag'), perk: val(el, '#ivPerk'), dress: val(el, '#ivDress'), passes: Number(val(el, '#ivPasses') || 1) });
   $('#ivSave', el).onclick = async () => {
-    try { await sapi('/api/admin/invites/settings', { method: 'POST', body: wording() }); await invitesView(el, { eventId: ev.id, onNight }); flash($('#ivMsgBox', el), 'Saved.'); }
+    try { await sapi('/api/admin/invites/settings', { method: 'POST', body: wording() }); await invitesView(el, { eventId: ev.id, onNight, role }); flash($('#ivMsgBox', el), 'Saved.'); }
     catch (err) { flash($('#ivSaveMsg', el), err.message, true); }
   };
   $('#ivCopy', el) && ($('#ivCopy', el).onclick = async () => { try { await navigator.clipboard.writeText(ev.applyUrl); $('#ivCopy', el).textContent = 'Copied'; } catch { prompt('Copy this link:', ev.applyUrl); } });
@@ -147,7 +136,7 @@ export async function invitesView(el, { eventId = '', onNight } = {}) {
   };
   $('#ivSend', el).onclick = async () => {
     const batchPasses = Math.max(1, Number($('#ivPasses2', el).value) || inv.passes);
-    const rows = parseInviteLines($('#ivList', el).value).map(r => r.passes ? r : { ...r, passes: batchPasses }), style = $('#ivStyle', el).value;
+    const rows = parseInviteLines($('#ivList', el).value).map(r => r.passes ? r : { ...r, passes: batchPasses }), style = canSendHim ? ($('#ivStyle', el)?.value || 'her') : 'her';
     if (!rows.length) return flash($('#ivMsgBox', el), 'Paste at least one phone number.', true);
     if (!confirm(`Send ${rows.length} ${style === 'him' ? 'gentlemen’s pass' : 'ladies’ invitation'}${rows.length > 1 ? 'es' : ''} for ${ev.name} by text?`.replace('invitationes', 'invitations'))) return;
     const btn = $('#ivSend', el); btn.disabled = true; const results = [];
@@ -164,7 +153,6 @@ export async function invitesView(el, { eventId = '', onNight } = {}) {
   };
   await load();
 
-  // Load guest list contact count badge, then wire up "Load guest list" button.
   sapi('/api/admin/invites/contacts').then(({ total }) => {
     const badge = $('#ivContactCount', el);
     if (badge) badge.textContent = total ? `· ${total} saved` : '';
