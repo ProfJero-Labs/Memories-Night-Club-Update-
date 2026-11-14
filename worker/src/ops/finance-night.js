@@ -93,7 +93,7 @@ export async function nightFinance(env, user, { date, channel = 'all' } = {}) {
       serviceChargeRule: r ? r.serviceCharge : { percent: c.feePercent ?? null, capPesewas: c.feeCapPesewas ?? null },
     });
   }
-  const shown = ch === 'all' ? txs : txs.filter(t => t.channel === ch);
+  const shown = (ch === 'all' ? txs : txs.filter(t => t.channel === ch)).filter(t => !['pending', 'abandoned'].includes(t.status));
 
   // ── B. Payments and settlement (the channel filter applies) ──
   const L = ch === 'all' ? ledger : ledger.filter(r => paystackChannel(r.channel) === ch);
