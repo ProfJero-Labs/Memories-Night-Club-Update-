@@ -62,6 +62,7 @@ async function ticketContext(env, b) {
   if (!returnUrl(env)) return { error: 'Payments are not set up yet.', status: 503 };
   const [ev, tt, settings] = await Promise.all([getDoc(env, 'events', b.eventId), getDoc(env, 'ticket_types', b.ticketTypeId), getSettings(env)]);
   if (!ev || !tt || ev.fields.active === false || ev.fields.visibility !== 'public' || tt.fields.eventId !== b.eventId || tt.fields.active !== true) return { error: 'This ticket is no longer available.' };
+  if (ev.fields.salesClosed === true) return { error: 'Online ticket sales for this night are now closed.' };
   if (ev.fields.soldOut === true || (typeof tt.fields.remaining === 'number' && tt.fields.remaining < qty)) return { error: 'Not enough tickets left for that.' };
   if (isOver(ev.fields)) return { error: 'This night has already happened.' };
   // The line is optional: the guest can pick one of the night's lines, write their own (short
@@ -245,9 +246,10 @@ export async function reserveTable(env, b) {
   if (!name || name.length < 2) return { error: 'Add a name for the booking.' };
   if (!phone) return { error: 'That phone number doesn’t look right. Use a Ghana number, e.g. 024 123 4567.' };
   if (b.email && !validEmail(b.email)) return { error: 'That email doesn’t look right.' };
-  const [ev, pkg] = await Promise.all([getDoc(env, 'events', b.eventId), getDoc(env, 'table_packages', b.packageId)]);
-  if (!ev || !pkg || ev.fields.active === false || ev.fields.visibility !== 'public' || pkg.fields.eventId !== b.eventId || pkg.fields.active !== true) return { error: 'This table isn’t available any more.' };
-  if (isOver(ev.fields)) return { error: 'This night has already happened.' };
+  const [ev, pkg] = await Promise.all([getDoc(env, ‘events’, b.eventId), getDoc(env, ‘table_packages’, b.packageId)]);
+  if (!ev || !pkg || ev.fields.active === false || ev.fields.visibility !== ‘public’ || pkg.fields.eventId !== b.eventId || pkg.fields.active !== true) return { error: ‘This table isn’t available any more.’ };
+  if (ev.fields.salesClosed === true) return { error: ‘Online table bookings for this night are now closed.’ };
+  if (isOver(ev.fields)) return { error: ‘This night has already happened.’ };
   const arriveAt = arrivalFor(ev.fields.date, b.arriveTime);
   if (!arriveAt) { const s = new Date(ev.fields.date); return { error: `Pick the time you'll arrive, between ${accraTime(s)} and ${accraTime(new Date(s.getTime() + ARRIVE_WINDOW_HOURS * 3600e3))}.` }; }
   const holdUntil = new Date(Date.parse(arriveAt) + HOLD_MINUTES * 60e3).toISOString();

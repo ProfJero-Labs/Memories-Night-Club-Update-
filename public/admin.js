@@ -436,6 +436,7 @@ async function night(id, notice) {
         <label class="check"><input type="checkbox" id="evPublic" ${e.visibility === 'public' ? 'checked' : ''}> On the public site</label>
         <label class="check"><input type="checkbox" id="evActive" ${e.active !== false ? 'checked' : ''}> Active</label>
         <label class="check"><input type="checkbox" id="evSold" ${e.soldOut ? 'checked' : ''}> Sold out</label>
+        <label class="check"><input type="checkbox" id="evSalesClosed" ${e.salesClosed ? 'checked' : ''}> Sales closed</label>
         <label class="check"><input type="checkbox" id="evFeat" ${e.featured ? 'checked' : ''}> Lead on the homepage</label>
       </div>
       <div class="sfield"><label for="evOrg">Organiser</label><select id="evOrg"><option value="">Club night (no outside organiser)</option>${orgs.map(o => `<option value="${esc(o.uid)}" ${o.uid === e.organiserId ? 'selected' : ''}>${esc([o.name || o.email || 'Organiser', o.phoneLast4 ? `•••${o.phoneLast4}` : '', o.name && o.email ? o.email : ''].filter(Boolean).join(' · '))}</option>`).join('')}${e.organiserId && !orgs.some(o => o.uid === e.organiserId) ? `<option value="${esc(e.organiserId)}" selected>Account no longer an organiser</option>` : ''}</select><span class="hint">They’ll see this night’s sales and can run its door. To add someone, give them the Organiser role under Staff.</span></div>
@@ -533,7 +534,7 @@ async function night(id, notice) {
         id: isNew ? undefined : e.id, name: val('#evName'), date: dt ? `${dt}:00Z` : '', doors: val('#evDoors'), venue: val('#evVenue'), description: val('#evDesc'),
         artwork: art.artwork, heroImage: art.heroImage, heroVideo: art.heroVideo, ticketLines: lines, ticketStyle: $('#tStyle').value, ticketColors: colors,
         visibility: $('#evPublic').checked ? 'public' : 'private',
-        active: $('#evActive').checked, soldOut: $('#evSold').checked, featured: $('#evFeat').checked,
+        active: $('#evActive').checked, soldOut: $('#evSold').checked, salesClosed: $('#evSalesClosed').checked, featured: $('#evFeat').checked,
         organiserId: val('#evOrg'),
         organizerSharePct: Number(val('#evOrgPct')) || 0,
         ...($('#evEvolveitPct') ? { evolveitSharePct: val('#evEvolveitPct') === '' ? null : Number(val('#evEvolveitPct')) } : {}),
