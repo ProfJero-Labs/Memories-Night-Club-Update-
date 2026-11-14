@@ -84,7 +84,8 @@ export async function eventBundle(env, eventId) {
   const promosNow = await livePromos(env, eventId);
   const stock = f => (typeof f.remaining === 'number' ? { soldOut: f.remaining <= 0, lastFew: f.remaining > 0 && f.remaining <= 10 } : { soldOut: false, lastFew: false });
   const bySort = (a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0) || a.pricePesewas - b.pricePesewas;
-  const ticketTypes = tickets.filter(x => x.fields.active === true).map(x => ({ id: x.id, name: x.fields.name, pricePesewas: Number(x.fields.pricePesewas || 0), admits: Number(x.fields.admits || 1), description: clean(x.fields.description, 140), sortOrder: x.fields.sortOrder ?? 0, ...stock(x.fields) })).sort(bySort);
+  const eventSoldOut = e.fields.soldOut === true;
+  const ticketTypes = eventSoldOut ? [] : tickets.filter(x => x.fields.active === true).map(x => ({ id: x.id, name: x.fields.name, pricePesewas: Number(x.fields.pricePesewas || 0), admits: Number(x.fields.admits || 1), description: clean(x.fields.description, 140), sortOrder: x.fields.sortOrder ?? 0, ...stock(x.fields) })).sort(bySort);
   const raffle = raffles.find(x => x.fields.public === true && x.fields.enabled === true);
   return {
     event: { ...publicEvent(eventId, e.fields, settings), over: isOver(e.fields), autoStyle },
@@ -94,7 +95,7 @@ export async function eventBundle(env, eventId) {
     ticketTypes,
     // Promos running now: names and promo prices for the page; codes never leave the server.
     promo: publicPromos(promosNow, ticketTypes),
-    tablePackages: tables.filter(x => x.fields.active === true).map(x => ({ id: x.id, name: x.fields.name, pricePesewas: Number(x.fields.pricePesewas || 0), capacity: Number(x.fields.capacity || 0), includes: clean(x.fields.description, 200), sortOrder: x.fields.sortOrder ?? 0, ...stock(x.fields) })).sort(bySort),
+    tablePackages: eventSoldOut ? [] : tables.filter(x => x.fields.active === true).map(x => ({ id: x.id, name: x.fields.name, pricePesewas: Number(x.fields.pricePesewas || 0), capacity: Number(x.fields.capacity || 0), includes: clean(x.fields.description, 200), sortOrder: x.fields.sortOrder ?? 0, ...stock(x.fields) })).sort(bySort),
     bottles: (() => {
       const catalog = [...bottles, ...globalBottles].filter(x => x.fields.active === true).map(x => ({ id: x.id, name: x.fields.name, category: x.fields.category || '', pricePesewas: Number(x.fields.pricePesewas || 0), ...stock(x.fields) }));
       // Finance's bar menu fills in when no explicit bottles catalog exists for this night.
