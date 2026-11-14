@@ -176,7 +176,7 @@ export async function upsertEvent(env, b, user) {
     artwork, heroImage, heroVideo, ticketLines: lines,
     ticketStyle: TICKET_STYLES.includes(b.ticketStyle) ? b.ticketStyle : 'auto', ticketColors: cleanTicketColors(b.ticketColors) || existing?.fields?.ticketColors || null,
     visibility: b.visibility === 'public' ? 'public' : 'private',
-    active: b.active !== false, soldOut: b.soldOut === true, featured: b.featured === true,
+    active: b.active !== false, soldOut: b.soldOut === true, salesClosed: b.salesClosed === true, featured: b.featured === true,
     organiserId, organizerSharePct: pct, evolveitSharePct, updatedAt: now(), createdAt: existing?.fields?.createdAt || now(), 
   };
   await setDoc(env, 'events', eventId, { ...(existing?.fields || {}), ...data });
@@ -472,7 +472,7 @@ export async function inviteStaff(env, b, user) {
 
   // Refuse if the account already exists — that's the Save role form's job.
   const existing = ((await identity(env, 'accounts:lookup', { email: [email] })).users || [])[0];
-  if (existing) return { error: 'That email already has an account. Use “Save role” below to change their role.' };
+  if (existing) return { error: 'That email already has an account. Use "Save role" below to change their role.' };
 
   const password = generatePassword();
   const claims = { role, admin: role === 'superAdmin' };
