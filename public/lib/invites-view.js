@@ -52,7 +52,8 @@ const STATUS = { sent: ['sent', 'green'], not_texted: ['made, text failed', 'amb
 
 // el: where to draw. eventId: the night to open (else the one taking requests, else the next).
 // onNight(id): called when another night is picked (to keep it in the address).
-export async function invitesView(el, { eventId = '', onNight } = {}) {
+export async function invitesView(el, { eventId = '', onNight, role = '' } = {}) {
+  const canSendHim = role === 'superAdmin' || role === 'director';
   el.innerHTML = '<div class="loading">Loading…</div>';
   const { nights } = await sapi('/api/admin/invites/nights');
   if (!nights.length) { el.innerHTML = '<h1>Invitations</h1><p class="muted">No nights coming up. Add the night first (control room → Nights).</p>'; return; }
@@ -63,7 +64,7 @@ export async function invitesView(el, { eventId = '', onNight } = {}) {
 
     <h2>Send invitations</h2>
     <div class="card">
-      <div class="sfield"><label for="ivStyle">Which card</label><select id="ivStyle"><option value="her">Ladies: the red visa (${esc(inv.perk || 'no perks set')})</option><option value="him">Gentlemen: the black Memories card, a pass to witness (no free drinks)</option></select></div>
+      <div class="sfield" ${canSendHim ? '' : 'hidden'}><label for="ivStyle">Which card</label><select id="ivStyle"><option value="her">Ladies: the red visa (${esc(inv.perk || 'no perks set')})</option>${canSendHim ? '<option value="him">Gentlemen: the black Memories card, a pass to witness (no free drinks)</option>' : ''}</select></div>
       <div class="sfield"><label for="ivPasses2">Passes for this batch</label><input id="ivPasses2" type="number" min="1" max="20" value="${inv.passes}" style="width:80px"><span class="hint">How many passes each person in this send gets. Type a different number after someone’s phone to override theirs individually.</span></div>
       <div class="sfield"><label for="ivList">Phone numbers, one per line</label>
         <textarea id="ivList" rows="7" placeholder="024 123 4567&#10;Ama Mensah 0201112222&#10;0241234567 Kofi Mensah 3&#10;+233 55 123 4567"></textarea>
@@ -98,10 +99,10 @@ export async function invitesView(el, { eventId = '', onNight } = {}) {
       <div class="toolbar"><button class="sbtn red" type="button" id="ivSave">Save</button></div><div id="ivSaveMsg"></div>
     </details>`;
 
-  $('#ivNight', el).onchange = () => { const id = $('#ivNight', el).value; if (onNight) onNight(id); else invitesView(el, { eventId: id, onNight }); };
+  $('#ivNight', el).onchange = () => { const id = $('#ivNight', el).value; if (onNight) onNight(id); else invitesView(el, { eventId: id, onNight, role }); };
   const wording = () => ({ eventId: ev.id, open: $('#ivOpen', el).checked, title: val(el, '#ivTitle'), tagline: val(el, '#ivTag'), perk: val(el, '#ivPerk'), dress: val(el, '#ivDress'), passes: Number(val(el, '#ivPasses') || 1) });
   $('#ivSave', el).onclick = async () => {
-    try { await sapi('/api/admin/invites/settings', { method: 'POST', body: wording() }); await invitesView(el, { eventId: ev.id, onNight }); flash($('#ivMsgBox', el), 'Saved.'); }
+    try { await sapi('/api/admin/invites/settings', { method: 'POST', body: wording() }); await invitesView(el, { eventId: ev.id, onNight, role }); flash($('#ivMsgBox', el), 'Saved.'); }
     catch (err) { flash($('#ivSaveMsg', el), err.message, true); }
   };
   $('#ivCopy', el) && ($('#ivCopy', el).onclick = async () => { try { await navigator.clipboard.writeText(ev.applyUrl); $('#ivCopy', el).textContent = 'Copied'; } catch { prompt('Copy this link:', ev.applyUrl); } });

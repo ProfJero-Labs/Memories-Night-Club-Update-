@@ -117,6 +117,7 @@ export async function saveInvitation(env, b, user) {
 //   style: 'her' (the ladies' visa) | 'him' (the gentlemen's pass) }
 export async function sendInvites(env, b, user) {
   if (!requireRole(user, INVITERS)) return FORBIDDEN;
+  if (styleOf(b.style) === 'him' && !requireRole(user, ['superAdmin', 'director'])) return { error: 'Only directors can send gentlemen\'s passes.', status: 403 };
   const n = await inviteNight(env, b?.eventId); if (n.error) return n;
   const rows = Array.isArray(b.rows) ? b.rows : [];
   if (!rows.length) return { error: 'Add at least one phone number.' };

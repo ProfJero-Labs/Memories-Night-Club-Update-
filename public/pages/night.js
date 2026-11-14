@@ -59,7 +59,7 @@ async function route() {
     if (key === 'customers') { app.innerHTML = `${director ? back() : ''}<div id="rv2"></div><div id="yv" style="margin-top:20px"></div>`; bindBack(); await reviewsView($('#rv2')).catch(() => {}); return await paymentsView($('#yv'), { tab: 'customers' }); }
     if (key === 'approve') { app.innerHTML = '<div id="tav"></div>'; return await toApproveView($('#tav'), { onCount: n => nav.setDot('approve', n) }); }
     if (key === 'salaries') { app.innerHTML = `${back('Money', 'money')}<div id="slv"></div>`; bindBack(); return await payView($('#slv'), arg); }
-    if (key === 'invites') { app.innerHTML = `${back()}<div id="ivv"></div>`; bindBack(); return await invitesView($('#ivv'), { eventId: arg || '', onNight: id => { location.hash = `invites/${id}`; } }); }
+    if (key === 'invites') { app.innerHTML = `${back()}<div id="ivv"></div>`; bindBack(); return await invitesView($('#ivv'), { eventId: arg || '', onNight: id => { location.hash = `invites/${id}`; }, role: user.role }); }
     if (key === 'reviews') { app.innerHTML = `${back()}<div id="rvv"></div>`; bindBack(); return await reviewsView($('#rvv')); }
     if (key === 'feedback') { app.innerHTML = `${back()}<div id="fbv"></div>`; bindBack(); return await feedbackInboxView($('#fbv')); }
     if (key === 'perf') { app.innerHTML = `${back()}<div id="pfv"></div>`; bindBack(); return await perfView($('#pfv'), arg); }

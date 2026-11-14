@@ -35,7 +35,7 @@ async function route() {
     if (key === 'payments') { app.innerHTML = `${back('Floor', 'floor')}<div id="pv"></div>`; bindBack(); return await paymentsView($('#pv')); }
     if (key === 'feedback') { app.innerHTML = `${back()}<div id="fv"></div>`; bindBack(); return await feedbackInboxView($('#fv')); }
     if (key === 'perf') { app.innerHTML = `${back()}<div id="pfv"></div>`; bindBack(); return await people.perfView($('#pfv'), arg); }
-    if (key === 'invites') { app.innerHTML = `${back()}<div id="ivv"></div>`; bindBack(); return await invitesView($('#ivv'), { eventId: arg || '', onNight: id => { location.hash = `invites/${id}`; } }); }
+    if (key === 'invites') { app.innerHTML = `${back()}<div id="ivv"></div>`; bindBack(); return await invitesView($('#ivv'), { eventId: arg || '', onNight: id => { location.hash = `invites/${id}`; }, role: user.role }); }
     if (key === 'momophone') { app.innerHTML = `${back()}<div id="mpv"></div>`; bindBack(); return await momoPhoneView($('#mpv')); }
     if (key === 'close') { app.innerHTML = `${back()}<div id="clv"></div>`; bindBack(); return await closingView($('#clv'), undefined, { canClose: true }); }
     stop = every(30000, alive => floor(alive).catch(e => alive() && fail(e)));
