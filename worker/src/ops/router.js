@@ -26,6 +26,7 @@ import * as fin from './finance-night.js';
 import * as trial from './trial-reset.js';
 import * as tabClear from './tab-clear.js';
 import * as salesList from './sales-list.js';
+import * as voidSale from './void-sale.js';
 import * as wallet from './wallet.js';
 import * as evolveit from './evolveit.js';
 import * as momoPhone from './momophone.js';
@@ -59,6 +60,8 @@ export async function opsRoute(m, p, u, b, env, user) {
       case '/api/ops/evolveit': return evolveit.evolveitDue(env, user);
       case '/api/ops/momo-phone': return momoPhone.phoneStatus(env, user);
       case '/api/ops/wallet/one': return wallet.walletOne(env, user, q('id'));
+      case '/api/ops/sales/door': return voidSale.doorSales(env, user, { date: q('date') });
+      case '/api/ops/test-mode': return voidSale.testModeStatus(env, user);
       case '/api/ops/sales/list': return salesList.salesList(env, user, { period: q('period'), from: q('from'), to: q('to'), method: q('method'), person: q('person'), drink: q('drink') });
       case '/api/ops/closing': return closing.closingStatus(env, user, { date: q('date') });
       case '/api/ops/eod': return closing.eodReport(env, user, { date: q('date') });
@@ -133,6 +136,9 @@ export async function opsRoute(m, p, u, b, env, user) {
     case '/api/ops/tabs/cash': return tabs.cashierCash(env, b, user);
     case '/api/ops/tabs/pay': return tabs.recordPayment(env, b, user);
     case '/api/ops/tabs/void': return tabs.voidTab(env, b, user);
+    case '/api/ops/sales/void': return voidSale.voidSale(env, b, user);
+    case '/api/ops/sales/clear-test': return voidSale.clearTestSales(env, b, user);
+    case '/api/ops/test-mode': return voidSale.setTestMode(env, b, user);
     case '/api/ops/tabs/close': return tabs.closeTab(env, b, user);
     case '/api/ops/tabs/text-bill': return tabs.textBill(env, b, user);
     case '/api/ops/bar/round': return tabs.barRound(env, b, user);

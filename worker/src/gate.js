@@ -18,7 +18,7 @@ import { sendSms, siteUrl } from './lib/notify.js';
 import { computeShares } from './shares.js';
 import { memberAtGate } from './members.js';
 import { cashBag } from './ops/tabs.js';
-import { bizDate } from './ops/common.js';
+import { bizDate, isTestMode } from './ops/common.js';
 import { serviceFee } from './lib/fee.js';
 
 const FORBIDDEN = { error: 'You can’t do that with your role.', status: 403 };
@@ -116,6 +116,7 @@ export async function gateSell(env, b, user) {
   const phone = normalizePhone(b?.phone);
   if (!phone) return { error: 'Enter their phone number (it’s their ticket), e.g. 024 123 4567.' };
   const method = b?.method === 'momo' ? 'momo' : 'cash';
+  if (method === 'momo' && await isTestMode(env)) return { error: 'Test mode is on: MoMo prompts are off so no real phone is charged. Sell with cash.' };
   const name = clean(b?.name, 80) || 'Guest';
   let item;
   if (b?.ticketTypeId) {
@@ -180,7 +181,7 @@ export async function gateSell(env, b, user) {
 // Issues a gate sale once it's paid: tickets admitted now (or the table seated), the order, the
 // cash in the seller's cash for the night, and the ticket by SMS. Idempotent per reference.
 export async function issueGateSale(env, P, { paidWith, reference, sessionId = null }) {
-  const at = now(), orderId = id();
+  const at = now(), orderId = id(), test = await isTestMode(env);
   const res = await withTransaction(env, async tx => {
     const paths = [P.kind === 'ticket' ? `ticket_types/${P.ticketTypeId}` : `table_packages/${P.packageId}`, ...(P.holdId ? [`orders/${P.holdId}`] : []), ...(sessionId ? [`cash_sessions/${sessionId}`] : []), ...(paidWith === 'momo' ? [`pending_checkouts/${reference}`] : [])];
     const got = await batchGet(env, paths, tx);
@@ -188,7 +189,7 @@ export async function issueGateSale(env, P, { paidWith, reference, sessionId = n
     const writes = [];
     let tokens = [];
     const order = { orderId, kind: P.kind, channel: 'gate', paidWith, reference, eventId: P.eventId, eventName: P.eventName, amountPesewas: P.amountPesewas, quantity: P.quantity, admits: P.admits || 1,
-      buyerName: P.buyerName, buyerPhone: P.buyerPhone, buyerEmail: '', soldBy: P.soldBy, soldByName: P.soldByName, status: 'confirmed', createdAt: at,
+      buyerName: P.buyerName, buyerPhone: P.buyerPhone, buyerEmail: '', soldBy: P.soldBy, soldByName: P.soldByName, status: 'confirmed', createdAt: at, ...(test ? { test: true } : {}),
       shares: P.shares || {}, evolveitSharePesewas: P.shares?.evolveitSharePesewas || 0, memoriesSharePesewas: P.shares?.memoriesSharePesewas || 0, organizerSharePesewas: P.shares?.organizerSharePesewas || 0, organizerId: P.organizerId || null };
     if (P.kind === 'ticket') {
       const tt = foundFields(got, `/ticket_types/${P.ticketTypeId}`);
@@ -228,6 +229,7 @@ export async function issueGateSale(env, P, { paidWith, reference, sessionId = n
   });
   if (res.error || res.already) return res.error ? res : { status: 'issued', orderId: res.orderId, ticketIds: res.ticketIds };
   const how = paidWith === 'cash' ? 'cash' : 'MoMo';
+  if (test) return { status: 'issued', orderId: res.orderId, ticketIds: res.ticketIds, amountPesewas: P.amountPesewas, kind: P.kind, phoneHint: maskPhone(P.buyerPhone), people: P.kind === 'ticket' ? P.quantity * (P.admits || 1) : 0, test: true };
   const text = P.kind === 'ticket'
     ? `MEMORIES\nWelcome to ${P.eventName}! Paid ${money(P.amountPesewas)} (${how}) at the gate.\nYour ticket: ${siteUrl(env, `/ticket.html?token=${res.ticketIds[0]}`)}\nSecurity may check your number.`
     : `MEMORIES\nTable confirmed: ${P.packageName}, ${P.eventName}. Paid ${money(P.amountPesewas)} (${how}) at the gate: it's your minimum spend and counts towards your drinks. Code: ${tableCode(res.orderId)}.`;

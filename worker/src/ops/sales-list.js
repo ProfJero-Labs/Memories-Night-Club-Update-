@@ -5,6 +5,7 @@
 // served it or took a payment), one drink (by name). Ticket sales are not here (the events side).
 import { queryRecent, listDocs } from '../lib/firestore.js';
 import { requireRole, REPORTS } from '../lib/auth.js';
+import { VOIDERS } from './void-sale.js';
 import { FORBIDDEN, paidNight } from './common.js';
 import { billOf } from './tabs.js';
 import { periodOf } from './money.js';
@@ -28,6 +29,7 @@ export async function salesList(env, user, q = {}) {
   ]);
   const barName = Object.fromEntries(stations.map(s => [s.id, s.fields.name]));
   const rounds = roundsRaw.map(r => ({ id: r.id, ...r.fields }));
+  const mayVoid = requireRole(user, VOIDERS);
   const all = [];
   for (const d of tabsRaw) {
     const t = { id: d.id, ...d.fields };
@@ -36,7 +38,7 @@ export async function salesList(env, user, q = {}) {
     if (!bill.totalPesewas && !(t.payments || []).length) continue;
     const pays = (t.payments || []).map(x => ({ method: x.method, methodLabel: SALE_METHODS[x.method] || x.method, amountPesewas: Number(x.amountPesewas || 0), at: x.at,
       takenByName: x.method === 'digital' ? 'Customer, by Paystack' : x.byName || '', takenBy: x.by || '', ref: x.momoRef || x.reference || '', late: !!x.recordedLateBy }));
-    all.push({ id: t.id, kind: 'bill', date: t.businessDate, at: t.createdAt, where: where(t), label: `Tab ${t.number}`, bar: barName[t.stationId] || t.stationName || '',
+    all.push({ id: t.id, kind: 'bill', test: !!t.test, canVoid: mayVoid && t.status !== 'voided' && !pays.some(x => x.method === 'digital') && !t.pending?.reference, date: t.businessDate, at: t.createdAt, where: where(t), label: `Tab ${t.number}`, bar: barName[t.stationId] || t.stationName || '',
       servedByName: t.waiterName || '', servedBy: t.waiterUid || '', customerName: t.debt?.name || t.customerName || '', customerPhone: t.customerPhone || '',
       lines: bill.lines.map(l => ({ qty: l.qty, name: l.name, amountPesewas: l.amountPesewas })), discountPesewas: bill.discountPesewas,
       totalPesewas: bill.totalPesewas, paidPesewas: bill.paidPesewas, leftPesewas: t.status === 'written_off' ? 0 : bill.balancePesewas,

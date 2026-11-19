@@ -251,7 +251,7 @@ export async function reserveTable(env, b) {
   if (ev.fields.salesClosed === true) return { error: 'Online table bookings for this night are now closed.' };
   if (isOver(ev.fields)) return { error: 'This night has already happened.' };
   const arriveAt = arrivalFor(ev.fields.date, b.arriveTime);
-  if (!arriveAt) { const s = new Date(ev.fields.date); return { error: `Pick the time you'll arrive, between ${accraTime(s)} and ${accraTime(new Date(s.getTime() + ARRIVE_WINDOW_HOURS * 3600e3))}.` }; }
+  if (!arriveAt) { const s = new Date(ev.fields.date); return { error: `Pick the time you’ll arrive, between ${accraTime(s)} and ${accraTime(new Date(s.getTime() + ARRIVE_WINDOW_HOURS * 3600e3))}.` }; }
   const holdUntil = new Date(Date.parse(arriveAt) + HOLD_MINUTES * 60e3).toISOString();
   const drinks = await pickBottles(env, b.eventId, b.bottles); if (drinks.error) return drinks;
   const drinkRequest = clean(b.drinkRequest, 300);

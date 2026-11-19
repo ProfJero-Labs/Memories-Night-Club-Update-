@@ -19,6 +19,7 @@ import { accraDayKey, loadFee, momoDirectOff } from '../app.js';
 loadFee().catch(() => {});
 import { accountsView, ticketsView, findOrderView, expensesView, nightsView, salesView, closingView, approvalsView, productsView, stockAdminView, eodListView, eodView, moneyView, expenseSheet, explainSheet, budgetView, paymentsView, commissionsView, toApproveView, stockValueView, salesListView, openSales, evolveitView, walletWaitingHtml, bindWalletWaiting, momoPhoneView, purchasesView, cashReceiveView, feedbackInboxView, chargesView, financeNightView, tabClearView } from '../lib/ops-views.js';
 import { payView, reviewsView, perfView } from '../lib/people-views.js';
+import { voidView, testBanner } from '../lib/void-views.js';
 import { staffView } from '../lib/staff-view.js';
 import { invitesView } from '../lib/invites-view.js';
 
@@ -29,6 +30,7 @@ const director = user.role !== 'manager';
 const admin = user.role === 'superAdmin';
 staffHeader(user, 'Tonight');
 const app = $('#app');
+testBanner(app.parentElement).catch(() => {});
 const navItems = director ? [['tonight', 'Tonight'], ['money', 'Money'], ['approve', 'To approve'], ['more', 'More']] : [['tonight', 'Tonight'], ['tables', 'Tables'], ['customers', 'Customers'], ['more', 'More']];
 // The directors see how many payments wait for them, wherever they are.
 if (director) sapi('/api/ops/to-approve').then(d => nav.setDot('approve', d.items.length)).catch(() => {});
@@ -65,6 +67,7 @@ async function route() {
     if (key === 'perf') { app.innerHTML = `${back()}<div id="pfv"></div>`; bindBack(); return await perfView($('#pfv'), arg); }
     if (key === 'purchases') { app.innerHTML = `${back()}<div id="puv"></div>`; bindBack(); return await purchasesView($('#puv')); }
     if (key === 'cash') { app.innerHTML = `${back()}<div id="crv"></div>`; bindBack(); return await cashReceiveView($('#crv')); }
+    if (key === 'testmode') { app.innerHTML = `${back()}<div id="tmv"></div>`; bindBack(); return await voidView($('#tmv')); }
     if (key === 'saleslist') { app.innerHTML = `${back()}<div id="slv"></div>`; bindBack(); const o = Object.fromEntries(new URLSearchParams(arg || '')); return await salesListView($('#slv'), o, { onChange: openSales }); }
     if (key === 'evolveit' && director) { app.innerHTML = `${back()}<div id="evv"></div>`; bindBack(); return await evolveitView($('#evv')); }
     if (key === 'momophone') { app.innerHTML = `${back()}<div id="mpv"></div>`; bindBack(); return await momoPhoneView($('#mpv')); }
@@ -213,7 +216,7 @@ function more() {
   // Grouped, so each thing is quick to find (no scrolling through one long list).
   const groups = director ? [
     ['Money', [['accounts', 'Night accounts', 'What the drinks should bring; who isn’t aligned'], ['salaries', 'Salaries and loans', 'What staff are paid'], ['budget', 'Bills and budget', 'What’s due this month'], ['commissions', 'Commissions', '10% on tables over GHS 3,000'], ['reports', 'End-of-day reports', 'Each night, signed off'], ['saleslist', 'Every sale', 'One by one: what, who, how paid'], ['sales', 'Tonight in detail', 'By waiter, by bar, by drink'], ['stockvalue', 'Stock value', 'What’s in the bars, at cost'], ['finance', 'Night’s finances', 'Sales, Paystack fees, settlement, every payment'], ['charges', 'How customers pay', 'Cash, Paystack, big bills: what each costs'], ['evolveit', 'Due to EvolveIT', 'Charges on big bills paid to the wallet']]],
-    ['Tabs', [['opentabs', 'Tabs left open', 'Clear tabs still open after a night']]],
+    ['Tabs', [['opentabs', 'Tabs left open', 'Clear tabs still open after a night'], ['testmode', 'Test mode and voids', 'Practice runs; take back a sale that never happened']]],
     ['People', [['staff', 'Staff', 'Add people, send PINs'], ['feedback', 'Staff feedback', 'Complaints and ideas'], ['perf', 'Performance reviews', 'Each staff member, every month'], ['@admin.html#members', 'Members', 'Members and passes']]],
     ['Floor', [['tables', 'Tables', 'Open tables and what they owe'], ['reviews', 'Customer reviews', 'What customers say']]],
     ['Guests', [['invites', 'Invitations', 'Send free entry (e.g. Ladies Night); approve requests']]],
@@ -222,6 +225,7 @@ function more() {
     ['Tonight', [['accounts', 'Night accounts', 'What the drinks should bring; who isn’t aligned'], ['tickets', 'Tickets tonight', 'Sold online and at the gate'], ['find', 'Find an order', 'A table booking or tickets'], ['payments', 'Payments tonight', 'Every payment, with details'], ['cash', 'Cash from the staff', 'Receive each person’s counted cash'], ['momophone', 'MoMo phone', 'Pair it, see its texts'], ['approvals', 'Approvals', 'Everything asked tonight'], ['saleslist', 'Every sale', 'One by one: what, who, how paid'], ['sales', 'Tonight in detail', 'By waiter, by bar, by drink']]],
     ['Stock and money', [['expenses', 'Expenses', 'What was spent; add one'], ['purchases', 'Buying drinks', 'Ask; finance and a director approve'], ['stock', 'Stock', 'New stock, counts, differences'], ['stockvalue', 'Stock value', 'What’s in the bars, at cost'], ['money', 'Money', 'In, out, profit'], ['prices', 'Drinks & prices', 'Set by finance'], ['commissions', 'Commissions', 'Who brought the big tables']]],
     ['Guests', [['invites', 'Invitations', 'Send free entry (e.g. Ladies Night); approve requests']]],
+    ['Sales', [['testmode', 'Test mode and voids', 'Practice runs; take back a sale that never happened']]],
     ['Records', [['nights', 'Nights coming up', 'Tickets sold, tables booked'], ['reports', 'Past nights', 'End-of-day reports'], ['@admin.html#members', 'Members', 'Members and passes']]],
   ];
   const { box, close } = sheet(`<h2>More</h2>${groups.map(([g, items]) => `<p class="group-h">${esc(g)}</p><div class="more-list">${items.map(([k, l, sub]) => `<button type="button" data-more="${esc(k)}"><b>${esc(l)}</b><span>${esc(sub)}</span></button>`).join('')}</div>`).join('')}`, { label: 'More', full: true });

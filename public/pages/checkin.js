@@ -7,6 +7,7 @@ const user = await requireStaff(['superAdmin', 'director', 'manager', 'eventMana
 staffHeader(user, 'Door');
 if (['superAdmin', 'director', 'manager', 'eventManager'].includes(user.role)) $('#adminLink').hidden = false;
 if (user.role === 'organiser') { $('#adminLink').hidden = false; $('#adminLink').href = 'organiser.html'; $('#adminLink').textContent = 'My nights'; }
+$('#goSell').onclick = () => { location.hash = 'sell'; };
 
 // ── The night ──
 // ?event= wins; otherwise tonight's night (the night still open, however late it is); otherwise

@@ -5,6 +5,7 @@
 import { $, $$, esc } from '../app.js';
 import { sapi } from '../staff.js';
 import { sheet, say, st, busy, ghsIn, moneyField, money, when, dayName, ask, pasteMomoButton, tableSpend } from './ops-ui.js';
+import { voidFlow } from './void-views.js';
 // One-tap reasons for refusing a request or a payment (they can still type their own).
 const REFUSE_QUICK = ['Wrong amount', 'Not in this month’s budget', 'Too expensive', 'Not needed now', 'Ask me first'];
 
@@ -344,7 +345,7 @@ export async function salesListView(el, o = {}, { onChange } = {}) {
       <div class="lines-list">
         <div class="ln"><span>Served by</span><span>${esc(s.servedByName || '—')}</span></div>
         ${s.customerName || s.customerPhone ? `<div class="ln"><span>Customer</span><span>${esc(s.customerName)}${s.customerPhone ? ` <a href="tel:${esc(s.customerPhone)}">${esc(s.customerPhone)}</a>` : ''}</span></div>` : ''}
-        <div class="ln"><span>Status</span><span>${esc(s.statusLabel)}</span></div></div>
+        <div class="ln"><span>Status</span><span>${esc(s.statusLabel)}${s.test ? ' · TEST sale' : ''}</span></div></div>
       <h3 style="margin:6px 0 0">What was bought</h3>
       <div class="lines-list">${s.lines.map(l => `<div class="ln"><span>${l.qty} × ${esc(l.name)}</span><span>${money(l.amountPesewas)}</span></div>`).join('') || '<div class="ln"><span class="muted">No drinks</span></div>'}
         ${s.discountPesewas ? `<div class="ln"><span>Discount</span><span>−${money(s.discountPesewas)}</span></div>` : ''}
@@ -352,7 +353,9 @@ export async function salesListView(el, o = {}, { onChange } = {}) {
       <h3 style="margin:6px 0 0">How it was paid</h3>
       <div class="lines-list">${s.payments.map(x => `<div class="ln"><span>${esc(x.methodLabel)} · ${when(x.at)}<br><small class="muted">Taken by ${esc(x.takenByName || '—')}${x.ref ? ` · ref ${esc(x.ref)}` : ''}${x.late ? ' · recorded after the night' : ''}</small></span><span>${money(x.amountPesewas)}</span></div>`).join('') || '<div class="ln"><span class="muted">No payment yet</span></div>'}
         ${s.leftPesewas ? `<div class="ln total"><span>Not paid yet</span><span>${money(s.leftPesewas)}</span></div>` : ''}</div>
+      ${s.canVoid ? '<p class="muted" style="margin:0">Never really happened (a test, or a mistake)? Voiding takes it out of the sales and the seller’s cash. Your name and reason are kept.</p><button class="big red" id="slVoid">Void this sale</button>' : ''}
       <button class="big ghost" data-close>Done</button>`, { label: 'Sale' });
+    const vb = $('#slVoid'); if (vb) vb.onclick = () => voidFlow({ kind: 'tab', id: s.id, title: `Void ${s.label} (${money(s.totalPesewas)})?` }, () => salesListView(el, o, { onChange }));
   });
   $('#slCsv', el).onclick = () => saveCsv(`sales-${d.period.from}${d.period.to !== d.period.from ? `-to-${d.period.to}` : ''}.csv`, [
     ['Sales', d.period.label], [],

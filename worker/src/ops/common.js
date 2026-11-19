@@ -57,3 +57,18 @@ export const audit = (env, user, action, data) => setDoc(env, 'audit_logs', id()
 // Every price, cost and stock-level change: who, when, the old value and the new value.
 export const logChange = (env, user, { kind, refId, refName, field, from, to, note = '' }) =>
   setDoc(env, 'change_log', id(), { kind, refId, refName, field, from: from ?? null, to: to ?? null, note, ...who(user), at: now(), businessDate: bizDate() });
+
+// Test mode: while it is on, every sale recorded (tabs, quick sales, gate sales) is stamped
+// test:true, SMS and MoMo prompts to real phones are off, and "Clear test sales" voids them all
+// (ops/void-sale.js). config/testmode { on, since, byName }. Read once every few seconds per Worker.
+const TEST_TTL = 5e3;
+let testCache = null; // { on, at, key }
+onResetCaches(() => { testCache = null; });
+export async function isTestMode(env) {
+  if (testCache && testCache.key === envKey(env) && Date.now() - testCache.at < TEST_TTL) return testCache.on;
+  let on = false;
+  try { on = (await getDoc(env, 'config', 'testmode'))?.fields?.on === true; } catch { on = false; }
+  testCache = { on, at: Date.now(), key: envKey(env) };
+  return on;
+}
+export const forgetTestMode = () => { testCache = null; };

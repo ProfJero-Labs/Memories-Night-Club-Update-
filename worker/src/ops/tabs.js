@@ -22,7 +22,7 @@ import { getDoc, setDoc, queryWhere, batchGet, commitTx, updateWrite, foundField
 import { now, id, clean, normalizePhone, maskPhone, paymentRef, validEmail, nightKey, tableCode } from '../lib/util.js';
 import { requireRole, uidOf } from '../lib/auth.js';
 import { sendSms, siteUrl } from '../lib/notify.js';
-import { FORBIDDEN, bizDate, who, audit, closedError, ghs, int } from './common.js';
+import { FORBIDDEN, bizDate, who, audit, closedError, ghs, int, isTestMode } from './common.js';
 import { addMoves, stockError } from './stock.js';
 import { prepareTip, tipFields, textTip, phoneOf, guestTipPeople } from './tips.js';
 import { paymentAlert } from './alerts.js';
@@ -130,7 +130,7 @@ export async function openTab(env, b, user) {
   const dealName = clean(b?.broughtByName, 60), dealPhone = b?.broughtByPhone ? normalizePhone(b.broughtByPhone) : '';
   if (b?.broughtByPhone && !dealPhone) return { error: 'The phone of the person who brought the table doesn’t look right, or leave it blank.' };
   const broughtBy = dealName ? { name: dealName, phone: dealPhone, setBy: uidOf(user), setByName: user.name || '', at: now() } : null;
-  const tabId = id();
+  const tabId = id(), test = await isTestMode(env);
   const bookingId = String(b?.bookingId || '');
   if (bookingId) { const bad = bookingError(await getDoc(env, 'orders', bookingId), date); if (bad) return bad; }
   const number = await withTransaction(env, async tx => {
@@ -139,7 +139,7 @@ export async function openTab(env, b, user) {
     await commitTx(env, [
       updateWrite(env, 'counters', key, { n }),
       updateWrite(env, 'tabs', tabId, { number: n, businessDate: date, stationId: st.id, stationName: st.fields.name, table: walkIn ? 'Walk-in' : table, customerName: clean(b.customerName, 60), customerPhone: phone,
-        waiterUid: uidOf(user), waiterName: user.name || '', waiterNickname: user.nickname || '', status: 'open', billToken: id(), payments: [], discounts: [], createdAt: now(), broughtBy }),
+        waiterUid: uidOf(user), waiterName: user.name || '', waiterNickname: user.nickname || '', status: 'open', billToken: id(), payments: [], discounts: [], createdAt: now(), broughtBy, ...(test ? { test: true } : {}) }),
     ], tx);
     return n;
   });
@@ -589,7 +589,7 @@ export async function quickSale(env, b, user) {
   let momo = null, bag = null;
   if (method === 'momo') { const off = await momoDirectBlocked(env); if (off) return off; momo = await momoCheck(env, b, date); if (momo.error) return momo; }
   else { bag = await cashBag(env, user, date); if (bag.error) return bag; }
-  const tabId = id(), rid = id(), payId = id(), at = now(), uid = uidOf(user), byName = user.name || '';
+  const tabId = id(), rid = id(), payId = id(), at = now(), uid = uidOf(user), byName = user.name || '', test = await isTestMode(env);
   const pay = { id: payId, method, amountPesewas: total, at, businessDate: date, by: uid, byName, ...(momo ? { momoRef: momo.ref, momoFrom: momo.from } : { sessionId: bag.sid }) };
   const round = { tabId, businessDate: date, stationId: st.id, waiterUid: uid, waiterName: byName, table: 'Quick sale', lines, note: '', createdAt: at, sentBy: uid, quick: true,
     ...(fromBar ? { status: 'delivered', handedAt: at, handedBy: uid, handedByName: byName, receivedAt: at, deliveredAt: at, soldAtBar: true } : { status: 'waiting' }) };
@@ -600,7 +600,7 @@ export async function quickSale(env, b, user) {
     const writes = [
       updateWrite(env, 'counters', key, { n }),
       updateWrite(env, 'tabs', tabId, { number: n, businessDate: date, stationId: st.id, stationName: st.fields.name, table: 'Quick sale', customerName: clean(b?.customerName, 60), customerPhone: custPhone || (momo?.from || ''), quick: true, soldAtBar: fromBar,
-        waiterUid: uid, waiterName: byName, status: fromBar ? 'closed' : 'open', ...(fromBar ? { closedAt: at, closedByName: byName } : {}), billToken: id(), payments: [pay], discounts: [], createdAt: at }),
+        waiterUid: uid, waiterName: byName, status: fromBar ? 'closed' : 'open', ...(fromBar ? { closedAt: at, closedByName: byName } : {}), billToken: id(), payments: [pay], discounts: [], createdAt: at, ...(test ? { test: true } : {}) }),
       updateWrite(env, 'rounds', rid, { ...round, tabNumber: n }),
       updateWrite(env, 'audit_logs', id(), { action: method === 'momo' ? 'QUICK_SALE_MOMO' : 'QUICK_SALE_CASH', actorUid: uid, actorName: byName, tabId, amountPesewas: total, fromBar, ...(momo ? { momoRef: momo.ref } : {}), ...(tip.none ? {} : { tipPesewas: tip.amount, tipToUid: tip.to.uid }), timestamp: at }),
       ...tipWrite(env, tip, { method, source: 'quick', user, date, at, tabId, tabNumber: n, paymentId: payId, ...(momo ? { momoRef: momo.ref, momoFrom: momo.from } : {}) }),
